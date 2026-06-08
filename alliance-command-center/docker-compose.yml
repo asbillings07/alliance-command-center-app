@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: alliance-command-center-db
+    restart: unless-stopped
+    ports:
+      - "5232:5232"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: alliance_command_center
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
