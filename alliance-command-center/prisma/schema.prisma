@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AllianceRole {
+  OWNER
+  ADMIN
+  LEADER
+  VIEWER
+}
+
+enum Metric_Type {
+  NUMERIC
+  BOOLEAN
+  LEADERSHIP
+}
+
+enum LeadershipNoteType {
+  POSITIVE
+  WARNING
+  OBSERVATION
+  PROMOTION
+  DEMOTION
+}
+
+enum LeadershipNoteVisibility {
+  LEADERSHIP
+  ADMIN
+}
+
+model Alliance {
+  id        String   @id @default(cuid())
+  name      String
+  server    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members   Member[]
+  metrics   Metric[]
+  memberships   AllianceMembership[]
+}
+
+model AllianceMembership {
+  id String @id @default(cuid())
+
+  allianceId String
+  alliance Alliance @relation(fields: [allianceId], references: [id])
+
+  userId String
+  user User @relation(fields: [userId], references: [id])
+
+  role AllianceRole
+
+  createdAt DateTime @default(now())
+
+  @@unique([allianceId, userId])
+}
+
+model Member {
+  id          String    @id @default(cuid())
+  allianceId  String
+  playerName  String
+  discordName String?
+  thp         Int?
+  squadPower  Int?
+  joinDate    DateTime?
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  alliance    Alliance  @relation(fields: [allianceId], references: [id])
+  metricEntries MemberMetricEntry[]
+  leadershipNotes LeadershipNote[]
+}
+
+model User {
+  id          String @id @default(cuid())
+
+  email       String @unique
+  displayName String
+
+  memberships AllianceMembership[]
+  authoredNotes LeadershipNote[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Metric {
+  id String @id @default(cuid())
+
+  allianceId String
+  alliance   Alliance @relation(fields: [allianceId], references: [id])
+  name        String
+  description String?
+  weight Int
+  type Metric_Type
+  active Boolean @default(true)
+  metricEntries MemberMetricEntry[]
+  @@unique([allianceId, name])
+
+  createdAt DateTime @default(now())
+}
+
+model MemberMetricEntry {
+  id String @id @default(cuid())
+
+  memberId String
+  member   Member @relation(fields: [memberId], references: [id])
+
+  metricId String
+  metric   Metric @relation(fields: [metricId], references: [id])
+
+  score Int
+
+  notes String?
+
+  createdAt DateTime @default(now())
+}
+
+model LeadershipNote {
+  id String @id @default(cuid())
+
+  memberId String
+  member Member @relation(fields: [memberId], references: [id])
+
+  authorId String
+  author User @relation(fields: [authorId], references: [id])
+
+  noteType LeadershipNoteType
+  visibility LeadershipNoteVisibility
+  title String?
+  content String
+
+  createdAt DateTime @default(now())
+}

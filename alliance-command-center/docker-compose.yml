@@ -4,7 +4,7 @@ services:
     container_name: alliance-command-center-db
     restart: unless-stopped
     ports:
-      - "5232:5232"
+      - "5232:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
