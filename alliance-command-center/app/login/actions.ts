@@ -20,12 +20,17 @@ export async function login(
   }
 
   //3. Call signIn()
+  //3. Call signIn()
   try {
-    await signIn("credentials", {
+    const result = await signIn("credentials", {
       email,
       password,
       redirect: false,
     });
+
+    if (result && "error" in result && result.error) {
+      return { error: "Invalid email or password" };
+    }
   } catch (error) {
     console.error("Error signing in", error);
     return { error: "Invalid email or password" };
