@@ -12,21 +12,26 @@
     "start": "next start",
     "lint": "eslint",
     "seedDb": "tsx prisma/seed.ts",
-    "migrateDb": "prisma migrate dev",
+    "migrateDev": "prisma migrate dev",
+    "migrateProd": "prisma migrate deploy",
     "studio": "prisma studio",
     "generate": "prisma generate",
-    "updateDb": "npx prisma db push"
+    "updateDb": "prisma db push",
+    "syncDevDb": "prisma generate && prisma db push"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "bcrypt": "^6.0.0",
     "dotenv": "^17.4.2",
     "next": "16.2.7",
+    "next-auth": "^4.24.14",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/bcrypt": "^6.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

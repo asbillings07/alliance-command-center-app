@@ -1,13 +1,39 @@
-import { PrismaClient } from '../app/generated/prisma/client'
-import { PrismaPg } from '@prisma/adapter-pg'
+import bcrypt from 'bcrypt'
 import 'dotenv/config'
-console.log(process.env.DATABASE_URL)
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL })
-const prisma = new PrismaClient({ adapter })
+import { prisma } from '@/app/src/lib/prisma'
+
+
+const passwordHash = await bcrypt.hash(
+    'Password123',
+    12
+  )
+  
+  await prisma.user.upsert({
+    where: {
+      email: 'ab@example.com',
+    },
+    update: {},
+    create: {
+      email: 'ab@example.com',
+      displayName: 'AB',
+      passwordHash,
+    },
+  })
+
+const alliance = await prisma.alliance.create({
+  data: {
+    name: 'DAY1',
+    server: '999',
+  },
+})
 
 async function main() {
-  const alliance = await prisma.alliance.create({
-    data: {
+  const alliance = await prisma.alliance.upsert({
+    where: {
+      name: 'DAY1',
+    },
+    update: {},
+    create: {
       name: 'DAY1',
       server: '999',
     },

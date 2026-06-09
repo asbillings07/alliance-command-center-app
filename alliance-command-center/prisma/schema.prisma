@@ -35,7 +35,7 @@ enum LeadershipNoteVisibility {
 
 model Alliance {
   id        String   @id @default(cuid())
-  name      String
+  name      String   @unique
   server    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -78,9 +78,10 @@ model Member {
 
 model User {
   id          String @id @default(cuid())
-
+  preferredLanguage String @default("en")
   email       String @unique
   displayName String
+  passwordHash String
 
   memberships AllianceMembership[]
   authoredNotes LeadershipNote[]
