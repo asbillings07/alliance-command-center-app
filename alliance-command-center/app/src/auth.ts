@@ -50,15 +50,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // user is the user object that is returned from the authorize function
     async jwt({ token, user }) {
       if (user) {
-        token.userId = user.id;
+        token.sub = user.id as string;
       }
       return token;
     },
     async session({ session, token }) {
       // Auth.js validates the authentication state
       // and then reconstructs the session from the token.
-      if (token.userId) {
-        session.user.id = token.userId as string;
+      if (session.user && token.sub) {
+        session.user.id = token.sub as string;
       }
       return session;
     },

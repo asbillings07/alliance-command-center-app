@@ -6,7 +6,10 @@ export async function app() {
   if (!session || !session.user?.id) {
     redirect("/login");
   }
-  console.log("Session found", session);
+
+  if (process.env.NODE_ENV !== "production") {
+    console.debug("Session found", session);
+  }
 
   return {
     userId: session.user.id,
