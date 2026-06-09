@@ -10,14 +10,14 @@ export default function LoginPage() {
 
   return (
     <main className="flex items-center justify-center min-h-screen">
-      <section className="flex flex-col gap-4 p-4 bg-gray rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold text-center">Alliance Command Center</h1>
+      <section className="flex flex-col gap-4 p-4 bg-white rounded-lg shadow-md max-w-md w-full">
+        <h1 className="text-2xl font-bold text-center text-gray-800">Alliance Command Center</h1>
 
         {state.error && <p className="text-red-500 text-sm">{state.error}</p>}
 
-        <form className="flex flex-col gap-2" action={formAction}>
+        <form className="flex flex-col gap-2 w-full rounded-md border border-gray-300 p-4" action={formAction}>
           <input
-            className="p-2 border border-gray-300 rounded-md"
+            className="p-2 border border-gray-300 rounded-md text-gray-800"
             name="email"
             type="email"
             required
@@ -27,17 +27,17 @@ export default function LoginPage() {
             placeholder="Email"
           />
           <input
-            className="p-2 border border-gray-300 rounded-md"
+            className="p-2 border border-gray-300 rounded-md text-gray-800"
             name="password"
             type="password"
             required
             disabled={isPending}
-            autoComplete="password"
+            autoComplete="current-password"
             aria-label="Password"
             placeholder="Password"
           />
 
-          <button className="p-2 bg-blue-500 text-white rounded-md" type="submit" disabled={isPending}>
+          <button className="p-2 bg-blue-500 text-white rounded-md w-full rounded-md" type="submit" disabled={isPending}>
             {isPending ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
