@@ -8,7 +8,7 @@ export async function app() {
   }
 
   if (process.env.NODE_ENV !== "production") {
-    console.debug("Session found", session);
+    console.debug("Session found", { userId: session.user.id });
   }
 
   return {
