@@ -15,3 +15,12 @@ export async function app() {
     userId: session.user.id,
   };
 }
+
+/** 
+ * 
+1. Get session
+2. If no session -> login
+3. Load memberships
+4. Log memberships
+5. Render something basic
+ */

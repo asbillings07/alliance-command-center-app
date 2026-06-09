@@ -8,18 +8,16 @@ export type LoginState = {
 
 export async function login(
   _prevState: LoginState,
-  formData: FormData
+  formData: FormData,
 ): Promise<LoginState> {
   //1. Extract email/password
   const email = formData.get("email")?.toString();
   const password = formData.get("password")?.toString();
   // 2. Validate inputs
   if (!email || !password) {
-    console.error("Email and password are required");
     return { error: "Email and password are required" };
   }
 
-  //3. Call signIn()
   //3. Call signIn()
   try {
     const result = await signIn("credentials", {

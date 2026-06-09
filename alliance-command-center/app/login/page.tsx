@@ -37,7 +37,7 @@ export default function LoginPage() {
             placeholder="Password"
           />
 
-          <button className="p-2 bg-blue-500 text-white rounded-md w-full rounded-md" type="submit" disabled={isPending}>
+          <button className="p-2 bg-blue-500 text-white w-full rounded-md" type="submit" disabled={isPending}>
             {isPending ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
