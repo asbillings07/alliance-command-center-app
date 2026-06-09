@@ -7,6 +7,7 @@ import Credentials from "next-auth/providers/credentials";
 // credentials is the email and password from the form
 // authorize is a function that returns a user object or null
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  secret: process.env.AUTH_SECRET,
   providers: [
     Credentials({
       async authorize(credentials) {
