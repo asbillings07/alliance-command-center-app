@@ -1,8 +1,3 @@
-// create a form with the following fields:
-// - alliance name
-// - alliance description
-// - alliance server number
-// - submit button
 'use client'
 
 import { useActionState } from "react";

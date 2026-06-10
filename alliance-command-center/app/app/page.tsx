@@ -15,8 +15,7 @@ export default async function AppPage() {
             userId: session.user.id,
         },
     });
-    // log memberships
-    console.log("Memberships", memberships);
+
     if (!memberships?.length) {
         // redirect to onboarding page
         redirect("/onboarding");

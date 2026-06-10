@@ -64,7 +64,7 @@ model AllianceMembership {
 model Member {
   id          String    @id @default(cuid())
   allianceId  String
-  playerName  String
+  playerName  String @unique
   discordName String?
   thp         Int?
   squadPower  Int?

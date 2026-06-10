@@ -59,7 +59,9 @@ export async function onboarding(
   //4. Check if alliance already exists
   if (alliance) {
     //5. If it exists return the user with an error message
-    return { error: "Alliance already exists" };
+    return {
+      error: "An alliance with that name already exists on this server",
+    };
   }
 
   try {
