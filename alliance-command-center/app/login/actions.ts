@@ -17,18 +17,14 @@ export async function login(
   if (!email || !password) {
     return { error: "Email and password are required" };
   }
-
+  console.log("before signIn");
   //3. Call signIn()
   try {
-    const result = await signIn("credentials", {
+    await signIn("credentials", {
       email,
       password,
       redirect: false,
     });
-
-    if (result && result.error && result.error.message) {
-      return { error: "Invalid email or password" };
-    }
   } catch (error) {
     console.error("Error signing in", error);
     return { error: "Invalid email or password" };
