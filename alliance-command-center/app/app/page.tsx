@@ -9,14 +9,14 @@ export default async function AppPage() {
     if (!session || !session.user?.id) {
         redirect("/login");
     }
-    // load memberships
-    const memberships = await prisma.allianceMembership.findMany({
+    // Does this user have any memberships?
+    const membershipCount = await prisma.allianceMembership.count({
         where: {
             userId: session.user.id,
         },
     });
 
-    if (!memberships?.length) {
+    if (!membershipCount) {
         // redirect to onboarding page
         redirect("/onboarding");
     }

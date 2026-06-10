@@ -11,13 +11,13 @@ export async function login(
   formData: FormData,
 ): Promise<LoginState> {
   //1. Extract email/password
-  const email = formData.get("email")?.toString();
-  const password = formData.get("password")?.toString();
+  const email = formData.get("email")?.toString().trim();
+  const password = formData.get("password")?.toString().trim();
   // 2. Validate inputs
   if (!email || !password) {
     return { error: "Email and password are required" };
   }
-  console.log("before signIn");
+
   //3. Call signIn()
   try {
     await signIn("credentials", {

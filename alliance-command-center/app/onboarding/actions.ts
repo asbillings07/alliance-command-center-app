@@ -26,11 +26,18 @@ export async function onboarding(
   }
   const userId = session.user.id;
   //2. Validate alliance name
-  const allianceName = formData.get("allianceName")?.toString().toUpperCase();
+  const allianceName = formData
+    .get("allianceName")
+    ?.toString()
+    .toUpperCase()
+    .trim();
   if (!allianceName || allianceName.length < 3 || allianceName.length > 20) {
     return { error: "Alliance name must be between 3 and 20 characters" };
   }
-  const allianceServerNumber = formData.get("allianceServerNumber")?.toString();
+  const allianceServerNumber = formData
+    .get("allianceServerNumber")
+    ?.toString()
+    .trim();
   if (
     !allianceServerNumber ||
     allianceServerNumber.length < 1 ||
@@ -89,7 +96,9 @@ export async function onboarding(
       "code" in error &&
       (error as { code?: string }).code === "P2002"
     ) {
-      return { error: "An alliance with that name already exists on this server." };
+      return {
+        error: "An alliance with that name already exists on this server.",
+      };
     }
     console.error("Error creating alliance", error);
     return { error: "Error creating alliance" };

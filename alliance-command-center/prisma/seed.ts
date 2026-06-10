@@ -2,21 +2,24 @@ import bcrypt from "bcrypt";
 import "dotenv/config";
 import { prisma } from "@/app/src/lib/prisma";
 
-const passwordHash = await bcrypt.hash("Password123", 12);
+const createUser = async (email: string, password: string) => {
+  const passwordHash = await bcrypt.hash(password, 12);
 
-await prisma.user.upsert({
-  where: {
-    email: "ab@example.com",
-  },
-  update: {},
-  create: {
-    email: "ab@example.com",
-    displayName: "AB",
-    passwordHash,
-  },
-});
+  await prisma.user.upsert({
+    where: {
+      email,
+    },
+    update: {},
+    create: {
+      email,
+      displayName: "AB",
+      passwordHash,
+    },
+  });
+};
 
 async function main() {
+  await createUser("ab@example.com", "Password123");
   const alliance = await prisma.alliance.upsert({
     where: {
       name_server: {
