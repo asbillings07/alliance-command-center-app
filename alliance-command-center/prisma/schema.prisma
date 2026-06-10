@@ -35,13 +35,14 @@ enum LeadershipNoteVisibility {
 
 model Alliance {
   id        String   @id @default(cuid())
-  name      String   @unique
-  server    String?
+  name      String
+  server    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   members   Member[]
   metrics   Metric[]
   memberships   AllianceMembership[]
+  @@unique([name, server])
 }
 
 model AllianceMembership {
@@ -63,7 +64,7 @@ model AllianceMembership {
 model Member {
   id          String    @id @default(cuid())
   allianceId  String
-  playerName  String
+  playerName  String @unique
   discordName String?
   thp         Int?
   squadPower  Int?

@@ -1,6 +1,31 @@
-import { app } from "./actions";
+import { auth } from "@/app/src/auth";
+import { redirect } from "next/navigation";
+import { prisma } from "@/app/src/lib/prisma";
 
 export default async function AppPage() {
-await app()
-  return <div>AppPage</div>;
+    // get session 
+    const session = await auth();
+    // check if session is valid
+    if (!session || !session.user?.id) {
+        redirect("/login");
+    }
+    // Does this user have any memberships?
+    const membershipCount = await prisma.allianceMembership.count({
+        where: {
+            userId: session.user.id,
+        },
+    });
+
+    if (!membershipCount) {
+        // redirect to onboarding page
+        redirect("/onboarding");
+    }
+  return <div>Welcome {session.user.name}!</div>;
 }
+
+/* 
+Get session
+Check authentication
+Load memberships
+Render something basic
+*/
