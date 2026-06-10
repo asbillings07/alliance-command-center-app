@@ -26,7 +26,7 @@ export async function login(
       redirect: false,
     });
 
-    if (result && "error" in result && result.error) {
+    if (result && result.error && result.error.message) {
       return { error: "Invalid email or password" };
     }
   } catch (error) {
