@@ -81,6 +81,14 @@ export async function onboarding(
       });
     });
   } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2002"
+    ) {
+      return { error: "An alliance with that name already exists on this server." };
+    }
     console.error("Error creating alliance", error);
     return { error: "Error creating alliance" };
   }
