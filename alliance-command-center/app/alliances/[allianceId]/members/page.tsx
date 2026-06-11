@@ -46,7 +46,10 @@ export default async function MembersPage({ params }: Params) {
     const members = await prisma.member.findMany({
         where: {
             allianceId: allianceId,
-        }
+        },
+        orderBy: {
+            playerName: "asc",
+        },
     });
 
     return (
