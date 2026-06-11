@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import bcrypt from "bcrypt";
 import { prisma } from "@/app/src/lib/prisma";
+import { redirect } from "next/navigation";
 import Credentials from "next-auth/providers/credentials";
 
 // authentication engine
@@ -65,6 +66,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 });
+
+export const getCurrentUserSession = async () => {
+  const session = await auth();
+  if (!session || !session.user?.id) {
+    return null;
+  }
+  return session;
+};
 
 /* 
 1. Get Session
