@@ -66,6 +66,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
 });
 
+export const getCurrentUserSession = async () => {
+  const session = await auth();
+  if (!session || !session.user?.id) {
+    return null;
+  }
+  return session;
+};
+
 /* 
 1. Get Session
 2. Extract userId

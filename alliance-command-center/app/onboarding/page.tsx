@@ -13,7 +13,7 @@ export default function OnboardingPage() {
             {state.error && <p className="text-red-500 mb-4">{state.error}</p>}
             <form className="flex w-full max-w-md flex-col gap-2" action={formAction}>
                 <input className="border border-gray-300 rounded-md p-2" maxLength={20} required type="text" name="allianceName" aria-label="Alliance Name" placeholder="Alliance Name" />
-                <input className="border border-gray-300 rounded-md p-2" maxLength={7} required type="text" inputMode="numeric" pattern="\\d{1,7}" name="allianceServerNumber" aria-label="Alliance Server Number" placeholder="Alliance Server Number" />
+                <input className="border border-gray-300 rounded-md p-2" maxLength={7} required type="text" inputMode="numeric" pattern="[0-9]{1,7}" name="allianceServerNumber" aria-label="Alliance Server Number" placeholder="Alliance Server Number" />
                 <button className="bg-blue-500 text-white rounded-md p-2" type="submit" disabled={isPending}>
                     {isPending ? 'Creating...' : 'Onboard'}
                 </button>
