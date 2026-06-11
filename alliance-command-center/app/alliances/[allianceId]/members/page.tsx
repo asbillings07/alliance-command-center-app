@@ -57,8 +57,8 @@ export default async function MembersPage({ params }: Params) {
                 {members.map((member) => (
                     <div key={member.id} className="flex flex-col items-center justify-center p-5 border-b border-gray-300">
                     <div className="text-lg font-bold">{member.playerName}</div>
-                    <div className="text-sm text-gray-500">{member.thp?.toLocaleString()}</div>
-                    <div className="text-sm text-gray-500">{member.squadPower?.toLocaleString()}</div>
+                    <div className="text-sm text-gray-500">THP: {member.thp == null ? "—" : member.thp.toLocaleString()}</div>
+                    <div className="text-sm text-gray-500">Top Squad: {member.squadPower == null ? "—" : member.squadPower.toLocaleString()}</div>
                     </div>
                 ))}
             </div>
