@@ -11,6 +11,11 @@ export default async function SelectAlliancePage() {
     }
 
     const alliances = await selectAlliance(session.user.id);
+
+    if (alliances.length === 0) {
+        redirect("/app");
+    }
+
     return (
         <div className="flex flex-col items-center justify-center min-h-screen">
             <div>Welcome {session.user.name}!</div>
