@@ -14,6 +14,10 @@ export default async function AppPage() {
         where: {
             userId: session.user.id,
         },
+        select: {
+            allianceId: true,
+        },
+        take: 2,
     });
 
     if (memberships.length === 0) {
