@@ -24,7 +24,6 @@ export default async function AppPage() {
         redirect(`/alliances/${memberships[0].allianceId}`);
     }
     if (memberships.length > 1) {
-        console.log("redirecting to select alliance page");
         redirect('/alliances/select_alliance')
     }
 }

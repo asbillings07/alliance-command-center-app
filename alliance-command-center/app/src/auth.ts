@@ -1,7 +1,6 @@
 import NextAuth from "next-auth";
 import bcrypt from "bcrypt";
 import { prisma } from "@/app/src/lib/prisma";
-import { redirect } from "next/navigation";
 import Credentials from "next-auth/providers/credentials";
 
 // authentication engine

@@ -25,8 +25,6 @@ type Params = {
 
 export default async function AlliancePage({ params }: Params) {
     const { allianceId } = await params;
-    console.log("AlliancePage");
-    console.log("allianceId", allianceId);
     const session = await auth();
     if (!session || !session.user?.id) {
         redirect("/login");
