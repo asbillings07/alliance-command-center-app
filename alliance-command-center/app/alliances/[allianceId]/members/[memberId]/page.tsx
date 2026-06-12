@@ -43,7 +43,12 @@ export default async function MemberPage({ params }: Params) {
             memberId: memberId,
         },
         include: {
-            author: true,
+            author: {
+                select: {
+                    id: true,
+                    displayName: true,
+                },
+            },
         },
         orderBy: {
             createdAt: "desc",
