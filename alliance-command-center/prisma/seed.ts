@@ -27,12 +27,21 @@ const createLeadershipNote = async (
   visibility: LeadershipNoteVisibility,
   content: string,
 ) => {
-  await prisma.leadershipNote.upsert({
+  const existing = await prisma.leadershipNote.findFirst({
     where: {
-      id: memberId,
+      memberId,
+      authorId,
+      noteType,
+      visibility,
+      content,
     },
-    update: {},
-    create: {
+    select: { id: true },
+  });
+
+  if (existing) return;
+
+  await prisma.leadershipNote.create({
+    data: {
       memberId,
       authorId,
       noteType,
