@@ -15,4 +15,6 @@ DROP TYPE "public"."LeadershipNoteType_old";
 COMMIT;
 
 -- AlterTable
-ALTER TABLE "LeadershipNote" ADD COLUMN     "updatedAt" TIMESTAMP(3) NOT NULL;
+ALTER TABLE "LeadershipNote" ADD COLUMN     "updatedAt" TIMESTAMP(3);
+UPDATE "LeadershipNote" SET "updatedAt" = "createdAt" WHERE "updatedAt" IS NULL;
+ALTER TABLE "LeadershipNote" ALTER COLUMN "updatedAt" SET NOT NULL;
