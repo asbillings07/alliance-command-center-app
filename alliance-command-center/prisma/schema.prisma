@@ -25,7 +25,6 @@ enum LeadershipNoteType {
   WARNING
   OBSERVATION
   PROMOTION
-  DEMOTION
 }
 
 enum LeadershipNoteVisibility {
@@ -138,4 +137,5 @@ model LeadershipNote {
   content String
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

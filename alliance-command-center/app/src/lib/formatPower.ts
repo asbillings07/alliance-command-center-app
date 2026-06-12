@@ -22,9 +22,12 @@ export function formatPower(power: number) {
   const powerInTrillions = power / 1000000000000;
 
   if (power < 1000) {
-    return power.toLocaleString();
+    return String(power);
   }
-  if (powerInThousands < 1000 && Math.round(powerInThousands * 10) / 10 < 1000) {
+  if (
+    powerInThousands < 1000 &&
+    Math.round(powerInThousands * 10) / 10 < 1000
+  ) {
     return formatValue(powerInThousands, "K");
   }
   if (powerInMillions < 1000 && Math.round(powerInMillions * 10) / 10 < 1000) {

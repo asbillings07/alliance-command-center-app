@@ -81,13 +81,13 @@ Resources should be scoped to alliances whenever possible.
 Prefer:
 
 ```text
-/app/alliances/[allianceId]/members/[memberId]
+/alliances/[allianceId]/members/[memberId]
 ```
 
 over:
 
 ```text
-/app/members/[memberId]
+/members/[memberId]
 ```
 
 Alliance context should be explicit in routes, queries, and authorization checks.
