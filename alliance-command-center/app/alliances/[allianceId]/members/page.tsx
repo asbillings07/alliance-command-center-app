@@ -10,7 +10,8 @@
 import { auth } from "@/app/src/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
-
+import Link from "next/link";
+import { formatPower } from "@/app/src/lib/formatPower";
 type Params = {
     params: Promise<{
         allianceId: string;
@@ -58,11 +59,11 @@ export default async function MembersPage({ params }: Params) {
             <div>Member Count: {members.length}</div>
             <div className="flex flex-col items-center justify-center">
                 {members.map((member) => (
-                    <div key={member.id} className="flex flex-col items-center justify-center p-5 border-b border-gray-300">
+                    <Link href={`/alliances/${allianceId}/members/${member.id}`} key={member.id} className="flex flex-col items-center justify-center p-5 border border-gray-300 rounded-md cursor-pointer m-5">
                     <div className="text-lg font-bold">{member.playerName}</div>
-                    <div className="text-sm text-gray-500">THP: {member.thp == null ? "—" : member.thp.toLocaleString()}</div>
-                    <div className="text-sm text-gray-500">Top Squad: {member.squadPower == null ? "—" : member.squadPower.toLocaleString()}</div>
-                    </div>
+                    <div className="text-sm text-gray-500">THP: {member.thp == null ? "—" : formatPower(member.thp)}</div>
+                    <div className="text-sm text-gray-500">Top Squad: {member.squadPower == null ? "—" : formatPower(member.squadPower)}</div>
+                    </Link>
                 ))}
             </div>
         </div>
