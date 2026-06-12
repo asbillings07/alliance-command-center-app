@@ -16,12 +16,14 @@ export default async function MemberPage({ params }: Params) {
     if (!session || !session.user?.id) {
         redirect("/login");
     }
-    const membership = await prisma.allianceMembership.findFirst({
-        where: {
-            allianceId: allianceId,
-            userId: session.user.id,
-        }
-    });
+    const membership = await prisma.allianceMembership.findUnique({
+      where: {
+        allianceId_userId: {
+          allianceId,
+          userId: session.user.id,
+        },
+      },
+    })
     if (!membership) {
         notFound();
     }
@@ -40,7 +42,7 @@ return (
     <div className="mx-auto flex max-w-4xl flex-col gap-8 p-8">
         <section className="flex flex-col items-center justify-center">
             <div className="text-2xl font-bold p-5">Member Overview</div>
-            <h1 className="text-1xl font-bold">Member: {member.playerName}</h1>
+            <h1 className="text-xl font-bold">Member: {member.playerName}</h1>
             <div className="text-sm text-gray-500">THP: {member.thp == null ? "—" : formatPower(member.thp)}</div>
             <div className="text-sm text-gray-500">Top Squad: {member.squadPower == null ? "—" : formatPower(member.squadPower)}</div>
         </section>
