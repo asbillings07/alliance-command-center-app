@@ -1,6 +1,8 @@
 import bcrypt from "bcrypt";
 import "dotenv/config";
 import { prisma } from "@/app/src/lib/prisma";
+import { LeadershipNoteType } from "@/app/generated/prisma/enums";
+import { LeadershipNoteVisibility } from "@/app/generated/prisma/enums";
 
 const createUser = async (email: string, password: string) => {
   const passwordHash = await bcrypt.hash(password, 12);
@@ -18,6 +20,28 @@ const createUser = async (email: string, password: string) => {
   });
 };
 
+const createLeadershipNote = async (
+  memberId: string,
+  authorId: string,
+  noteType: LeadershipNoteType,
+  visibility: LeadershipNoteVisibility,
+  content: string,
+) => {
+  await prisma.leadershipNote.upsert({
+    where: {
+      id: memberId,
+    },
+    update: {},
+    create: {
+      memberId,
+      authorId,
+      noteType,
+      visibility,
+      content,
+    },
+  });
+};
+
 async function main() {
   await createUser("ab@example.com", "Password123");
   const alliance = await prisma.alliance.upsert({
@@ -31,6 +55,29 @@ async function main() {
     create: {
       name: "DAY1",
       server: "999",
+    },
+  });
+  const user = await prisma.user.findUnique({
+    where: {
+      email: "ab@example.com",
+    },
+  });
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  await prisma.allianceMembership.upsert({
+    where: {
+      allianceId_userId: {
+        allianceId: alliance.id,
+        userId: user.id,
+      },
+    },
+    update: {},
+    create: {
+      allianceId: alliance.id,
+      userId: user.id,
+      role: "OWNER",
     },
   });
 
@@ -69,6 +116,23 @@ async function main() {
     ],
     skipDuplicates: true,
   });
+  const dragon = await prisma.member.findFirst({
+    where: {
+      playerName: "Dragon",
+      allianceId: alliance.id,
+    },
+  });
+  if (!dragon) {
+    throw new Error("Dragon not found");
+  }
+
+  await createLeadershipNote(
+    dragon.id,
+    user.id,
+    LeadershipNoteType.POSITIVE,
+    LeadershipNoteVisibility.LEADERSHIP,
+    "Dragon is a great leader",
+  );
 
   console.log("🌱 Seed completed");
 }
