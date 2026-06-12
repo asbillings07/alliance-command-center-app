@@ -28,13 +28,12 @@ export default async function MemberPage({ params }: Params) {
         notFound();
     }
 
-    const member = await prisma.member.findFirst({
+    const member = await prisma.member.findUnique({
         where: {
             id: memberId,
-            allianceId: allianceId,
-        }
+        },
     });
-    if (!member) {
+    if (!member || member.allianceId !== allianceId) {
         notFound();
     }
 
