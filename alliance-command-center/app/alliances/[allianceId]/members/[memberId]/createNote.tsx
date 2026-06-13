@@ -21,7 +21,7 @@ export const CreateNote = ({memberId}: CreateNoteProps) => {
                 <option value={LeadershipNoteType.OBSERVATION}>Observation</option>
                 <option value={LeadershipNoteType.PROMOTION}>Promotion</option>
             </select>
-            <textarea rows={5} className="w-full" name="content" placeholder="Note" required />
+            <textarea aria-label="Note content" rows={5} className="w-full" name="content" placeholder="Note" required />
             <div className="flex gap-2">
             <button type="submit" className="bg-blue-500 text-white rounded-md p-2 cursor-pointer">Save Note</button>
             <button type="button" onClick={() => setIsCreatingNote(false)} className="bg-red-500 text-white rounded-md p-2 cursor-pointer">Cancel</button>
