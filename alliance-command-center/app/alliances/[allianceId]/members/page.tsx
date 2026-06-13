@@ -7,7 +7,7 @@
 // 4. Load members
 
 // 5. Render member list
-import { auth } from "@/app/src/auth";
+import { auth } from "@/app/src/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import Link from "next/link";

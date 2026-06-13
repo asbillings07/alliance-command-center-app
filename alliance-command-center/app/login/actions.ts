@@ -1,5 +1,5 @@
 "use server";
-import { signIn } from "@/app/src/auth";
+import { signIn } from "@/app/src/lib/auth";
 import { redirect } from "next/navigation";
 
 export type LoginState = {
