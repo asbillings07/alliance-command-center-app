@@ -1,7 +1,7 @@
 import { prisma } from "../prisma";
 
 export async function requireMember(memberId: string) {
-  const member = await prisma.member.findFirst({
+  const member = await prisma.member.findUnique({
     where: {
       id: memberId,
     },
