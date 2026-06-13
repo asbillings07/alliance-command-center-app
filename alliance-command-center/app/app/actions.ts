@@ -1,4 +1,4 @@
-import { auth } from "@/app/src/auth";
+import { auth } from "@/app/src/lib/auth";
 import { redirect } from "next/navigation";
 
 export async function app() {

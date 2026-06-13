@@ -7,7 +7,7 @@
  *
  *
  */
-import { auth } from "@/app/src/auth";
+import { auth } from "@/app/src/lib/auth";
 import { prisma } from "@/app/src/lib/prisma";
 import { redirect } from "next/navigation";
 
