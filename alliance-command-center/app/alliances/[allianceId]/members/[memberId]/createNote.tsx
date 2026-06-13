@@ -10,7 +10,7 @@ type CreateNoteProps ={
 export const CreateNote = ({memberId}: CreateNoteProps) => {
     const [isCreatingNote, setIsCreatingNote] = useState(false);
     return !isCreatingNote ? (
-        <button onClick={() => setIsCreatingNote(true)} className="bg-blue-500 text-white rounded-md p-2 cursor-pointer">Create Note</button>
+        <button type="button" onClick={() => setIsCreatingNote(true)} className="bg-blue-500 text-white rounded-md p-2 cursor-pointer">Create Note</button>
     ) : (
         <form className="flex flex-col gap-2" action={createLeadershipNote}>
             <input type="hidden" name="memberId" value={memberId} />
