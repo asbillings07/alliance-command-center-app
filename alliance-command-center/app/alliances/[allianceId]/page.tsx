@@ -7,9 +7,9 @@
 // Establish alliance context
 // Provide navigation to modules
 
-import { auth } from "@/app/src/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
+import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import Link from "next/link";
 
 type Params = {
@@ -20,19 +20,16 @@ type Params = {
 
 export default async function AlliancePage({ params }: Params) {
     const { allianceId } = await params;
-    const session = await auth();
-    if (!session || !session.user?.id) {
-        redirect("/login");
-    }
+    const user = await requireAuth();
     if (!allianceId){
         redirect('/app')
-    }  
+    }
 
     const membership = await prisma.allianceMembership.findUnique({
         where: {
             allianceId_userId: {
                 allianceId: allianceId,
-                userId: session.user.id,
+                userId: user.id,
             }
         }
     });

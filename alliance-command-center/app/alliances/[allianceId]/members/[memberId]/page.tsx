@@ -1,7 +1,10 @@
-import { auth } from "@/app/src/auth";  
-import { redirect, notFound } from "next/navigation";
+
+import { notFound } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { formatPower } from "@/app/src/lib/formatPower";
+import { CreateNote } from "./createNote";
+import { requireAuth } from "@/app/src/lib/auth/requireAuth";
+import { requireMembershipAccess } from "@/app/src/lib/auth/requireMembershipAccess";
 
 type Params = {
     params: Promise<{
@@ -12,29 +15,10 @@ type Params = {
 
 export default async function MemberPage({ params }: Params) {
     const { allianceId, memberId } = await params;
-    const session = await auth();
-    if (!session || !session.user?.id) {
-        redirect("/login");
-    }
-    const membership = await prisma.allianceMembership.findUnique({
-      where: {
-        allianceId_userId: {
-          allianceId,
-          userId: session.user.id,
-        },
-      },
-    })
-    if (!membership) {
-        notFound();
-    }
+    const user = await requireAuth();
+    const { member } = await requireMembershipAccess(memberId, user.id);
 
-    const member = await prisma.member.findFirst({
-        where: {
-          id: memberId,
-          allianceId,
-        },
-      });
-    if (!member) {
+    if (member.allianceId !== allianceId) {
         notFound();
     }
 
@@ -55,6 +39,7 @@ export default async function MemberPage({ params }: Params) {
         },
     })
 
+
 return (
     <div className="mx-auto flex max-w-4xl flex-col gap-8 p-8">
         <section className="flex flex-col items-center justify-center">
@@ -65,6 +50,7 @@ return (
         </section>
         <section className="flex flex-col gap-4">
             <div className="text-2xl font-bold p-5 self-center">Leadership Notes</div>
+            <CreateNote memberId={member.id} />
             { leadershipNotes.length > 0 ? leadershipNotes.map((note) => (
                 <div key={note.id} className="w-full rounded-md border p-4 mb-5">
                     <div>Author: {note.author.displayName}</div>
