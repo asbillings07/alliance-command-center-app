@@ -1,10 +1,11 @@
 import { auth } from "@/app/src/lib/auth";
-import { User } from "@/app/generated/prisma/client";
+import { redirect } from "next/navigation";
 
-export async function requireAuth(): Promise<User> {
+export type AuthUser = { id: string; email: string };
+export async function requireAuth(): Promise<AuthUser> {
   const session = await auth();
-  if (!session || !session.user?.id) {
-    throw new Error("Unauthorized");
+  if (!session?.user?.id || !session?.user?.email) {
+    redirect("/login");
   }
-  return session.user as User;
+  return { id: session.user.id, email: session.user.email };
 }

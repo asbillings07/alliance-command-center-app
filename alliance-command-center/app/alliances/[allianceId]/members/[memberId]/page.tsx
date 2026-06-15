@@ -1,5 +1,5 @@
 
-import { redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { formatPower } from "@/app/src/lib/formatPower";
 import { CreateNote } from "./createNote";
@@ -16,11 +16,11 @@ type Params = {
 export default async function MemberPage({ params }: Params) {
     const { allianceId, memberId } = await params;
     const user = await requireAuth();
-    if (!allianceId || !memberId) {
-        redirect("/login");
-    }
-    
     const { member } = await requireMembershipAccess(memberId, user.id);
+
+    if (member.allianceId !== allianceId) {
+        notFound();
+    }
 
     const leadershipNotes = await prisma.leadershipNote.findMany({
         where: {

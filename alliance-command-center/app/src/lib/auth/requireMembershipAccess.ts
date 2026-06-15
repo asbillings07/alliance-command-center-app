@@ -8,9 +8,6 @@ export const requireMembershipAccess = async (
     where: {
       id: memberId,
     },
-    include: {
-      alliance: true,
-    },
   });
 
   if (!member) {
