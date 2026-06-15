@@ -10,9 +10,13 @@ import { revalidatePath } from "next/cache";
 
 export async function createLeadershipNote(formData: FormData): Promise<void> {
   const user = await requireAuth();
-  const memberId = formData.get("memberId") as string;
-  const { member } = await requireMembershipAccess(memberId, user.id);
 
+  const memberId = formData.get("memberId");
+  if (typeof memberId !== "string" || !memberId) {
+    throw new Error("Member is required");
+  }
+
+  const { member } = await requireMembershipAccess(memberId, user.id);
   const authorId = user.id;
   const noteType = formData.get("noteType") as LeadershipNoteType;
   if (!Object.values(LeadershipNoteType).includes(noteType)) {
