@@ -23,9 +23,10 @@ export async function createLeadershipNote(formData: FormData): Promise<void> {
     throw new Error("Invalid note type");
   }
   const visibility = LeadershipNoteVisibility.LEADERSHIP;
-  const content = formData.get("content") as string;
+  const rawContent = formData.get("content");
+  const content = typeof rawContent === "string" ? rawContent.trim() : "";
 
-  if (!content.trim()) {
+  if (!content) {
     throw new Error("Content is required");
   }
 
