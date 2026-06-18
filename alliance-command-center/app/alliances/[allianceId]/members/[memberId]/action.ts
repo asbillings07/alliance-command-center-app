@@ -54,7 +54,7 @@ export async function editLeadershipNote(formData: FormData): Promise<void> {
   if (typeof noteId !== "string" || !noteId) {
     throw new Error("Note is required");
   }
-  const note = await prisma.leadershipNote.findUnique({
+  const note = await prisma.leadershipNote.findFirst({
     where: { id: noteId, authorId: user.id },
     include: {
       member: true,
@@ -71,7 +71,7 @@ export async function editLeadershipNote(formData: FormData): Promise<void> {
   }
 
   await prisma.leadershipNote.update({
-    where: { id: noteId, authorId: user.id },
+    where: { id: noteId },
     data: { noteType, content },
   });
   revalidatePath(
