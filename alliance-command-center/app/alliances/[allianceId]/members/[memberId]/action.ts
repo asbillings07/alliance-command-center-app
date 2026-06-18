@@ -42,3 +42,39 @@ export async function createLeadershipNote(formData: FormData): Promise<void> {
 
   revalidatePath(`/alliances/${member.allianceId}/members/${member.id}`);
 }
+
+export async function editLeadershipNote(formData: FormData): Promise<void> {
+  const user = await requireAuth();
+  const noteId = formData.get("noteId");
+  const noteType = formData.get("noteType") as LeadershipNoteType;
+
+  if (!Object.values(LeadershipNoteType).includes(noteType)) {
+    throw new Error("Invalid note type");
+  }
+  if (typeof noteId !== "string" || !noteId) {
+    throw new Error("Note is required");
+  }
+  const note = await prisma.leadershipNote.findUnique({
+    where: { id: noteId, authorId: user.id },
+    include: {
+      member: true,
+    },
+  });
+  if (!note) {
+    throw new Error("Note not found");
+  }
+
+  const rawContent = formData.get("content");
+  const content = typeof rawContent === "string" ? rawContent.trim() : "";
+  if (!content) {
+    throw new Error("Content is required");
+  }
+
+  await prisma.leadershipNote.update({
+    where: { id: noteId, authorId: user.id },
+    data: { noteType, content },
+  });
+  revalidatePath(
+    `/alliances/${note.member.allianceId}/members/${note.memberId}`,
+  );
+}
