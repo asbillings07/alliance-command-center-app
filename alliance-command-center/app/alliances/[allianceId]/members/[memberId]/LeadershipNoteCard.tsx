@@ -2,6 +2,7 @@
 import { LeadershipNoteType } from "@/app/generated/prisma/enums";
 import { useState } from "react";
 import { NoteForm } from "./noteForm";
+import { deleteLeadershipNote } from "./action";
 
 type NoteData = {
     id: string;
@@ -100,13 +101,19 @@ export function LeadershipNoteCard({ memberId, mode, note }: LeadershipNoteCardP
                     <p className="text-gray-700 whitespace-pre-wrap">{note.content}</p>
                 </div>
                 {note.isAuthor && (
-                    <button
-                        type="button"
-                        onClick={() => setCardState("form")}
-                        className="text-sm text-blue-500 hover:text-blue-700 cursor-pointer"
-                    >
-                        Edit
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setCardState("form")}
+                            className="text-sm text-blue-500 hover:text-blue-700 cursor-pointer"
+                        >
+                            Edit
+                        </button>
+                        <form action={deleteLeadershipNote}>
+                            <input type="hidden" name="noteId" value={note.id} />
+                            <button type="submit" className="text-sm text-red-500 hover:text-red-700 cursor-pointer">Delete</button>
+                        </form>
+                    </div>
                 )}
             </div>
         </div>

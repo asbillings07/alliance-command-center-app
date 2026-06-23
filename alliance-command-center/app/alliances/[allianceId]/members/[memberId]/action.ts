@@ -7,6 +7,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { requireMembershipAccess } from "@/app/src/lib/auth/requireMembershipAccess";
 import { revalidatePath } from "next/cache";
+import { requireAuthorAccess } from "@/app/src/lib/auth/requireAuthorAccess";
 
 export async function createLeadershipNote(formData: FormData): Promise<void> {
   const user = await requireAuth();
@@ -45,8 +46,11 @@ export async function createLeadershipNote(formData: FormData): Promise<void> {
 
 export async function editLeadershipNote(formData: FormData): Promise<void> {
   const user = await requireAuth();
+
   const noteId = formData.get("noteId");
   const noteType = formData.get("noteType") as LeadershipNoteType;
+  const rawContent = formData.get("content");
+  const content = typeof rawContent === "string" ? rawContent.trim() : "";
 
   if (!Object.values(LeadershipNoteType).includes(noteType)) {
     throw new Error("Invalid note type");
@@ -54,27 +58,32 @@ export async function editLeadershipNote(formData: FormData): Promise<void> {
   if (typeof noteId !== "string" || !noteId) {
     throw new Error("Note is required");
   }
-  const note = await prisma.leadershipNote.findFirst({
-    where: { id: noteId, authorId: user.id },
-    include: {
-      member: true,
-    },
-  });
-  if (!note) {
-    throw new Error("Note not found");
-  }
-
-  const rawContent = formData.get("content");
-  const content = typeof rawContent === "string" ? rawContent.trim() : "";
   if (!content) {
     throw new Error("Content is required");
+  }
+
+  const { note, member } = await requireAuthorAccess(noteId, user.id);
+
+  if (!note) {
+    throw new Error("Note not found");
   }
 
   await prisma.leadershipNote.update({
     where: { id: noteId },
     data: { noteType, content },
   });
-  revalidatePath(
-    `/alliances/${note.member.allianceId}/members/${note.memberId}`,
-  );
+  revalidatePath(`/alliances/${member.allianceId}/members/${member.id}`);
+}
+
+export async function deleteLeadershipNote(formData: FormData): Promise<void> {
+  const user = await requireAuth();
+  const noteId = formData.get("noteId");
+  if (typeof noteId !== "string" || !noteId) {
+    throw new Error("Note is required");
+  }
+  const { note, member } = await requireAuthorAccess(noteId, user.id);
+  await prisma.leadershipNote.delete({
+    where: { id: note.id },
+  });
+  revalidatePath(`/alliances/${member.allianceId}/members/${member.id}`);
 }
