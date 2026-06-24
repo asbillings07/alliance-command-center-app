@@ -62,11 +62,7 @@ export async function editLeadershipNote(formData: FormData): Promise<void> {
     throw new Error("Content is required");
   }
 
-  const { note, member } = await requireAuthorAccess(noteId, user.id);
-
-  if (!note) {
-    throw new Error("Note not found");
-  }
+  const { member } = await requireAuthorAccess(noteId, user.id);
 
   await prisma.leadershipNote.update({
     where: { id: noteId },
