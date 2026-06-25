@@ -72,7 +72,7 @@ model Member {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   alliance    Alliance  @relation(fields: [allianceId], references: [id])
-  metricEntries MemberMetricEntry[]
+  entries MemberMetricEntry[]
   leadershipNotes LeadershipNote[]
 }
 
@@ -120,7 +120,7 @@ model MetricPeriod {
   endsAt DateTime?
 
   periodMetrics MetricPeriodMetric[]
-  metricEntries MemberMetricEntry[]
+  entries MemberMetricEntry[]
 
   createdAt DateTime @default(now())
 }
@@ -136,7 +136,7 @@ model MetricPeriodMetric {
   required Boolean
   active Boolean @default(true)
 
-  metricEntries MemberMetricEntry[]
+  entries MemberMetricEntry[]
 
   @@id([periodId, metricId])
 }
