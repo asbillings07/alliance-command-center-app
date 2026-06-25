@@ -32,16 +32,14 @@ enum LeadershipNoteVisibility {
 }
 
 model Alliance {
-  id            String               @id @default(cuid())
-  name          String
-  server        String
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
-  members       Member[]
-  metrics       Metric[]
+  id        String   @id @default(cuid())
+  name      String
+  server    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members   Member[]
+  metrics   Metric[]
   memberships   AllianceMembership[]
-  metricPeriods MetricPeriod[]
-
   @@unique([name, server])
 }
 
@@ -49,10 +47,10 @@ model AllianceMembership {
   id String @id @default(cuid())
 
   allianceId String
-  alliance   Alliance @relation(fields: [allianceId], references: [id])
+  alliance Alliance @relation(fields: [allianceId], references: [id])
 
   userId String
-  user   User   @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
   role AllianceRole
 
@@ -62,79 +60,79 @@ model AllianceMembership {
 }
 
 model Member {
-  id              String              @id @default(cuid())
-  allianceId      String
-  playerName      String              @unique
-  discordName     String?
-  thp             Int?
-  squadPower      Int?
-  joinDate        DateTime?
-  active          Boolean             @default(true)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  alliance        Alliance            @relation(fields: [allianceId], references: [id])
-  metricEntries   MemberMetricEntry[]
+  id          String    @id @default(cuid())
+  allianceId  String
+  playerName  String @unique
+  discordName String?
+  thp         Int?
+  squadPower  Int?
+  joinDate    DateTime?
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  alliance    Alliance  @relation(fields: [allianceId], references: [id])
+  metricEntries MemberMetricEntry[]
   leadershipNotes LeadershipNote[]
 }
 
 model User {
-  id                String @id @default(cuid())
+  id          String @id @default(cuid())
   preferredLanguage String @default("en")
-  email             String @unique
-  displayName       String
-  passwordHash      String
+  email       String @unique
+  displayName String
+  passwordHash String
 
-  memberships   AllianceMembership[]
+  memberships AllianceMembership[]
   authoredNotes LeadershipNote[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Metric {
   id String @id @default(cuid())
 
-  allianceId  String
-  alliance    Alliance @relation(fields: [allianceId], references: [id])
+  allianceId String
+  alliance   Alliance @relation(fields: [allianceId], references: [id])
   name        String
   description String?
 
-  type          Metric_Type
+  type Metric_Type
   periodMetrics MetricPeriodMetric[]
-  metricEntries MemberMetricEntry[]
+  entries MemberMetricEntry[]
 
   createdAt DateTime @default(now())
+  @@unique([allianceId, name])
 }
 
 model MetricPeriod {
   id String @id @default(cuid())
 
   allianceId String
-  alliance   Alliance @relation(fields: [allianceId], references: [id])
+  alliance Alliance @relation(fields: [allianceId], references: [id])
 
   name String
 
   active Boolean @default(true)
 
   startsAt DateTime?
-  endsAt   DateTime?
+  endsAt DateTime?
 
   periodMetrics MetricPeriodMetric[]
 
-  createdAt           DateTime            @default(now())
-  memberMetricEntries MemberMetricEntry[]
+  createdAt DateTime @default(now())
 }
 
 model MetricPeriodMetric {
   periodId String
-  period   MetricPeriod @relation(fields: [periodId], references: [id])
+  period MetricPeriod @relation(fields: [periodId], references: [id])
 
   metricId String
-  metric   Metric @relation(fields: [metricId], references: [id])
+  metric Metric @relation(fields: [metricId], references: [id])
 
-  weight   Int
+  weight Int
   required Boolean
-  active   Boolean @default(true)
+  active Boolean @default(true)
 
   @@id([periodId, metricId])
 }
@@ -143,33 +141,38 @@ model MemberMetricEntry {
   id String @id @default(cuid())
 
   memberId String
-  member   Member @relation(fields: [memberId], references: [id])
+  member Member @relation(fields: [memberId], references: [id])
 
   periodId String
-  period   MetricPeriod @relation(fields: [periodId], references: [id])
+  period MetricPeriod @relation(fields: [periodId], references: [id])
 
   metricId String
-  metric   Metric @relation(fields: [metricId], references: [id])
+  metric Metric @relation(fields: [metricId], references: [id])
+
+  periodMetric MetricPeriodMetric @relation(fields: [periodId, metricId], references: [periodId, metricId])
 
   value Int
 
   recordedAt DateTime
-  createdAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([memberId, periodId])
+  @@index([metricId])
 }
 
 model LeadershipNote {
   id String @id @default(cuid())
 
   memberId String
-  member   Member @relation(fields: [memberId], references: [id])
+  member Member @relation(fields: [memberId], references: [id])
 
   authorId String
-  author   User   @relation(fields: [authorId], references: [id])
+  author User @relation(fields: [authorId], references: [id])
 
-  noteType   LeadershipNoteType
+  noteType LeadershipNoteType
   visibility LeadershipNoteVisibility
-  title      String?
-  content    String
+  title String?
+  content String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
