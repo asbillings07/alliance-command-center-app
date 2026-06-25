@@ -11,7 +11,7 @@ UPDATE "LeadershipNote" SET "noteType" = 'WARNING' WHERE "noteType" = 'DEMOTION'
 ALTER TYPE "LeadershipNoteType" RENAME TO "LeadershipNoteType_old";
 CREATE TYPE "LeadershipNoteType" AS ENUM ('POSITIVE', 'WARNING', 'OBSERVATION', 'PROMOTION');
 ALTER TABLE "LeadershipNote" ALTER COLUMN "noteType" TYPE "LeadershipNoteType" USING ("noteType"::text::"LeadershipNoteType");
-DROP TYPE "LeadershipNoteType_old";
+DROP TYPE "public"."LeadershipNoteType_old";
 COMMIT;
 
 -- AlterTable
