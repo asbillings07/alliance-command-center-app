@@ -37,9 +37,10 @@ model Alliance {
   server    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  members   Member[]
-  metrics   Metric[]
+  members       Member[]
+  metrics       Metric[]
   memberships   AllianceMembership[]
+  metricPeriods MetricPeriod[]
   @@unique([name, server])
 }
 
@@ -119,6 +120,7 @@ model MetricPeriod {
   endsAt DateTime?
 
   periodMetrics MetricPeriodMetric[]
+  metricEntries MemberMetricEntry[]
 
   createdAt DateTime @default(now())
 }
@@ -133,6 +135,8 @@ model MetricPeriodMetric {
   weight Int
   required Boolean
   active Boolean @default(true)
+
+  metricEntries MemberMetricEntry[]
 
   @@id([periodId, metricId])
 }
@@ -153,7 +157,7 @@ model MemberMetricEntry {
 
   value Int
 
-  recordedAt DateTime
+  recordedAt DateTime @default(now())
   createdAt DateTime @default(now())
 
   @@index([memberId, periodId])
