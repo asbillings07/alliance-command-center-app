@@ -72,7 +72,7 @@ model Member {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   alliance    Alliance  @relation(fields: [allianceId], references: [id])
-  entries MemberMetricEntry[]
+  MetricEntries MemberMetricEntry[]
   leadershipNotes LeadershipNote[]
 }
 
@@ -100,7 +100,6 @@ model Metric {
 
   type Metric_Type
   periodMetrics MetricPeriodMetric[]
-  entries MemberMetricEntry[]
 
   createdAt DateTime @default(now())
   @@unique([allianceId, name])
@@ -120,7 +119,6 @@ model MetricPeriod {
   endsAt DateTime?
 
   periodMetrics MetricPeriodMetric[]
-  entries MemberMetricEntry[]
 
   createdAt DateTime @default(now())
 }
@@ -136,7 +134,7 @@ model MetricPeriodMetric {
   required Boolean
   active Boolean @default(true)
 
-  entries MemberMetricEntry[]
+  memberMetricEntries MemberMetricEntry[]
 
   @@id([periodId, metricId])
 }
@@ -145,20 +143,16 @@ model MemberMetricEntry {
   id String @id @default(cuid())
 
   memberId String
-  member Member @relation(fields: [memberId], references: [id])
+  member   Member @relation(fields: [memberId], references: [id])
 
   periodId String
-  period MetricPeriod @relation(fields: [periodId], references: [id])
-
   metricId String
-  metric Metric @relation(fields: [metricId], references: [id])
-
   periodMetric MetricPeriodMetric @relation(fields: [periodId, metricId], references: [periodId, metricId])
 
   value Int
 
   recordedAt DateTime @default(now())
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
   @@index([memberId, periodId])
   @@index([metricId])
