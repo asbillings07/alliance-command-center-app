@@ -3,6 +3,13 @@ import { prisma } from "@/app/src/lib/prisma";
 import { LeadershipNoteType, Metric_Type } from "@/app/generated/prisma/enums";
 import { LeadershipNoteVisibility } from "@/app/generated/prisma/enums";
 
+/**
+ * Create a new user
+ * @param email - The email of the user
+ * @param password - The password of the user
+ * @returns The created user
+ */
+
 const createUser = async (email: string, password: string) => {
   const passwordHash = await bcrypt.hash(password, 12);
 
@@ -19,6 +26,15 @@ const createUser = async (email: string, password: string) => {
   });
 };
 
+/**
+ * Create a new leadership note
+ * @param memberId - The ID of the member
+ * @param authorId - The ID of the author
+ * @param noteType - The type of the note
+ * @param visibility - The visibility of the note
+ * @param content - The content of the note
+ * @returns The created leadership note
+ */
 const createLeadershipNote = async (
   memberId: string,
   authorId: string,
@@ -51,6 +67,14 @@ const createLeadershipNote = async (
 };
 
 // example metric: VS Score
+/**
+ * Create a new metric
+ * @param allianceId - The ID of the alliance
+ * @param name - The name of the metric
+ * @param description - The description of the metric
+ * @param type - The type of the metric
+ * @returns The created metric
+ */
 const createMetric = async (
   allianceId: string,
   name: string,
@@ -79,6 +103,12 @@ const createMetric = async (
 };
 
 // example period: Season 7
+/**
+ * Create a new metric period
+ * @param allianceId - The ID of the alliance
+ * @param name - The name of the period
+ * @returns The created metric period
+ */
 const createMetricPeriod = async (allianceId: string, name: string) => {
   const existing = await prisma.metricPeriod.findFirst({
     where: {
@@ -100,6 +130,15 @@ const createMetricPeriod = async (allianceId: string, name: string) => {
 };
 
 // example entry: 92
+/**
+ * Record a new metric entry for a member
+ * @param memberId - The ID of the member
+ * @param periodId - The ID of the period
+ * @param metricId - The ID of the metric
+ * @param value - The value of the metric
+ * @param recordedAt - The date and time the metric was recorded
+ * @returns The created metric entry
+ */
 const recordMemberMetric = async (
   memberId: string,
   periodId: string,
@@ -118,6 +157,14 @@ const recordMemberMetric = async (
   });
 };
 
+/**
+ * Assign a metric to a period
+ * @param periodId - The ID of the period
+ * @param metricId - The ID of the metric
+ * @param weight - The weight of the metric
+ * @param required - Whether the metric is required
+ * @returns The created metric period metric
+ */
 const assignMetricToPeriod = async (
   periodId: string,
   metricId: string,
@@ -143,6 +190,12 @@ const assignMetricToPeriod = async (
   });
 };
 
+/**
+ * Create a new member
+ * @param allianceId - The ID of the alliance
+ * @param playerName - The name of the player
+ * @returns The created member
+ */
 const createMember = async (allianceId: string, playerName: string) => {
   return await prisma.member.upsert({
     where: {
@@ -156,6 +209,12 @@ const createMember = async (allianceId: string, playerName: string) => {
   });
 };
 
+/**
+ * Create multiple members
+ * @param allianceId - The ID of the alliance
+ * @param members - The members to create
+ * @returns The created members
+ */
 const createMembers = async (
   allianceId: string,
   members: { playerName: string; thp: number; squadPower: number }[],

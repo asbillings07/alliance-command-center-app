@@ -15,6 +15,10 @@ import {
   recordMemberMetric,
 } from "./helpers";
 
+// ---------------------------------------
+// Members data
+// ---------------------------------------
+
 const members = [
   {
     playerName: "Dragon",
@@ -42,6 +46,10 @@ const members = [
     squadPower: 80000000,
   },
 ];
+
+// ---------------------------------------
+// Create alliance data
+// ---------------------------------------
 
 const createAllianceData = async () => {
   const alliance = await prisma.alliance.upsert({
@@ -99,6 +107,68 @@ const createAllianceData = async () => {
   return { alliance, user, dragon };
 };
 
+const createMetricData = async (allianceId: string, memberId: string) => {
+  // ---------------------------------------
+  // Metric Periods
+  // ---------------------------------------
+  const season7 = await createMetricPeriod(allianceId, "Season 7");
+  const season7Offseason = await createMetricPeriod(
+    allianceId,
+    "Season 7 Offseason",
+  );
+  const vsScore = await createMetric(
+    allianceId,
+    "VS Score",
+    "The score of the alliance in the VS game",
+    Metric_Type.NUMERIC,
+  );
+  const desertStorm = await createMetric(
+    allianceId,
+    "Desert Storm",
+    "The score of the alliance in the Desert Storm game",
+    Metric_Type.NUMERIC,
+  );
+  // ---------------------------------------
+
+  await assignMetricToPeriod(season7.id, vsScore.id, 20, true);
+  await assignMetricToPeriod(season7.id, desertStorm.id, 10, true);
+  await assignMetricToPeriod(season7Offseason.id, vsScore.id, 30, true);
+  await assignMetricToPeriod(season7Offseason.id, desertStorm.id, 25, true);
+
+  await recordMemberMetric(
+    memberId,
+    season7.id,
+    vsScore.id,
+    10000000,
+    new Date(),
+  );
+  await recordMemberMetric(
+    memberId,
+    season7.id,
+    desertStorm.id,
+    5000000,
+    new Date(),
+  );
+  await recordMemberMetric(
+    memberId,
+    season7Offseason.id,
+    vsScore.id,
+    8000000,
+    new Date(),
+  );
+  await recordMemberMetric(
+    memberId,
+    season7Offseason.id,
+    desertStorm.id,
+    700000000,
+    new Date(),
+  );
+};
+
+// ---------------------------------------
+// Main function
+// ---------------------------------------
+
 async function main() {
   // Users
   await createUser("ab@example.com", "Password123");
@@ -115,58 +185,10 @@ async function main() {
     "Dragon is a great leader",
   );
 
-  // Metric Periods
-  const season7 = await createMetricPeriod(alliance.id, "Season 7");
-  const season7Offseason = await createMetricPeriod(
-    alliance.id,
-    "Season 7 Offseason",
-  );
-  const vsScore = await createMetric(
-    alliance.id,
-    "VS Score",
-    "The score of the alliance in the VS game",
-    Metric_Type.NUMERIC,
-  );
-  const desertStorm = await createMetric(
-    alliance.id,
-    "Desert Storm",
-    "The score of the alliance in the Desert Storm game",
-    Metric_Type.NUMERIC,
-  );
-
-  await assignMetricToPeriod(season7.id, vsScore.id, 20, true);
-  await assignMetricToPeriod(season7.id, desertStorm.id, 10, true);
-  await assignMetricToPeriod(season7Offseason.id, vsScore.id, 30, true);
-  await assignMetricToPeriod(season7Offseason.id, desertStorm.id, 25, true);
-
-  await recordMemberMetric(
-    dragon.id,
-    season7.id,
-    vsScore.id,
-    10000000,
-    new Date(),
-  );
-  await recordMemberMetric(
-    dragon.id,
-    season7.id,
-    desertStorm.id,
-    5000000,
-    new Date(),
-  );
-  await recordMemberMetric(
-    dragon.id,
-    season7Offseason.id,
-    vsScore.id,
-    8000000,
-    new Date(),
-  );
-  await recordMemberMetric(
-    dragon.id,
-    season7Offseason.id,
-    desertStorm.id,
-    700000000,
-    new Date(),
-  );
+  // ---------------------------------------
+  // Metrics
+  // ---------------------------------------
+  await createMetricData(alliance.id, dragon.id);
 
   console.log("🌱 Seed completed successfully");
 }
