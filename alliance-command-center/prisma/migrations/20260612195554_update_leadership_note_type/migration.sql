@@ -8,9 +8,9 @@
 -- AlterEnum
 BEGIN;
 UPDATE "LeadershipNote" SET "noteType" = 'WARNING' WHERE "noteType" = 'DEMOTION';
-CREATE TYPE "LeadershipNoteType_new" AS ENUM ('POSITIVE', 'WARNING', 'OBSERVATION', 'PROMOTION');
-ALTER TABLE "LeadershipNote" ALTER COLUMN "noteType" TYPE "LeadershipNoteType_new" USING ("noteType"::text::"LeadershipNoteType_new");
-ALTER TYPE "LeadershipNoteType_new" RENAME TO "LeadershipNoteType";
+ALTER TYPE "LeadershipNoteType" RENAME TO "LeadershipNoteType_old";
+CREATE TYPE "LeadershipNoteType" AS ENUM ('POSITIVE', 'WARNING', 'OBSERVATION', 'PROMOTION');
+ALTER TABLE "LeadershipNote" ALTER COLUMN "noteType" TYPE "LeadershipNoteType" USING ("noteType"::text::"LeadershipNoteType");
 DROP TYPE "public"."LeadershipNoteType_old";
 COMMIT;
 

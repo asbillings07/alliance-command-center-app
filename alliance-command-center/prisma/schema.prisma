@@ -17,7 +17,6 @@ enum AllianceRole {
 enum Metric_Type {
   NUMERIC
   BOOLEAN
-  LEADERSHIP
 }
 
 enum LeadershipNoteType {
@@ -38,9 +37,10 @@ model Alliance {
   server    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  members   Member[]
-  metrics   Metric[]
+  members       Member[]
+  metrics       Metric[]
   memberships   AllianceMembership[]
+  metricPeriods MetricPeriod[]
   @@unique([name, server])
 }
 
@@ -97,13 +97,46 @@ model Metric {
   alliance   Alliance @relation(fields: [allianceId], references: [id])
   name        String
   description String?
-  weight Int
+
   type Metric_Type
-  active Boolean @default(true)
-  metricEntries MemberMetricEntry[]
-  @@unique([allianceId, name])
+  periodMetrics MetricPeriodMetric[]
 
   createdAt DateTime @default(now())
+  @@unique([allianceId, name])
+}
+
+model MetricPeriod {
+  id String @id @default(cuid())
+
+  allianceId String
+  alliance Alliance @relation(fields: [allianceId], references: [id])
+
+  name String
+
+  active Boolean @default(true)
+
+  startsAt DateTime?
+  endsAt DateTime?
+
+  periodMetrics MetricPeriodMetric[]
+
+  createdAt DateTime @default(now())
+}
+
+model MetricPeriodMetric {
+  periodId String
+  period MetricPeriod @relation(fields: [periodId], references: [id])
+
+  metricId String
+  metric Metric @relation(fields: [metricId], references: [id])
+
+  weight Int
+  required Boolean
+  active Boolean @default(true)
+
+  memberMetricEntries MemberMetricEntry[]
+
+  @@id([periodId, metricId])
 }
 
 model MemberMetricEntry {
@@ -112,14 +145,17 @@ model MemberMetricEntry {
   memberId String
   member   Member @relation(fields: [memberId], references: [id])
 
+  periodId String
   metricId String
-  metric   Metric @relation(fields: [metricId], references: [id])
+  periodMetric MetricPeriodMetric @relation(fields: [periodId, metricId], references: [periodId, metricId])
 
-  score Int
+  value Int
 
-  notes String?
+  recordedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
-  createdAt DateTime @default(now())
+  @@index([memberId, periodId])
+  @@index([metricId])
 }
 
 model LeadershipNote {
