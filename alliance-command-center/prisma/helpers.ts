@@ -11,14 +11,16 @@ import { LeadershipNoteVisibility } from "@/app/generated/prisma/enums";
  */
 
 const createUser = async (email: string, password: string) => {
+  const existing = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (existing) return existing;
+
   const passwordHash = await bcrypt.hash(password, 12);
 
-  return await prisma.user.upsert({
-    where: {
-      email,
-    },
-    update: {},
-    create: {
+  return await prisma.user.create({
+    data: {
       email,
       displayName: "AB",
       passwordHash,
