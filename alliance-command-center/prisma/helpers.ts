@@ -219,13 +219,24 @@ const createMembers = async (
   allianceId: string,
   members: { playerName: string; thp: number; squadPower: number }[],
 ) => {
-  return await prisma.member.createMany({
-    data: members.map((member) => ({
-      allianceId,
-      playerName: member.playerName,
-    })),
-    skipDuplicates: true,
-  });
+  return await Promise.all(
+    members.map((member) =>
+      prisma.member.upsert({
+        where: { playerName: member.playerName },
+        update: {
+          allianceId,
+          thp: member.thp,
+          squadPower: member.squadPower,
+        },
+        create: {
+          allianceId,
+          playerName: member.playerName,
+          thp: member.thp,
+          squadPower: member.squadPower,
+        },
+      }),
+    ),
+  );
 };
 
 export {
