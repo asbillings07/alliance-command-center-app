@@ -1,58 +1,57 @@
-import bcrypt from "bcrypt";
 import "dotenv/config";
 import { prisma } from "@/app/src/lib/prisma";
-import { LeadershipNoteType } from "@/app/generated/prisma/enums";
-import { LeadershipNoteVisibility } from "@/app/generated/prisma/enums";
+import {
+  LeadershipNoteType,
+  LeadershipNoteVisibility,
+  Metric_Type,
+} from "@/app/generated/prisma/enums";
+import {
+  createUser,
+  createLeadershipNote,
+  createMembers,
+  createMetricPeriod,
+  createMetric,
+  assignMetricToPeriod,
+  recordMemberMetric,
+} from "./helpers";
 
-const createUser = async (email: string, password: string) => {
-  const passwordHash = await bcrypt.hash(password, 12);
+// ---------------------------------------
+// Members data
+// ---------------------------------------
 
-  await prisma.user.upsert({
-    where: {
-      email,
-    },
-    update: {},
-    create: {
-      email,
-      displayName: "AB",
-      passwordHash,
-    },
-  });
-};
+const members = [
+  {
+    playerName: "Dragon",
+    thp: 210000000,
+    squadPower: 350000000,
+  },
+  {
+    playerName: "Val",
+    thp: 180000000,
+    squadPower: 300000000,
+  },
+  {
+    playerName: "BF",
+    thp: 175000000,
+    squadPower: 290000000,
+  },
+  {
+    playerName: "Inosuke",
+    thp: 165000000,
+    squadPower: 280000000,
+  },
+  {
+    playerName: "Mando",
+    thp: 261000000,
+    squadPower: 80000000,
+  },
+];
 
-const createLeadershipNote = async (
-  memberId: string,
-  authorId: string,
-  noteType: LeadershipNoteType,
-  visibility: LeadershipNoteVisibility,
-  content: string,
-) => {
-  const existing = await prisma.leadershipNote.findFirst({
-    where: {
-      memberId,
-      authorId,
-      noteType,
-      visibility,
-      content,
-    },
-    select: { id: true },
-  });
+// ---------------------------------------
+// Create alliance data
+// ---------------------------------------
 
-  if (existing) return;
-
-  await prisma.leadershipNote.create({
-    data: {
-      memberId,
-      authorId,
-      noteType,
-      visibility,
-      content,
-    },
-  });
-};
-
-async function main() {
-  await createUser("ab@example.com", "Password123");
+const createAllianceData = async () => {
   const alliance = await prisma.alliance.upsert({
     where: {
       name_server: {
@@ -66,6 +65,7 @@ async function main() {
       server: "999",
     },
   });
+
   const user = await prisma.user.findUnique({
     where: {
       email: "ab@example.com",
@@ -75,6 +75,9 @@ async function main() {
     throw new Error("User not found");
   }
 
+  await createMembers(alliance.id, members);
+
+  // Alliance Membership
   await prisma.allianceMembership.upsert({
     where: {
       allianceId_userId: {
@@ -90,51 +93,90 @@ async function main() {
     },
   });
 
-  await prisma.member.createMany({
-    data: [
-      {
-        playerName: "Dragon",
-        allianceId: alliance.id,
-        thp: 210000000,
-        squadPower: 350000000,
-      },
-      {
-        playerName: "Val",
-        allianceId: alliance.id,
-        thp: 180000000,
-        squadPower: 300000000,
-      },
-      {
-        playerName: "BF",
-        allianceId: alliance.id,
-        thp: 175000000,
-        squadPower: 290000000,
-      },
-      {
-        playerName: "Inosuke",
-        allianceId: alliance.id,
-        thp: 165000000,
-        squadPower: 280000000,
-      },
-      {
-        playerName: "Mando",
-        allianceId: alliance.id,
-        thp: 261000000,
-        squadPower: 80000000,
-      },
-    ],
-    skipDuplicates: true,
-  });
   const dragon = await prisma.member.findFirst({
     where: {
       playerName: "Dragon",
       allianceId: alliance.id,
     },
   });
+
   if (!dragon) {
     throw new Error("Dragon not found");
   }
 
+  return { alliance, user, dragon };
+};
+
+const createMetricData = async (allianceId: string, memberId: string) => {
+  // ---------------------------------------
+  // Metric Periods
+  // ---------------------------------------
+  const season7 = await createMetricPeriod(allianceId, "Season 7");
+  const season7Offseason = await createMetricPeriod(
+    allianceId,
+    "Season 7 Offseason",
+  );
+  const vsScore = await createMetric(
+    allianceId,
+    "VS Score",
+    "The score of the alliance in the VS game",
+    Metric_Type.NUMERIC,
+  );
+  const desertStorm = await createMetric(
+    allianceId,
+    "Desert Storm",
+    "The score of the alliance in the Desert Storm game",
+    Metric_Type.NUMERIC,
+  );
+  // ---------------------------------------
+
+  await assignMetricToPeriod(season7.id, vsScore.id, 20, true);
+  await assignMetricToPeriod(season7.id, desertStorm.id, 10, true);
+  await assignMetricToPeriod(season7Offseason.id, vsScore.id, 30, true);
+  await assignMetricToPeriod(season7Offseason.id, desertStorm.id, 25, true);
+
+  await recordMemberMetric(
+    memberId,
+    season7.id,
+    vsScore.id,
+    10000000,
+    new Date(),
+  );
+  await recordMemberMetric(
+    memberId,
+    season7.id,
+    desertStorm.id,
+    5000000,
+    new Date(),
+  );
+  await recordMemberMetric(
+    memberId,
+    season7Offseason.id,
+    vsScore.id,
+    8000000,
+    new Date(),
+  );
+  await recordMemberMetric(
+    memberId,
+    season7Offseason.id,
+    desertStorm.id,
+    700000000,
+    new Date(),
+  );
+};
+
+// ---------------------------------------
+// Main function
+// ---------------------------------------
+
+async function main() {
+  // Users
+  await createUser("ab@example.com", "Password123");
+
+  // Alliance
+  const { alliance, user, dragon } = await createAllianceData();
+
+  // Leadership Notes
   await createLeadershipNote(
     dragon.id,
     user.id,
@@ -143,7 +185,12 @@ async function main() {
     "Dragon is a great leader",
   );
 
-  console.log("🌱 Seed completed");
+  // ---------------------------------------
+  // Metrics
+  // ---------------------------------------
+  await createMetricData(alliance.id, dragon.id);
+
+  console.log("🌱 Seed completed successfully");
 }
 
 main()
