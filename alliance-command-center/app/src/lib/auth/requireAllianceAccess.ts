@@ -1,4 +1,5 @@
 import { prisma } from "../prisma";
+import { redirect } from "next/navigation";
 
 export async function requireAllianceAccess(
   allianceId: string,
@@ -14,7 +15,7 @@ export async function requireAllianceAccess(
   });
 
   if (!membership) {
-    throw new Error("Unauthorized");
+    redirect("/app");
   }
 
   return membership;

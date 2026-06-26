@@ -1,5 +1,6 @@
 import { prisma } from "../prisma";
 import { AllianceRole } from "@/app/generated/prisma/enums";
+import { redirect, notFound } from "next/navigation";
 
 export const requireLeadershipAccess = async (
   allianceId: string,
@@ -14,10 +15,10 @@ export const requireLeadershipAccess = async (
     },
   });
   if (!membership) {
-    throw new Error("Access Denied");
+    notFound();
   }
   if (membership.role === AllianceRole.VIEWER) {
-    throw new Error("Unauthorized");
+    redirect("/app");
   }
 
   return membership;

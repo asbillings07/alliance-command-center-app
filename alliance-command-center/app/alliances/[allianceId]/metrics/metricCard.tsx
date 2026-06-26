@@ -1,5 +1,6 @@
 
-import { Metric, Metric_Type } from "@/app/generated/prisma/client";
+import type { Metric } from "@/app/generated/prisma/client";
+import type { Metric_Type } from "@/app/generated/prisma/enums";
 
 const METRIC_TYPE_LABELS:Record<Metric_Type, string> = {
     NUMERIC: "Numeric",

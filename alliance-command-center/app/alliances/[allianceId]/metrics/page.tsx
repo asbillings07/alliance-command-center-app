@@ -17,6 +17,9 @@ export default async function MetricsPage({ params }: Params) {
         where: {
             allianceId: allianceId,
         },
+        orderBy: {
+            createdAt: "desc",
+        },
     });
 
   return (
