@@ -121,14 +121,14 @@ const createMetricPeriod = async (allianceId: string, name: string) => {
 
   if (existing) return existing;
 
-  const metric = await prisma.metricPeriod.create({
+  const period = await prisma.metricPeriod.create({
     data: {
       allianceId,
       name,
     },
   });
 
-  return metric;
+  return period;
 };
 
 // example entry: 92
