@@ -146,6 +146,19 @@ const recordMemberMetric = async (
   value: number,
   recordedAt: Date,
 ) => {
+  const existing = await prisma.memberMetricEntry.findFirst({
+    where: { memberId, periodId, metricId },
+    orderBy: { recordedAt: "desc" },
+    select: { id: true },
+  });
+
+  if (existing) {
+    return await prisma.memberMetricEntry.update({
+      where: { id: existing.id },
+      data: { value, recordedAt },
+    });
+  }
+
   return await prisma.memberMetricEntry.create({
     data: {
       memberId,
