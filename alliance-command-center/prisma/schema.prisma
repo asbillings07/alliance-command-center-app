@@ -98,7 +98,9 @@ model Metric {
   name        String
   description String?
 
-  type Metric_Type
+  type   Metric_Type
+  active Boolean @default(true)
+
   periodMetrics MetricPeriodMetric[]
 
   createdAt DateTime @default(now())

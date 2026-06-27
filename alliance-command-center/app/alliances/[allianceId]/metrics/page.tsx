@@ -22,19 +22,31 @@ export default async function MetricsPage({ params }: Params) {
         },
     });
 
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-      <h1 className="text-2xl font-bold">Metrics</h1>
-      <div className="flex flex-col items-center justify-center gap-4">
-        <button className="w-full rounded-md border-2 border-dashed border-gray-300 p-4 text-gray-500 hover:border-blue-400 hover:text-blue-500 cursor-pointer">Create Metric</button>
-        {metrics.length === 0 ? (
-          <div className="text-2xl font-bold">No metrics found, create one to get started!</div>
-        ) : (
-          metrics.map((metric) => (
-            <MetricCard key={metric.id} metric={metric} />
-          ))
-        )}
-      </div>
-    </div>
-  );
+    return (
+        <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+            <h1 className="text-2xl font-bold">Metrics Library</h1>
+            <div className="flex flex-col items-center justify-center gap-4 w-full max-w-3xl">
+                <MetricCard allianceId={allianceId} mode="create" />
+                {metrics.length === 0 ? (
+                    <p className="text-gray-500">No metrics found. Create one to get started!</p>
+                ) : (
+                    metrics.map((metric) => (
+                        <MetricCard
+                            key={metric.id}
+                            allianceId={allianceId}
+                            mode="view"
+                            metric={{
+                                id: metric.id,
+                                name: metric.name,
+                                description: metric.description,
+                                type: metric.type,
+                                active: metric.active,
+                                metricKey: `${metric.id}-${metric.createdAt.getTime()}`,
+                            }}
+                        />
+                    ))
+                )}
+            </div>
+        </div>
+    );
 }
