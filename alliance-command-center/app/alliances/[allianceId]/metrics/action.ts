@@ -21,7 +21,8 @@ export async function createMetric(formData: FormData): Promise<void> {
   }
 
   const rawDescription = formData.get("description");
-  const description = typeof rawDescription === "string" ? rawDescription.trim() || null : null;
+  const description =
+    typeof rawDescription === "string" ? rawDescription.trim() || null : null;
 
   const type = formData.get("type") as Metric_Type;
   if (!Object.values(Metric_Type).includes(type)) {
@@ -58,13 +59,20 @@ export async function editMetric(formData: FormData): Promise<void> {
 
   await requireLeadershipAccess(metric.allianceId, user.id);
 
+  if (!metric.active) {
+    throw new Error(
+      "Metric is archived and cannot be edited, please restore it to edit it.",
+    );
+  }
+
   const name = formData.get("name");
   if (typeof name !== "string" || !name.trim()) {
     throw new Error("Name is required");
   }
 
   const rawDescription = formData.get("description");
-  const description = typeof rawDescription === "string" ? rawDescription.trim() || null : null;
+  const description =
+    typeof rawDescription === "string" ? rawDescription.trim() || null : null;
 
   const type = formData.get("type") as Metric_Type;
   if (!Object.values(Metric_Type).includes(type)) {
