@@ -52,7 +52,7 @@ export default async function AlliancePage({ params }: Params) {
         <div className="flex flex-col items-center justify-center gap-4">
             <h2>Modules:</h2>
             <Link href={`/alliances/${allianceId}/members`} className="bg-blue-500 text-white rounded-md p-2 cursor-pointer">Members</Link>
-            <button className="bg-blue-500 text-white rounded-md p-2" disabled>Metrics (coming soon)</button>
+            <Link href={`/alliances/${allianceId}/metrics`} className="bg-blue-500 text-white rounded-md p-2 cursor-pointer">Metrics</Link>
             <button className="bg-blue-500 text-white rounded-md p-2" disabled>Notes (coming soon)</button>
             <button className="bg-blue-500 text-white rounded-md p-2" disabled>Recruiting (coming soon)</button>
         </div>

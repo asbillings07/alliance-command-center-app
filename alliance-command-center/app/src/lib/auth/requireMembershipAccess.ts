@@ -1,3 +1,4 @@
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "../prisma";
 
 export const requireMembershipAccess = async (
@@ -11,7 +12,7 @@ export const requireMembershipAccess = async (
   });
 
   if (!member) {
-    throw new Error("Member not found");
+    notFound();
   }
 
   const membership = await prisma.allianceMembership.findUnique({
@@ -24,7 +25,7 @@ export const requireMembershipAccess = async (
   });
 
   if (!membership) {
-    throw new Error("Unauthorized");
+    redirect("/app");
   }
 
   return { membership, member };
