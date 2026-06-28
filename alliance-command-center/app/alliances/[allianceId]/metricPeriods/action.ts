@@ -32,7 +32,7 @@ export async function createMetricPeriod(formData: FormData): Promise<void> {
     throw new Error("Alliance is required");
   }
 
-  await requireLeadershipAccess(allianceId, user.id);
+  await requirePeriodAccess(allianceId, user.id);
 
   const { name, startsAt, endsAt } = validateFormData(formData);
 
@@ -56,15 +56,7 @@ export async function editMetricPeriod(formData: FormData): Promise<void> {
     throw new Error("Period is required");
   }
 
-  const period = await prisma.metricPeriod.findUnique({
-    where: { id: periodId },
-  });
-
-  if (!period) {
-    throw new Error("Period not found");
-  }
-
-  await requireLeadershipAccess(period.allianceId, user.id);
+  const { period } = await requirePeriodAccess(periodId, user.id);
 
   const { name, startsAt, endsAt } = validateFormData(formData);
 
