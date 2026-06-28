@@ -20,7 +20,7 @@ type MetricPeriodCardProps = {
 
 function formatDate(dateStr: string | null): string {
     if (!dateStr) return "Not set";
-    return new Date(dateStr).toLocaleDateString();
+    return new Date(`${dateStr}T00:00:00`).toLocaleDateString();
 }
 
 export function MetricPeriodCard({ allianceId, mode, period }: MetricPeriodCardProps) {

@@ -30,7 +30,7 @@ export function MetricPeriodForm({
     const action = mode === "create" ? createMetricPeriod : editMetricPeriod;
     const submitLabel = mode === "create" ? "Create Period" : "Update Period";
 
-    const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    const handleSubmit = (e: React.BaseSyntheticEvent) => {
         e.preventDefault();
         const formData = new FormData(e.currentTarget);
         startTransition(async () => {
