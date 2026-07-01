@@ -1,7 +1,6 @@
 "use server";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
 import { revalidatePath } from "next/cache";
 import { requirePeriodAccess } from "@/app/src/lib/auth/requirePeriodAccess";
 
