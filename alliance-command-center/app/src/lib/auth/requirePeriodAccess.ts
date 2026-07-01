@@ -9,8 +9,9 @@ export const requirePeriodAccess = async (periodId: string, userId: string) => {
       periodMetrics: {
         include: {
           metric: {
-            include: {
-              periodMetrics: true,
+            select: {
+              id: true,
+              name: true,
             },
           },
         },
