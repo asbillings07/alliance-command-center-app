@@ -16,6 +16,9 @@ type PeriodMetricListProps = {
 };
 
 export function PeriodMetricList({ metrics, periodId, periodMetrics }: PeriodMetricListProps) {
+    const assignedMetricIds = new Set(periodMetrics.map((pm) => pm.metricId));
+    const availableMetrics = metrics.filter((m) => !assignedMetricIds.has(m.id));
+
     return (
         <div className="flex flex-col gap-4 w-full max-w-md items-center">
             {periodMetrics.length === 0 ? (
@@ -47,12 +50,16 @@ export function PeriodMetricList({ metrics, periodId, periodMetrics }: PeriodMet
                     ))}
                 </ul>
             )}
-            <PeriodMetricForm
-                metrics={metrics}
-                periodId={periodId}
-                mode="create"
-                onClose={() => {}}
-            />
+            {availableMetrics.length > 0 ? (
+                <PeriodMetricForm
+                    metrics={availableMetrics}
+                    periodId={periodId}
+                    mode="create"
+                    onClose={() => {}}
+                />
+            ) : (
+                <p className="text-gray-500 text-sm">All metrics have been assigned to this period.</p>
+            )}
         </div>
     );
 }

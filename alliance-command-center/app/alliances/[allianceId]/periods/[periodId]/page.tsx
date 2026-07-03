@@ -23,6 +23,9 @@ export default async function PeriodPage({ params }: Params) {
             id: true,
             name: true,
         },
+        orderBy: {
+            name: "asc",
+        },
     });
 
     const periodMetrics = period.periodMetrics.map((pm) => ({
