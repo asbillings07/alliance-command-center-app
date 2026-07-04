@@ -22,11 +22,15 @@ export const requirePeriodAccess = async (
       },
     },
   });
+  console.log("Period");
   if (!period) {
     notFound();
   }
 
   if (allianceId !== period.allianceId) {
+    console.log("Alliance ID mismatch");
+    console.log(allianceId);
+    console.log(period.allianceId);
     notFound();
   }
 
