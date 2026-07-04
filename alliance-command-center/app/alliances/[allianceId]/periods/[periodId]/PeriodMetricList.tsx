@@ -11,11 +11,12 @@ type PeriodMetricData = {
 
 type PeriodMetricListProps = {
     metrics: Pick<Metric, "id" | "name">[];
+    allianceId: string;
     periodId: string;
     periodMetrics: PeriodMetricData[];
 };
 
-export function PeriodMetricList({ metrics, periodId, periodMetrics }: PeriodMetricListProps) {
+export function PeriodMetricList({ metrics, periodId, allianceId, periodMetrics }: PeriodMetricListProps) {
     const assignedMetricIds = new Set(periodMetrics.map((pm) => pm.metricId));
     const availableMetrics = metrics.filter((m) => !assignedMetricIds.has(m.id));
 
@@ -38,6 +39,7 @@ export function PeriodMetricList({ metrics, periodId, periodMetrics }: PeriodMet
                                 <PeriodMetricForm
                                     metrics={metrics}
                                     periodId={periodId}
+                                    allianceId={allianceId}
                                     mode="edit"
                                     metricId={pm.metricId}
                                     metricName={pm.metricName}
@@ -54,6 +56,7 @@ export function PeriodMetricList({ metrics, periodId, periodMetrics }: PeriodMet
                 <PeriodMetricForm
                     metrics={availableMetrics}
                     periodId={periodId}
+                    allianceId={allianceId}
                     mode="create"
                     onClose={() => {}}
                 />

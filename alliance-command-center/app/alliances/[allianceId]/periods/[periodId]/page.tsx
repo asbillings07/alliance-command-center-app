@@ -49,6 +49,7 @@ export default async function PeriodPage({ params }: Params) {
             
             <PeriodMetricList
                 metrics={metrics}
+                allianceId={allianceId}
                 periodId={period.id}
                 periodMetrics={periodMetrics}
             />

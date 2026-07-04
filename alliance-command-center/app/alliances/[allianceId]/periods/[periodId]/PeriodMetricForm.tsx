@@ -6,6 +6,7 @@ import { addMetricToPeriod, editPeriodMetric } from "./action";
 type PeriodMetricFormProps = {
     metrics: Pick<Metric, "id" | "name">[];
     periodId: string;
+    allianceId: string;
     mode: "create" | "edit";
     metricId?: string;
     metricName?: string;
@@ -17,6 +18,7 @@ type PeriodMetricFormProps = {
 export function PeriodMetricForm({
     metrics,
     periodId,
+    allianceId,
     mode,
     metricId,
     metricName,
@@ -80,6 +82,7 @@ export function PeriodMetricForm({
                 className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg p-0 backdrop:bg-black/50 max-w-md w-full m-0"
             >
                 <form ref={formRef} className="p-6 flex flex-col gap-4" onSubmit={handleSubmit}>
+                    <input type="hidden" name="allianceId" value={allianceId} />
                     <h2 className="text-lg font-semibold">{title}</h2>
                     
                     {mode === "create" ? (

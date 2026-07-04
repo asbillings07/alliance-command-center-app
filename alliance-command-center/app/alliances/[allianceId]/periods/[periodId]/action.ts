@@ -20,17 +20,23 @@ const validateFormData = (formData: FormData) => {
     throw new Error("Weight is invalid");
   }
 
+  const allianceId = formData.get("allianceId");
+  if (typeof allianceId !== "string" || !allianceId) {
+    throw new Error("Alliance is required");
+  }
+
   const required = formData.get("required") === "on";
 
-  return { periodId, metricId, weight, required };
+  return { periodId, metricId, weight, required, allianceId };
 };
 
 export async function addMetricToPeriod(formData: FormData): Promise<void> {
   const user = await requireAuth();
 
-  const { periodId, metricId, weight, required } = validateFormData(formData);
+  const { periodId, metricId, weight, required, allianceId } =
+    validateFormData(formData);
 
-  const { period } = await requirePeriodAccess(periodId, user.id);
+  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
 
   await prisma.metricPeriodMetric.create({
     data: {
@@ -47,9 +53,10 @@ export async function addMetricToPeriod(formData: FormData): Promise<void> {
 export async function editPeriodMetric(formData: FormData): Promise<void> {
   const user = await requireAuth();
 
-  const { periodId, metricId, weight, required } = validateFormData(formData);
+  const { periodId, metricId, weight, required, allianceId } =
+    validateFormData(formData);
 
-  const { period } = await requirePeriodAccess(periodId, user.id);
+  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
 
   await prisma.metricPeriodMetric.update({
     where: { periodId_metricId: { periodId, metricId } },
