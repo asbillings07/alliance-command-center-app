@@ -1,5 +1,5 @@
 'use client'
-import { Metric } from "@/app/generated/prisma/client";
+import type { Metric } from "@/app/generated/prisma/client";
 import { useRef, useTransition } from "react";
 import { addMetricToPeriod, editPeriodMetric } from "./action";
 

@@ -2,7 +2,11 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "../prisma";
 import { AllianceRole } from "@/app/generated/prisma/enums";
 
-export const requirePeriodAccess = async (periodId: string, userId: string) => {
+export const requirePeriodAccess = async (
+  periodId: string,
+  allianceId: string,
+  userId: string,
+) => {
   const period = await prisma.metricPeriod.findUnique({
     where: { id: periodId },
     include: {
@@ -21,6 +25,11 @@ export const requirePeriodAccess = async (periodId: string, userId: string) => {
   if (!period) {
     notFound();
   }
+
+  if (allianceId !== period.allianceId) {
+    notFound();
+  }
+
   const membership = await prisma.allianceMembership.findUnique({
     where: {
       allianceId_userId: {

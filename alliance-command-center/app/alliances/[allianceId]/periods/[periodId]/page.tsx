@@ -11,9 +11,9 @@ type Params = {
 }
 
 export default async function PeriodPage({ params }: Params) {
-    const { periodId } = await params;
+    const { periodId, allianceId } = await params;
     const user = await requireAuth();
-    const { period } = await requirePeriodAccess(periodId, user.id);
+    const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
     const metrics = await prisma.metric.findMany({
         where: {
             allianceId: period.allianceId,
