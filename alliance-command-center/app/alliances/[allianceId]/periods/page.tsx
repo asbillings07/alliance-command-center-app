@@ -21,6 +21,13 @@ export default async function PeriodsPage({ params }: Params) {
         orderBy: {
             createdAt: "desc",
         },
+        include: {
+            periodMetrics: {
+                include: {
+                    metric: true,
+                },
+            },
+        },
     });
 
     return (
@@ -43,6 +50,7 @@ export default async function PeriodsPage({ params }: Params) {
                                 endsAt: period.endsAt?.toISOString().split('T')[0] || null,
                                 active: period.active,
                                 periodKey: `${period.id}-${period.createdAt.getTime()}`,
+                                periodMetrics: period.periodMetrics,
                             }}
                         />
                     ))

@@ -2,6 +2,9 @@
 import { useState } from "react";
 import { MetricPeriodForm } from "./metricPeriodForm";
 import { archiveMetricPeriod, restoreMetricPeriod } from "./action";
+import { MetricPeriodMetric } from "@/app/generated/prisma/client";
+import { Metric } from "@/app/generated/prisma/client";
+import Link from "next/link";
 
 type MetricPeriodData = {
     id: string;
@@ -10,6 +13,7 @@ type MetricPeriodData = {
     endsAt: string | null;
     active: boolean;
     periodKey: string;
+    periodMetrics: (MetricPeriodMetric & { metric: Metric })[];
 };
 
 type MetricPeriodCardProps = {
@@ -90,6 +94,9 @@ export function MetricPeriodCard({ allianceId, mode, period }: MetricPeriodCardP
                     <div className="text-sm text-gray-600 flex gap-4">
                         <span>Start: {formatDate(period.startsAt)}</span>
                         <span>End: {formatDate(period.endsAt)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Link href={`/alliances/${allianceId}/periods/${period.id}`} className="text-sm text-blue-500 hover:text-blue-700 cursor-pointer">Configure Metrics</Link>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
