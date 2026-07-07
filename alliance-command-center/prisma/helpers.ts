@@ -133,7 +133,7 @@ const createMetricPeriod = async (allianceId: string, name: string) => {
 
 // example entry: 92
 /**
- * Record a new metric entry for a member
+ * Record a new metric entry for a member (appends to history)
  * @param memberId - The ID of the member
  * @param periodId - The ID of the period
  * @param metricId - The ID of the metric
@@ -148,19 +148,6 @@ const recordMemberMetric = async (
   value: number,
   recordedAt: Date,
 ) => {
-  const existing = await prisma.memberMetricEntry.findFirst({
-    where: { memberId, periodId, metricId },
-    orderBy: { recordedAt: "desc" },
-    select: { id: true },
-  });
-
-  if (existing) {
-    return await prisma.memberMetricEntry.update({
-      where: { id: existing.id },
-      data: { value, recordedAt },
-    });
-  }
-
   return await prisma.memberMetricEntry.create({
     data: {
       memberId,
