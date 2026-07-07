@@ -19,27 +19,49 @@ type RecordMetricsFormProps = {
     metrics: Metric[];
 };
 
+function isValidInteger(value: string): boolean {
+    if (value === "") return true; // Empty is allowed (will be filtered out)
+    return /^-?\d+$/.test(value);
+}
+
 export function RecordMetricsForm({ periodId, allianceId, members, metrics }: RecordMetricsFormProps) {
     const [selectedMetricId, setSelectedMetricId] = useState(metrics[0]?.id || "");
     const [isPending, startTransition] = useTransition();
     const [values, setValues] = useState<Record<string, string>>({});
+    const [error, setError] = useState<string | null>(null);
 
     const handleValueChange = (memberId: string, value: string) => {
         setValues((prev) => ({ ...prev, [memberId]: value }));
+        setError(null);
     };
 
     const handleSubmit = (e: React.BaseSyntheticEvent) => {
         e.preventDefault();
-        
-        const entries = Object.entries(values)
-            .filter(([_, value]) => value !== "")
-            .map(([memberId, value]) => ({
-                memberId,
-                value: parseInt(value, 10),
-            }));
+        setError(null);
+
+        // Validate all non-empty values are valid integers
+        const invalidEntries: string[] = [];
+        const filledEntries = Object.entries(values).filter(([, value]) => value !== "");
+
+        for (const [memberId, value] of filledEntries) {
+            if (!isValidInteger(value)) {
+                const member = members.find((m) => m.id === memberId);
+                invalidEntries.push(member?.playerName || memberId);
+            }
+        }
+
+        if (invalidEntries.length > 0) {
+            setError(`Invalid values for: ${invalidEntries.join(", ")}. Please enter whole numbers only.`);
+            return;
+        }
+
+        const entries = filledEntries.map(([memberId, value]) => ({
+            memberId,
+            value: parseInt(value, 10),
+        }));
 
         if (entries.length === 0) {
-            alert("Please enter at least one value");
+            setError("Please enter at least one value");
             return;
         }
 
@@ -52,10 +74,11 @@ export function RecordMetricsForm({ periodId, allianceId, members, metrics }: Re
                     entries,
                 });
                 setValues({});
+                setError(null);
                 alert("Metrics recorded successfully!");
             } catch (error) {
                 console.error("Failed to record metrics:", error);
-                alert("Failed to record metrics");
+                setError("Failed to record metrics. Please try again.");
             }
         });
     };
@@ -91,22 +114,41 @@ export function RecordMetricsForm({ periodId, allianceId, members, metrics }: Re
             </h3>
 
             <div className="flex flex-col gap-2">
-                {members.map((member) => (
-                    <div key={member.id} className="flex items-center justify-between p-3 border rounded-md">
-                        <label htmlFor={`value-${member.id}`} className="font-medium">
-                            {member.playerName}
-                        </label>
-                        <input
-                            type="text"
-                            id={member.id}
-                            value={values[member.id] || ""}
-                            onChange={(e) => handleValueChange(member.id, e.target.value)}
-                            placeholder="Enter value"
-                            className="w-32 rounded-md border border-gray-300 p-2 text-right"
-                        />
-                    </div>
-                ))}
+                {members.map((member) => {
+                    const value = values[member.id] || "";
+                    const isInvalid = value !== "" && !isValidInteger(value);
+                    return (
+                        <div key={member.id} className="flex items-center justify-between p-3 border rounded-md">
+                            <label htmlFor={`value-${member.id}`} className="font-medium">
+                                {member.playerName}
+                            </label>
+                            <div className="flex flex-col items-end">
+                                <input
+                                    type="text"
+                                    id={member.id}
+                                    value={value}
+                                    onChange={(e) => handleValueChange(member.id, e.target.value)}
+                                    placeholder="Enter value"
+                                    className={`w-32 rounded-md border p-2 text-right ${
+                                        isInvalid 
+                                            ? "border-red-500 bg-red-50" 
+                                            : "border-gray-300"
+                                    }`}
+                                />
+                                {isInvalid && (
+                                    <span className="text-xs text-red-500 mt-1">Must be a whole number</span>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
+
+            {error && (
+                <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm">
+                    {error}
+                </div>
+            )}
 
             <button
                 type="submit"
