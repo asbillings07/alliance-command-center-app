@@ -1,5 +1,5 @@
 'use client'
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { parseCSV, matchEntriesToMembers, matchMetricName, type MatchResult, type MatchSummary, type MetricMatchResult } from "@/app/src/lib/memberMatcher";
 import { importMemberMetrics } from "./action";
 
@@ -22,6 +22,9 @@ type ImportFormProps = {
 
 type ImportStep = "upload" | "metric-not-found" | "preview" | "complete";
 
+// Maps memberId to the index in matchSummary.results that should be imported
+type DuplicateSelections = Record<string, number>;
+
 export function ImportForm({ periodId, allianceId, members, metrics }: ImportFormProps) {
     const [step, setStep] = useState<ImportStep>("upload");
     const [selectedMetricId, setSelectedMetricId] = useState(metrics[0]?.id || "");
@@ -31,6 +34,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     const [error, setError] = useState<string | null>(null);
     const [importCount, setImportCount] = useState(0);
     const [isPending, startTransition] = useTransition();
+    const [duplicateSelections, setDuplicateSelections] = useState<DuplicateSelections>({});
 
     const selectedMetric = metrics.find((m) => m.id === selectedMetricId);
 
@@ -41,6 +45,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setError(null);
         setParseErrors([]);
         setMetricMatch(null);
+        setDuplicateSelections({});
 
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -70,6 +75,17 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         const summary = matchEntriesToMembers(entries, members);
         setMatchSummary(summary);
 
+        // Initialize duplicate selections - default to first occurrence for each member
+        const initialSelections: DuplicateSelections = {};
+        summary.results.forEach((result, index) => {
+            if ((result.status === "matched" || result.status === "duplicate") && result.memberId) {
+                if (!(result.memberId in initialSelections)) {
+                    initialSelections[result.memberId] = index;
+                }
+            }
+        });
+        setDuplicateSelections(initialSelections);
+
         // Try to match the detected metric name to configured metrics (exact match after normalization)
         if (detectedMetricName) {
             const metricMatchResult = matchMetricName(detectedMetricName, metrics);
@@ -96,17 +112,23 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setStep("preview");
     };
 
-    // Get entries to import - takes first occurrence for each member (no duplicate selection)
+    const handleDuplicateSelection = (memberId: string, resultIndex: number) => {
+        setDuplicateSelections(prev => ({
+            ...prev,
+            [memberId]: resultIndex,
+        }));
+    };
+
+    // Get entries to import based on duplicate selections
     const getEntriesToImport = () => {
         if (!matchSummary) return [];
 
-        const seenMembers = new Set<string>();
+        const selectedIndices = new Set(Object.values(duplicateSelections));
+        
         return matchSummary.results
-            .filter((result): result is MatchResult & { memberId: string } => {
-                if (result.status !== "matched" || !result.memberId) return false;
-                if (seenMembers.has(result.memberId)) return false;
-                seenMembers.add(result.memberId);
-                return true;
+            .filter((result, index): result is MatchResult & { memberId: string } => {
+                if (!result.memberId) return false;
+                return selectedIndices.has(index);
             })
             .map((r) => ({
                 memberId: r.memberId,
@@ -146,7 +168,28 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setParseErrors([]);
         setError(null);
         setImportCount(0);
+        setDuplicateSelections({});
     };
+
+    // Precompute which memberIds have duplicates - O(n) once instead of O(n²) during render
+    const membersWithDuplicates = useMemo(() => {
+        if (!matchSummary) return new Set<string>();
+        
+        const counts = new Map<string, number>();
+        for (const result of matchSummary.results) {
+            if (result.memberId) {
+                counts.set(result.memberId, (counts.get(result.memberId) || 0) + 1);
+            }
+        }
+        
+        const duplicates = new Set<string>();
+        for (const [memberId, count] of counts) {
+            if (count > 1) {
+                duplicates.add(memberId);
+            }
+        }
+        return duplicates;
+    }, [matchSummary]);
 
     // Complete step
     if (step === "complete") {
@@ -249,6 +292,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     // Preview step
     if (step === "preview" && matchSummary) {
         const entriesToImport = getEntriesToImport();
+        const hasDuplicates = matchSummary.duplicates > 0;
 
         return (
             <div className="w-full max-w-2xl flex flex-col gap-4">
@@ -289,12 +333,13 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     </div>
                 </div>
 
-                {/* Duplicate Notice */}
-                {matchSummary.duplicates > 0 && (
+                {/* Duplicate Resolution Notice */}
+                {hasDuplicates && (
                     <div className="p-3 rounded-md bg-yellow-50 border border-yellow-300">
-                        <p className="text-sm text-yellow-800">
-                            <strong>{matchSummary.duplicates}</strong> duplicate entries detected. 
-                            First occurrence for each member will be used.
+                        <h4 className="font-medium text-yellow-900">Duplicates Found</h4>
+                        <p className="text-sm text-yellow-800 mt-1">
+                            {matchSummary.duplicates} duplicate entries detected. 
+                            Click &quot;Use This&quot; to choose which value to import for each member.
                         </p>
                     </div>
                 )}
@@ -324,16 +369,22 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                         </thead>
                         <tbody>
                             {matchSummary.results.map((result, i) => {
-                                const isFirstForMember = result.memberId && 
-                                    matchSummary.results.findIndex(r => r.memberId === result.memberId) === i;
-                                const willImport = result.status === "matched" && isFirstForMember;
+                                const memberHasDuplicates = result.memberId 
+                                    ? membersWithDuplicates.has(result.memberId)
+                                    : false;
+                                
+                                const isSelected = result.memberId 
+                                    ? duplicateSelections[result.memberId] === i
+                                    : false;
+                                
+                                const willImport = result.status !== "unmatched" && isSelected;
                                 
                                 return (
                                     <tr 
                                         key={i}
                                         className={
                                             result.status === "unmatched" ? "bg-red-50 text-gray-900" :
-                                            result.status === "duplicate" || !isFirstForMember ? "bg-gray-50 text-gray-500" :
+                                            !isSelected ? "bg-gray-50 text-gray-500" :
                                             "text-gray-900"
                                         }
                                     >
@@ -348,21 +399,26 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                                         </td>
                                         <td className="px-3 py-2 border-t text-right font-mono">{result.value}</td>
                                         <td className="px-3 py-2 border-t text-center">
-                                            {willImport && (
-                                                <span className="px-2 py-0.5 rounded text-xs bg-green-200 text-green-800">
-                                                    Will Import
-                                                </span>
-                                            )}
-                                            {result.status === "unmatched" && (
+                                            {result.status === "unmatched" ? (
                                                 <span className="px-2 py-0.5 rounded text-xs bg-red-200 text-red-800">
                                                     No Match
                                                 </span>
-                                            )}
-                                            {(result.status === "duplicate" || (result.status === "matched" && !isFirstForMember)) && (
-                                                <span className="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">
-                                                    Skipped (duplicate)
+                                            ) : memberHasDuplicates ? (
+                                                <button
+                                                    onClick={() => result.memberId && handleDuplicateSelection(result.memberId, i)}
+                                                    className={`px-2 py-1 rounded text-xs cursor-pointer ${
+                                                        isSelected 
+                                                            ? "bg-green-600 text-white" 
+                                                            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                                                    }`}
+                                                >
+                                                    {isSelected ? "Selected" : "Use This"}
+                                                </button>
+                                            ) : willImport ? (
+                                                <span className="px-2 py-0.5 rounded text-xs bg-green-200 text-green-800">
+                                                    Will Import
                                                 </span>
-                                            )}
+                                            ) : null}
                                         </td>
                                     </tr>
                                 );
