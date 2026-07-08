@@ -1,6 +1,7 @@
 "use server";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { requirePeriodAccess } from "@/app/src/lib/auth/requirePeriodAccess";
+import { Metric_Type } from "@/app/generated/prisma/enums";
 import { prisma } from "@/app/src/lib/prisma";
 import { revalidatePath } from "next/cache";
 
@@ -22,6 +23,18 @@ type CreateMetricAndImportInput = {
   metricName: string;
   entries: ImportEntry[];
 };
+
+/**
+ * Detect metric type based on the values in the entries.
+ * - BOOLEAN: all values are 0 or 1
+ * - NUMERIC: any other integer values
+ */
+function detectMetricType(entries: ImportEntry[]): Metric_Type {
+  const allBoolean = entries.every(
+    (entry) => entry.value === 0 || entry.value === 1,
+  );
+  return allBoolean ? Metric_Type.BOOLEAN : Metric_Type.NUMERIC;
+}
 
 const validateCreateMetricAndImportInput = (
   input: CreateMetricAndImportInput,
@@ -45,12 +58,16 @@ const validateCreateMetricAndImportInput = (
   // Validate all memberIds belong to this alliance
   const memberIds = entries.map((e) => e.memberId);
 
+  // Detect type based on values
+  const detectedType = detectMetricType(entries);
+
   return {
     periodId,
     allianceId,
     metricName: metricName.trim(),
     entries,
     memberIds,
+    detectedType,
   };
 };
 
@@ -78,16 +95,16 @@ export async function createMetricAndImport(
 }> {
   const user = await requireAuth();
 
-  const { periodId, allianceId, metricName, entries, memberIds } =
+  const { periodId, allianceId, metricName, entries, memberIds, detectedType } =
     validateCreateMetricAndImportInput(input);
   const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
 
-  // Create the metric
+  // Create the metric with detected type
   const metric = await prisma.metric.create({
     data: {
       name: metricName,
       allianceId,
-      type: "NUMERIC",
+      type: detectedType,
     },
   });
 

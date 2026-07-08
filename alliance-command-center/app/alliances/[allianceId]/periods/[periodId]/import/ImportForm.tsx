@@ -20,7 +20,7 @@ type ImportFormProps = {
     metrics: Metric[];
 };
 
-type ImportStep = "upload" | "metric-not-found" | "select-metric" | "preview" | "complete";
+type ImportStep = "upload" | "metric-not-found" | "select-metric" | "confirm-create-metric" | "preview" | "complete";
 
 type DuplicateSelection = {
     [memberId: string]: number; // maps memberId to the index in matchSummary.results
@@ -130,7 +130,11 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         }));
     };
 
-    const handleProceedToCreatePreview = () => {
+    const handleProceedToConfirmCreate = () => {
+        setStep("confirm-create-metric");
+    };
+
+    const handleConfirmCreateMetric = () => {
         setImportMode("create-new");
         setStep("preview");
     };
@@ -296,7 +300,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         return (
             <div className="w-full max-w-2xl flex flex-col gap-4">
                 <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-red-800">Metric Not Found</h3>
+                    <h3 className="text-lg font-semibold text-amber-800">Metric Not Configured</h3>
                     <button
                         onClick={handleReset}
                         className="text-sm text-gray-500 hover:text-gray-700 cursor-pointer"
@@ -305,13 +309,13 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     </button>
                 </div>
 
-                <div className="p-4 rounded-md bg-red-50 border border-red-200">
-                    <p className="text-red-700">
+                <div className="p-4 rounded-md bg-amber-50 border border-amber-300">
+                    <p className="text-amber-900">
                         The CSV file contains data for <strong>&quot;{metricMatch.detectedName}&quot;</strong>, 
                         but this metric is not configured for this period.
                     </p>
-                    <p className="text-red-600 text-sm mt-2">
-                        Choose how you&apos;d like to proceed:
+                    <p className="text-amber-800 text-sm mt-2">
+                        You can import this data into an existing metric, or cancel and configure the metric first.
                     </p>
                 </div>
 
@@ -333,27 +337,15 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                 )}
 
                 <div className="flex flex-col gap-3">
-                    <button
-                        onClick={handleProceedToCreatePreview}
-                        disabled={selectedCount === 0}
-                        className="w-full px-4 py-3 rounded-md bg-green-500 text-white hover:bg-green-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-left"
-                    >
-                        <div className="font-medium">
-                            Create &quot;{metricMatch.detectedName}&quot; and Import
-                        </div>
-                        <div className="text-sm opacity-90">
-                            Review and confirm before creating the metric
-                        </div>
-                    </button>
-
+                    {/* Primary action: use existing metric */}
                     {metrics.length > 0 && (
                         <button
                             onClick={handleProceedToSelectMetric}
-                            className="w-full px-4 py-3 rounded-md bg-yellow-400 text-yellow-900 hover:bg-yellow-500 cursor-pointer text-left"
+                            className="w-full px-4 py-3 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer text-left"
                         >
-                            <div className="font-medium">Import as Different Metric</div>
-                            <div className="text-sm text-yellow-800">
-                                Choose an existing metric to import this data into
+                            <div className="font-medium">Choose Existing Metric</div>
+                            <div className="text-sm text-blue-100">
+                                Import this data into a metric already configured for this period
                             </div>
                         </button>
                     )}
@@ -364,8 +356,88 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     >
                         <div className="font-medium">Cancel Import</div>
                         <div className="text-sm text-gray-500">
-                            Return to upload screen
+                            Go back and configure the metric first, then re-import
                         </div>
+                    </button>
+
+                    {/* Secondary action: create new metric - separated with visual distinction */}
+                    <div className="pt-3 border-t border-gray-200">
+                        <p className="text-xs text-gray-500 mb-2">
+                            Don&apos;t see the right metric? You can create a new one:
+                        </p>
+                        <button
+                            onClick={handleProceedToConfirmCreate}
+                            disabled={selectedCount === 0}
+                            className="w-full px-4 py-3 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-left"
+                        >
+                            <div className="font-medium">Create New Metric...</div>
+                            <div className="text-sm text-gray-500">
+                                This will add a new metric definition to your alliance
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (step === "confirm-create-metric" && metricMatch) {
+        const selectedCount = Object.keys(duplicateSelections).length;
+
+        return (
+            <div className="w-full max-w-2xl flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-900">Create New Metric</h3>
+                    <button
+                        onClick={handleReset}
+                        className="text-sm text-gray-500 hover:text-gray-700 cursor-pointer"
+                    >
+                        ← Start Over
+                    </button>
+                </div>
+
+                <div className="p-4 rounded-md bg-amber-50 border border-amber-300">
+                    <h4 className="font-medium text-amber-900">Are you sure you want to create a new metric?</h4>
+                    <p className="text-amber-800 text-sm mt-2">
+                        This will create a new metric called <strong>&quot;{metricMatch.detectedName}&quot;</strong> in your alliance&apos;s metric library and automatically add it to this period.
+                    </p>
+                </div>
+
+                <div className="p-4 rounded-md bg-gray-50 border border-gray-200">
+                    <h4 className="font-medium text-gray-900 mb-2">What this means:</h4>
+                    <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                        <li>A new metric <strong>&quot;{metricMatch.detectedName}&quot;</strong> will be added to your alliance</li>
+                        <li>The metric will be configured for this evaluation period</li>
+                        <li><strong>{selectedCount}</strong> data entries will be imported</li>
+                        <li>This metric will be available for future periods</li>
+                    </ul>
+                </div>
+
+                <div className="p-3 rounded-md bg-blue-50 border border-blue-200">
+                    <p className="text-sm text-blue-800">
+                        <strong>Tip:</strong> If you&apos;re not sure this is the right metric name, go back and choose an existing metric instead.
+                    </p>
+                </div>
+
+                {error && (
+                    <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm">
+                        {error}
+                    </div>
+                )}
+
+                <div className="flex gap-3 justify-end">
+                    <button
+                        onClick={() => setStep("metric-not-found")}
+                        className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer"
+                    >
+                        ← Back
+                    </button>
+                    <button
+                        onClick={handleConfirmCreateMetric}
+                        disabled={selectedCount === 0}
+                        className="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Yes, Create Metric & Continue
                     </button>
                 </div>
             </div>
@@ -478,10 +550,10 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                             This will create a new metric called <strong>&quot;{metricMatch.detectedName}&quot;</strong> and add it to this period.
                         </p>
                         <button
-                            onClick={() => setStep("metric-not-found")}
+                            onClick={() => setStep("confirm-create-metric")}
                             className="mt-2 text-sm text-green-600 hover:text-green-800 underline cursor-pointer"
                         >
-                            ← Choose a different option
+                            ← Go back
                         </button>
                     </div>
                 )}
