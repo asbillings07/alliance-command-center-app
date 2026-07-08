@@ -234,6 +234,16 @@ export function parseCSV(
 
     const columns = parseCSVLine(line);
 
+    if (columns.length > 2) {
+      return {
+        entries: [],
+        errors: [
+          `Row ${i + 1}: CSV has ${columns.length} columns, but only 2 are supported (name, value).`,
+        ],
+        detectedMetricName,
+      };
+    }
+
     if (columns.length <= Math.max(nameColumn, valueColumn)) {
       errors.push(`Row ${i + 1}: Not enough columns`);
       continue;
