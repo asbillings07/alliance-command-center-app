@@ -1,7 +1,8 @@
 'use client'
 import { useState, useTransition, useMemo } from "react";
 import { parseCSV, matchEntriesToMembers, matchMetricName, type MatchResult, type MatchSummary, type MetricMatchResult } from "@/app/src/lib/memberMatcher";
-import { importMemberMetrics } from "./action";
+import { importMemberMetrics, createMetricAndAddToPeriod } from "./action";
+import { Metric_Type } from "@/app/generated/prisma/enums";
 
 type Member = {
     id: string;
@@ -20,14 +21,15 @@ type ImportFormProps = {
     metrics: Metric[];
 };
 
-type ImportStep = "upload" | "metric-not-found" | "preview" | "complete";
+type ImportStep = "upload" | "metric-not-found" | "confirm-create-metric" | "preview" | "complete";
 
 // Maps memberId to the index in matchSummary.results that should be imported
 type DuplicateSelections = Record<string, number>;
 
-export function ImportForm({ periodId, allianceId, members, metrics }: ImportFormProps) {
+export function ImportForm({ periodId, allianceId, members, metrics: initialMetrics }: ImportFormProps) {
     const [step, setStep] = useState<ImportStep>("upload");
-    const [selectedMetricId, setSelectedMetricId] = useState(metrics[0]?.id || "");
+    const [metrics, setMetrics] = useState(initialMetrics);
+    const [selectedMetricId, setSelectedMetricId] = useState(initialMetrics[0]?.id || "");
     const [matchSummary, setMatchSummary] = useState<MatchSummary | null>(null);
     const [metricMatch, setMetricMatch] = useState<MetricMatchResult | null>(null);
     const [parseErrors, setParseErrors] = useState<string[]>([]);
@@ -35,6 +37,10 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     const [importCount, setImportCount] = useState(0);
     const [isPending, startTransition] = useTransition();
     const [duplicateSelections, setDuplicateSelections] = useState<DuplicateSelections>({});
+    
+    // State for creating new metric
+    const [newMetricName, setNewMetricName] = useState("");
+    const [newMetricType, setNewMetricType] = useState<Metric_Type>(Metric_Type.NUMERIC);
 
     const selectedMetric = metrics.find((m) => m.id === selectedMetricId);
 
@@ -112,6 +118,45 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setStep("preview");
     };
 
+    const handleStartCreateMetric = () => {
+        // Pre-fill with the detected metric name from the CSV
+        setNewMetricName(metricMatch?.detectedName || "");
+        setNewMetricType(Metric_Type.NUMERIC);
+        setError(null);
+        setStep("confirm-create-metric");
+    };
+
+    const handleConfirmCreateMetric = () => {
+        if (!newMetricName.trim()) {
+            setError("Metric name is required");
+            return;
+        }
+
+        startTransition(async () => {
+            try {
+                const result = await createMetricAndAddToPeriod({
+                    periodId,
+                    allianceId,
+                    name: newMetricName.trim(),
+                    type: newMetricType,
+                });
+                
+                // Add the new metric to local state
+                const newMetric = { id: result.metricId, name: result.metricName };
+                setMetrics(prev => [...prev, newMetric]);
+                setSelectedMetricId(result.metricId);
+                setStep("preview");
+            } catch (err) {
+                setError(err instanceof Error ? err.message : "Failed to create metric");
+            }
+        });
+    };
+
+    const handleCancelCreateMetric = () => {
+        setStep("metric-not-found");
+        setError(null);
+    };
+
     const handleDuplicateSelection = (memberId: string, resultIndex: number) => {
         setDuplicateSelections(prev => ({
             ...prev,
@@ -169,6 +214,8 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setError(null);
         setImportCount(0);
         setDuplicateSelections({});
+        setNewMetricName("");
+        setNewMetricType(Metric_Type.NUMERIC);
     };
 
     // Precompute which memberIds have duplicates - O(n) once instead of O(n²) during render
@@ -232,25 +279,54 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                         The CSV header contains <strong>&quot;{metricMatch.detectedName}&quot;</strong>, 
                         but no metric with that exact name is configured for this period.
                     </p>
-                    <p className="text-amber-800 text-sm mt-2">
-                        Please select an existing metric to import this data into, or cancel and configure the metric first.
-                    </p>
                 </div>
 
-                <div>
-                    <label htmlFor="metric-select" className="block text-sm font-medium text-gray-900 mb-2">
-                        Choose Metric
-                    </label>
-                    <select
-                        id="metric-select"
-                        value={selectedMetricId}
-                        onChange={(e) => setSelectedMetricId(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 p-3 text-base text-gray-900 bg-white"
+                {/* Option 1: Select existing metric */}
+                <div className="p-4 rounded-md border border-gray-200 bg-white">
+                    <h4 className="font-medium text-gray-900 mb-3">Option 1: Use an Existing Metric</h4>
+                    <div>
+                        <label htmlFor="metric-select" className="block text-sm font-medium text-gray-700 mb-2">
+                            Choose Metric
+                        </label>
+                        <select
+                            id="metric-select"
+                            value={selectedMetricId}
+                            onChange={(e) => setSelectedMetricId(e.target.value)}
+                            className="w-full rounded-md border border-gray-300 p-3 text-base text-gray-900 bg-white"
+                        >
+                            {metrics.map((metric) => (
+                                <option key={metric.id} value={metric.id}>{metric.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <button
+                        onClick={handleMetricSelected}
+                        disabled={!selectedMetricId || entriesToImport.length === 0}
+                        className="mt-3 px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {metrics.map((metric) => (
-                            <option key={metric.id} value={metric.id}>{metric.name}</option>
-                        ))}
-                    </select>
+                        Continue with Selected Metric
+                    </button>
+                </div>
+
+                {/* Divider */}
+                <div className="flex items-center gap-3">
+                    <div className="flex-1 border-t border-gray-300"></div>
+                    <span className="text-sm text-gray-500">or</span>
+                    <div className="flex-1 border-t border-gray-300"></div>
+                </div>
+
+                {/* Option 2: Create new metric */}
+                <div className="p-4 rounded-md border border-gray-200 bg-white">
+                    <h4 className="font-medium text-gray-900 mb-2">Option 2: Create New Metric</h4>
+                    <p className="text-sm text-gray-600 mb-3">
+                        Create a new metric named <strong>&quot;{metricMatch.detectedName}&quot;</strong> and add it to this period.
+                    </p>
+                    <button
+                        onClick={handleStartCreateMetric}
+                        className="px-4 py-2 rounded-md border border-blue-500 text-blue-600 hover:bg-blue-50 cursor-pointer"
+                    >
+                        Create New Metric...
+                    </button>
                 </div>
 
                 {matchSummary && (
@@ -277,12 +353,97 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     >
                         Cancel
                     </button>
+                </div>
+            </div>
+        );
+    }
+
+    // Confirm create metric step
+    if (step === "confirm-create-metric") {
+        const entriesToImport = getEntriesToImport();
+        
+        return (
+            <div className="w-full max-w-2xl flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-900">Create New Metric</h3>
                     <button
-                        onClick={handleMetricSelected}
-                        disabled={!selectedMetricId || entriesToImport.length === 0}
-                        className="px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={handleCancelCreateMetric}
+                        className="text-sm text-gray-500 hover:text-gray-700 cursor-pointer"
                     >
-                        Continue to Preview
+                        ← Back
+                    </button>
+                </div>
+
+                <div className="p-4 rounded-md bg-blue-50 border border-blue-200">
+                    <p className="text-blue-800 text-sm">
+                        This will create a new metric in your alliance&apos;s metric library and add it to this evaluation period.
+                    </p>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                    <div>
+                        <label htmlFor="new-metric-name" className="block text-sm font-medium text-gray-900 mb-2">
+                            Metric Name
+                        </label>
+                        <input
+                            id="new-metric-name"
+                            type="text"
+                            value={newMetricName}
+                            onChange={(e) => setNewMetricName(e.target.value)}
+                            className="w-full rounded-md border border-gray-300 p-3 text-base text-gray-900 bg-white"
+                            placeholder="Enter metric name"
+                        />
+                    </div>
+
+                    <div>
+                        <label htmlFor="new-metric-type" className="block text-sm font-medium text-gray-900 mb-2">
+                            Metric Type
+                        </label>
+                        <select
+                            id="new-metric-type"
+                            value={newMetricType}
+                            onChange={(e) => setNewMetricType(e.target.value as Metric_Type)}
+                            className="w-full rounded-md border border-gray-300 p-3 text-base text-gray-900 bg-white"
+                        >
+                            <option value={Metric_Type.NUMERIC}>Numeric</option>
+                            <option value={Metric_Type.BOOLEAN}>Boolean</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                            Numeric metrics track integer values. Boolean metrics track yes/no (1/0).
+                        </p>
+                    </div>
+                </div>
+
+                {matchSummary && (
+                    <div className="p-3 rounded-md bg-gray-100 border border-gray-200">
+                        <p className="text-sm text-gray-800">
+                            After creating, <strong>{entriesToImport.length}</strong> entries will be imported
+                            {matchSummary.unmatched > 0 && (
+                                <span> ({matchSummary.unmatched} unmatched members will be skipped)</span>
+                            )}
+                        </p>
+                    </div>
+                )}
+
+                {error && (
+                    <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm">
+                        {error}
+                    </div>
+                )}
+
+                <div className="flex gap-3 justify-end">
+                    <button
+                        onClick={handleCancelCreateMetric}
+                        className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleConfirmCreateMetric}
+                        disabled={isPending || !newMetricName.trim()}
+                        className="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isPending ? "Creating..." : "Create Metric & Continue"}
                     </button>
                 </div>
             </div>

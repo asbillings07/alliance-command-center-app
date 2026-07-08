@@ -1,6 +1,8 @@
 "use server";
+import { Metric_Type } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { requirePeriodAccess } from "@/app/src/lib/auth/requirePeriodAccess";
+import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
 import { prisma } from "@/app/src/lib/prisma";
 import { revalidatePath } from "next/cache";
 
@@ -15,6 +17,60 @@ type ImportMetricsInput = {
   allianceId: string;
   entries: ImportEntry[];
 };
+
+type CreateMetricInput = {
+  periodId: string;
+  allianceId: string;
+  name: string;
+  type: Metric_Type;
+};
+
+export async function createMetricAndAddToPeriod(
+  input: CreateMetricInput,
+): Promise<{ metricId: string; metricName: string }> {
+  const user = await requireAuth();
+  const { periodId, allianceId, name, type } = input;
+
+  if (!periodId || !allianceId) {
+    throw new Error("Period and alliance are required");
+  }
+
+  if (!name || typeof name !== "string" || !name.trim()) {
+    throw new Error("Metric name is required");
+  }
+
+  if (!Object.values(Metric_Type).includes(type)) {
+    throw new Error("Invalid metric type");
+  }
+
+  await requireLeadershipAccess(allianceId, user.id);
+  await requirePeriodAccess(periodId, allianceId, user.id);
+
+  // Create the metric in the alliance's metric library
+  const metric = await prisma.metric.create({
+    data: {
+      allianceId,
+      name: name.trim(),
+      type,
+    },
+  });
+
+  // Add the metric to this period with default settings
+  await prisma.metricPeriodMetric.create({
+    data: {
+      periodId,
+      metricId: metric.id,
+      weight: 0,
+      required: false,
+    },
+  });
+
+  revalidatePath(`/alliances/${allianceId}/metrics`);
+  revalidatePath(`/alliances/${allianceId}/periods/${periodId}`);
+  revalidatePath(`/alliances/${allianceId}/periods/${periodId}/import`);
+
+  return { metricId: metric.id, metricName: metric.name };
+}
 
 export async function importMemberMetrics(
   input: ImportMetricsInput,
