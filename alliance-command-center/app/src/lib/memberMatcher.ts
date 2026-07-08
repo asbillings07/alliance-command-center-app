@@ -196,14 +196,14 @@ export function parseCSV(
   } = {},
 ): CSVParseResult {
   const { nameColumn = 0, valueColumn = 1, hasHeader = true } = options;
-  const lines = content.trim().split(/\r?\n/);
+  const trimmedContent = content.trim();
+  if (!trimmedContent) {
+    return { entries: [], errors: ["CSV file is empty"], detectedMetricName: null };
+  }
+  const lines = trimmedContent.split(/\r?\n/);
   const entries: RawEntry[] = [];
   const errors: string[] = [];
   let detectedMetricName: string | null = null;
-
-  if (lines.length === 0) {
-    return { entries: [], errors: ["CSV file is empty"], detectedMetricName: null };
-  }
 
   // Validate column count from header or first data row
   const firstLineColumns = parseCSVLine(lines[0]);
