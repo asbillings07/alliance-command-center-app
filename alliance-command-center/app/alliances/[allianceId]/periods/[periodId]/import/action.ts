@@ -1,6 +1,6 @@
 "use server";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requirePeriodAccess } from "@/app/src/lib/auth/requirePeriodAccess";
 import { prisma } from "@/app/src/lib/prisma";
 import { revalidatePath } from "next/cache";
 
@@ -23,50 +23,16 @@ type CreateMetricAndImportInput = {
   entries: ImportEntry[];
 };
 
-export async function createMetricAndImport(
-  input: CreateMetricAndImportInput
-): Promise<{ success: boolean; count: number; metricId: string; metricName: string }> {
-  const user = await requireAuth();
+const validateCreateMetricAndImportInput = (
+  input: CreateMetricAndImportInput,
+) => {
   const { periodId, allianceId, metricName, entries } = input;
-
   if (!periodId || !allianceId || !metricName) {
     throw new Error("Period, alliance, and metric name are required");
   }
-
   if (!Array.isArray(entries) || entries.length === 0) {
     throw new Error("At least one entry is required");
   }
-
-  await requireLeadershipAccess(allianceId, user.id);
-
-  // Validate period exists and belongs to alliance
-  const period = await prisma.metricPeriod.findUnique({
-    where: { id: periodId },
-  });
-
-  if (!period || period.allianceId !== allianceId) {
-    throw new Error("Period not found");
-  }
-
-  // Create the metric
-  const metric = await prisma.metric.create({
-    data: {
-      name: metricName.trim(),
-      allianceId,
-      type: "NUMERIC",
-    },
-  });
-
-  // Add metric to the period
-  await prisma.metricPeriodMetric.create({
-    data: {
-      periodId,
-      metricId: metric.id,
-      weight: 1,
-      required: false,
-    },
-  });
-
   // Validate all entries
   for (const entry of entries) {
     if (typeof entry.value !== "number" || !Number.isInteger(entry.value)) {
@@ -76,9 +42,67 @@ export async function createMetricAndImport(
       throw new Error("Invalid member ID");
     }
   }
-
   // Validate all memberIds belong to this alliance
   const memberIds = entries.map((e) => e.memberId);
+
+  return {
+    periodId,
+    allianceId,
+    metricName: metricName.trim(),
+    entries,
+    memberIds,
+  };
+};
+
+const validateImportMetricsInput = (input: ImportMetricsInput) => {
+  const { periodId, metricId, allianceId, entries } = input;
+  if (!periodId || !metricId || !allianceId) {
+    throw new Error("Period, metric, and alliance are required");
+  }
+
+  if (!Array.isArray(entries) || entries.length === 0) {
+    throw new Error("At least one entry is required");
+  }
+  // Validate all memberIds belong to this alliance
+  const memberIds = entries.map((e) => e.memberId);
+  return { periodId, metricId, allianceId, entries, memberIds };
+};
+
+export async function createMetricAndImport(
+  input: CreateMetricAndImportInput,
+): Promise<{
+  success: boolean;
+  count: number;
+  metricId: string;
+  metricName: string;
+}> {
+  const user = await requireAuth();
+
+  const { periodId, allianceId, metricName, entries, memberIds } =
+    validateCreateMetricAndImportInput(input);
+  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
+
+  // Create the metric
+  const metric = await prisma.metric.create({
+    data: {
+      name: metricName,
+      allianceId,
+      type: "NUMERIC",
+    },
+  });
+
+  // Add metric to the period
+  await prisma.metricPeriodMetric.create({
+    data: {
+      periodId: period.id,
+      metricId: metric.id,
+      weight: 1,
+      required: false,
+    },
+  });
+
+  // Validate all memberIds belong to this alliance
+
   const validMembers = await prisma.member.findMany({
     where: {
       id: { in: memberIds },
@@ -109,38 +133,27 @@ export async function createMetricAndImport(
   revalidatePath(`/alliances/${allianceId}/periods/${periodId}`);
   revalidatePath(`/alliances/${allianceId}/metrics`);
 
-  return { success: true, count: entries.length, metricId: metric.id, metricName: metric.name };
+  return {
+    success: true,
+    count: entries.length,
+    metricId: metric.id,
+    metricName: metric.name,
+  };
 }
 
 export async function importMemberMetrics(
-  input: ImportMetricsInput
+  input: ImportMetricsInput,
 ): Promise<{ success: boolean; count: number }> {
   const user = await requireAuth();
-  const { periodId, metricId, allianceId, entries } = input;
 
-  if (!periodId || !metricId || !allianceId) {
-    throw new Error("Period, metric, and alliance are required");
-  }
-
-  if (!Array.isArray(entries) || entries.length === 0) {
-    throw new Error("At least one entry is required");
-  }
-
-  await requireLeadershipAccess(allianceId, user.id);
-
-  // Validate period exists and belongs to alliance
-  const period = await prisma.metricPeriod.findUnique({
-    where: { id: periodId },
-  });
-
-  if (!period || period.allianceId !== allianceId) {
-    throw new Error("Period not found");
-  }
+  const { periodId, metricId, allianceId, entries, memberIds } =
+    validateImportMetricsInput(input);
+  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
 
   // Validate metric is configured for this period
   const periodMetric = await prisma.metricPeriodMetric.findUnique({
     where: {
-      periodId_metricId: { periodId, metricId },
+      periodId_metricId: { periodId: period.id, metricId },
     },
   });
 
@@ -148,18 +161,6 @@ export async function importMemberMetrics(
     throw new Error("Metric is not configured for this period");
   }
 
-  // Validate all entries
-  for (const entry of entries) {
-    if (typeof entry.value !== "number" || !Number.isInteger(entry.value)) {
-      throw new Error("All values must be integers");
-    }
-    if (typeof entry.memberId !== "string" || !entry.memberId) {
-      throw new Error("Invalid member ID");
-    }
-  }
-
-  // Validate all memberIds belong to this alliance
-  const memberIds = entries.map((e) => e.memberId);
   const validMembers = await prisma.member.findMany({
     where: {
       id: { in: memberIds },
