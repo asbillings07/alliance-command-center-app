@@ -2,6 +2,7 @@ import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { requirePeriodAccess } from "@/app/src/lib/auth/requirePeriodAccess";
 import { PeriodMetricList } from "./PeriodMetricList";
 import { prisma } from "@/app/src/lib/prisma";
+import Link from "next/link";
 
 type Params = {
     params: Promise<{
@@ -38,13 +39,13 @@ export default async function PeriodPage({ params }: Params) {
     return (
         <div className="flex flex-col items-center justify-center min-h-screen gap-4">
             <h1 className="text-2xl font-bold">Evaluation Period: {period.name}</h1>
-            <p>──────────────────────────────────────────────────────</p>
+            <hr className="w-full max-w-3xl border-gray-200" />
             <div className="flex flex-col items-center justify-center gap-2">
                 <h2>Overview:</h2>
                 <h2>Starts: {period.startsAt?.toLocaleDateString() || 'Not Set'}</h2>
                 <h2>Ends: {period.endsAt?.toLocaleDateString() || 'Not Set'}</h2>
-                <p>──────────────────────────────────────────────────────</p>
             </div>
+            <hr className="w-full max-w-3xl border-gray-200" />
             <h2>Configured Metrics:</h2>
             
             <PeriodMetricList
@@ -53,6 +54,9 @@ export default async function PeriodPage({ params }: Params) {
                 periodId={period.id}
                 periodMetrics={periodMetrics}
             />
+            <hr className="w-full max-w-3xl border-gray-200" />
+            <h2>Actions:</h2>
+            <Link href={`/alliances/${allianceId}/periods/${periodId}/record`} className="bg-blue-500 text-white rounded-md p-2 cursor-pointer">Record Metrics</Link>
         </div>
     );
 }

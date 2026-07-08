@@ -22,6 +22,7 @@ export const requirePeriodAccess = async (
       },
     },
   });
+
   if (!period) {
     notFound();
   }

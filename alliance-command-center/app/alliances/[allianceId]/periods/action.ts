@@ -20,20 +20,24 @@ const validateFormData = (formData: FormData) => {
   const endsAt =
     typeof rawEndsAt === "string" && rawEndsAt ? new Date(rawEndsAt) : null;
 
-  return { name, startsAt, endsAt };
-};
-
-export async function createMetricPeriod(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
     throw new Error("Alliance is required");
   }
 
-  await requirePeriodAccess(allianceId, user.id);
+  const periodId = formData.get("periodId");
+  if (typeof periodId !== "string" || !periodId) {
+    throw new Error("Period is required");
+  }
 
-  const { name, startsAt, endsAt } = validateFormData(formData);
+  return { name, startsAt, endsAt, allianceId, periodId };
+};
+
+export async function createMetricPeriod(formData: FormData): Promise<void> {
+  const user = await requireAuth();
+  const { name, startsAt, endsAt, allianceId, periodId } =
+    validateFormData(formData);
+  await requirePeriodAccess(periodId, allianceId, user.id);
 
   await prisma.metricPeriod.create({
     data: {
@@ -50,14 +54,10 @@ export async function createMetricPeriod(formData: FormData): Promise<void> {
 export async function editMetricPeriod(formData: FormData): Promise<void> {
   const user = await requireAuth();
 
-  const periodId = formData.get("periodId");
-  if (typeof periodId !== "string" || !periodId) {
-    throw new Error("Period is required");
-  }
+  const { name, startsAt, endsAt, allianceId, periodId } =
+    validateFormData(formData);
 
-  const { period } = await requirePeriodAccess(periodId, user.id);
-
-  const { name, startsAt, endsAt } = validateFormData(formData);
+  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
 
   await prisma.metricPeriod.update({
     where: { id: periodId },
@@ -74,12 +74,9 @@ export async function editMetricPeriod(formData: FormData): Promise<void> {
 export async function archiveMetricPeriod(formData: FormData): Promise<void> {
   const user = await requireAuth();
 
-  const periodId = formData.get("periodId");
-  if (typeof periodId !== "string" || !periodId) {
-    throw new Error("Period is required");
-  }
+  const { allianceId, periodId } = validateFormData(formData);
 
-  const { period } = await requirePeriodAccess(periodId, user.id);
+  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
 
   await prisma.metricPeriod.update({
     where: { id: periodId },
@@ -92,17 +89,14 @@ export async function archiveMetricPeriod(formData: FormData): Promise<void> {
 export async function restoreMetricPeriod(formData: FormData): Promise<void> {
   const user = await requireAuth();
 
-  const periodId = formData.get("periodId");
-  if (typeof periodId !== "string" || !periodId) {
-    throw new Error("Period is required");
-  }
+  const { allianceId, periodId } = validateFormData(formData);
 
-  const { period } = await requirePeriodAccess(periodId, user.id);
+  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
 
   await prisma.metricPeriod.update({
     where: { id: periodId },
     data: { active: true },
   });
 
-  revalidatePath(`/alliances/${period.allianceId}/metricPeriods`);
+  revalidatePath(`/alliances/${period.allianceId}/periods`);
 }
