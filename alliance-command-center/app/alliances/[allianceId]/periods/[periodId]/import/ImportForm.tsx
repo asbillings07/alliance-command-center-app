@@ -63,7 +63,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setParseErrors(errors);
 
         if (entries.length === 0) {
-            setError("No valid entries found in CSV");
+            setError(errors[0] ?? "No valid entries found in CSV");
             return;
         }
 
