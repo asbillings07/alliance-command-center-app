@@ -1,5 +1,5 @@
 'use client'
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { parseCSV, matchEntriesToMembers, matchMetricName, type MatchResult, type MatchSummary, type MetricMatchResult } from "@/app/src/lib/memberMatcher";
 import { importMemberMetrics } from "./action";
 
@@ -171,22 +171,25 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setDuplicateSelections({});
     };
 
-    // Helper to check if a member has duplicates
-    const getMemberDuplicateInfo = (memberId: string) => {
-        if (!matchSummary) return { hasDuplicates: false, indices: [] };
+    // Precompute which memberIds have duplicates - O(n) once instead of O(n²) during render
+    const membersWithDuplicates = useMemo(() => {
+        if (!matchSummary) return new Set<string>();
         
-        const indices: number[] = [];
-        matchSummary.results.forEach((result, index) => {
-            if (result.memberId === memberId) {
-                indices.push(index);
+        const counts = new Map<string, number>();
+        for (const result of matchSummary.results) {
+            if (result.memberId) {
+                counts.set(result.memberId, (counts.get(result.memberId) || 0) + 1);
             }
-        });
+        }
         
-        return {
-            hasDuplicates: indices.length > 1,
-            indices,
-        };
-    };
+        const duplicates = new Set<string>();
+        for (const [memberId, count] of counts) {
+            if (count > 1) {
+                duplicates.add(memberId);
+            }
+        }
+        return duplicates;
+    }, [matchSummary]);
 
     // Complete step
     if (step === "complete") {
@@ -366,9 +369,9 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                         </thead>
                         <tbody>
                             {matchSummary.results.map((result, i) => {
-                                const { hasDuplicates: memberHasDuplicates } = result.memberId 
-                                    ? getMemberDuplicateInfo(result.memberId)
-                                    : { hasDuplicates: false };
+                                const memberHasDuplicates = result.memberId 
+                                    ? membersWithDuplicates.has(result.memberId)
+                                    : false;
                                 
                                 const isSelected = result.memberId 
                                     ? duplicateSelections[result.memberId] === i
