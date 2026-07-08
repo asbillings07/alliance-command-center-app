@@ -20,16 +20,37 @@ type ImportFormProps = {
     metrics: Metric[];
 };
 
-type ImportStep = "upload" | "map-columns" | "select-metric" | "preview" | "complete";
+type ImportStep = "upload" | "select" | "preview" | "complete";
 
 type DuplicateSelections = Record<string, number>;
+
+// Recognized player column names (case-insensitive)
+// Only add aliases that come from real spreadsheet exports
+const PLAYER_COLUMN_NAMES = new Set([
+    'player',
+    'player name',
+    'playername',
+    'member',
+    'member name', 
+    'membername',
+    'alliance member',
+    'alliancemember',
+    'name',
+    'ign',
+]);
+
+function isPlayerColumn(columnName: string): boolean {
+    const normalized = columnName.toLowerCase().trim().replace(/\s+/g, ' ').replace(/-/g, ' ');
+    const noSpaces = normalized.replace(/\s/g, '');
+    return PLAYER_COLUMN_NAMES.has(normalized) || PLAYER_COLUMN_NAMES.has(noSpaces);
+}
 
 export function ImportForm({ periodId, allianceId, members, metrics }: ImportFormProps) {
     const [step, setStep] = useState<ImportStep>("upload");
     const [csvContent, setCsvContent] = useState<string>("");
     const [columns, setColumns] = useState<ColumnInfo[]>([]);
     const [rowCount, setRowCount] = useState(0);
-    const [playerColumn, setPlayerColumn] = useState<number | null>(null);
+    const [detectedPlayerColumn, setDetectedPlayerColumn] = useState<ColumnInfo | null>(null);
     const [valueColumn, setValueColumn] = useState<number | null>(null);
     const [selectedMetricId, setSelectedMetricId] = useState(metrics[0]?.id || "");
     const [matchSummary, setMatchSummary] = useState<MatchSummary | null>(null);
@@ -40,41 +61,8 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     const [duplicateSelections, setDuplicateSelections] = useState<DuplicateSelections>({});
 
     const selectedMetric = metrics.find((m) => m.id === selectedMetricId);
-
-    // Exact player column names we recognize (case-insensitive, spaces normalized)
-    const PLAYER_COLUMN_NAMES = new Set([
-        'player',
-        'player name',
-        'playername',
-        'member',
-        'member name', 
-        'membername',
-        'alliance member',
-        'alliancemember',
-        'name',
-        'username',
-        'user name',
-        'user',
-        'ign',
-        'in game name',
-        'ingame name',
-        'in-game name',
-    ]);
-
-    // Check if a column name exactly matches one of our player column patterns
-    const isPlayerColumn = (columnName: string): boolean => {
-        // Normalize: lowercase, trim, collapse spaces, remove hyphens
-        const normalized = columnName.toLowerCase().trim().replace(/\s+/g, ' ').replace(/-/g, ' ');
-        // Also check without spaces
-        const noSpaces = normalized.replace(/\s/g, '');
-        
-        return PLAYER_COLUMN_NAMES.has(normalized) || PLAYER_COLUMN_NAMES.has(noSpaces);
-    };
-
-    // Derive column types for constrained selection
-    const textColumns = columns.filter(c => !c.isNumeric);
     const numericColumns = columns.filter(c => c.isNumeric);
-    const playerColumns = textColumns.filter(c => isPlayerColumn(c.name));
+    const selectedValueColumnName = valueColumn !== null ? columns[valueColumn]?.name : null;
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -111,54 +99,31 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setColumns(result.columns);
         setRowCount(result.rowCount);
 
-        // Auto-select columns based on heuristics
+        // Auto-detect player column
         const textCols = result.columns.filter(c => !c.isNumeric);
+        const playerCol = textCols.find(c => isPlayerColumn(c.name));
+        setDetectedPlayerColumn(playerCol || null);
+
+        // Auto-select first numeric column
         const numCols = result.columns.filter(c => c.isNumeric);
-        const playerCols = textCols.filter(c => isPlayerColumn(c.name));
-
-        // Player column: prefer columns that match player name patterns
-        if (playerCols.length > 0) {
-            setPlayerColumn(playerCols[0].index);
-        } else {
-            // No matching player columns - don't auto-select
-            setPlayerColumn(null);
-        }
-
-        // Value column: prefer first numeric column
         if (numCols.length > 0) {
             setValueColumn(numCols[0].index);
         } else {
             setValueColumn(null);
         }
 
-        setStep("map-columns");
+        setStep("select");
     };
 
-    const handleColumnMappingComplete = () => {
-        if (playerColumn === null || valueColumn === null) {
-            setError("Please select both a player column and a value column");
+    const handleSelectComplete = () => {
+        if (!detectedPlayerColumn || valueColumn === null || !selectedMetricId) {
             return;
         }
 
-        if (playerColumn === valueColumn) {
-            setError("Player and value columns must be different");
-            return;
-        }
-
-        setError(null);
-        setStep("select-metric");
-    };
-
-    const handleMetricSelected = () => {
-        if (!selectedMetricId) {
-            setError("Please select a metric");
-            return;
-        }
-
-        // Parse the CSV with the selected columns
+        // Parse the CSV with the detected player column and selected value column
         const { entries, errors } = parseCSV(csvContent, {
-            nameColumn: playerColumn!,
-            valueColumn: valueColumn!,
+            nameColumn: detectedPlayerColumn.index,
+            valueColumn: valueColumn,
             hasHeader: true,
         });
 
@@ -239,7 +204,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setCsvContent("");
         setColumns([]);
         setRowCount(0);
-        setPlayerColumn(null);
+        setDetectedPlayerColumn(null);
         setValueColumn(null);
         setMatchSummary(null);
         setParseErrors([]);
@@ -249,13 +214,10 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     };
 
     const handleBack = () => {
-        if (step === "map-columns") {
+        if (step === "select") {
             handleReset();
-        } else if (step === "select-metric") {
-            setStep("map-columns");
-            setError(null);
         } else if (step === "preview") {
-            setStep("select-metric");
+            setStep("select");
             setMatchSummary(null);
             setParseErrors([]);
             setError(null);
@@ -294,7 +256,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                 </div>
                 <button
                     onClick={handleReset}
-                    className="px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer"
+                    className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
                 >
                     Import Another File
                 </button>
@@ -302,15 +264,14 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         );
     }
 
-    // Map columns step
-    if (step === "map-columns") {
-        const selectedPlayerColumnName = playerColumn !== null ? columns[playerColumn]?.name : null;
-        const selectedValueColumnName = valueColumn !== null ? columns[valueColumn]?.name : null;
+    // Select step - validate player column, choose value column and metric
+    if (step === "select") {
+        const canProceed = detectedPlayerColumn && numericColumns.length > 0 && valueColumn !== null && selectedMetricId;
 
         return (
             <div className="w-full max-w-2xl flex flex-col gap-5">
                 <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900">Choose Which Columns to Import</h3>
+                    <h3 className="text-lg font-semibold text-gray-600">Configure Import</h3>
                     <button
                         onClick={handleBack}
                         className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
@@ -319,154 +280,108 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     </button>
                 </div>
 
-                <div className="p-4 rounded-md bg-blue-100 border border-blue-300">
-                    <p className="text-blue-900 font-medium">
-                        Your spreadsheet has {columns.length} columns and {rowCount} rows.
-                    </p>
-                    <p className="text-blue-800 text-sm mt-1">
-                        Select which column contains <strong>player names</strong> and which contains the <strong>values</strong> you want to import.
-                    </p>
-                </div>
-
-                {/* Column selection - moved above table for clarity */}
-                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-md border border-gray-200">
-                    <div>
-                        <label htmlFor="player-column" className="block text-sm font-semibold text-gray-900 mb-2">
-                            1. Player Names Column
-                            <span className="font-normal text-gray-600 ml-1">(text)</span>
-                        </label>
-                        {playerColumns.length > 0 ? (
-                            <>
-                                <select
-                                    id="player-column"
-                                    value={playerColumn ?? ""}
-                                    onChange={(e) => setPlayerColumn(parseInt(e.target.value))}
-                                    className="w-full rounded-md border-2 border-purple-300 p-3 text-base text-gray-900 bg-white focus:border-purple-500 focus:ring-purple-500"
-                                >
-                                    <option value="" disabled>Select column...</option>
-                                    {playerColumns.map((col) => (
-                                        <option key={col.index} value={col.index}>
-                                            {col.name}
-                                        </option>
-                                    ))}
-                                </select>
-                                <p className="text-xs text-green-700 mt-1">
-                                    Found {playerColumns.length} matching column{playerColumns.length > 1 ? 's' : ''}
-                                </p>
-                            </>
-                        ) : (
-                            <div className="p-3 rounded-md bg-amber-100 border border-amber-300">
-                                <p className="text-sm text-amber-900 font-medium">
-                                    No player name column found
-                                </p>
-                                <p className="text-xs text-amber-800 mt-1">
-                                    Your spreadsheet needs a column named something like:
-                                </p>
-                                <p className="text-xs text-amber-800 mt-1 font-medium">
-                                    Player, Player Name, Member, Member Name, Name, or Alliance Member
-                                </p>
-                            </div>
-                        )}
-                    </div>
-
-                    <div>
-                        <label htmlFor="value-column" className="block text-sm font-semibold text-gray-900 mb-2">
-                            2. Values Column
-                            <span className="font-normal text-gray-600 ml-1">(numeric)</span>
-                        </label>
-                        {numericColumns.length > 0 ? (
-                            <>
-                                <select
-                                    id="value-column"
-                                    value={valueColumn ?? ""}
-                                    onChange={(e) => setValueColumn(parseInt(e.target.value))}
-                                    className="w-full rounded-md border-2 border-green-300 p-3 text-base text-gray-900 bg-white focus:border-green-500 focus:ring-green-500"
-                                >
-                                    <option value="" disabled>Select column...</option>
-                                    {numericColumns.map((col) => (
-                                        <option key={col.index} value={col.index}>
-                                            {col.name}
-                                        </option>
-                                    ))}
-                                </select>
-                                <p className="text-xs text-green-700 mt-1">
-                                    Found {numericColumns.length} numeric column{numericColumns.length > 1 ? 's' : ''}
-                                </p>
-                            </>
-                        ) : (
-                            <div className="p-3 rounded-md bg-amber-100 border border-amber-300">
-                                <p className="text-sm text-amber-900 font-medium">
-                                    No numeric columns found
-                                </p>
-                                <p className="text-xs text-amber-800 mt-1">
-                                    Your spreadsheet needs at least one column with whole numbers (e.g., 1500, 2300).
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Data preview with highlighted columns */}
-                <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">Preview (first 3 rows):</p>
-                    <div className="border rounded-md overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-gray-100">
-                                <tr>
-                                    {columns.map((col) => {
-                                        const isPlayerCol = col.index === playerColumn;
-                                        const isValueCol = col.index === valueColumn;
-                                        return (
-                                            <th 
-                                                key={col.index} 
-                                                className={`px-3 py-2 text-left font-semibold border-b-2 ${
-                                                    isPlayerCol ? 'bg-purple-100 text-purple-900 border-purple-400' :
-                                                    isValueCol ? 'bg-green-100 text-green-900 border-green-400' :
-                                                    'text-gray-600 border-gray-200'
-                                                }`}
-                                            >
-                                                {col.name}
-                                                {isPlayerCol && <span className="ml-1 text-xs">(Player)</span>}
-                                                {isValueCol && <span className="ml-1 text-xs">(Value)</span>}
-                                            </th>
-                                        );
-                                    })}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {columns[0]?.sampleValues.slice(0, 3).map((_, rowIdx) => (
-                                    <tr key={rowIdx}>
-                                        {columns.map((col) => {
-                                            const isPlayerCol = col.index === playerColumn;
-                                            const isValueCol = col.index === valueColumn;
-                                            return (
-                                                <td 
-                                                    key={col.index} 
-                                                    className={`px-3 py-2 border-t truncate max-w-32 ${
-                                                        isPlayerCol ? 'bg-purple-50 text-purple-900 font-medium' :
-                                                        isValueCol ? 'bg-green-50 text-green-900 font-medium' :
-                                                        'text-gray-500'
-                                                    }`}
-                                                >
-                                                    {col.sampleValues[rowIdx] || '—'}
-                                                </td>
-                                            );
-                                        })}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                {/* What will be imported */}
-                {playerColumns.length > 0 && numericColumns.length > 0 && selectedPlayerColumnName && selectedValueColumnName && playerColumn !== valueColumn && (
+                {/* Validation Result */}
+                {detectedPlayerColumn ? (
                     <div className="p-4 rounded-md bg-green-50 border border-green-300">
-                        <p className="text-green-900 font-medium">Ready to continue</p>
-                        <p className="text-green-800 text-sm mt-1">
-                            Will import <strong>{selectedValueColumnName}</strong> for each player in <strong>{selectedPlayerColumnName}</strong>.
+                        <div className="flex items-center gap-2">
+                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <p className="text-green-900 font-medium">
+                                Player column found: <strong>{detectedPlayerColumn.name}</strong>
+                            </p>
+                        </div>
+                        <p className="text-green-800 text-sm mt-1 ml-7">
+                            {rowCount} rows detected
                         </p>
                     </div>
+                ) : (
+                    <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
+                        <div className="flex items-center gap-2">
+                            <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            <p className="text-red-900 font-semibold">
+                                No player column found
+                            </p>
+                        </div>
+                        <p className="text-sm text-red-800 mt-2 ml-7">
+                            Please rename a column in your spreadsheet to one of these:
+                        </p>
+                        <ul className="text-sm text-red-800 mt-1 ml-7 list-disc list-inside">
+                            <li><strong>Player</strong> or <strong>Player Name</strong></li>
+                            <li><strong>Member</strong> or <strong>Member Name</strong></li>
+                            <li><strong>Name</strong>, <strong>IGN</strong>, or <strong>Alliance Member</strong></li>
+                        </ul>
+                    </div>
+                )}
+
+                {/* Numeric columns info */}
+                {numericColumns.length > 0 ? (
+                    <div className="p-4 rounded-md bg-blue-50 border border-blue-200">
+                        <p className="text-blue-900">
+                            Found <strong>{numericColumns.length}</strong> numeric column{numericColumns.length > 1 ? 's' : ''} to choose from.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
+                        <p className="text-red-900 font-semibold">
+                            No numeric columns found
+                        </p>
+                        <p className="text-sm text-red-800 mt-1">
+                            Your spreadsheet needs at least one column with whole numbers.
+                        </p>
+                    </div>
+                )}
+
+                {/* Only show selection if validation passed */}
+                {detectedPlayerColumn && numericColumns.length > 0 && (
+                    <>
+                        {/* Question 1: Which column has the values? */}
+                        <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
+                            <label htmlFor="value-column" className="block text-sm font-semibold text-gray-900 mb-2">
+                                1. Which column contains the values?
+                            </label>
+                            <select
+                                id="value-column"
+                                value={valueColumn ?? ""}
+                                onChange={(e) => setValueColumn(parseInt(e.target.value))}
+                                className="w-full rounded-md border-2 border-gray-300 p-3 text-base text-gray-900 bg-white focus:border-blue-500"
+                            >
+                                {numericColumns.map((col) => (
+                                    <option key={col.index} value={col.index}>
+                                        {col.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Question 2: Which metric to save as? */}
+                        <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
+                            <label htmlFor="metric-select" className="block text-sm font-semibold text-gray-900 mb-2">
+                                2. Which metric should these values be saved as?
+                            </label>
+                            <select
+                                id="metric-select"
+                                value={selectedMetricId}
+                                onChange={(e) => setSelectedMetricId(e.target.value)}
+                                className="w-full rounded-md border-2 border-gray-300 p-3 text-base text-gray-900 bg-white focus:border-blue-500"
+                            >
+                                {metrics.map((metric) => (
+                                    <option key={metric.id} value={metric.id}>{metric.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Summary */}
+                        {selectedValueColumnName && selectedMetric && (
+                            <div className="p-4 rounded-md bg-green-50 border border-green-300">
+                                <p className="text-green-900">
+                                    <strong>{selectedValueColumnName}</strong> → <strong>{selectedMetric.name}</strong>
+                                </p>
+                            </div>
+                        )}
+                    </>
                 )}
 
                 {error && (
@@ -483,86 +398,11 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                         Cancel
                     </button>
                     <button
-                        onClick={handleColumnMappingComplete}
-                        disabled={playerColumns.length === 0 || numericColumns.length === 0 || playerColumn === null || valueColumn === null || playerColumn === valueColumn}
+                        onClick={handleSelectComplete}
+                        disabled={!canProceed}
                         className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        Next: Select Metric
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    // Select metric step
-    if (step === "select-metric") {
-        const selectedValueColumnName = valueColumn !== null ? columns[valueColumn]?.name : null;
-
-        return (
-            <div className="w-full max-w-2xl flex flex-col gap-5">
-                <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900">Choose Which Metric to Save As</h3>
-                    <button
-                        onClick={handleBack}
-                        className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
-                    >
-                        ← Back
-                    </button>
-                </div>
-
-                <div className="p-4 rounded-md bg-blue-100 border border-blue-300">
-                    <p className="text-blue-900">
-                        You&apos;re importing <strong>{selectedValueColumnName}</strong> values.
-                    </p>
-                    <p className="text-blue-800 text-sm mt-1">
-                        Select which metric these values should be saved as.
-                    </p>
-                </div>
-
-                <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
-                    <label htmlFor="metric-select" className="block text-sm font-semibold text-gray-900 mb-2">
-                        Save as Metric
-                    </label>
-                    <select
-                        id="metric-select"
-                        value={selectedMetricId}
-                        onChange={(e) => setSelectedMetricId(e.target.value)}
-                        className="w-full rounded-md border-2 border-blue-300 p-3 text-base text-gray-900 bg-white focus:border-blue-500"
-                    >
-                        {metrics.map((metric) => (
-                            <option key={metric.id} value={metric.id}>{metric.name}</option>
-                        ))}
-                    </select>
-                </div>
-
-                {metrics.length === 0 && (
-                    <div className="p-4 rounded-md bg-amber-100 border border-amber-300">
-                        <p className="text-amber-900 font-medium">No metrics configured</p>
-                        <p className="text-amber-800 text-sm mt-1">
-                            Please add metrics to this period before importing.
-                        </p>
-                    </div>
-                )}
-
-                {error && (
-                    <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">
-                        {error}
-                    </div>
-                )}
-
-                <div className="flex gap-3 justify-end">
-                    <button
-                        onClick={handleBack}
-                        className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer"
-                    >
-                        Back
-                    </button>
-                    <button
-                        onClick={handleMetricSelected}
-                        disabled={!selectedMetricId || metrics.length === 0}
-                        className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Next: Preview
+                        Preview Import
                     </button>
                 </div>
             </div>
@@ -573,7 +413,6 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     if (step === "preview" && matchSummary) {
         const entriesToImport = getEntriesToImport();
         const hasDuplicates = matchSummary.duplicates > 0;
-        const selectedValueColumnName = valueColumn !== null ? columns[valueColumn]?.name : null;
 
         return (
             <div className="w-full max-w-2xl flex flex-col gap-4">
@@ -661,21 +500,21 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                                     <tr 
                                         key={i}
                                         className={
-                                            result.status === "unmatched" ? "bg-red-50 text-gray-900" :
-                                            !isSelected ? "bg-gray-50 text-gray-500" :
-                                            "text-gray-900"
+                                            result.status === "unmatched" ? "bg-red-100 text-red-900" :
+                                            !isSelected ? "bg-gray-100 text-gray-500" :
+                                            "bg-green-50 text-green-900"
                                         }
                                     >
-                                        <td className="px-3 py-2 border-t">{result.rawName}</td>
+                                        <td className="px-3 py-2 border-t font-medium">{result.rawName}</td>
                                         <td className="px-3 py-2 border-t">
                                             {result.matchedName || "—"}
                                             {result.confidence > 0 && result.confidence < 1 && (
-                                                <span className="ml-2 text-xs text-gray-600">
+                                                <span className={`ml-2 text-xs ${willImport ? 'text-green-700' : 'text-gray-500'}`}>
                                                     ({Math.round(result.confidence * 100)}%)
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-3 py-2 border-t text-right font-mono">{result.value}</td>
+                                        <td className="px-3 py-2 border-t text-right font-mono font-medium">{result.value}</td>
                                         <td className="px-3 py-2 border-t text-center">
                                             {result.status === "unmatched" ? (
                                                 <span className="px-2 py-0.5 rounded text-xs bg-red-200 text-red-800">
@@ -761,50 +600,27 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
             )}
 
             <div className="p-4 rounded-md bg-gray-50 border border-gray-200">
-                <p className="font-semibold text-gray-900 mb-3">How it works:</p>
-                <ol className="space-y-2 text-sm text-gray-700 list-decimal list-inside">
-                    <li>Upload any CSV with player data</li>
-                    <li>Choose which column contains player names</li>
-                    <li>Choose which numeric column to import</li>
-                    <li>Select the metric to save it as</li>
-                    <li>Preview and confirm</li>
-                </ol>
+                <p className="font-semibold text-gray-900 mb-3">Requirements:</p>
+                <ul className="space-y-2 text-sm text-gray-700">
+                    <li className="flex items-start gap-2">
+                        <span className="text-green-600 mt-0.5">✓</span>
+                        <span>A column named <strong>Player</strong>, <strong>Member</strong>, <strong>Name</strong>, or <strong>IGN</strong></span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                        <span className="text-green-600 mt-0.5">✓</span>
+                        <span>At least one numeric column with whole numbers</span>
+                    </li>
+                </ul>
             </div>
 
             <div className="p-4 rounded-md bg-gray-50 border border-gray-200">
-                <p className="font-semibold text-gray-900 mb-3">Common column names:</p>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                        <p className="text-gray-700 font-medium mb-1">Player names:</p>
-                        <p className="text-gray-600">Player, Player Name, Member, Member Name, Name, Alliance Member</p>
-                    </div>
-                    <div>
-                        <p className="text-gray-700 font-medium mb-1">Metric values:</p>
-                        <p className="text-gray-600">Kill Points, Score, Kills, Captures, Power, Points</p>
-                    </div>
-                </div>
-            </div>
-
-            <div className="p-4 rounded-md bg-gray-50 border border-gray-200">
-                <p className="font-semibold text-gray-900 mb-3">Example CSV formats:</p>
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <p className="text-sm text-gray-700 mb-2">Simple (2 columns):</p>
-                        <pre className="text-sm bg-white p-3 rounded border border-gray-300 text-gray-900">
-{`Player,Kill Points
-Dragon,1500
-Phoenix,2300`}
-                        </pre>
-                    </div>
-                    <div>
-                        <p className="text-sm text-gray-700 mb-2">Complex (many columns):</p>
-                        <pre className="text-sm bg-white p-3 rounded border border-gray-300 text-gray-900">
-{`Rank,Member Name,Kills,Score
-1,Dragon,1500,9500
-2,Phoenix,2300,8200`}
-                        </pre>
-                    </div>
-                </div>
+                <p className="font-semibold text-gray-900 mb-3">Example CSV:</p>
+                <pre className="text-sm bg-white p-3 rounded border border-gray-300 text-gray-900">
+{`Member Name,Kill Points,Captures,Score
+Dragon,1500,800,2300
+Phoenix,2300,600,2900
+...`}
+                </pre>
             </div>
         </div>
     );
