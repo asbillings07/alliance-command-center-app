@@ -56,7 +56,10 @@ export default async function PeriodPage({ params }: Params) {
             />
             <hr className="w-full max-w-3xl border-gray-200" />
             <h2>Actions:</h2>
-            <Link href={`/alliances/${allianceId}/periods/${periodId}/record`} className="bg-blue-500 text-white rounded-md p-2 cursor-pointer">Record Metrics</Link>
+            <div className="flex gap-4">
+                <Link href={`/alliances/${allianceId}/periods/${periodId}/record`} className="bg-blue-500 text-white rounded-md p-2 cursor-pointer">Record Metrics</Link>
+                <Link href={`/alliances/${allianceId}/periods/${periodId}/import`} className="bg-green-500 text-white rounded-md p-2 cursor-pointer">Import from CSV</Link>
+            </div>
         </div>
     );
 }

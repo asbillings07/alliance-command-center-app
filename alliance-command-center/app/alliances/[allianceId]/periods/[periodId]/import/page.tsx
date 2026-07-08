@@ -1,14 +1,21 @@
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { requirePeriodAccess } from "@/app/src/lib/auth/requirePeriodAccess";
 import { prisma } from "@/app/src/lib/prisma";
-import { RecordMetricsForm } from "./RecordMetricsForm";
+import { ImportForm } from "./ImportForm";
 import Link from "next/link";
 
-export default async function PeriodRecordPage({ params }: { params: Promise<{ allianceId: string, periodId: string }> }) {
+type Params = {
+    params: Promise<{
+        allianceId: string;
+        periodId: string;
+    }>;
+};
+
+export default async function ImportPage({ params }: Params) {
     const { allianceId, periodId } = await params;
     const user = await requireAuth();
     const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
-    
+
     const metrics = period.periodMetrics.map((pm) => ({
         id: pm.metric.id,
         name: pm.metric.name,
@@ -30,9 +37,17 @@ export default async function PeriodRecordPage({ params }: { params: Promise<{ a
 
     if (!alliance || metrics.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+            <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-4">
                 <h1 className="text-2xl font-bold">{period.name}</h1>
-                <p className="text-gray-500">No metrics configured for this period. Please add metrics first.</p>
+                <p className="text-gray-500">
+                    No metrics configured for this period. Please add metrics first.
+                </p>
+                <Link
+                    href={`/alliances/${allianceId}/periods/${periodId}`}
+                    className="text-blue-500 hover:text-blue-700"
+                >
+                    ← Back to Period
+                </Link>
             </div>
         );
     }
@@ -40,7 +55,7 @@ export default async function PeriodRecordPage({ params }: { params: Promise<{ a
     return (
         <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-4">
             <h1 className="text-2xl font-bold">{period.name}</h1>
-            <h2 className="text-lg text-gray-600">Record Metrics</h2>
+            <h2 className="text-lg text-gray-600">Import Metrics from CSV</h2>
             
             <div className="flex gap-4 text-sm">
                 <Link
@@ -50,15 +65,16 @@ export default async function PeriodRecordPage({ params }: { params: Promise<{ a
                     ← Back to Period
                 </Link>
                 <Link
-                    href={`/alliances/${allianceId}/periods/${periodId}/import`}
+                    href={`/alliances/${allianceId}/periods/${periodId}/record`}
                     className="text-blue-500 hover:text-blue-700"
                 >
-                    Import from CSV →
+                    Manual Entry →
                 </Link>
             </div>
 
             <hr className="w-full max-w-2xl border-gray-200" />
-            <RecordMetricsForm
+
+            <ImportForm
                 periodId={periodId}
                 allianceId={allianceId}
                 members={alliance.members}
