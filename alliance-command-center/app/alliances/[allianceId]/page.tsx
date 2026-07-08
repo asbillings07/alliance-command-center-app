@@ -53,7 +53,7 @@ export default async function AlliancePage({ params }: Params) {
             <h2>Modules:</h2>
             <Link href={`/alliances/${allianceId}/members`} className="bg-blue-500 text-white rounded-md p-2 cursor-pointer">Members</Link>
             <Link href={`/alliances/${allianceId}/metrics`} className="bg-blue-500 text-white rounded-md p-2 cursor-pointer">Metrics Library</Link>
-            <Link href={`/alliances/${allianceId}/periods`} className="bg-blue-500 text-white rounded-md p-2 cursor-pointer">Metric Periods</Link>
+            <Link href={`/alliances/${allianceId}/periods`} className="bg-blue-500 text-white rounded-md p-2 cursor-pointer">Evaluation Periods</Link>
             <button className="bg-blue-500 text-white rounded-md p-2" disabled>Notes (coming soon)</button>
             <button className="bg-blue-500 text-white rounded-md p-2" disabled>Recruiting (coming soon)</button>
         </div>

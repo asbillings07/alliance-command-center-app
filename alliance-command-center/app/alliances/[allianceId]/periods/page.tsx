@@ -32,7 +32,7 @@ export default async function PeriodsPage({ params }: Params) {
 
     return (
         <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-            <h1 className="text-2xl font-bold">Metric Periods</h1>
+            <h1 className="text-2xl font-bold">Evaluation Periods</h1>
             <div className="flex flex-col items-center justify-center gap-4 w-full max-w-3xl">
                 <MetricPeriodCard allianceId={allianceId} mode="create" />
                 {periods.length === 0 ? (
