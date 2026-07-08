@@ -317,13 +317,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                 )}
 
                 {/* Numeric columns info */}
-                {numericColumns.length > 0 ? (
-                    <div className="p-4 rounded-md bg-blue-50 border border-blue-200">
-                        <p className="text-blue-900">
-                            Found <strong>{numericColumns.length}</strong> numeric column{numericColumns.length > 1 ? 's' : ''} to choose from.
-                        </p>
-                    </div>
-                ) : (
+                {numericColumns.length === 0 && (
                     <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
                         <p className="text-red-900 font-semibold">
                             No numeric columns found
@@ -339,9 +333,15 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     <>
                         {/* Question 1: Which column has the values? */}
                         <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
-                            <label htmlFor="value-column" className="block text-sm font-semibold text-gray-900 mb-2">
-                                1. Which column contains the values?
+                            <label htmlFor="value-column" className="block text-sm font-semibold text-gray-900 mb-1">
+                                1. Which column contains the values you want to import?
                             </label>
+                            <p className="text-sm text-gray-600 mb-3">
+                                {numericColumns.length === 1 
+                                    ? "Found 1 numeric column in your spreadsheet."
+                                    : `Found ${numericColumns.length} numeric columns. We've pre-selected one, but choose the one you want.`
+                                }
+                            </p>
                             <select
                                 id="value-column"
                                 value={valueColumn ?? ""}
@@ -354,6 +354,11 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                                     </option>
                                 ))}
                             </select>
+                            {numericColumns.length > 1 && (
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Available: {numericColumns.map(c => c.name).join(', ')}
+                                </p>
+                            )}
                         </div>
 
                         {/* Question 2: Which metric to save as? */}
