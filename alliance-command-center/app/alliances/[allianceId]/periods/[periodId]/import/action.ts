@@ -40,6 +40,17 @@ export async function importMemberMetrics(
     }
   }
 
+  // Server-side deduplication: keep first occurrence per memberId
+  // This matches UI behavior and prevents crafted requests from creating duplicates
+  const seenMemberIds = new Set<string>();
+  const dedupedEntries = entries.filter((entry) => {
+    if (seenMemberIds.has(entry.memberId)) {
+      return false;
+    }
+    seenMemberIds.add(entry.memberId);
+    return true;
+  });
+
   const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
 
   // Validate metric is configured for this period
@@ -54,7 +65,7 @@ export async function importMemberMetrics(
   }
 
   // Validate all memberIds belong to this alliance
-  const memberIds = entries.map((e) => e.memberId);
+  const memberIds = dedupedEntries.map((e) => e.memberId);
   const validMembers = await prisma.member.findMany({
     where: {
       id: { in: memberIds },
@@ -72,7 +83,7 @@ export async function importMemberMetrics(
 
   // Create entries (append to history)
   await prisma.memberMetricEntry.createMany({
-    data: entries.map((entry) => ({
+    data: dedupedEntries.map((entry) => ({
       memberId: entry.memberId,
       periodId,
       metricId,
@@ -83,5 +94,5 @@ export async function importMemberMetrics(
   revalidatePath(`/alliances/${allianceId}/periods/${periodId}/import`);
   revalidatePath(`/alliances/${allianceId}/periods/${periodId}/record`);
 
-  return { success: true, count: entries.length };
+  return { success: true, count: dedupedEntries.length };
 }

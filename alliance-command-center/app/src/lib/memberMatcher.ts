@@ -182,8 +182,10 @@ export type CSVParseResult = {
 
 /**
  * Parse CSV content into raw entries
- * Expects format: name,value (with optional header row)
+ * Expects format: name,value (exactly 2 columns, with header row)
  * Returns the detected metric name from the header's value column
+ * 
+ * Rejects CSVs with more than 2 columns to prevent silent data corruption.
  */
 export function parseCSV(
   content: string,
@@ -198,6 +200,23 @@ export function parseCSV(
   const entries: RawEntry[] = [];
   const errors: string[] = [];
   let detectedMetricName: string | null = null;
+
+  if (lines.length === 0) {
+    return { entries: [], errors: ["CSV file is empty"], detectedMetricName: null };
+  }
+
+  // Validate column count from header or first data row
+  const firstLineColumns = parseCSVLine(lines[0]);
+  if (firstLineColumns.length > 2) {
+    return {
+      entries: [],
+      errors: [
+        `CSV has ${firstLineColumns.length} columns, but only 2 are supported (name, value). ` +
+        `Please remove extra columns or use a CSV with just the player name and metric value.`
+      ],
+      detectedMetricName: null,
+    };
+  }
 
   // Extract metric name from header if present
   if (hasHeader && lines.length > 0) {
