@@ -251,51 +251,42 @@ export type MetricMatchResult = {
   status: "matched" | "unmatched";
   metricId?: string;
   metricName?: string;
-  confidence: number;
   detectedName: string;
 };
 
 /**
- * Match a detected metric name (from CSV header, OCR, etc.) to available metrics
- * Returns the best matching metric if confidence is above threshold
+ * Match a detected metric name (from CSV header) to available metrics using exact matching.
+ * Normalizes both names (lowercase, trim, collapse spaces) before comparison.
+ * 
+ * For CSV imports, exact matching is preferred for determinism.
+ * Fuzzy matching can be added later for OCR use cases.
  */
 export function matchMetricName(
   detectedName: string,
   metrics: MetricRecord[],
-  threshold: number = 0.6,
 ): MetricMatchResult {
   if (!detectedName) {
     return {
       status: "unmatched",
-      confidence: 0,
       detectedName: "",
     };
   }
 
-  let bestMatch: MetricRecord | null = null;
-  let bestScore = 0;
+  const normalizedDetected = normalizeName(detectedName);
 
   for (const metric of metrics) {
-    const score = calculateSimilarity(detectedName, metric.name);
-    if (score > bestScore && score >= threshold) {
-      bestScore = score;
-      bestMatch = metric;
+    if (normalizeName(metric.name) === normalizedDetected) {
+      return {
+        status: "matched",
+        metricId: metric.id,
+        metricName: metric.name,
+        detectedName,
+      };
     }
-  }
-
-  if (bestMatch) {
-    return {
-      status: "matched",
-      metricId: bestMatch.id,
-      metricName: bestMatch.name,
-      confidence: bestScore,
-      detectedName,
-    };
   }
 
   return {
     status: "unmatched",
-    confidence: bestScore,
     detectedName,
   };
 }

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from "react";
 import { parseCSV, matchEntriesToMembers, matchMetricName, type MatchResult, type MatchSummary, type MetricMatchResult } from "@/app/src/lib/memberMatcher";
-import { importMemberMetrics, createMetricAndImport } from "./action";
+import { importMemberMetrics } from "./action";
 
 type Member = {
     id: string;
@@ -20,13 +20,7 @@ type ImportFormProps = {
     metrics: Metric[];
 };
 
-type ImportStep = "upload" | "metric-not-found" | "select-metric" | "confirm-create-metric" | "preview" | "complete";
-
-type DuplicateSelection = {
-    [memberId: string]: number; // maps memberId to the index in matchSummary.results
-};
-
-type ImportMode = "existing" | "create-new";
+type ImportStep = "upload" | "metric-not-found" | "preview" | "complete";
 
 export function ImportForm({ periodId, allianceId, members, metrics }: ImportFormProps) {
     const [step, setStep] = useState<ImportStep>("upload");
@@ -37,10 +31,6 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     const [error, setError] = useState<string | null>(null);
     const [importCount, setImportCount] = useState(0);
     const [isPending, startTransition] = useTransition();
-    const [userOverrodeMetric, setUserOverrodeMetric] = useState(false);
-    const [duplicateSelections, setDuplicateSelections] = useState<DuplicateSelection>({});
-    const [createdMetricName, setCreatedMetricName] = useState<string | null>(null);
-    const [importMode, setImportMode] = useState<ImportMode>("existing");
 
     const selectedMetric = metrics.find((m) => m.id === selectedMetricId);
 
@@ -51,9 +41,6 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setError(null);
         setParseErrors([]);
         setMetricMatch(null);
-        setUserOverrodeMetric(false);
-        setDuplicateSelections({});
-        setCreatedMetricName(null);
 
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -83,34 +70,17 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         const summary = matchEntriesToMembers(entries, members);
         setMatchSummary(summary);
 
-        // Initialize duplicate selections - default to first occurrence
-        const initialSelections: DuplicateSelection = {};
-        const seenMembers = new Map<string, number>();
-        summary.results.forEach((result, index) => {
-            if (result.status === "matched" && result.memberId) {
-                if (!seenMembers.has(result.memberId)) {
-                    seenMembers.set(result.memberId, index);
-                    initialSelections[result.memberId] = index;
-                }
-            } else if (result.status === "duplicate" && result.memberId) {
-                // Don't overwrite - keep first occurrence selected
-            }
-        });
-        setDuplicateSelections(initialSelections);
-
-        // Try to match the detected metric name to configured metrics
+        // Try to match the detected metric name to configured metrics (exact match after normalization)
         if (detectedMetricName) {
             const metricMatchResult = matchMetricName(detectedMetricName, metrics);
             setMetricMatch(metricMatchResult);
 
             if (metricMatchResult.status === "unmatched") {
-                // Metric not found - block and ask user what to do
                 setStep("metric-not-found");
                 return;
             }
 
             if (metricMatchResult.status === "matched" && metricMatchResult.metricId) {
-                // Auto-select the matched metric
                 setSelectedMetricId(metricMatchResult.metricId);
             }
         }
@@ -118,78 +88,25 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setStep("preview");
     };
 
-    const handleMetricOverride = (newMetricId: string) => {
-        setSelectedMetricId(newMetricId);
-        setUserOverrodeMetric(true);
-    };
-
-    const handleDuplicateSelection = (memberId: string, resultIndex: number) => {
-        setDuplicateSelections(prev => ({
-            ...prev,
-            [memberId]: resultIndex,
-        }));
-    };
-
-    const handleProceedToConfirmCreate = () => {
-        setStep("confirm-create-metric");
-    };
-
-    const handleConfirmCreateMetric = () => {
-        setImportMode("create-new");
-        setStep("preview");
-    };
-
-    const handleProceedToSelectMetric = () => {
-        setImportMode("existing");
-        setStep("select-metric");
-    };
-
     const handleMetricSelected = () => {
         if (!selectedMetricId) {
             setError("Please select a metric");
             return;
         }
-        setUserOverrodeMetric(true);
         setStep("preview");
     };
 
-    const handleConfirmCreateAndImport = () => {
-        if (!matchSummary || !metricMatch?.detectedName) return;
-
-        const validEntries = getSelectedEntries();
-        if (validEntries.length === 0) {
-            setError("No matched entries to import");
-            return;
-        }
-
-        startTransition(async () => {
-            try {
-                const result = await createMetricAndImport({
-                    periodId,
-                    allianceId,
-                    metricName: metricMatch.detectedName,
-                    entries: validEntries,
-                });
-                setImportCount(result.count);
-                setCreatedMetricName(result.metricName);
-                setStep("complete");
-            } catch (err) {
-                setError(err instanceof Error ? err.message : "Import failed");
-            }
-        });
-    };
-
-    const getSelectedEntries = () => {
+    // Get entries to import - takes first occurrence for each member (no duplicate selection)
+    const getEntriesToImport = () => {
         if (!matchSummary) return [];
 
-        // Get entries based on duplicate selections
-        const selectedIndices = new Set(Object.values(duplicateSelections));
-        
+        const seenMembers = new Set<string>();
         return matchSummary.results
-            .filter((result, index): result is MatchResult & { memberId: string } => {
-                if (!result.memberId) return false;
-                // Include if this is the selected index for this member
-                return selectedIndices.has(index);
+            .filter((result): result is MatchResult & { memberId: string } => {
+                if (result.status !== "matched" || !result.memberId) return false;
+                if (seenMembers.has(result.memberId)) return false;
+                seenMembers.add(result.memberId);
+                return true;
             })
             .map((r) => ({
                 memberId: r.memberId,
@@ -200,8 +117,8 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     const handleImport = () => {
         if (!matchSummary) return;
 
-        const validEntries = getSelectedEntries();
-        if (validEntries.length === 0) {
+        const entries = getEntriesToImport();
+        if (entries.length === 0) {
             setError("No matched entries to import");
             return;
         }
@@ -212,7 +129,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     periodId,
                     metricId: selectedMetricId,
                     allianceId,
-                    entries: validEntries,
+                    entries,
                 });
                 setImportCount(result.count);
                 setStep("complete");
@@ -229,60 +146,17 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setParseErrors([]);
         setError(null);
         setImportCount(0);
-        setUserOverrodeMetric(false);
-        setDuplicateSelections({});
-        setCreatedMetricName(null);
-        setImportMode("existing");
     };
 
-    // Group results by member for duplicate handling
-    const getGroupedResults = () => {
-        if (!matchSummary) return { groups: [], ungrouped: [] };
-
-        const memberGroups = new Map<string, { indices: number[], results: MatchResult[] }>();
-        const ungrouped: { index: number, result: MatchResult }[] = [];
-
-        matchSummary.results.forEach((result, index) => {
-            if ((result.status === "matched" || result.status === "duplicate") && result.memberId) {
-                const existing = memberGroups.get(result.memberId);
-                if (existing) {
-                    existing.indices.push(index);
-                    existing.results.push(result);
-                } else {
-                    memberGroups.set(result.memberId, { indices: [index], results: [result] });
-                }
-            } else {
-                ungrouped.push({ index, result });
-            }
-        });
-
-        return {
-            groups: Array.from(memberGroups.entries()).map(([memberId, data]) => ({
-                memberId,
-                memberName: data.results[0].matchedName || "",
-                entries: data.indices.map((idx, i) => ({
-                    index: idx,
-                    result: data.results[i],
-                })),
-                hasDuplicates: data.indices.length > 1,
-            })),
-            ungrouped,
-        };
-    };
-
+    // Complete step
     if (step === "complete") {
         return (
             <div className="w-full max-w-2xl flex flex-col gap-4 items-center">
                 <div className="p-6 rounded-lg bg-green-50 border border-green-200 text-center">
                     <h3 className="text-lg font-semibold text-green-800">Import Complete</h3>
                     <p className="text-green-700 mt-2">
-                        Successfully imported {importCount} metric entries for {createdMetricName || selectedMetric?.name}.
+                        Successfully imported {importCount} metric entries for {selectedMetric?.name}.
                     </p>
-                    {createdMetricName && (
-                        <p className="text-green-600 text-sm mt-1">
-                            Created new metric: &quot;{createdMetricName}&quot;
-                        </p>
-                    )}
                 </div>
                 <button
                     onClick={handleReset}
@@ -294,13 +168,14 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         );
     }
 
+    // Metric not found step
     if (step === "metric-not-found" && metricMatch) {
-        const selectedCount = Object.keys(duplicateSelections).length;
+        const entriesToImport = getEntriesToImport();
         
         return (
             <div className="w-full max-w-2xl flex flex-col gap-4">
                 <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-amber-800">Metric Not Configured</h3>
+                    <h3 className="text-lg font-semibold text-amber-800">Metric Not Found</h3>
                     <button
                         onClick={handleReset}
                         className="text-sm text-gray-500 hover:text-gray-700 cursor-pointer"
@@ -311,160 +186,11 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
 
                 <div className="p-4 rounded-md bg-amber-50 border border-amber-300">
                     <p className="text-amber-900">
-                        The CSV file contains data for <strong>&quot;{metricMatch.detectedName}&quot;</strong>, 
-                        but this metric is not configured for this period.
+                        The CSV header contains <strong>&quot;{metricMatch.detectedName}&quot;</strong>, 
+                        but no metric with that exact name is configured for this period.
                     </p>
                     <p className="text-amber-800 text-sm mt-2">
-                        You can import this data into an existing metric, or cancel and configure the metric first.
-                    </p>
-                </div>
-
-                {matchSummary && (
-                    <div className="p-3 rounded-md bg-gray-100 border border-gray-200">
-                        <p className="text-sm text-gray-800">
-                            Found <strong>{selectedCount}</strong> member matches ready to import
-                            {matchSummary.unmatched > 0 && (
-                                <span> ({matchSummary.unmatched} unmatched)</span>
-                            )}
-                        </p>
-                    </div>
-                )}
-
-                {error && (
-                    <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm">
-                        {error}
-                    </div>
-                )}
-
-                <div className="flex flex-col gap-3">
-                    {/* Primary action: use existing metric */}
-                    {metrics.length > 0 && (
-                        <button
-                            onClick={handleProceedToSelectMetric}
-                            className="w-full px-4 py-3 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer text-left"
-                        >
-                            <div className="font-medium">Choose Existing Metric</div>
-                            <div className="text-sm text-blue-100">
-                                Import this data into a metric already configured for this period
-                            </div>
-                        </button>
-                    )}
-
-                    <button
-                        onClick={handleReset}
-                        className="w-full px-4 py-3 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer text-left"
-                    >
-                        <div className="font-medium">Cancel Import</div>
-                        <div className="text-sm text-gray-500">
-                            Go back and configure the metric first, then re-import
-                        </div>
-                    </button>
-
-                    {/* Secondary action: create new metric - separated with visual distinction */}
-                    <div className="pt-3 border-t border-gray-200">
-                        <p className="text-xs text-gray-500 mb-2">
-                            Don&apos;t see the right metric? You can create a new one:
-                        </p>
-                        <button
-                            onClick={handleProceedToConfirmCreate}
-                            disabled={selectedCount === 0}
-                            className="w-full px-4 py-3 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-left"
-                        >
-                            <div className="font-medium">Create New Metric...</div>
-                            <div className="text-sm text-gray-500">
-                                This will add a new metric definition to your alliance
-                            </div>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    if (step === "confirm-create-metric" && metricMatch) {
-        const selectedCount = Object.keys(duplicateSelections).length;
-
-        return (
-            <div className="w-full max-w-2xl flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900">Create New Metric</h3>
-                    <button
-                        onClick={handleReset}
-                        className="text-sm text-gray-500 hover:text-gray-700 cursor-pointer"
-                    >
-                        ← Start Over
-                    </button>
-                </div>
-
-                <div className="p-4 rounded-md bg-amber-50 border border-amber-300">
-                    <h4 className="font-medium text-amber-900">Are you sure you want to create a new metric?</h4>
-                    <p className="text-amber-800 text-sm mt-2">
-                        This will create a new metric called <strong>&quot;{metricMatch.detectedName}&quot;</strong> in your alliance&apos;s metric library and automatically add it to this period.
-                    </p>
-                </div>
-
-                <div className="p-4 rounded-md bg-gray-50 border border-gray-200">
-                    <h4 className="font-medium text-gray-900 mb-2">What this means:</h4>
-                    <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
-                        <li>A new metric <strong>&quot;{metricMatch.detectedName}&quot;</strong> will be added to your alliance</li>
-                        <li>The metric will be configured for this evaluation period</li>
-                        <li><strong>{selectedCount}</strong> data entries will be imported</li>
-                        <li>This metric will be available for future periods</li>
-                    </ul>
-                </div>
-
-                <div className="p-3 rounded-md bg-blue-50 border border-blue-200">
-                    <p className="text-sm text-blue-800">
-                        <strong>Tip:</strong> If you&apos;re not sure this is the right metric name, go back and choose an existing metric instead.
-                    </p>
-                </div>
-
-                {error && (
-                    <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm">
-                        {error}
-                    </div>
-                )}
-
-                <div className="flex gap-3 justify-end">
-                    <button
-                        onClick={() => setStep("metric-not-found")}
-                        className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer"
-                    >
-                        ← Back
-                    </button>
-                    <button
-                        onClick={handleConfirmCreateMetric}
-                        disabled={selectedCount === 0}
-                        className="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Yes, Create Metric & Continue
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    if (step === "select-metric" && matchSummary) {
-        const selectedCount = Object.keys(duplicateSelections).length;
-
-        return (
-            <div className="w-full max-w-2xl flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold">Select Metric</h3>
-                    <button
-                        onClick={handleReset}
-                        className="text-sm text-gray-500 hover:text-gray-700 cursor-pointer"
-                    >
-                        ← Start Over
-                    </button>
-                </div>
-
-                <div className="p-4 rounded-md bg-yellow-50 border border-yellow-300">
-                    <p className="text-yellow-900">
-                        CSV contains data for <strong>&quot;{metricMatch?.detectedName}&quot;</strong> which is not configured.
-                    </p>
-                    <p className="text-yellow-800 text-sm mt-2">
-                        Select an existing metric to import this data into:
+                        Please select an existing metric to import this data into, or cancel and configure the metric first.
                     </p>
                 </div>
 
@@ -487,7 +213,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                 {matchSummary && (
                     <div className="p-3 rounded-md bg-gray-100 border border-gray-200">
                         <p className="text-sm text-gray-800">
-                            <strong>{selectedCount}</strong> entries will be imported
+                            <strong>{entriesToImport.length}</strong> entries will be imported
                             {matchSummary.unmatched > 0 && (
                                 <span> ({matchSummary.unmatched} unmatched members will be skipped)</span>
                             )}
@@ -503,14 +229,14 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
 
                 <div className="flex gap-3 justify-end">
                     <button
-                        onClick={() => setStep("metric-not-found")}
+                        onClick={handleReset}
                         className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer"
                     >
-                        ← Back
+                        Cancel
                     </button>
                     <button
                         onClick={handleMetricSelected}
-                        disabled={!selectedMetricId || selectedCount === 0}
+                        disabled={!selectedMetricId || entriesToImport.length === 0}
                         className="px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Continue to Preview
@@ -520,19 +246,15 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         );
     }
 
+    // Preview step
     if (step === "preview" && matchSummary) {
-        const { groups, ungrouped } = getGroupedResults();
-        const selectedCount = Object.keys(duplicateSelections).length;
-        const hasUnresolvedDuplicates = groups.some(g => g.hasDuplicates);
-
-        const isCreatingNewMetric = importMode === "create-new";
-        const metricDisplayName = isCreatingNewMetric ? metricMatch?.detectedName : selectedMetric?.name;
+        const entriesToImport = getEntriesToImport();
 
         return (
             <div className="w-full max-w-2xl flex flex-col gap-4">
                 <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold">
-                        Preview Import: {metricDisplayName}
+                    <h3 className="text-lg font-semibold text-gray-900">
+                        Preview Import: {selectedMetric?.name}
                     </h3>
                     <button
                         onClick={handleReset}
@@ -542,98 +264,37 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     </button>
                 </div>
 
-                {/* Creating New Metric Notice */}
-                {isCreatingNewMetric && metricMatch && (
-                    <div className="p-3 rounded-md bg-green-50 border border-green-200">
-                        <h4 className="font-medium text-green-800">Creating New Metric</h4>
-                        <p className="text-sm text-green-700 mt-1">
-                            This will create a new metric called <strong>&quot;{metricMatch.detectedName}&quot;</strong> and add it to this period.
-                        </p>
-                        <button
-                            onClick={() => setStep("confirm-create-metric")}
-                            className="mt-2 text-sm text-green-600 hover:text-green-800 underline cursor-pointer"
-                        >
-                            ← Go back
-                        </button>
-                    </div>
-                )}
-
-                {/* Metric Detection Info - only show when not creating new */}
-                {!isCreatingNewMetric && metricMatch && metricMatch.status === "matched" && !userOverrodeMetric && (
+                {/* Metric Match Info */}
+                {metricMatch && metricMatch.status === "matched" && (
                     <div className="p-3 rounded-md bg-blue-50 border border-blue-200">
-                        <h4 className="font-medium text-blue-800">Metric Detected</h4>
-                        <p className="text-sm text-blue-700 mt-1">
-                            CSV header &quot;{metricMatch.detectedName}&quot; matched to <strong>{metricMatch.metricName}</strong>
-                            {metricMatch.confidence < 1 && (
-                                <span className="text-blue-500"> ({Math.round(metricMatch.confidence * 100)}% match)</span>
-                            )}
+                        <p className="text-sm text-blue-800">
+                            CSV metric <strong>&quot;{metricMatch.detectedName}&quot;</strong> matched to <strong>{metricMatch.metricName}</strong>
                         </p>
-                        <div className="mt-2">
-                            <label className="text-sm text-blue-700">Wrong metric?</label>
-                            <select
-                                value={selectedMetricId}
-                                onChange={(e) => handleMetricOverride(e.target.value)}
-                                className="ml-2 rounded-md border border-blue-300 p-1 text-sm text-black"
-                            >
-                                {metrics.map((metric) => (
-                                    <option key={metric.id} value={metric.id}>{metric.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-                )}
-
-                {/* Manual Override - only show when not creating new */}
-                {!isCreatingNewMetric && userOverrodeMetric && (
-                    <div className="p-3 rounded-md bg-yellow-50 border border-yellow-300">
-                        <h4 className="font-medium text-yellow-900">Importing as Different Metric</h4>
-                        <p className="text-sm text-yellow-800 mt-1">
-                            Importing as <strong>{selectedMetric?.name}</strong> (CSV header: &quot;{metricMatch?.detectedName}&quot;)
-                        </p>
-                        <select
-                            value={selectedMetricId}
-                            onChange={(e) => handleMetricOverride(e.target.value)}
-                            className="mt-2 w-full rounded-md border border-yellow-400 p-2 text-sm text-gray-900 bg-white"
-                        >
-                            {metrics.map((metric) => (
-                                <option key={metric.id} value={metric.id}>{metric.name}</option>
-                            ))}
-                        </select>
-                        <button
-                            onClick={() => setStep("metric-not-found")}
-                            className="mt-2 text-sm text-yellow-700 hover:text-yellow-900 underline cursor-pointer"
-                        >
-                            ← Choose a different option
-                        </button>
                     </div>
                 )}
 
                 {/* Summary Stats */}
-                <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="grid grid-cols-3 gap-2 text-center">
                     <div className="p-3 rounded-md bg-gray-200 border border-gray-300">
                         <div className="text-2xl font-bold text-gray-900">{matchSummary.total}</div>
                         <div className="text-xs text-gray-700">Total Rows</div>
                     </div>
                     <div className="p-3 rounded-md bg-green-100 border border-green-200">
-                        <div className="text-2xl font-bold text-green-800">{selectedCount}</div>
+                        <div className="text-2xl font-bold text-green-800">{entriesToImport.length}</div>
                         <div className="text-xs text-green-700">Will Import</div>
                     </div>
                     <div className="p-3 rounded-md bg-red-100 border border-red-200">
                         <div className="text-2xl font-bold text-red-800">{matchSummary.unmatched}</div>
                         <div className="text-xs text-red-700">Unmatched</div>
                     </div>
-                    <div className="p-3 rounded-md bg-yellow-100 border border-yellow-300">
-                        <div className="text-2xl font-bold text-yellow-800">{matchSummary.duplicates}</div>
-                        <div className="text-xs text-yellow-700">Duplicates</div>
-                    </div>
                 </div>
 
-                {/* Duplicate Resolution Notice */}
-                {hasUnresolvedDuplicates && (
+                {/* Duplicate Notice */}
+                {matchSummary.duplicates > 0 && (
                     <div className="p-3 rounded-md bg-yellow-50 border border-yellow-300">
-                        <h4 className="font-medium text-yellow-900">Resolve Duplicates</h4>
-                        <p className="text-sm text-yellow-800 mt-1">
-                            Some members have multiple entries. Select which value to import for each.
+                        <p className="text-sm text-yellow-800">
+                            <strong>{matchSummary.duplicates}</strong> duplicate entries detected. 
+                            First occurrence for each member will be used.
                         </p>
                     </div>
                 )}
@@ -658,70 +319,54 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                                 <th className="px-3 py-2 text-left">CSV Name</th>
                                 <th className="px-3 py-2 text-left">Matched To</th>
                                 <th className="px-3 py-2 text-right">Value</th>
-                                <th className="px-3 py-2 text-center">Action</th>
+                                <th className="px-3 py-2 text-center">Status</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {/* Grouped entries (matched members, potentially with duplicates) */}
-                            {groups.map((group) => (
-                                group.entries.map((entry) => {
-                                    const isSelected = duplicateSelections[group.memberId] === entry.index;
-                                    const showDuplicateSelector = group.hasDuplicates;
-                                    
-                                    return (
-                                        <tr 
-                                            key={entry.index}
-                                            className={
-                                                !isSelected && showDuplicateSelector ? "bg-gray-50 text-gray-500" :
-                                                isSelected ? "bg-green-50 text-gray-900" : "text-gray-900"
-                                            }
-                                        >
-                                            <td className="px-3 py-2 border-t">{entry.result.rawName}</td>
-                                            <td className="px-3 py-2 border-t">
-                                                {entry.result.matchedName}
-                                                {entry.result.confidence > 0 && entry.result.confidence < 1 && (
-                                                    <span className="ml-2 text-xs text-gray-600">
-                                                        ({Math.round(entry.result.confidence * 100)}%)
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="px-3 py-2 border-t text-right font-mono">{entry.result.value}</td>
-                                            <td className="px-3 py-2 border-t text-center">
-                                                {showDuplicateSelector ? (
-                                                    <button
-                                                        onClick={() => handleDuplicateSelection(group.memberId, entry.index)}
-                                                        className={`px-2 py-1 rounded text-xs cursor-pointer ${
-                                                            isSelected 
-                                                                ? "bg-green-600 text-white" 
-                                                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                                                        }`}
-                                                    >
-                                                        {isSelected ? "Selected" : "Use This"}
-                                                    </button>
-                                                ) : (
-                                                    <span className="px-2 py-0.5 rounded text-xs bg-green-200 text-green-800">
-                                                        Will Import
-                                                    </span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })
-                            ))}
-                            
-                            {/* Unmatched entries */}
-                            {ungrouped.map(({ index, result }) => (
-                                <tr key={index} className="bg-red-50 text-gray-900">
-                                    <td className="px-3 py-2 border-t">{result.rawName}</td>
-                                    <td className="px-3 py-2 border-t text-gray-500">—</td>
-                                    <td className="px-3 py-2 border-t text-right font-mono">{result.value}</td>
-                                    <td className="px-3 py-2 border-t text-center">
-                                        <span className="px-2 py-0.5 rounded text-xs bg-red-200 text-red-800">
-                                            No Match
-                                        </span>
-                                    </td>
-                                </tr>
-                            ))}
+                            {matchSummary.results.map((result, i) => {
+                                const isFirstForMember = result.memberId && 
+                                    matchSummary.results.findIndex(r => r.memberId === result.memberId) === i;
+                                const willImport = result.status === "matched" && isFirstForMember;
+                                
+                                return (
+                                    <tr 
+                                        key={i}
+                                        className={
+                                            result.status === "unmatched" ? "bg-red-50 text-gray-900" :
+                                            result.status === "duplicate" || !isFirstForMember ? "bg-gray-50 text-gray-500" :
+                                            "text-gray-900"
+                                        }
+                                    >
+                                        <td className="px-3 py-2 border-t">{result.rawName}</td>
+                                        <td className="px-3 py-2 border-t">
+                                            {result.matchedName || "—"}
+                                            {result.confidence > 0 && result.confidence < 1 && (
+                                                <span className="ml-2 text-xs text-gray-600">
+                                                    ({Math.round(result.confidence * 100)}%)
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-3 py-2 border-t text-right font-mono">{result.value}</td>
+                                        <td className="px-3 py-2 border-t text-center">
+                                            {willImport && (
+                                                <span className="px-2 py-0.5 rounded text-xs bg-green-200 text-green-800">
+                                                    Will Import
+                                                </span>
+                                            )}
+                                            {result.status === "unmatched" && (
+                                                <span className="px-2 py-0.5 rounded text-xs bg-red-200 text-red-800">
+                                                    No Match
+                                                </span>
+                                            )}
+                                            {(result.status === "duplicate" || (result.status === "matched" && !isFirstForMember)) && (
+                                                <span className="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">
+                                                    Skipped (duplicate)
+                                                </span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -740,23 +385,13 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     >
                         Cancel
                     </button>
-                    {isCreatingNewMetric ? (
-                        <button
-                            onClick={handleConfirmCreateAndImport}
-                            disabled={isPending || selectedCount === 0}
-                            className="px-4 py-2 rounded-md bg-green-500 text-white hover:bg-green-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {isPending ? "Creating & Importing..." : `Create Metric & Import ${selectedCount} Entries`}
-                        </button>
-                    ) : (
-                        <button
-                            onClick={handleImport}
-                            disabled={isPending || selectedCount === 0}
-                            className="px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {isPending ? "Importing..." : `Import ${selectedCount} Entries`}
-                        </button>
-                    )}
+                    <button
+                        onClick={handleImport}
+                        disabled={isPending || entriesToImport.length === 0}
+                        className="px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isPending ? "Importing..." : `Import ${entriesToImport.length} Entries`}
+                    </button>
                 </div>
             </div>
         );
@@ -793,7 +428,9 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
 
             <div className="text-sm text-gray-700 bg-gray-100 p-3 rounded-md border border-gray-200">
                 <strong className="text-gray-900">CSV Format:</strong>
-                <p className="text-xs mt-1 mb-2 text-gray-600">The header&apos;s second column should be the metric name (e.g., &quot;Kill Points&quot;)</p>
+                <p className="text-xs mt-1 mb-2 text-gray-600">
+                    The header&apos;s second column must match the metric name exactly (case-insensitive)
+                </p>
                 <pre className="text-xs bg-white p-2 rounded border text-gray-800">
 {`name,Kill Points
 PlayerOne,1500
@@ -810,8 +447,8 @@ PlayerTwo,2300
                     ))}
                 </ul>
                 {metrics.length === 0 && (
-                    <p className="text-xs text-yellow-700 mt-1">
-                        No metrics configured yet. You can create one during import.
+                    <p className="text-xs text-amber-700 mt-1">
+                        No metrics configured yet. Please add metrics to this period before importing.
                     </p>
                 )}
             </div>
