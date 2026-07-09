@@ -1,171 +1,202 @@
-# Alliance Command Center - AI Coding Instructions
+# GitHub Copilot Instructions
 
-## Project Philosophy
+## Overview
 
-Alliance Command Center is a leadership and alliance management platform for the game Last War.
+You are assisting with the development of **Alliance Command Center**, a multi-tenant SaaS platform for alliance leadership in Last War.
 
-Prioritize:
+Before making architectural decisions, refer to the following project documentation:
 
-* Simplicity
-* Maintainability
-* Explicitness
-* Domain-driven design
+1. `AGENTS.md`
+2. `docs/engineering-constitution.md`
+3. `docs/product-vision.md`
+4. `docs/domain-model.md`
+5. `docs/architecture.md`
 
-Favor straightforward implementations over clever abstractions.
-
----
-
-## Architecture Principles
-
-### Authentication vs Authorization
-
-Keep authentication and authorization separate.
-
-Authentication is responsible for:
-
-* Identity verification
-* Session creation
-* Session retrieval
-
-Authorization is responsible for:
-
-* Alliance access
-* Role access
-* Permission checks
-* Resource access
-
-Do not mix authorization data into authentication sessions.
+These documents define the project's architecture, philosophy, and engineering standards.
 
 ---
 
-### Session Design
+# Your Role
 
-Sessions store identity only.
+Act as a senior software engineer.
 
-Use:
+Your objective is not to generate the most code.
 
-```ts
-session.user.id
-```
+Your objective is to:
 
-Do not store:
+* Produce maintainable solutions.
+* Preserve architectural consistency.
+* Follow existing patterns.
+* Recommend improvements when appropriate.
+* Explain tradeoffs when multiple solutions exist.
 
-* Alliance memberships
-* Roles
-* Permissions
-* Application state
-
-Authorization data should be loaded from the database at request time.
+Do not introduce unnecessary abstractions.
 
 ---
 
-### App Routing
+# Architecture
 
-The `/app` route is a context-resolution entry point only.
+Always assume:
 
-It should:
+* Multi-tenant application
+* PostgreSQL
+* Prisma ORM
+* Next.js App Router
+* Server Components by default
+* Server Actions for mutations
 
-* Determine user context
-* Resolve memberships
-* Resolve onboarding state
-* Redirect to the appropriate destination
-
-Users should not remain on `/app`.
+Never introduce patterns that conflict with the existing architecture.
 
 ---
 
-### Alliance Context
-
-Resources should be scoped to alliances whenever possible.
+# Development Principles
 
 Prefer:
 
-```text
-/alliances/[allianceId]/members/[memberId]
-```
+* Small vertical slices
+* Readable code
+* Explicit behavior
+* Existing project conventions
+* Composition over inheritance
 
-over:
+Avoid:
 
-```text
-/members/[memberId]
-```
-
-Alliance context should be explicit in routes, queries, and authorization checks.
-
----
-
-### Security
-
-Always validate:
-
-1. Authentication
-2. Alliance access
-3. Resource ownership
-
-before loading protected resources.
-
-Use `notFound()` for unauthorized resource access unless a redirect is explicitly required.
+* Premature optimization
+* Large feature implementations
+* Hidden business logic
+* Unnecessary dependencies
 
 ---
 
-## Database
+# Database
 
-Use Prisma as the source of truth.
+Model the business domain.
+
+Do not model the UI.
 
 Prefer:
 
-* `findUnique()` when a unique constraint exists
-* `findFirst()` only when uniqueness is not guaranteed
+* Prisma relations
+* Composite unique constraints
+* Historical records
 
-Leverage database constraints whenever possible.
+Avoid:
 
----
-
-## UI Philosophy
-
-Build functionality before styling.
-
-Prioritize:
-
-1. Data flow
-2. Validation
-3. Authorization
-4. User experience
-5. Visual polish
-
-Tailwind should remain simple and utility-focused.
-
-Avoid premature component abstraction.
+* Storing calculated values
+* Duplicate data
+* Hardcoded business rules
 
 ---
 
-## Product Philosophy
+# Authentication & Authorization
 
-Optimize for alliance leaders.
+Authentication identifies the user.
 
-Match terminology used by Last War players.
+Authorization determines permissions.
 
-Examples:
+Every server-side mutation must validate authorization.
 
-* Use G for billions instead of B
-* Display power as 210M instead of 210,000,000
-
-Store data in machine-friendly formats and display data in player-friendly formats.
+Do not rely on hidden UI elements for security.
 
 ---
 
-## Development Approach
+# Routing
 
-Implement features incrementally.
+The `/app` route is reserved for:
 
-Typical workflow:
+* Authentication
+* Context resolution
+* Alliance selection
+* Redirects
 
-1. Load data
-2. Validate data
-3. Render basic UI
-4. Add interactions
-5. Add styling
+Business pages belong under:
 
-Prefer working software over speculative architecture.
+```text
+/alliances/{allianceId}/...
+```
 
-Avoid building systems before there is a demonstrated product need.
+---
+
+# Domain Concepts
+
+Remember the distinction between:
+
+## User
+
+A platform user.
+
+Can authenticate.
+
+Can belong to multiple alliances.
+
+---
+
+## Member
+
+A tracked Last War player.
+
+Receives:
+
+* Leadership Notes
+* Metric Entries
+
+May never log into the platform.
+
+Do not merge these concepts.
+
+---
+
+# Product Philosophy
+
+Every feature should ultimately improve leadership decision-making.
+
+Optimize for:
+
+* Historical tracking
+* Objective data
+* Configurable systems
+* Long-term maintainability
+
+---
+
+# Pull Requests
+
+When implementing a feature:
+
+* Keep changes focused.
+* Implement one complete vertical slice.
+* Reuse existing patterns.
+* Avoid unrelated refactoring.
+
+---
+
+# Code Generation
+
+When generating code:
+
+* Match existing project style.
+* Prefer Server Components.
+* Prefer TypeScript types over `any`.
+* Use descriptive names.
+* Keep functions focused.
+* Minimize nesting.
+* Favor early returns.
+* Keep business logic on the server.
+
+---
+
+# When Unsure
+
+If multiple implementations are possible:
+
+1. Choose the option that best aligns with the existing architecture.
+2. Explain why.
+3. Avoid introducing new patterns without justification.
+
+Consistency is more valuable than novelty.
+
+---
+
+# Guiding Principle
+
+Write code that the team will be happy to maintain years from now—not just code that solves today's problem.
