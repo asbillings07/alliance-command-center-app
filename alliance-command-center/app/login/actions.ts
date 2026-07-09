@@ -6,19 +6,36 @@ export type LoginState = {
   error: string | null;
 };
 
+function sanitizeCallbackUrl(url: string): string {
+  // Only allow relative paths starting with /
+  if (!url || !url.startsWith("/") || url.startsWith("//")) {
+    return "/app";
+  }
+  // Reject any URL with a protocol
+  try {
+    const parsed = new URL(url, "http://localhost");
+    if (parsed.origin !== "http://localhost") {
+      return "/app";
+    }
+  } catch {
+    return "/app";
+  }
+  return url;
+}
+
 export async function login(
   _prevState: LoginState,
   formData: FormData,
 ): Promise<LoginState> {
-  //1. Extract email/password
   const email = formData.get("email")?.toString().trim();
   const password = formData.get("password")?.toString().trim();
-  // 2. Validate inputs
+  const rawCallbackUrl = formData.get("callbackUrl")?.toString() || "/app";
+  const callbackUrl = sanitizeCallbackUrl(rawCallbackUrl);
+
   if (!email || !password) {
     return { error: "Email and password are required" };
   }
 
-  //3. Call signIn()
   try {
     await signIn("credentials", {
       email,
@@ -30,6 +47,5 @@ export async function login(
     return { error: "Invalid email or password" };
   }
 
-  // 5. Redirect to /app
-  redirect("/app");
+  redirect(callbackUrl);
 }

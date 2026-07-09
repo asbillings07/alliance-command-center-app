@@ -2,10 +2,9 @@
 /**
  * Validate input
  * Create Alliance
- * Create Membership
+ * Create AllianceMember (roster entry for owner, linked via userId)
+ * Create AllianceMembership (access/permissions)
  * Redirect /app
- *
- *
  */
 import { auth } from "@/app/src/lib/auth";
 import { prisma } from "@/app/src/lib/prisma";
@@ -72,12 +71,31 @@ export async function onboarding(
   }
 
   try {
-    //6. Create Alliance + AllianceMembership inside a transaction
+    //6. Get user's display name for roster entry
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { displayName: true },
+    });
+    
+    if (!user) {
+      return { error: "User not found" };
+    }
+
+    //7. Create Alliance + AllianceMembership + AllianceMember inside a transaction
     await prisma.$transaction(async (tx) => {
       const alliance = await tx.alliance.create({
         data: {
           name: allianceName,
           server: allianceServerNumber,
+        },
+      });
+
+      // Create roster entry for the owner (linked to their user account)
+      await tx.allianceMember.create({
+        data: {
+          allianceId: alliance.id,
+          playerName: user.displayName,
+          userId: userId,
         },
       });
 

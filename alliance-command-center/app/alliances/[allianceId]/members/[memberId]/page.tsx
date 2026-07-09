@@ -7,6 +7,7 @@ import { LeadershipNoteCard } from "./LeadershipNoteCard";
 import { MemberPerformanceSection } from "./MemberPerformanceSection";
 import type { CurrentMetricViewModel } from "./MemberPerformanceSection";
 import { MemberActions } from "./MemberActions";
+import { MemberAccountSection } from "./MemberAccountSection";
 
 type Params = {
     params: Promise<{
@@ -138,6 +139,26 @@ export default async function MemberPage({ params }: Params) {
     });
     const isLeadership = membership?.role !== "VIEWER";
 
+    // Query linked user info for account section
+    const linkedUserInfo = allianceMember.userId
+        ? await prisma.user.findUnique({
+              where: { id: allianceMember.userId },
+              select: { email: true },
+          })
+        : null;
+
+    const linkedMembership = allianceMember.userId
+        ? await prisma.allianceMembership.findUnique({
+              where: {
+                  allianceId_userId: {
+                      allianceId,
+                      userId: allianceMember.userId,
+                  },
+              },
+              select: { role: true },
+          })
+        : null;
+
     return (
         <div className="mx-auto flex max-w-4xl flex-col gap-8 p-8">
             {allianceMember.archivedAt && (
@@ -178,6 +199,22 @@ export default async function MemberPage({ params }: Params) {
                     />
                 )}
             </section>
+
+            {linkedUserInfo && linkedMembership ? (
+                <MemberAccountSection
+                    allianceId={allianceId}
+                    isLeadership={isLeadership}
+                    connected={true}
+                    email={linkedUserInfo.email}
+                    membershipRole={linkedMembership.role}
+                />
+            ) : (
+                <MemberAccountSection
+                    allianceId={allianceId}
+                    isLeadership={isLeadership}
+                    connected={false}
+                />
+            )}
 
             <MemberPerformanceSection {...performanceProps} />
 

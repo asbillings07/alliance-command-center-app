@@ -77,6 +77,23 @@ const createAllianceData = async () => {
 
   await createMembers(alliance.id, members);
 
+  // Link Mando to the user (the owner's roster entry)
+  const mando = await prisma.allianceMember.findFirst({
+    where: {
+      playerName: "Mando",
+      allianceId: alliance.id,
+    },
+  });
+
+  if (!mando) {
+    throw new Error("Mando not found");
+  }
+
+  await prisma.allianceMember.update({
+    where: { id: mando.id },
+    data: { userId: user.id },
+  });
+
   // Alliance Membership
   await prisma.allianceMembership.upsert({
     where: {

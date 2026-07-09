@@ -4,7 +4,7 @@ import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
 import { prisma } from "@/app/src/lib/prisma";
 import { revalidatePath } from "next/cache";
-import { Prisma } from "@/app/generated/prisma";
+import { Prisma } from "@/app/generated/prisma/client";
 
 export type AddMemberResult =
     | { success: true; memberId: string }
