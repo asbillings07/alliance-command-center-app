@@ -78,7 +78,7 @@ export function EditMemberForm({
                     type="text"
                     id="thp"
                     name="thp"
-                    defaultValue={defaultValues.thp ? formatPower(defaultValues.thp) : ""}
+                    defaultValue={defaultValues.thp != null ? formatPower(defaultValues.thp) : ""}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g., 52,000,000"
                 />
@@ -95,11 +95,7 @@ export function EditMemberForm({
                     type="text"
                     id="squadPower"
                     name="squadPower"
-                    defaultValue={
-                        defaultValues.squadPower
-                            ? formatPower(defaultValues.squadPower)
-                            : ""
-                    }
+                    defaultValue={defaultValues.squadPower != null ? formatPower(defaultValues.squadPower) : ""}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g., 15,000,000"
                 />
