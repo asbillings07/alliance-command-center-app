@@ -8,21 +8,24 @@
 // 1,400,000,000,000 -> 1.4T
 
 export function formatPower(power: number) {
+  const sign = power < 0 ? "-" : "";
+  const abs = Math.abs(power);
+
   const formatValue = (value: number, suffix: string): string => {
     const rounded = Math.round(value * 10) / 10;
     if (rounded === Math.floor(rounded)) {
-      return rounded.toFixed(0) + suffix;
+      return sign + rounded.toFixed(0) + suffix;
     }
-    return rounded.toFixed(1) + suffix;
+    return sign + rounded.toFixed(1) + suffix;
   };
 
-  const powerInThousands = power / 1000;
-  const powerInMillions = power / 1000000;
-  const powerInBillions = power / 1000000000;
-  const powerInTrillions = power / 1000000000000;
+  const powerInThousands = abs / 1000;
+  const powerInMillions = abs / 1000000;
+  const powerInBillions = abs / 1000000000;
+  const powerInTrillions = abs / 1000000000000;
 
-  if (power < 1000) {
-    return String(power);
+  if (abs < 1000) {
+    return sign + String(abs);
   }
   if (
     powerInThousands < 1000 &&

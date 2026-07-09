@@ -42,4 +42,12 @@ describe('formatPower', () => {
     expect(formatPower(999950000)).toBe('1G');
     expect(formatPower(999950000000)).toBe('1T');
   });
+
+  it('should handle negative numbers', () => {
+    expect(formatPower(-850)).toBe('-850');
+    expect(formatPower(-12500)).toBe('-12.5K');
+    expect(formatPower(-1200000)).toBe('-1.2M');
+    expect(formatPower(-3100000000)).toBe('-3.1G');
+    expect(formatPower(-1400000000000)).toBe('-1.4T');
+  });
 });
