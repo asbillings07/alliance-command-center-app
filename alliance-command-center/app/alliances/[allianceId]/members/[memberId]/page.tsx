@@ -24,10 +24,14 @@ export default async function MemberPage({ params }: Params) {
     }
 
     // Query 1: Active period with configured metrics
+    // orderBy ensures deterministic selection if multiple active periods exist
     const activePeriod = await prisma.metricPeriod.findFirst({
         where: {
             allianceId,
             active: true,
+        },
+        orderBy: {
+            createdAt: "desc",
         },
         include: {
             periodMetrics: {
