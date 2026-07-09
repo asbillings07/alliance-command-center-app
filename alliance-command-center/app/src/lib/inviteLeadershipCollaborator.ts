@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import { prisma } from "./prisma";
 import type { AllianceRole, Invitation, AllianceMember } from "@/app/generated/prisma/client";
 
@@ -23,12 +23,13 @@ export type InviteLeadershipResult = {
 
 function generateInviteCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const segment = () =>
+  const bytes = randomBytes(9); // 9 bytes for 9 characters
+  const segment = (offset: number) =>
     Array.from(
       { length: 3 },
-      () => chars[Math.floor(Math.random() * chars.length)]
+      (_, i) => chars[bytes[offset + i] % chars.length]
     ).join("");
-  return `${segment()}-${segment()}-${segment()}`;
+  return `${segment(0)}-${segment(3)}-${segment(6)}`;
 }
 
 function addDays(date: Date, days: number): Date {

@@ -36,12 +36,6 @@ CREATE UNIQUE INDEX "Invitation_code_key" ON "Invitation"("code");
 -- Create index for looking up invitations by alliance and email
 CREATE INDEX "Invitation_allianceId_email_idx" ON "Invitation"("allianceId", "email");
 
--- Create index for token lookups
-CREATE INDEX "Invitation_token_idx" ON "Invitation"("token");
-
--- Create index for code lookups
-CREATE INDEX "Invitation_code_idx" ON "Invitation"("code");
-
 -- Add foreign key constraints
 ALTER TABLE "Invitation" ADD CONSTRAINT "Invitation_allianceId_fkey" FOREIGN KEY ("allianceId") REFERENCES "Alliance"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 

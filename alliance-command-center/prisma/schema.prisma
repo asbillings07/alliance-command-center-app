@@ -219,6 +219,4 @@ model Invitation {
   createdAt DateTime @default(now())
   
   @@index([allianceId, email])
-  @@index([token])
-  @@index([code])
 }

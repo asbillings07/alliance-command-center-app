@@ -27,6 +27,18 @@ export async function confirmMember(
     return { error: "You are not a member of this alliance" };
   }
 
+  // Check if user is already linked to another AllianceMember in this alliance
+  const existingRosterLink = await prisma.allianceMember.findFirst({
+    where: {
+      allianceId,
+      userId: user.id,
+    },
+  });
+
+  if (existingRosterLink) {
+    return { error: "You are already linked to a roster member in this alliance" };
+  }
+
   if (memberId) {
     const member = await prisma.allianceMember.findUnique({
       where: { id: memberId },
