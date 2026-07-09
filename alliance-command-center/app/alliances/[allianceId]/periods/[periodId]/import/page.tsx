@@ -25,7 +25,7 @@ export default async function ImportPage({ params }: Params) {
         where: { id: allianceId },
         select: {
             allianceMembers: {
-                where: { active: true },
+                where: { archivedAt: null },
                 select: {
                     id: true,
                     playerName: true,

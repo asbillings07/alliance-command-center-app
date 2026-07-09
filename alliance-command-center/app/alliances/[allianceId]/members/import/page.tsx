@@ -21,6 +21,7 @@ export default async function MemberImportPage({ params }: Params) {
         select: {
             id: true,
             playerName: true,
+            archivedAt: true,
         },
         orderBy: { playerName: "asc" },
     });

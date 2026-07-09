@@ -9,6 +9,7 @@ import type { RosterEntry, ImportResult } from "./action";
 type ExistingMember = {
     id: string;
     playerName: string;
+    archivedAt: Date | null;
 };
 
 type RosterImportFormProps = {
@@ -24,6 +25,7 @@ type ParsedMember = {
     thp: string;
     role: string;
     isExisting: boolean;
+    isArchived: boolean;
     selected: boolean;
 };
 
@@ -88,9 +90,12 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     const [importResult, setImportResult] = useState<ImportResult | null>(null);
     const [isPending, startTransition] = useTransition();
 
-    // Build a set of normalized existing names for fast lookup
-    const existingNamesNormalized = new Set(
-        existingMembers.map((m) => normalizeName(m.playerName))
+    // Build a map of normalized existing names to their archived status
+    const existingMembersMap = new Map(
+        existingMembers.map((m) => [
+            normalizeName(m.playerName),
+            { isArchived: !!m.archivedAt },
+        ])
     );
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -149,7 +154,10 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
             const thpRaw = thpCol ? values[thpCol.index]?.trim() || "" : "";
             const roleValue = roleCol ? values[roleCol.index]?.trim() || "" : "";
 
-            const isExisting = existingNamesNormalized.has(normalizeName(playerName));
+            const normalized = normalizeName(playerName);
+            const existingInfo = existingMembersMap.get(normalized);
+            const isExisting = !!existingInfo;
+            const isArchived = existingInfo?.isArchived ?? false;
 
             members.push({
                 id: `row-${i}`,
@@ -157,6 +165,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                 thp: thpRaw,
                 role: roleValue,
                 isExisting,
+                isArchived,
                 selected: !isExisting,
             });
         }
@@ -445,8 +454,12 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                                             .filter((m) => m.isExisting)
                                             .map((member) => (
                                                 <li key={member.id} className="px-4 py-2 text-sm text-gray-500 flex items-center gap-2">
-                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
-                                                        Exists
+                                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                                        member.isArchived
+                                                            ? "bg-amber-100 text-amber-700"
+                                                            : "bg-gray-100 text-gray-600"
+                                                    }`}>
+                                                        {member.isArchived ? "Archived" : "Exists"}
                                                     </span>
                                                     {member.playerName}
                                                 </li>
