@@ -9,6 +9,23 @@ export type RegisterState = {
   error: string | null;
 };
 
+function sanitizeCallbackUrl(url: string): string {
+  // Only allow relative paths starting with /
+  if (!url || !url.startsWith("/") || url.startsWith("//")) {
+    return "/app";
+  }
+  // Reject any URL with a protocol
+  try {
+    const parsed = new URL(url, "http://localhost");
+    if (parsed.origin !== "http://localhost") {
+      return "/app";
+    }
+  } catch {
+    return "/app";
+  }
+  return url;
+}
+
 export async function register(
   _prevState: RegisterState,
   formData: FormData
@@ -17,11 +34,14 @@ export async function register(
   const password = formData.get("password")?.toString();
   const confirmPassword = formData.get("confirmPassword")?.toString();
   const displayName = formData.get("displayName")?.toString().trim();
-  const callbackUrl = formData.get("callbackUrl")?.toString() || "";
+  const rawCallbackUrl = formData.get("callbackUrl")?.toString() || "";
 
   if (!email || !password || !displayName) {
     return { error: "All fields are required" };
   }
+
+  // Sanitize callback URL first
+  const callbackUrl = sanitizeCallbackUrl(rawCallbackUrl);
 
   // Extract invitation token from callbackUrl and validate
   const tokenMatch = callbackUrl.match(/\/invite\/([^/?]+)/);
@@ -60,6 +80,11 @@ export async function register(
   // Verify the display name matches the invitation
   if (invitation.playerNameSnapshot !== displayName) {
     return { error: "Invalid registration attempt" };
+  }
+
+  // Verify the email matches the invitation (case-insensitive)
+  if (invitation.email.toLowerCase() !== email) {
+    return { error: "Email does not match the invitation" };
   }
 
   if (password !== confirmPassword) {

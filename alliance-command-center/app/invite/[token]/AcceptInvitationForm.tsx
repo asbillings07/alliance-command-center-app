@@ -38,7 +38,7 @@ export function AcceptInvitationForm({
       type="button"
       onClick={handleAccept}
       disabled={isPending}
-      className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+      className="w-full px-4 py-2 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB] disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {isPending ? "Joining..." : `Join ${allianceName}`}
     </button>

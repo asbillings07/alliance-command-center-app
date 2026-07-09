@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { prisma } from "@/app/src/lib/prisma";
 import {
   inviteLeadershipCollaborator,
   searchMembers,
@@ -90,6 +91,16 @@ export async function cancelInvitationAction(
     return { error: "Only owners and admins can cancel invitations" };
   }
 
+  // Verify invitation belongs to this alliance
+  const invitation = await prisma.invitation.findUnique({
+    where: { id: invitationId },
+    select: { allianceId: true },
+  });
+
+  if (!invitation || invitation.allianceId !== allianceId) {
+    return { error: "Invitation not found" };
+  }
+
   try {
     await cancelInvitation(invitationId);
     revalidatePath(`/alliances/${allianceId}/settings/invitations`);
@@ -111,6 +122,16 @@ export async function resendInvitationAction(
   const membership = await requireLeadershipAccess(allianceId, user.id);
   if (membership.role !== "OWNER" && membership.role !== "ADMIN") {
     return { error: "Only owners and admins can resend invitations" };
+  }
+
+  // Verify invitation belongs to this alliance
+  const invitation = await prisma.invitation.findUnique({
+    where: { id: invitationId },
+    select: { allianceId: true },
+  });
+
+  if (!invitation || invitation.allianceId !== allianceId) {
+    return { error: "Invitation not found" };
   }
 
   try {

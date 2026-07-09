@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { prisma } from "./prisma";
 import type { AllianceRole, Invitation, AllianceMember } from "@/app/generated/prisma/client";
 
@@ -158,7 +159,7 @@ export async function inviteLeadershipCollaborator(
     memberCreated = true;
   }
 
-  const token = crypto.randomUUID();
+  const token = randomUUID();
   const code = generateInviteCode();
 
   const invitation = await prisma.invitation.create({
@@ -198,7 +199,7 @@ export async function resendInvitation(invitationId: string): Promise<{
   inviteUrl: string;
   inviteCode: string;
 }> {
-  const newToken = crypto.randomUUID();
+  const newToken = randomUUID();
   const newCode = generateInviteCode();
 
   const invitation = await prisma.invitation.update({
