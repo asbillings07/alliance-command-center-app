@@ -6,6 +6,7 @@ import {
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { requireAllianceMemberAccess } from "@/app/src/lib/auth/requireMembershipAccess";
+import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
 import { revalidatePath } from "next/cache";
 import { requireAuthorAccess } from "@/app/src/lib/auth/requireAuthorAccess";
 
@@ -18,6 +19,10 @@ export async function createLeadershipNote(formData: FormData): Promise<void> {
   }
 
   const { allianceMember } = await requireAllianceMemberAccess(allianceMemberId, user.id);
+  
+  // Verify user has leadership role (not just VIEWER)
+  await requireLeadershipAccess(allianceMember.allianceId, user.id);
+  
   const authorId = user.id;
   const noteType = formData.get("noteType") as LeadershipNoteType;
   if (!Object.values(LeadershipNoteType).includes(noteType)) {

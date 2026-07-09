@@ -260,9 +260,6 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                             <span className="text-gray-700 font-medium">
                                 Click to upload CSV
                             </span>
-                            <span className="text-sm text-gray-500">
-                                or drag and drop
-                            </span>
                         </label>
                     </div>
 
