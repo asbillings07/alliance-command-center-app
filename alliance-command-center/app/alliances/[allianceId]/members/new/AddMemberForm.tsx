@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { addMember, restoreMember, type AddMemberResult } from "./action";
+import { addMember, restoreMember } from "./action";
 
 interface AddMemberFormProps {
     allianceId: string;
@@ -15,7 +15,7 @@ export function AddMemberForm({ allianceId }: AddMemberFormProps) {
     const [archivedPrompt, setArchivedPrompt] = useState<{
         id: string;
         playerName: string;
-        archivedAt: Date;
+        archivedAt: string;
     } | null>(null);
 
     async function handleSubmit(formData: FormData) {

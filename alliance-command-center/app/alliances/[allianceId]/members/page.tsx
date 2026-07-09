@@ -57,8 +57,8 @@ export default async function MembersPage({ params, searchParams }: Params) {
     // Build where clause based on filter
     const whereClause = {
         allianceId: allianceId,
-        ...(filter === "active" && { archivedAt: null }),
-        ...(filter === "archived" && { archivedAt: { not: null } }),
+        ...(filter === "active" ? { archivedAt: null } : {}),
+        ...(filter === "archived" ? { archivedAt: { not: null } } : {}),
         // "all" has no additional filter
     };
 

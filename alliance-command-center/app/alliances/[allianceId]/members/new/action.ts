@@ -9,7 +9,7 @@ import { Prisma } from "@/app/generated/prisma";
 export type AddMemberResult =
     | { success: true; memberId: string }
     | { success: false; error: string }
-    | { success: false; archivedMember: { id: string; playerName: string; archivedAt: Date } };
+    | { success: false; archivedMember: { id: string; playerName: string; archivedAt: string } };
 
 function parseIntOrNull(value: string | undefined): number | null {
     if (!value) return null;
@@ -45,13 +45,13 @@ export async function addMember(formData: FormData): Promise<AddMemberResult> {
 
     if (existingMember) {
         if (existingMember.archivedAt) {
-            // Return archived member info for smart restore prompt
+            // Return archived member info for smart restore prompt (serialize Date to ISO string)
             return {
                 success: false,
                 archivedMember: {
                     id: existingMember.id,
                     playerName: existingMember.playerName,
-                    archivedAt: existingMember.archivedAt,
+                    archivedAt: existingMember.archivedAt.toISOString(),
                 },
             };
         } else {

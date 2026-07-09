@@ -9,7 +9,7 @@ import type { RosterEntry, ImportResult } from "./action";
 type ExistingMember = {
     id: string;
     playerName: string;
-    archivedAt: Date | null;
+    archivedAt: string | null;
 };
 
 type RosterImportFormProps = {
