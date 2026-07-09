@@ -18,7 +18,7 @@ export default async function PeriodRecordPage({ params }: { params: Promise<{ a
         where: { id: allianceId },
         select: {
             allianceMembers: {
-                where: { active: true },
+                where: { archivedAt: null },
                 select: {
                     id: true,
                     playerName: true,

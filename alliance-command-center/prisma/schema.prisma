@@ -68,8 +68,8 @@ model AllianceMember {
   thp         Int?
   squadPower  Int?
   role        String?
-  joinDate    DateTime?
-  active      Boolean   @default(true)
+  joinedAt    DateTime?
+  archivedAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   alliance    Alliance  @relation(fields: [allianceId], references: [id])
@@ -77,6 +77,7 @@ model AllianceMember {
   leadershipNotes LeadershipNote[]
 
   @@unique([allianceId, playerName])
+  @@index([allianceId, archivedAt])
 }
 
 model User {

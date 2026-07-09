@@ -3,12 +3,12 @@ import { useState, useTransition, useMemo } from "react";
 import { analyzeCSV, parseCSV, matchEntriesToMembers, type MatchResult, type MatchSummary, type ColumnInfo } from "@/app/src/lib/memberMatcher";
 import { importMemberMetrics } from "./action";
 
-type Member = {
+type MemberOption = {
     id: string;
     playerName: string;
 };
 
-type Metric = {
+type MetricOption = {
     id: string;
     name: string;
 };
@@ -16,8 +16,8 @@ type Metric = {
 type ImportFormProps = {
     periodId: string;
     allianceId: string;
-    members: Member[];
-    metrics: Metric[];
+    members: MemberOption[];
+    metrics: MetricOption[];
 };
 
 type ImportStep = "upload" | "select" | "preview" | "complete";

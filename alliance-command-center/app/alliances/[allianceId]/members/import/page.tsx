@@ -16,14 +16,22 @@ export default async function MemberImportPage({ params }: Params) {
     await requireLeadershipAccess(allianceId, user.id);
 
     // Fetch existing alliance members to check for duplicates
-    const existingMembers = await prisma.allianceMember.findMany({
+    const existingMembersRaw = await prisma.allianceMember.findMany({
         where: { allianceId },
         select: {
             id: true,
             playerName: true,
+            archivedAt: true,
         },
         orderBy: { playerName: "asc" },
     });
+
+    // Serialize Date to ISO string for client component
+    const existingMembers = existingMembersRaw.map((m) => ({
+        id: m.id,
+        playerName: m.playerName,
+        archivedAt: m.archivedAt?.toISOString() ?? null,
+    }));
 
     return (
         <div className="mx-auto flex max-w-4xl flex-col gap-6 p-8">

@@ -6,6 +6,7 @@ import { requireAllianceMemberAccess } from "@/app/src/lib/auth/requireMembershi
 import { LeadershipNoteCard } from "./LeadershipNoteCard";
 import { MemberPerformanceSection } from "./MemberPerformanceSection";
 import type { CurrentMetricViewModel } from "./MemberPerformanceSection";
+import { MemberActions } from "./MemberActions";
 
 type Params = {
     params: Promise<{
@@ -126,16 +127,56 @@ export default async function MemberPage({ params }: Params) {
     });
 
 
+    // Check if current user has leadership access
+    const membership = await prisma.allianceMembership.findUnique({
+        where: {
+            allianceId_userId: {
+                allianceId,
+                userId: user.id,
+            },
+        },
+    });
+    const isLeadership = membership?.role !== "VIEWER";
+
     return (
         <div className="mx-auto flex max-w-4xl flex-col gap-8 p-8">
+            {allianceMember.archivedAt && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center">
+                    <p className="text-amber-800 font-medium">
+                        This member was archived on{" "}
+                        {allianceMember.archivedAt.toLocaleDateString()}
+                    </p>
+                    <p className="text-sm text-amber-600 mt-1">
+                        Historical data is preserved but they will not appear in active member lists.
+                    </p>
+                </div>
+            )}
+
             <section className="flex flex-col items-center justify-center">
                 <h1 className="text-2xl font-bold">{allianceMember.playerName}</h1>
+                {allianceMember.role && (
+                    <div className="text-sm text-blue-600 font-medium mt-1">
+                        {allianceMember.role}
+                    </div>
+                )}
                 <div className="text-sm text-gray-500 mt-2">
                     THP: {allianceMember.thp == null ? "—" : formatPower(allianceMember.thp)}
                 </div>
                 <div className="text-sm text-gray-500">
                     Top Squad: {allianceMember.squadPower == null ? "—" : formatPower(allianceMember.squadPower)}
                 </div>
+                {allianceMember.joinedAt && (
+                    <div className="text-sm text-gray-400 mt-2">
+                        Joined {allianceMember.joinedAt.toLocaleDateString()}
+                    </div>
+                )}
+                {isLeadership && (
+                    <MemberActions
+                        allianceId={allianceId}
+                        memberId={allianceMember.id}
+                        isArchived={!!allianceMember.archivedAt}
+                    />
+                )}
             </section>
 
             <MemberPerformanceSection {...performanceProps} />
@@ -147,7 +188,7 @@ export default async function MemberPage({ params }: Params) {
                     leadershipNotes.map((note) => (
                         <LeadershipNoteCard
                             key={note.id}
-                            memberId={member.id}
+                            memberId={allianceMember.id}
                             mode="view"
                             note={{
                                 id: note.id,

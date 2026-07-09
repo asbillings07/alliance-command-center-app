@@ -2,12 +2,12 @@
 import { useState, useTransition } from "react";
 import { recordMemberMetrics } from "./action";
 
-type Member = {
+type MemberOption = {
     id: string;
     playerName: string;
 };
 
-type Metric = {
+type MetricOption = {
     id: string;
     name: string;
 };
@@ -15,8 +15,8 @@ type Metric = {
 type RecordMetricsFormProps = {
     periodId: string;
     allianceId: string;
-    members: Member[];
-    metrics: Metric[];
+    members: MemberOption[];
+    metrics: MetricOption[];
 };
 
 function isValidInteger(value: string): boolean {
