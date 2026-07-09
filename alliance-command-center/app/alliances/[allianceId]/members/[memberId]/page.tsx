@@ -4,7 +4,8 @@ import { formatPower } from "@/app/src/lib/formatPower";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { requireMembershipAccess } from "@/app/src/lib/auth/requireMembershipAccess";
 import { LeadershipNoteCard } from "./LeadershipNoteCard";
-import { MemberPerformanceSection, CurrentMetricViewModel } from "./MemberPerformanceSection";
+import { MemberPerformanceSection } from "./MemberPerformanceSection";
+import type { CurrentMetricViewModel } from "./MemberPerformanceSection";
 
 type Params = {
     params: Promise<{
