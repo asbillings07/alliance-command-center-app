@@ -4,12 +4,19 @@ import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
 import { prisma } from "@/app/src/lib/prisma";
 import { revalidatePath } from "next/cache";
-import { normalizeName } from "@/app/src/lib/memberMatcher";
+import { Prisma } from "@/app/generated/prisma";
 
 export type AddMemberResult =
     | { success: true; memberId: string }
     | { success: false; error: string }
     | { success: false; archivedMember: { id: string; playerName: string; archivedAt: Date } };
+
+function parseIntOrNull(value: string | undefined): number | null {
+    if (!value) return null;
+    const cleaned = value.replace(/,/g, "");
+    const num = parseInt(cleaned, 10);
+    return Number.isFinite(num) ? num : null;
+}
 
 export async function addMember(formData: FormData): Promise<AddMemberResult> {
     const allianceId = formData.get("allianceId") as string;
@@ -24,8 +31,6 @@ export async function addMember(formData: FormData): Promise<AddMemberResult> {
     if (!playerName) {
         return { success: false, error: "Player name is required" };
     }
-
-    const normalizedInput = normalizeName(playerName);
 
     // Check for existing member (active or archived)
     const existingMember = await prisma.allianceMember.findFirst({
@@ -57,23 +62,30 @@ export async function addMember(formData: FormData): Promise<AddMemberResult> {
         }
     }
 
-    // Parse numeric fields
-    const thp = thpRaw ? parseInt(thpRaw.replace(/,/g, ""), 10) || null : null;
-    const squadPower = squadPowerRaw ? parseInt(squadPowerRaw.replace(/,/g, ""), 10) || null : null;
+    // Parse numeric fields (preserves 0 as valid value)
+    const thp = parseIntOrNull(thpRaw);
+    const squadPower = parseIntOrNull(squadPowerRaw);
 
-    const member = await prisma.allianceMember.create({
-        data: {
-            allianceId,
-            playerName,
-            thp,
-            squadPower,
-            role,
-            joinedAt: new Date(),
-        },
-    });
+    try {
+        const member = await prisma.allianceMember.create({
+            data: {
+                allianceId,
+                playerName,
+                thp,
+                squadPower,
+                role,
+                joinedAt: new Date(),
+            },
+        });
 
-    revalidatePath(`/alliances/${allianceId}/members`);
-    return { success: true, memberId: member.id };
+        revalidatePath(`/alliances/${allianceId}/members`);
+        return { success: true, memberId: member.id };
+    } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+            return { success: false, error: "A member with this name already exists" };
+        }
+        throw error;
+    }
 }
 
 export async function restoreMember(formData: FormData): Promise<AddMemberResult> {
@@ -101,5 +113,6 @@ export async function restoreMember(formData: FormData): Promise<AddMemberResult
     });
 
     revalidatePath(`/alliances/${allianceId}/members`);
+    revalidatePath(`/alliances/${allianceId}/members/${memberId}`);
     return { success: true, memberId: member.id };
 }

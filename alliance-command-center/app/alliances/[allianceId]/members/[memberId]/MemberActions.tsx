@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { archiveMember, restoreMember } from "./memberActions";
 
 interface MemberActionsProps {
@@ -30,7 +30,9 @@ export function MemberActions({
 
         startTransition(async () => {
             const result = await archiveMember(formData);
-            if (!result.success) {
+            if (result.success) {
+                router.refresh();
+            } else {
                 alert(result.error);
             }
         });
@@ -43,7 +45,9 @@ export function MemberActions({
 
         startTransition(async () => {
             const result = await restoreMember(formData);
-            if (!result.success) {
+            if (result.success) {
+                router.refresh();
+            } else {
                 alert(result.error);
             }
         });

@@ -4,10 +4,18 @@ import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
 import { prisma } from "@/app/src/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@/app/generated/prisma";
 
 export type MemberActionResult =
     | { success: true }
     | { success: false; error: string };
+
+function parseIntOrNull(value: string | undefined): number | null {
+    if (!value) return null;
+    const cleaned = value.replace(/,/g, "");
+    const num = parseInt(cleaned, 10);
+    return Number.isFinite(num) ? num : null;
+}
 
 export async function archiveMember(
     formData: FormData
@@ -121,22 +129,28 @@ export async function updateMember(
         }
     }
 
-    const thp = thpRaw ? parseInt(thpRaw.replace(/,/g, ""), 10) || null : null;
-    const squadPower = squadPowerRaw
-        ? parseInt(squadPowerRaw.replace(/,/g, ""), 10) || null
-        : null;
+    // Parse numeric fields (preserves 0 as valid value)
+    const thp = parseIntOrNull(thpRaw);
+    const squadPower = parseIntOrNull(squadPowerRaw);
 
-    await prisma.allianceMember.update({
-        where: { id: memberId },
-        data: {
-            playerName,
-            thp,
-            squadPower,
-            role,
-        },
-    });
+    try {
+        await prisma.allianceMember.update({
+            where: { id: memberId },
+            data: {
+                playerName,
+                thp,
+                squadPower,
+                role,
+            },
+        });
 
-    revalidatePath(`/alliances/${allianceId}/members`);
-    revalidatePath(`/alliances/${allianceId}/members/${memberId}`);
-    return { success: true };
+        revalidatePath(`/alliances/${allianceId}/members`);
+        revalidatePath(`/alliances/${allianceId}/members/${memberId}`);
+        return { success: true };
+    } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+            return { success: false, error: "A member with this name already exists" };
+        }
+        throw error;
+    }
 }
