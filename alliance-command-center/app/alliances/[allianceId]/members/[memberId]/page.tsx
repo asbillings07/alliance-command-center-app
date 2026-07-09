@@ -60,12 +60,14 @@ export default async function MemberPage({ params }: Params) {
           })
         : [];
 
-    // Build view model: group entries by metricId
+    // Build view model: group entries by metricId (cap at 2 per metric)
     const entriesByMetric = new Map<string, typeof memberEntries>();
     for (const entry of memberEntries) {
         const list = entriesByMetric.get(entry.metricId) || [];
-        list.push(entry);
-        entriesByMetric.set(entry.metricId, list);
+        if (list.length < 2) {
+            list.push(entry);
+            entriesByMetric.set(entry.metricId, list);
+        }
     }
 
     // Build the performance view model
