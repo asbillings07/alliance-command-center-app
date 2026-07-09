@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import React, { useState, useTransition } from "react";
 import { analyzeCSV, normalizeName, parseCSVLine } from "@/app/src/lib/memberMatcher";
 import type { ColumnInfo } from "@/app/src/lib/memberMatcher";
 import { importMembers } from "./action";
@@ -128,14 +128,10 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
         }
 
         // Detect optional columns
-        const thpCol = detectColumn(
-            result.columns.filter((c) => c.isNumeric),
-            THP_COLUMN_NAMES
-        );
-        const roleCol = detectColumn(
-            result.columns.filter((c) => !c.isNumeric),
-            ROLE_COLUMN_NAMES
-        );
+        // Note: Don't filter by isNumeric for THP - values may contain commas (e.g. "52,000,000")
+        // which analyzeCSV marks as non-numeric. parseNumber handles commas correctly.
+        const thpCol = detectColumn(result.columns, THP_COLUMN_NAMES);
+        const roleCol = detectColumn(result.columns, ROLE_COLUMN_NAMES);
 
         // Parse the CSV manually to extract values
         const lines = content.trim().split(/\r?\n/);
@@ -201,7 +197,20 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
             return;
         }
 
-        const entries: RosterEntry[] = selectedMembers.map((m) => ({
+        // Validate: filter out entries with empty player names
+        const validMembers = selectedMembers.filter((m) => m.playerName.trim().length > 0);
+        const emptyNameCount = selectedMembers.length - validMembers.length;
+
+        if (validMembers.length === 0) {
+            setError("All selected members have empty player names. Please fill in names before importing.");
+            return;
+        }
+
+        if (emptyNameCount > 0) {
+            setError(`${emptyNameCount} member(s) skipped due to empty player name.`);
+        }
+
+        const entries: RosterEntry[] = validMembers.map((m) => ({
             playerName: m.playerName.trim(),
             thp: parseNumber(m.thp),
             role: m.role.trim() || undefined,

@@ -34,6 +34,28 @@ export async function importMembers(
         return { created: 0, skippedExisting: 0, skippedDuplicates: 0, errors: ["Cannot import more than 100 members at once"] };
     }
 
+    // Validate player names - filter out empty/whitespace-only entries
+    const invalidEntries: string[] = [];
+    const validatedEntries = entries.filter((entry) => {
+        const trimmedName = entry.playerName.trim();
+        if (!trimmedName) {
+            invalidEntries.push("Empty player name");
+            return false;
+        }
+        return true;
+    });
+
+    if (validatedEntries.length === 0) {
+        return { 
+            created: 0, 
+            skippedExisting: 0, 
+            skippedDuplicates: 0, 
+            errors: invalidEntries.length > 0 
+                ? [`All entries have invalid player names (${invalidEntries.length} empty)`] 
+                : ["No valid entries to import"] 
+        };
+    }
+
     // Get existing members for this alliance
     const existingMembers = await prisma.member.findMany({
         where: { allianceId },
@@ -51,7 +73,7 @@ export async function importMembers(
     let skippedExisting = 0;
     let skippedDuplicates = 0;
 
-    for (const entry of entries) {
+    for (const entry of validatedEntries) {
         const normalized = normalizeName(entry.playerName);
         
         if (existingNamesNormalized.has(normalized)) {
