@@ -1,24 +1,28 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "../prisma";
 
-export const requireMembershipAccess = async (
-  memberId: string,
+/**
+ * Verifies that the user has access to view/edit the specified AllianceMember.
+ * Returns both the AllianceMembership (user's role in the alliance) and the AllianceMember record.
+ */
+export const requireAllianceMemberAccess = async (
+  allianceMemberId: string,
   userId: string,
 ) => {
-  const member = await prisma.member.findUnique({
+  const allianceMember = await prisma.allianceMember.findUnique({
     where: {
-      id: memberId,
+      id: allianceMemberId,
     },
   });
 
-  if (!member) {
+  if (!allianceMember) {
     notFound();
   }
 
   const membership = await prisma.allianceMembership.findUnique({
     where: {
       allianceId_userId: {
-        allianceId: member.allianceId,
+        allianceId: allianceMember.allianceId,
         userId,
       },
     },
@@ -28,5 +32,10 @@ export const requireMembershipAccess = async (
     redirect("/app");
   }
 
-  return { membership, member };
+  return { membership, allianceMember };
 };
+
+/**
+ * @deprecated Use requireAllianceMemberAccess instead
+ */
+export const requireMembershipAccess = requireAllianceMemberAccess;

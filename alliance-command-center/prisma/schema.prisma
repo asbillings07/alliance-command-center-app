@@ -37,10 +37,10 @@ model Alliance {
   server    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  members       Member[]
-  metrics       Metric[]
-  memberships   AllianceMembership[]
-  metricPeriods MetricPeriod[]
+  allianceMembers  AllianceMember[]
+  metrics          Metric[]
+  memberships      AllianceMembership[]
+  metricPeriods    MetricPeriod[]
   @@unique([name, server])
 }
 
@@ -60,10 +60,10 @@ model AllianceMembership {
   @@unique([allianceId, userId])
 }
 
-model Member {
+model AllianceMember {
   id          String    @id @default(cuid())
   allianceId  String
-  playerName  String @unique
+  playerName  String
   discordName String?
   thp         Int?
   squadPower  Int?
@@ -75,6 +75,8 @@ model Member {
   alliance    Alliance  @relation(fields: [allianceId], references: [id])
   metricEntries MemberMetricEntry[]
   leadershipNotes LeadershipNote[]
+
+  @@unique([allianceId, playerName])
 }
 
 model User {
@@ -145,8 +147,8 @@ model MetricPeriodMetric {
 model MemberMetricEntry {
   id String @id @default(cuid())
 
-  memberId String
-  member   Member @relation(fields: [memberId], references: [id])
+  allianceMemberId String
+  allianceMember   AllianceMember @relation(fields: [allianceMemberId], references: [id])
 
   periodId String
   metricId String
@@ -157,15 +159,15 @@ model MemberMetricEntry {
   recordedAt DateTime @default(now())
   createdAt  DateTime @default(now())
 
-  @@index([memberId, periodId])
+  @@index([allianceMemberId, periodId])
   @@index([metricId])
 }
 
 model LeadershipNote {
   id String @id @default(cuid())
 
-  memberId String
-  member Member @relation(fields: [memberId], references: [id])
+  allianceMemberId String
+  allianceMember AllianceMember @relation(fields: [allianceMemberId], references: [id])
 
   authorId String
   author User @relation(fields: [authorId], references: [id])

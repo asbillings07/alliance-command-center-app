@@ -58,8 +58,8 @@ export async function importMembers(
         };
     }
 
-    // Get existing members for this alliance
-    const existingMembers = await prisma.member.findMany({
+    // Get existing alliance members
+    const existingMembers = await prisma.allianceMember.findMany({
         where: { allianceId },
         select: { playerName: true },
     });
@@ -98,11 +98,11 @@ export async function importMembers(
         };
     }
 
-    // Create all new members in a single batch query
+    // Create all new alliance members in a single batch query
     const errors: string[] = [];
 
     try {
-        await prisma.member.createMany({
+        await prisma.allianceMember.createMany({
             data: newEntries.map((entry) => ({
                 allianceId,
                 playerName: entry.playerName.trim(),
@@ -111,7 +111,7 @@ export async function importMembers(
             })),
         });
     } catch (error) {
-        console.error("Error importing members:", error);
+        console.error("Error importing alliance members:", error);
         errors.push("Failed to create members. Please try again.");
         return {
             created: 0,

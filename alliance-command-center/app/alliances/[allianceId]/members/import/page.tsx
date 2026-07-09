@@ -15,8 +15,8 @@ export default async function MemberImportPage({ params }: Params) {
     const user = await requireAuth();
     await requireLeadershipAccess(allianceId, user.id);
 
-    // Fetch existing members to check for duplicates
-    const existingMembers = await prisma.member.findMany({
+    // Fetch existing alliance members to check for duplicates
+    const existingMembers = await prisma.allianceMember.findMany({
         where: { allianceId },
         select: {
             id: true,

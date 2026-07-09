@@ -43,7 +43,7 @@ Verify that responsibilities belong to the correct domain object.
 Questions:
 
 * Does this belong to Alliance?
-* Does this belong to Member?
+* Does this belong to AllianceMember?
 * Does this belong to User?
 * Does this belong to Metric?
 * Does this belong to Leadership Note?

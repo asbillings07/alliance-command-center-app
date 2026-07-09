@@ -152,7 +152,7 @@ Current business entities include:
 ```text
 Alliance
 │
-├── Members
+├── AllianceMembers
 │   ├── Leadership Notes
 │   └── Member Metric Entries
 │
@@ -172,10 +172,10 @@ Relationships should reflect real-world concepts.
 
 Examples:
 
-* A Member belongs to an Alliance.
-* A Leadership Note belongs to a Member.
+* An AllianceMember belongs to an Alliance.
+* A Leadership Note belongs to an AllianceMember.
 * A Metric belongs to an Alliance.
-* A MemberMetricEntry records a historical score.
+* A MemberMetricEntry records a historical score for an AllianceMember.
 
 Calculated values should not be persisted unless required for performance.
 

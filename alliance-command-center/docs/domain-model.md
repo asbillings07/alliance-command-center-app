@@ -32,7 +32,7 @@ The Alliance is the primary tenant boundary within the application.
 
 An Alliance owns:
 
-* Members
+* Alliance Members (tracked players)
 * Metrics
 * Leadership configuration
 * Alliance memberships
@@ -81,24 +81,39 @@ AllianceMembership exists because permissions belong to the relationship between
 
 ---
 
-# Member
+# Alliance Member
 
-Represents a player being tracked by an Alliance.
+Represents an alliance's record about a tracked player.
 
-Members are the primary subject of leadership evaluation.
+Alliance Members are the primary subject of leadership evaluation.
 
-A Member may have:
+An AllianceMember represents the alliance's knowledge about a player, including:
 
+* Player Name
+* THP
+* Squad Power
 * Leadership Notes
 * Metric Entries
 * Participation history
 * Availability information
+* Join Date
+* Internal leadership observations
 
-Members do not authenticate.
+Important: An AllianceMember does **not** represent:
 
-Members may never log into the application.
+* The player globally across all alliances
+* The player's entire game history
+* The player's current alliance in Last War
+
+It represents what **this alliance** knows and tracks about the player.
+
+Alliance Members do not authenticate.
+
+Alliance Members may never log into the application.
 
 A tracked player and a platform User are intentionally separate concepts.
+
+Player names are unique within an alliance but not globally—the same player name can exist in different alliances as separate AllianceMember records.
 
 ---
 
@@ -122,7 +137,7 @@ Metrics define **what is measured**, not the measured value itself.
 
 # Member Metric Entry
 
-Represents a historical measurement of a Member for a specific Metric.
+Represents a historical measurement of an AllianceMember for a specific Metric.
 
 Examples:
 
@@ -145,7 +160,7 @@ Current scores should always be derived from historical entries rather than repl
 
 # Leadership Note
 
-Represents a qualitative observation made by a leader about a Member.
+Represents a qualitative observation made by a leader about an AllianceMember.
 
 Examples include:
 
@@ -210,7 +225,7 @@ AllianceMembership
     ▼
 Alliance
     │
-    ├── Members
+    ├── AllianceMembers
     │      ├── Leadership Notes
     │      └── Member Metric Entries
     │
@@ -235,7 +250,7 @@ When introducing new functionality, ask:
 
 4. Is this a calculated value?
 
-5. Does this belong to a User, Member, or Alliance?
+5. Does this belong to a User, AllianceMember, or Alliance?
 
 6. Does this cross tenant boundaries?
 
