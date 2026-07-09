@@ -5,8 +5,8 @@
 ALTER TABLE "LeadershipNote" DROP CONSTRAINT "LeadershipNote_memberId_fkey";
 ALTER TABLE "MemberMetricEntry" DROP CONSTRAINT "MemberMetricEntry_memberId_fkey";
 
--- Step 2: Drop the old global unique constraint on playerName
-ALTER TABLE "Member" DROP CONSTRAINT "Member_playerName_key";
+-- Step 2: Drop the old global unique index on playerName
+DROP INDEX "Member_playerName_key";
 
 -- Step 3: Drop indexes that reference memberId
 DROP INDEX "MemberMetricEntry_memberId_periodId_idx";
