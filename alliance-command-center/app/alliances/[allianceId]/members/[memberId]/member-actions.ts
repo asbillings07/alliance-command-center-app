@@ -20,12 +20,20 @@ function parseIntOrNull(value: string | undefined): number | null {
 export async function archiveMember(
     formData: FormData
 ): Promise<MemberActionResult> {
-    const allianceId = formData.get("allianceId") as string;
-    const memberId = formData.get("memberId") as string;
+    const allianceId = formData.get("allianceId");
+    const memberId = formData.get("memberId");
+
+    if (
+        typeof allianceId !== "string" ||
+        allianceId.trim() === "" ||
+        typeof memberId !== "string" ||
+        memberId.trim() === ""
+    ) {
+        return { success: false, error: "Invalid request" };
+    }
 
     const user = await requireAuth();
     await requireLeadershipAccess(allianceId, user.id);
-
     const member = await prisma.allianceMember.findUnique({
         where: { id: memberId },
     });
