@@ -23,13 +23,22 @@ export type InviteLeadershipResult = {
 
 function generateInviteCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = randomBytes(9); // 9 bytes for 9 characters
-  const segment = (offset: number) =>
-    Array.from(
-      { length: 3 },
-      (_, i) => chars[bytes[offset + i] % chars.length]
-    ).join("");
-  return `${segment(0)}-${segment(3)}-${segment(6)}`;
+  const len = chars.length;
+  // Rejection sampling: reject values >= largest multiple of len to avoid modulo bias
+  const limit = 256 - (256 % len);
+
+  const randomChar = (): string => {
+    let byte: number;
+    do {
+      byte = randomBytes(1)[0];
+    } while (byte >= limit);
+    return chars[byte % len];
+  };
+
+  const segment = () =>
+    Array.from({ length: 3 }, randomChar).join("");
+
+  return `${segment()}-${segment()}-${segment()}`;
 }
 
 function addDays(date: Date, days: number): Date {
