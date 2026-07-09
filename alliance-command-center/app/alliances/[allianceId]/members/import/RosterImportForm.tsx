@@ -376,19 +376,24 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                                                     />
                                                 </td>
                                                 <td className="px-4 py-2">
-                                                    <input
-                                                        type="text"
-                                                        value={member.playerName}
-                                                        onChange={(e) =>
-                                                            updateMember(member.id, "playerName", e.target.value)
-                                                        }
-                                                        disabled={!member.selected}
-                                                        className={`w-full px-2 py-1 border rounded text-sm ${
-                                                            member.selected
-                                                                ? "border-gray-300 bg-white text-gray-900"
-                                                                : "border-gray-200 bg-gray-100 text-gray-500"
-                                                        }`}
-                                                    />
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                            New
+                                                        </span>
+                                                        <input
+                                                            type="text"
+                                                            value={member.playerName}
+                                                            onChange={(e) =>
+                                                                updateMember(member.id, "playerName", e.target.value)
+                                                            }
+                                                            disabled={!member.selected}
+                                                            className={`flex-1 px-2 py-1 border rounded text-sm ${
+                                                                member.selected
+                                                                    ? "border-gray-300 bg-white text-gray-900"
+                                                                    : "border-gray-200 bg-gray-100 text-gray-500"
+                                                            }`}
+                                                        />
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-2">
                                                     <input
@@ -440,7 +445,10 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                                         {parsedMembers
                                             .filter((m) => m.isExisting)
                                             .map((member) => (
-                                                <li key={member.id} className="px-4 py-2 text-sm text-gray-500">
+                                                <li key={member.id} className="px-4 py-2 text-sm text-gray-500 flex items-center gap-2">
+                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                                                        Exists
+                                                    </span>
                                                     {member.playerName}
                                                 </li>
                                             ))}
