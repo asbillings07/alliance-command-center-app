@@ -44,11 +44,14 @@ export default async function MemberPage({ params }: Params) {
     });
 
     // Query 2: Member's metric entries for the active period (if exists)
+    // Filter to only active metric IDs to reduce unnecessary data transfer
+    const activeMetricIds = activePeriod?.periodMetrics.map((pm) => pm.metricId) ?? [];
     const memberEntries = activePeriod
         ? await prisma.memberMetricEntry.findMany({
               where: {
                   memberId: member.id,
                   periodId: activePeriod.id,
+                  metricId: { in: activeMetricIds },
               },
               orderBy: [
                   { metricId: "asc" },
