@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { updateMember } from "../memberActions";
+import { updateMember } from "../member-actions";
 import { formatPower } from "@/app/src/lib/formatPower";
 
 interface EditMemberFormProps {

@@ -6,7 +6,6 @@ import { requireAllianceMemberAccess } from "@/app/src/lib/auth/requireMembershi
 import { LeadershipNoteCard } from "./LeadershipNoteCard";
 import { MemberPerformanceSection } from "./MemberPerformanceSection";
 import type { CurrentMetricViewModel } from "./MemberPerformanceSection";
-import Link from "next/link";
 import { MemberActions } from "./MemberActions";
 
 type Params = {

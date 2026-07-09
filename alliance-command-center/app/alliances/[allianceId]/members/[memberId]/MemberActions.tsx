@@ -3,7 +3,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { archiveMember, restoreMember } from "./memberActions";
+import { archiveMember, restoreMember } from "./member-actions";
 
 interface MemberActionsProps {
     allianceId: string;
