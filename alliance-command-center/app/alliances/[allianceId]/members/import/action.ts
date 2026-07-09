@@ -16,6 +16,7 @@ export type ImportResult = {
     created: number;
     skippedExisting: number;
     skippedDuplicates: number;
+    skippedEmptyNames: number;
     errors: string[];
 };
 
@@ -27,19 +28,19 @@ export async function importMembers(
     await requireLeadershipAccess(allianceId, user.id);
 
     if (entries.length === 0) {
-        return { created: 0, skippedExisting: 0, skippedDuplicates: 0, errors: ["No entries to import"] };
+        return { created: 0, skippedExisting: 0, skippedDuplicates: 0, skippedEmptyNames: 0, errors: ["No entries to import"] };
     }
 
     if (entries.length > 100) {
-        return { created: 0, skippedExisting: 0, skippedDuplicates: 0, errors: ["Cannot import more than 100 members at once"] };
+        return { created: 0, skippedExisting: 0, skippedDuplicates: 0, skippedEmptyNames: 0, errors: ["Cannot import more than 100 members at once"] };
     }
 
     // Validate player names - filter out empty/whitespace-only entries
-    const invalidEntries: string[] = [];
+    let skippedEmptyNames = 0;
     const validatedEntries = entries.filter((entry) => {
         const trimmedName = entry.playerName.trim();
         if (!trimmedName) {
-            invalidEntries.push("Empty player name");
+            skippedEmptyNames++;
             return false;
         }
         return true;
@@ -50,8 +51,9 @@ export async function importMembers(
             created: 0, 
             skippedExisting: 0, 
             skippedDuplicates: 0, 
-            errors: invalidEntries.length > 0 
-                ? [`All entries have invalid player names (${invalidEntries.length} empty)`] 
+            skippedEmptyNames,
+            errors: skippedEmptyNames > 0 
+                ? ["All entries have empty player names"] 
                 : ["No valid entries to import"] 
         };
     }
@@ -91,25 +93,22 @@ export async function importMembers(
             created: 0,
             skippedExisting,
             skippedDuplicates,
+            skippedEmptyNames,
             errors: [],
         };
     }
 
-    // Create all new members in a single transaction
+    // Create all new members in a single batch query
     const errors: string[] = [];
 
     try {
-        await prisma.$transaction(async (tx) => {
-            for (const entry of newEntries) {
-                await tx.member.create({
-                    data: {
-                        allianceId,
-                        playerName: entry.playerName.trim(),
-                        thp: entry.thp ?? null,
-                        role: entry.role?.trim() ?? null,
-                    },
-                });
-            }
+        await prisma.member.createMany({
+            data: newEntries.map((entry) => ({
+                allianceId,
+                playerName: entry.playerName.trim(),
+                thp: entry.thp ?? null,
+                role: entry.role?.trim() ?? null,
+            })),
         });
     } catch (error) {
         console.error("Error importing members:", error);
@@ -118,6 +117,7 @@ export async function importMembers(
             created: 0,
             skippedExisting,
             skippedDuplicates,
+            skippedEmptyNames,
             errors,
         };
     }
@@ -128,6 +128,7 @@ export async function importMembers(
         created: newEntries.length,
         skippedExisting,
         skippedDuplicates,
+        skippedEmptyNames,
         errors,
     };
 }

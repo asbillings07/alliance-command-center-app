@@ -191,26 +191,15 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                 created: 0, 
                 skippedExisting: existingCount, 
                 skippedDuplicates: 0, 
+                skippedEmptyNames: 0,
                 errors: [] 
             });
             setStep("complete");
             return;
         }
 
-        // Validate: filter out entries with empty player names
-        const validMembers = selectedMembers.filter((m) => m.playerName.trim().length > 0);
-        const emptyNameCount = selectedMembers.length - validMembers.length;
-
-        if (validMembers.length === 0) {
-            setError("All selected members have empty player names. Please fill in names before importing.");
-            return;
-        }
-
-        if (emptyNameCount > 0) {
-            setError(`${emptyNameCount} member(s) skipped due to empty player name.`);
-        }
-
-        const entries: RosterEntry[] = validMembers.map((m) => ({
+        // Send all selected members - server will filter empty names and report in result
+        const entries: RosterEntry[] = selectedMembers.map((m) => ({
             playerName: m.playerName.trim(),
             thp: parseNumber(m.thp),
             role: m.role.trim() || undefined,
@@ -530,6 +519,12 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                         <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
                             <p className="text-3xl font-bold text-gray-500">{importResult.skippedDuplicates}</p>
                             <p className="text-sm text-gray-600">Duplicates in file</p>
+                        </div>
+                    )}
+                    {importResult.skippedEmptyNames > 0 && (
+                        <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
+                            <p className="text-3xl font-bold text-yellow-600">{importResult.skippedEmptyNames}</p>
+                            <p className="text-sm text-gray-600">Empty names skipped</p>
                         </div>
                     )}
                 </div>
