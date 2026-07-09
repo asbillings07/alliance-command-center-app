@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { analyzeCSV, normalizeName } from "@/app/src/lib/memberMatcher";
+import { analyzeCSV, normalizeName, parseCSVLine } from "@/app/src/lib/memberMatcher";
 import type { ColumnInfo } from "@/app/src/lib/memberMatcher";
 import { importMembers } from "./action";
 import type { RosterEntry, ImportResult } from "./action";
@@ -190,9 +190,13 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
         const selectedMembers = parsedMembers.filter((m) => m.selected && !m.isExisting);
 
         if (selectedMembers.length === 0) {
-            const skippedCount = parsedMembers.filter((m) => m.isExisting).length +
-                parsedMembers.filter((m) => !m.selected && !m.isExisting).length;
-            setImportResult({ created: 0, skipped: skippedCount, errors: [] });
+            const existingCount = parsedMembers.filter((m) => m.isExisting).length;
+            setImportResult({ 
+                created: 0, 
+                skippedExisting: existingCount, 
+                skippedDuplicates: 0, 
+                errors: [] 
+            });
             setStep("complete");
             return;
         }
@@ -507,10 +511,18 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                         <p className="text-3xl font-bold text-green-600">{importResult.created}</p>
                         <p className="text-sm text-gray-600">Members created</p>
                     </div>
-                    <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
-                        <p className="text-3xl font-bold text-gray-500">{importResult.skipped}</p>
-                        <p className="text-sm text-gray-600">Already existed</p>
-                    </div>
+                    {importResult.skippedExisting > 0 && (
+                        <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
+                            <p className="text-3xl font-bold text-gray-500">{importResult.skippedExisting}</p>
+                            <p className="text-sm text-gray-600">Already existed</p>
+                        </div>
+                    )}
+                    {importResult.skippedDuplicates > 0 && (
+                        <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
+                            <p className="text-3xl font-bold text-gray-500">{importResult.skippedDuplicates}</p>
+                            <p className="text-sm text-gray-600">Duplicates in file</p>
+                        </div>
+                    )}
                 </div>
 
                 {importResult.errors.length > 0 && (
@@ -543,31 +555,4 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     }
 
     return null;
-}
-
-function parseCSVLine(line: string): string[] {
-    const values: string[] = [];
-    let current = "";
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-
-        if (char === '"') {
-            if (inQuotes && line[i + 1] === '"') {
-                current += '"';
-                i++;
-            } else {
-                inQuotes = !inQuotes;
-            }
-        } else if (char === "," && !inQuotes) {
-            values.push(current);
-            current = "";
-        } else {
-            current += char;
-        }
-    }
-
-    values.push(current);
-    return values;
 }

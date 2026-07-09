@@ -14,7 +14,8 @@ export type RosterEntry = {
 
 export type ImportResult = {
     created: number;
-    skipped: number;
+    skippedExisting: number;
+    skippedDuplicates: number;
     errors: string[];
 };
 
@@ -26,11 +27,11 @@ export async function importMembers(
     await requireLeadershipAccess(allianceId, user.id);
 
     if (entries.length === 0) {
-        return { created: 0, skipped: 0, errors: ["No entries to import"] };
+        return { created: 0, skippedExisting: 0, skippedDuplicates: 0, errors: ["No entries to import"] };
     }
 
     if (entries.length > 100) {
-        return { created: 0, skipped: 0, errors: ["Cannot import more than 100 members at once"] };
+        return { created: 0, skippedExisting: 0, skippedDuplicates: 0, errors: ["Cannot import more than 100 members at once"] };
     }
 
     // Get existing members for this alliance
@@ -44,33 +45,36 @@ export async function importMembers(
         existingMembers.map((m) => normalizeName(m.playerName))
     );
 
-    // Separate new entries from existing
+    // Separate new entries from existing, tracking all skip reasons
     const newEntries: RosterEntry[] = [];
-    const skippedCount = { count: 0 };
+    const seenInImport = new Set<string>();
+    let skippedExisting = 0;
+    let skippedDuplicates = 0;
 
     for (const entry of entries) {
         const normalized = normalizeName(entry.playerName);
+        
         if (existingNamesNormalized.has(normalized)) {
-            skippedCount.count++;
+            skippedExisting++;
+        } else if (seenInImport.has(normalized)) {
+            skippedDuplicates++;
         } else {
-            // Check for duplicates within the import itself
-            if (!newEntries.some((e) => normalizeName(e.playerName) === normalized)) {
-                newEntries.push(entry);
-            }
+            seenInImport.add(normalized);
+            newEntries.push(entry);
         }
     }
 
     if (newEntries.length === 0) {
         return {
             created: 0,
-            skipped: skippedCount.count,
+            skippedExisting,
+            skippedDuplicates,
             errors: [],
         };
     }
 
     // Create all new members in a single transaction
     const errors: string[] = [];
-    let createdCount = 0;
 
     try {
         await prisma.$transaction(async (tx) => {
@@ -83,19 +87,25 @@ export async function importMembers(
                         role: entry.role?.trim() ?? null,
                     },
                 });
-                createdCount++;
             }
         });
     } catch (error) {
         console.error("Error importing members:", error);
-        errors.push("Failed to create some members. Please try again.");
+        errors.push("Failed to create members. Please try again.");
+        return {
+            created: 0,
+            skippedExisting,
+            skippedDuplicates,
+            errors,
+        };
     }
 
     revalidatePath(`/alliances/${allianceId}/members`);
 
     return {
-        created: createdCount,
-        skipped: skippedCount.count,
+        created: newEntries.length,
+        skippedExisting,
+        skippedDuplicates,
         errors,
     };
 }
