@@ -82,16 +82,24 @@ export async function restoreMember(
 export async function updateMember(
     formData: FormData
 ): Promise<MemberActionResult> {
-    const allianceId = formData.get("allianceId") as string;
-    const memberId = formData.get("memberId") as string;
-    const playerName = (formData.get("playerName") as string)?.trim();
-    const thpRaw = formData.get("thp") as string;
-    const squadPowerRaw = formData.get("squadPower") as string;
-    const role = (formData.get("role") as string)?.trim() || null;
+    const allianceId = formData.get("allianceId");
+    const memberId = formData.get("memberId");
+    const playerName = (formData.get("playerName") as string | null)?.trim();
+    const thpRaw = (formData.get("thp") as string | null) ?? "";
+    const squadPowerRaw = (formData.get("squadPower") as string | null) ?? "";
+    const role = (formData.get("role") as string | null)?.trim() || null;
+
+    if (
+        typeof allianceId !== "string" ||
+        allianceId.trim() === "" ||
+        typeof memberId !== "string" ||
+        memberId.trim() === ""
+    ) {
+        return { success: false, error: "Invalid request" };
+    }
 
     const user = await requireAuth();
     await requireLeadershipAccess(allianceId, user.id);
-
     if (!playerName) {
         return { success: false, error: "Player name is required" };
     }
