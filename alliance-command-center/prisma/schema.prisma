@@ -41,6 +41,7 @@ model Alliance {
   metrics          Metric[]
   memberships      AllianceMembership[]
   metricPeriods    MetricPeriod[]
+  invitations      Invitation[]
   @@unique([name, server])
 }
 
@@ -72,12 +73,18 @@ model AllianceMember {
   archivedAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
+  
   alliance    Alliance  @relation(fields: [allianceId], references: [id])
   metricEntries MemberMetricEntry[]
   leadershipNotes LeadershipNote[]
+  invitations Invitation[]
 
   @@unique([allianceId, playerName])
   @@index([allianceId, archivedAt])
+  @@index([allianceId, userId])
 }
 
 model User {
@@ -89,6 +96,9 @@ model User {
 
   memberships AllianceMembership[]
   authoredNotes LeadershipNote[]
+  linkedMembers AllianceMember[]
+  invitationsSent Invitation[] @relation("InvitationsSent")
+  invitationsAccepted Invitation[] @relation("InvitationsAccepted")
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -180,4 +190,35 @@ model LeadershipNote {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Invitation {
+  id String @id @default(cuid())
+  
+  allianceId String
+  alliance   Alliance @relation(fields: [allianceId], references: [id])
+  
+  invitedById String
+  invitedBy   User @relation("InvitationsSent", fields: [invitedById], references: [id])
+  
+  allianceMemberId   String?
+  allianceMember     AllianceMember? @relation(fields: [allianceMemberId], references: [id])
+  playerNameSnapshot String
+  
+  email          String
+  membershipRole AllianceRole
+  token          String  @unique
+  code           String? @unique
+  
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  acceptedByUserId String?
+  acceptedByUser   User? @relation("InvitationsAccepted", fields: [acceptedByUserId], references: [id])
+  cancelledAt      DateTime?
+  
+  createdAt DateTime @default(now())
+  
+  @@index([allianceId, email])
+  @@index([token])
+  @@index([code])
 }

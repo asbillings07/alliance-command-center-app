@@ -10,15 +10,14 @@ export async function login(
   _prevState: LoginState,
   formData: FormData,
 ): Promise<LoginState> {
-  //1. Extract email/password
   const email = formData.get("email")?.toString().trim();
   const password = formData.get("password")?.toString().trim();
-  // 2. Validate inputs
+  const callbackUrl = formData.get("callbackUrl")?.toString() || "/app";
+
   if (!email || !password) {
     return { error: "Email and password are required" };
   }
 
-  //3. Call signIn()
   try {
     await signIn("credentials", {
       email,
@@ -30,6 +29,5 @@ export async function login(
     return { error: "Invalid email or password" };
   }
 
-  // 5. Redirect to /app
-  redirect("/app");
+  redirect(callbackUrl);
 }

@@ -1,11 +1,15 @@
 'use client'
 
 import { useActionState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { login, type LoginState } from './actions'
 
 const initialState: LoginState = { error: null }
 
 export default function LoginPage() {
+  const searchParams = useSearchParams()
+  const callbackUrl = searchParams.get('callbackUrl') || '/app'
   const [state, formAction, isPending] = useActionState(login, initialState)
 
   return (
@@ -16,6 +20,7 @@ export default function LoginPage() {
         {state.error && <p className="text-red-500 text-sm">{state.error}</p>}
 
         <form className="flex flex-col gap-2 w-full rounded-md border border-gray-300 p-4" action={formAction}>
+          <input type="hidden" name="callbackUrl" value={callbackUrl} />
           <input
             className="p-2 border border-gray-300 rounded-md text-gray-800"
             name="email"
@@ -41,6 +46,15 @@ export default function LoginPage() {
             {isPending ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
+
+        <div className="text-center pt-2 border-t border-gray-200">
+          <p className="text-sm text-gray-600">
+            Have an invitation code?{' '}
+            <Link href="/invite" className="text-blue-500 hover:text-blue-700">
+              Enter it here
+            </Link>
+          </p>
+        </div>
       </section>
     </main>
   )

@@ -20,6 +20,7 @@ Before making significant changes, read these documents in order:
 4. `docs/architecture.md`
 5. `docs/engineering-review-philosophy.md`
 6. `docs/design-principles.md`
+7. `docs/color-design-principles.md`
 
 These documents define the philosophy, architecture, and engineering standards of the project.
 
