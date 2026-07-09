@@ -192,7 +192,6 @@ export function InviteCollaboratorForm({
       )}
 
       <PlayerNameCombobox
-        allianceId={allianceId}
         onSelect={setSelection}
         searchMembers={handleSearchMembers}
       />
