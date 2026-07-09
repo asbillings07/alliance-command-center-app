@@ -53,7 +53,7 @@ export default async function PeriodRecordPage({ params }: { params: Promise<{ a
                     href={`/alliances/${allianceId}/periods/${periodId}/import`}
                     className="text-blue-500 hover:text-blue-700"
                 >
-                    Import from CSV →
+                    Import from Spreadsheet →
                 </Link>
             </div>
 

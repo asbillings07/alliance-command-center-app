@@ -180,22 +180,87 @@ export type CSVParseResult = {
   detectedMetricName: string | null;
 };
 
+export type ColumnInfo = {
+  index: number;
+  name: string;
+  isNumeric: boolean;
+  sampleValues: string[];
+};
+
+export type CSVAnalysisResult = {
+  columns: ColumnInfo[];
+  rowCount: number;
+  error: string | null;
+};
+
 /**
- * Parse CSV content into raw entries
- * Expects format: name,value (exactly 2 columns, with header row)
- * Returns the detected metric name from the header's value column
- * 
- * Rejects CSVs with more than 2 columns to prevent silent data corruption.
+ * Analyze CSV content to discover columns and their types.
+ * Returns column metadata to help users choose which columns to import.
+ */
+export function analyzeCSV(content: string): CSVAnalysisResult {
+  const trimmedContent = content.trim();
+  if (!trimmedContent) {
+    return { columns: [], rowCount: 0, error: "CSV file is empty" };
+  }
+
+  const lines = trimmedContent.split(/\r?\n/);
+  if (lines.length < 2) {
+    return { columns: [], rowCount: 0, error: "CSV must have a header row and at least one data row" };
+  }
+
+  const headerColumns = parseCSVLine(lines[0]);
+  if (headerColumns.length === 0) {
+    return { columns: [], rowCount: 0, error: "No columns found in CSV header" };
+  }
+
+  // Analyze each column using data rows
+  const columns: ColumnInfo[] = headerColumns.map((header, index) => ({
+    index,
+    name: header.trim() || `Column ${index + 1}`,
+    isNumeric: true,
+    sampleValues: [],
+  }));
+
+  // Sample up to 10 data rows to determine column types
+  const sampleSize = Math.min(10, lines.length - 1);
+  for (let i = 1; i <= sampleSize; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    const values = parseCSVLine(line);
+    for (let j = 0; j < columns.length; j++) {
+      const value = values[j]?.trim() || "";
+      columns[j].sampleValues.push(value);
+
+      // Check if value is numeric (integer)
+      if (value && !/^-?\d+$/.test(value)) {
+        columns[j].isNumeric = false;
+      }
+    }
+  }
+
+  // Count actual data rows (excluding header and empty lines)
+  let rowCount = 0;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim()) rowCount++;
+  }
+
+  return { columns, rowCount, error: null };
+}
+
+/**
+ * Parse CSV content into raw entries using user-specified columns.
+ * Supports CSVs with any number of columns - user chooses which to use.
  */
 export function parseCSV(
   content: string,
   options: {
-    nameColumn?: number;
-    valueColumn?: number;
+    nameColumn: number;
+    valueColumn: number;
     hasHeader?: boolean;
-  } = {},
+  },
 ): CSVParseResult {
-  const { nameColumn = 0, valueColumn = 1, hasHeader = true } = options;
+  const { nameColumn, valueColumn, hasHeader = true } = options;
   const trimmedContent = content.trim();
   if (!trimmedContent) {
     return { entries: [], errors: ["CSV file is empty"], detectedMetricName: null };
@@ -204,19 +269,6 @@ export function parseCSV(
   const entries: RawEntry[] = [];
   const errors: string[] = [];
   let detectedMetricName: string | null = null;
-
-  // Validate column count from header or first data row
-  const firstLineColumns = parseCSVLine(lines[0]);
-  if (firstLineColumns.length > 2) {
-    return {
-      entries: [],
-      errors: [
-        `CSV has ${firstLineColumns.length} columns, but only 2 are supported (name, value). ` +
-        `Please remove extra columns or use a CSV with just the player name and metric value.`
-      ],
-      detectedMetricName: null,
-    };
-  }
 
   // Extract metric name from header if present
   if (hasHeader && lines.length > 0) {
@@ -233,16 +285,6 @@ export function parseCSV(
     if (!line) continue;
 
     const columns = parseCSVLine(line);
-
-    if (columns.length > 2) {
-      return {
-        entries: [],
-        errors: [
-          `Row ${i + 1}: CSV has ${columns.length} columns, but only 2 are supported (name, value).`,
-        ],
-        detectedMetricName,
-      };
-    }
 
     if (columns.length <= Math.max(nameColumn, valueColumn)) {
       errors.push(`Row ${i + 1}: Not enough columns`);

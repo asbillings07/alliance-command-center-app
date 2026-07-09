@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   normalizeName,
   calculateSimilarity,
+  analyzeCSV,
   parseCSV,
   matchEntriesToMembers,
   matchMetricName,
@@ -55,12 +56,65 @@ describe('calculateSimilarity', () => {
   });
 });
 
+describe('analyzeCSV', () => {
+  it('should detect columns and their types', () => {
+    const csv = `Rank,Player,Score
+1,Dragon,1500
+2,Val,2000`;
+    const result = analyzeCSV(csv);
+    
+    expect(result.error).toBeNull();
+    expect(result.columns).toHaveLength(3);
+    expect(result.rowCount).toBe(2);
+    
+    expect(result.columns[0].name).toBe('Rank');
+    expect(result.columns[0].isNumeric).toBe(true);
+    
+    expect(result.columns[1].name).toBe('Player');
+    expect(result.columns[1].isNumeric).toBe(false);
+    
+    expect(result.columns[2].name).toBe('Score');
+    expect(result.columns[2].isNumeric).toBe(true);
+  });
+
+  it('should return sample values for each column', () => {
+    const csv = `Name,Score
+Dragon,1500
+Val,2000`;
+    const result = analyzeCSV(csv);
+    
+    expect(result.columns[0].sampleValues).toContain('Dragon');
+    expect(result.columns[1].sampleValues).toContain('1500');
+  });
+
+  it('should return error for empty CSV', () => {
+    const result = analyzeCSV('');
+    expect(result.error).toContain('empty');
+  });
+
+  it('should return error for header-only CSV', () => {
+    const result = analyzeCSV('Name,Score');
+    expect(result.error).toContain('at least one data row');
+  });
+
+  it('should handle many columns', () => {
+    const csv = `Rank,Player,S5 Kills,S5 Captures,Combined,Tier
+1,Dragon,1500,800,2300,Gold
+2,Val,2000,600,2600,Platinum`;
+    const result = analyzeCSV(csv);
+    
+    expect(result.columns).toHaveLength(6);
+    expect(result.columns.filter(c => c.isNumeric)).toHaveLength(4);
+    expect(result.columns.filter(c => !c.isNumeric)).toHaveLength(2);
+  });
+});
+
 describe('parseCSV', () => {
   it('should parse a valid 2-column CSV with header', () => {
     const csv = `name,Kill Points
 Dragon,1500
 Val,2000`;
-    const result = parseCSV(csv);
+    const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
     
     expect(result.detectedMetricName).toBe('Kill Points');
     expect(result.entries).toHaveLength(2);
@@ -71,7 +125,7 @@ Val,2000`;
 
   it('should handle Windows line endings (CRLF)', () => {
     const csv = "name,Score\r\nDragon,1500\r\nVal,2000";
-    const result = parseCSV(csv);
+    const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
     
     expect(result.entries).toHaveLength(2);
     expect(result.errors).toHaveLength(0);
@@ -81,7 +135,7 @@ Val,2000`;
     const csv = `name,Score
 "Dragon, The Great",1500
 Val,2000`;
-    const result = parseCSV(csv);
+    const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
     
     expect(result.entries).toHaveLength(2);
     expect(result.entries[0].name).toBe('Dragon, The Great');
@@ -90,27 +144,39 @@ Val,2000`;
   it('should handle quoted fields with escaped quotes', () => {
     const csv = `name,Score
 "Dragon ""The Great""",1500`;
-    const result = parseCSV(csv);
+    const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
     
     expect(result.entries[0].name).toBe('Dragon "The Great"');
   });
 
-  it('should reject CSV with more than 2 columns', () => {
-    const csv = `name,Rank,Score
-Dragon,1,1500`;
-    const result = parseCSV(csv);
+  it('should parse multi-column CSV with user-selected columns', () => {
+    const csv = `Rank,Player,S5 Kills,S5 Captures
+1,Dragon,1500,800
+2,Val,2000,600`;
+    const result = parseCSV(csv, { nameColumn: 1, valueColumn: 2 });
     
-    expect(result.entries).toHaveLength(0);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain('3 columns');
-    expect(result.errors[0]).toContain('only 2 are supported');
+    expect(result.detectedMetricName).toBe('S5 Kills');
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries[0]).toEqual({ name: 'Dragon', value: 1500 });
+    expect(result.entries[1]).toEqual({ name: 'Val', value: 2000 });
+  });
+
+  it('should allow selecting different value columns', () => {
+    const csv = `Player,Kills,Captures
+Dragon,1500,800
+Val,2000,600`;
+    const result = parseCSV(csv, { nameColumn: 0, valueColumn: 2 });
+    
+    expect(result.detectedMetricName).toBe('Captures');
+    expect(result.entries[0]).toEqual({ name: 'Dragon', value: 800 });
+    expect(result.entries[1]).toEqual({ name: 'Val', value: 600 });
   });
 
   it('should report error for rows with missing values', () => {
     const csv = `name,Score
 Dragon,1500
 Val,`;
-    const result = parseCSV(csv);
+    const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
     
     expect(result.entries).toHaveLength(1);
     expect(result.errors).toHaveLength(1);
@@ -121,7 +187,7 @@ Val,`;
     const csv = `name,Score
 Dragon,1500.5
 Val,abc`;
-    const result = parseCSV(csv);
+    const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
     
     expect(result.entries).toHaveLength(0);
     expect(result.errors).toHaveLength(2);
@@ -132,14 +198,14 @@ Val,abc`;
 Dragon,1500
 
 Val,2000`;
-    const result = parseCSV(csv);
+    const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
     
     expect(result.entries).toHaveLength(2);
     expect(result.errors).toHaveLength(0);
   });
 
   it('should return error for empty CSV', () => {
-    const result = parseCSV('');
+    const result = parseCSV('', { nameColumn: 0, valueColumn: 1 });
     
     expect(result.entries).toHaveLength(0);
     expect(result.errors).toHaveLength(1);
@@ -149,7 +215,7 @@ Val,2000`;
   it('should handle negative integers', () => {
     const csv = `name,Score
 Dragon,-100`;
-    const result = parseCSV(csv);
+    const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
     
     expect(result.entries).toHaveLength(1);
     expect(result.entries[0].value).toBe(-100);
@@ -158,7 +224,7 @@ Dragon,-100`;
   it('should trim whitespace from names and values', () => {
     const csv = `name,Score
   Dragon  ,  1500  `;
-    const result = parseCSV(csv);
+    const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
     
     expect(result.entries[0].name).toBe('Dragon');
     expect(result.entries[0].value).toBe(1500);

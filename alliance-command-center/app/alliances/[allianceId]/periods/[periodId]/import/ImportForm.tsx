@@ -1,6 +1,6 @@
 'use client'
 import { useState, useTransition, useMemo } from "react";
-import { parseCSV, matchEntriesToMembers, matchMetricName, type MatchResult, type MatchSummary, type MetricMatchResult } from "@/app/src/lib/memberMatcher";
+import { analyzeCSV, parseCSV, matchEntriesToMembers, type MatchResult, type MatchSummary, type ColumnInfo } from "@/app/src/lib/memberMatcher";
 import { importMemberMetrics } from "./action";
 
 type Member = {
@@ -20,16 +20,40 @@ type ImportFormProps = {
     metrics: Metric[];
 };
 
-type ImportStep = "upload" | "metric-not-found" | "preview" | "complete";
+type ImportStep = "upload" | "select" | "preview" | "complete";
 
-// Maps memberId to the index in matchSummary.results that should be imported
 type DuplicateSelections = Record<string, number>;
+
+// Recognized player column names (case-insensitive)
+// Only add aliases that come from real spreadsheet exports
+const PLAYER_COLUMN_NAMES = new Set([
+    'player',
+    'player name',
+    'playername',
+    'member',
+    'member name', 
+    'membername',
+    'alliance member',
+    'alliancemember',
+    'name',
+    'ign',
+]);
+
+function isPlayerColumn(columnName: string): boolean {
+    const normalized = columnName.toLowerCase().trim().replace(/\s+/g, ' ').replace(/-/g, ' ');
+    const noSpaces = normalized.replace(/\s/g, '');
+    return PLAYER_COLUMN_NAMES.has(normalized) || PLAYER_COLUMN_NAMES.has(noSpaces);
+}
 
 export function ImportForm({ periodId, allianceId, members, metrics }: ImportFormProps) {
     const [step, setStep] = useState<ImportStep>("upload");
+    const [csvContent, setCsvContent] = useState<string>("");
+    const [columns, setColumns] = useState<ColumnInfo[]>([]);
+    const [rowCount, setRowCount] = useState(0);
+    const [autoDetectedPlayerColumn, setAutoDetectedPlayerColumn] = useState<ColumnInfo | null>(null);
+    const [valueColumn, setValueColumn] = useState<number | null>(null);
     const [selectedMetricId, setSelectedMetricId] = useState(metrics[0]?.id || "");
     const [matchSummary, setMatchSummary] = useState<MatchSummary | null>(null);
-    const [metricMatch, setMetricMatch] = useState<MetricMatchResult | null>(null);
     const [parseErrors, setParseErrors] = useState<string[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [importCount, setImportCount] = useState(0);
@@ -37,6 +61,8 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     const [duplicateSelections, setDuplicateSelections] = useState<DuplicateSelections>({});
 
     const selectedMetric = metrics.find((m) => m.id === selectedMetricId);
+    const numericColumns = columns.filter(c => c.isNumeric);
+    const selectedValueColumnName = valueColumn !== null ? columns[valueColumn]?.name : null;
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -44,13 +70,11 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
 
         setError(null);
         setParseErrors([]);
-        setMetricMatch(null);
-        setDuplicateSelections({});
 
         const reader = new FileReader();
         reader.onload = (event) => {
             const content = event.target?.result as string;
-            processCSV(content);
+            analyzeFile(content);
         };
         reader.onerror = () => {
             setError("Failed to read file");
@@ -58,10 +82,48 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         reader.readAsText(file);
     };
 
-    const processCSV = (content: string) => {
-        const { entries, errors, detectedMetricName } = parseCSV(content, {
-            nameColumn: 0,
-            valueColumn: 1,
+    const analyzeFile = (content: string) => {
+        const result = analyzeCSV(content);
+        
+        if (result.error) {
+            setError(result.error);
+            return;
+        }
+
+        if (result.columns.length < 2) {
+            setError("CSV must have at least 2 columns");
+            return;
+        }
+
+        setCsvContent(content);
+        setColumns(result.columns);
+        setRowCount(result.rowCount);
+
+        // Auto-detect player column (required - must match known names)
+        const textCols = result.columns.filter(c => !c.isNumeric);
+        const playerCol = textCols.find(c => isPlayerColumn(c.name));
+        setAutoDetectedPlayerColumn(playerCol || null);
+
+        // Auto-select first numeric column
+        const numCols = result.columns.filter(c => c.isNumeric);
+        if (numCols.length > 0) {
+            setValueColumn(numCols[0].index);
+        } else {
+            setValueColumn(null);
+        }
+
+        setStep("select");
+    };
+
+    const handleSelectComplete = () => {
+        if (!autoDetectedPlayerColumn || valueColumn === null || !selectedMetricId) {
+            return;
+        }
+
+        // Parse the CSV with the detected player column and selected value column
+        const { entries, errors } = parseCSV(csvContent, {
+            nameColumn: autoDetectedPlayerColumn.index,
+            valueColumn: valueColumn,
             hasHeader: true,
         });
 
@@ -75,7 +137,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         const summary = matchEntriesToMembers(entries, members);
         setMatchSummary(summary);
 
-        // Initialize duplicate selections - default to first occurrence for each member
+        // Initialize duplicate selections
         const initialSelections: DuplicateSelections = {};
         summary.results.forEach((result, index) => {
             if ((result.status === "matched" || result.status === "duplicate") && result.memberId) {
@@ -86,29 +148,6 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         });
         setDuplicateSelections(initialSelections);
 
-        // Try to match the detected metric name to configured metrics (exact match after normalization)
-        if (detectedMetricName) {
-            const metricMatchResult = matchMetricName(detectedMetricName, metrics);
-            setMetricMatch(metricMatchResult);
-
-            if (metricMatchResult.status === "unmatched") {
-                setStep("metric-not-found");
-                return;
-            }
-
-            if (metricMatchResult.status === "matched" && metricMatchResult.metricId) {
-                setSelectedMetricId(metricMatchResult.metricId);
-            }
-        }
-
-        setStep("preview");
-    };
-
-    const handleMetricSelected = () => {
-        if (!selectedMetricId) {
-            setError("Please select a metric");
-            return;
-        }
         setStep("preview");
     };
 
@@ -119,7 +158,6 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         }));
     };
 
-    // Get entries to import based on duplicate selections
     const getEntriesToImport = () => {
         if (!matchSummary) return [];
 
@@ -163,15 +201,30 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
 
     const handleReset = () => {
         setStep("upload");
+        setCsvContent("");
+        setColumns([]);
+        setRowCount(0);
+        setAutoDetectedPlayerColumn(null);
+        setValueColumn(null);
         setMatchSummary(null);
-        setMetricMatch(null);
         setParseErrors([]);
         setError(null);
         setImportCount(0);
         setDuplicateSelections({});
     };
 
-    // Precompute which memberIds have duplicates - O(n) once instead of O(n²) during render
+    const handleBack = () => {
+        if (step === "select") {
+            handleReset();
+        } else if (step === "preview") {
+            setStep("select");
+            setMatchSummary(null);
+            setParseErrors([]);
+            setError(null);
+        }
+    };
+
+    // Precompute which memberIds have duplicates
     const membersWithDuplicates = useMemo(() => {
         if (!matchSummary) return new Set<string>();
         
@@ -203,7 +256,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                 </div>
                 <button
                     onClick={handleReset}
-                    className="px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer"
+                    className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
                 >
                     Import Another File
                 </button>
@@ -211,78 +264,166 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         );
     }
 
-    // Metric not found step
-    if (step === "metric-not-found" && metricMatch) {
-        const entriesToImport = getEntriesToImport();
-        
+    // Select step - validate player column, choose value column and metric
+    if (step === "select") {
+        const canProceed = autoDetectedPlayerColumn && numericColumns.length > 0 && valueColumn !== null && selectedMetricId && metrics.length > 0;
+
         return (
-            <div className="w-full max-w-2xl flex flex-col gap-4">
+            <div className="w-full max-w-2xl flex flex-col gap-5">
                 <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-amber-800">Metric Not Found</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">Configure Import</h3>
                     <button
-                        onClick={handleReset}
-                        className="text-sm text-gray-500 hover:text-gray-700 cursor-pointer"
+                        onClick={handleBack}
+                        className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
                     >
                         ← Start Over
                     </button>
                 </div>
 
-                <div className="p-4 rounded-md bg-amber-50 border border-amber-300">
-                    <p className="text-amber-900">
-                        The CSV header contains <strong>&quot;{metricMatch.detectedName}&quot;</strong>, 
-                        but no metric with that exact name is configured for this period.
-                    </p>
-                    <p className="text-amber-800 text-sm mt-2">
-                        Please select an existing metric to import this data into, or cancel and configure the metric first.
-                    </p>
-                </div>
+                {/* Player Column Status */}
+                {autoDetectedPlayerColumn ? (
+                    <div className="p-4 rounded-md bg-green-50 border border-green-300">
+                        <div className="flex items-center gap-2">
+                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <p className="text-green-900 font-medium">
+                                Player column found: <strong>{autoDetectedPlayerColumn.name}</strong>
+                            </p>
+                        </div>
+                        <p className="text-green-800 text-sm mt-1 ml-7">
+                            {rowCount} rows detected
+                        </p>
+                    </div>
+                ) : (
+                    <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
+                        <div className="flex items-center gap-2">
+                            <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            <p className="text-red-900 font-semibold">
+                                No player column found
+                            </p>
+                        </div>
+                        <p className="text-sm text-red-800 mt-2 ml-7">
+                            Please rename a column in your spreadsheet to one of these:
+                        </p>
+                        <ul className="text-sm text-red-800 mt-1 ml-7 list-disc list-inside">
+                            <li><strong>Player</strong> or <strong>Player Name</strong></li>
+                            <li><strong>Member</strong> or <strong>Member Name</strong></li>
+                            <li><strong>Name</strong>, <strong>IGN</strong>, or <strong>Alliance Member</strong></li>
+                        </ul>
+                    </div>
+                )}
 
-                <div>
-                    <label htmlFor="metric-select" className="block text-sm font-medium text-gray-900 mb-2">
-                        Choose Metric
-                    </label>
-                    <select
-                        id="metric-select"
-                        value={selectedMetricId}
-                        onChange={(e) => setSelectedMetricId(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 p-3 text-base text-gray-900 bg-white"
-                    >
-                        {metrics.map((metric) => (
-                            <option key={metric.id} value={metric.id}>{metric.name}</option>
-                        ))}
-                    </select>
-                </div>
-
-                {matchSummary && (
-                    <div className="p-3 rounded-md bg-gray-100 border border-gray-200">
-                        <p className="text-sm text-gray-800">
-                            <strong>{entriesToImport.length}</strong> entries will be imported
-                            {matchSummary.unmatched > 0 && (
-                                <span> ({matchSummary.unmatched} unmatched members will be skipped)</span>
-                            )}
+                {/* Numeric columns check */}
+                {numericColumns.length === 0 && (
+                    <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
+                        <p className="text-red-900 font-semibold">
+                            No numeric columns found
+                        </p>
+                        <p className="text-sm text-red-800 mt-1">
+                            Your spreadsheet needs at least one column with whole numbers.
                         </p>
                     </div>
                 )}
 
+                {/* No metrics configured check */}
+                {metrics.length === 0 && (
+                    <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
+                        <p className="text-red-900 font-semibold">
+                            No metrics configured for this period
+                        </p>
+                        <p className="text-sm text-red-800 mt-1">
+                            Please add metrics to this evaluation period before importing data.
+                        </p>
+                    </div>
+                )}
+
+                {/* Only show selection if we have a player column and numeric columns */}
+                {autoDetectedPlayerColumn && numericColumns.length > 0 && (
+                    <>
+                        {/* Question 1: Which column has the values? */}
+                        <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
+                            <label htmlFor="value-column" className="block text-sm font-semibold text-gray-900 mb-1">
+                                1. Which column contains the values you want to import?
+                            </label>
+                            <p className="text-sm text-gray-600 mb-3">
+                                {numericColumns.length === 1 
+                                    ? "Found 1 numeric column in your spreadsheet."
+                                    : `Found ${numericColumns.length} numeric columns. We've pre-selected one, but choose the one you want.`
+                                }
+                            </p>
+                            <select
+                                id="value-column"
+                                value={valueColumn ?? ""}
+                                onChange={(e) => setValueColumn(parseInt(e.target.value))}
+                                className="w-full rounded-md border-2 border-gray-300 p-3 text-base text-gray-900 bg-white focus:border-blue-500"
+                            >
+                                {numericColumns.map((col) => (
+                                    <option key={col.index} value={col.index}>
+                                        {col.name}
+                                    </option>
+                                ))}
+                            </select>
+                            {numericColumns.length > 1 && (
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Available: {numericColumns.map(c => c.name).join(', ')}
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Question 2: Which metric to save as? */}
+                        {metrics.length > 0 ? (
+                            <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
+                                <label htmlFor="metric-select" className="block text-sm font-semibold text-gray-900 mb-2">
+                                    2. Which metric should these values be saved as?
+                                </label>
+                                <select
+                                    id="metric-select"
+                                    value={selectedMetricId}
+                                    onChange={(e) => setSelectedMetricId(e.target.value)}
+                                    className="w-full rounded-md border-2 border-gray-300 p-3 text-base text-gray-900 bg-white focus:border-blue-500"
+                                >
+                                    {metrics.map((metric) => (
+                                        <option key={metric.id} value={metric.id}>{metric.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        ) : null}
+
+                        {/* Summary */}
+                        {autoDetectedPlayerColumn && selectedValueColumnName && selectedMetric && (
+                            <div className="p-4 rounded-md bg-blue-50 border border-blue-300">
+                                <p className="text-blue-900 font-medium mb-1">Ready to import:</p>
+                                <ul className="text-blue-900 text-sm list-disc list-inside">
+                                    <li>Player names from: <strong>{autoDetectedPlayerColumn.name}</strong></li>
+                                    <li>Values from: <strong>{selectedValueColumnName}</strong> → <strong>{selectedMetric.name}</strong></li>
+                                </ul>
+                            </div>
+                        )}
+                    </>
+                )}
+
                 {error && (
-                    <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm">
+                    <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">
                         {error}
                     </div>
                 )}
 
                 <div className="flex gap-3 justify-end">
                     <button
-                        onClick={handleReset}
-                        className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        onClick={handleBack}
+                        className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer"
                     >
                         Cancel
                     </button>
                     <button
-                        onClick={handleMetricSelected}
-                        disabled={!selectedMetricId || entriesToImport.length === 0}
-                        className="px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={handleSelectComplete}
+                        disabled={!canProceed}
+                        className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        Continue to Preview
+                        Preview Import
                     </button>
                 </div>
             </div>
@@ -298,46 +439,43 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
             <div className="w-full max-w-2xl flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-gray-900">
-                        Preview Import: {selectedMetric?.name}
+                        Review &amp; Confirm Import
                     </h3>
                     <button
-                        onClick={handleReset}
-                        className="text-sm text-gray-500 hover:text-gray-700 cursor-pointer"
+                        onClick={handleBack}
+                        className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
                     >
-                        ← Start Over
+                        ← Back
                     </button>
                 </div>
 
-                {/* Metric Match Info */}
-                {metricMatch && metricMatch.status === "matched" && (
-                    <div className="p-3 rounded-md bg-blue-50 border border-blue-200">
-                        <p className="text-sm text-blue-800">
-                            CSV metric <strong>&quot;{metricMatch.detectedName}&quot;</strong> matched to <strong>{metricMatch.metricName}</strong>
-                        </p>
-                    </div>
-                )}
+                <div className="p-4 rounded-md bg-blue-100 border border-blue-300">
+                    <p className="text-blue-900">
+                        <strong>{selectedValueColumnName}</strong> → <strong>{selectedMetric?.name}</strong>
+                    </p>
+                </div>
 
                 {/* Summary Stats */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="p-3 rounded-md bg-gray-200 border border-gray-300">
+                <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="p-4 rounded-md bg-gray-100 border border-gray-300">
                         <div className="text-2xl font-bold text-gray-900">{matchSummary.total}</div>
-                        <div className="text-xs text-gray-700">Total Rows</div>
+                        <div className="text-sm text-gray-700">Total Rows</div>
                     </div>
-                    <div className="p-3 rounded-md bg-green-100 border border-green-200">
-                        <div className="text-2xl font-bold text-green-800">{entriesToImport.length}</div>
-                        <div className="text-xs text-green-700">Will Import</div>
+                    <div className="p-4 rounded-md bg-green-100 border border-green-300">
+                        <div className="text-2xl font-bold text-green-900">{entriesToImport.length}</div>
+                        <div className="text-sm text-green-800">Will Import</div>
                     </div>
-                    <div className="p-3 rounded-md bg-red-100 border border-red-200">
-                        <div className="text-2xl font-bold text-red-800">{matchSummary.unmatched}</div>
-                        <div className="text-xs text-red-700">Unmatched</div>
+                    <div className="p-4 rounded-md bg-red-100 border border-red-300">
+                        <div className="text-2xl font-bold text-red-900">{matchSummary.unmatched}</div>
+                        <div className="text-sm text-red-800">Unmatched</div>
                     </div>
                 </div>
 
                 {/* Duplicate Resolution Notice */}
                 {hasDuplicates && (
-                    <div className="p-3 rounded-md bg-yellow-50 border border-yellow-300">
-                        <h4 className="font-medium text-yellow-900">Duplicates Found</h4>
-                        <p className="text-sm text-yellow-800 mt-1">
+                    <div className="p-4 rounded-md bg-amber-100 border border-amber-300">
+                        <h4 className="font-semibold text-amber-900">Duplicates Found</h4>
+                        <p className="text-sm text-amber-800 mt-1">
                             {matchSummary.duplicates} duplicate entries detected. 
                             Click &quot;Use This&quot; to choose which value to import for each member.
                         </p>
@@ -346,9 +484,9 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
 
                 {/* Parse Errors */}
                 {parseErrors.length > 0 && (
-                    <div className="p-3 rounded-md bg-orange-50 border border-orange-200">
-                        <h4 className="font-medium text-orange-800 mb-2">Parse Warnings ({parseErrors.length})</h4>
-                        <ul className="text-sm text-orange-700 list-disc list-inside max-h-24 overflow-y-auto">
+                    <div className="p-4 rounded-md bg-orange-100 border border-orange-300">
+                        <h4 className="font-semibold text-orange-900 mb-2">Parse Warnings ({parseErrors.length})</h4>
+                        <ul className="text-sm text-orange-800 list-disc list-inside max-h-24 overflow-y-auto">
                             {parseErrors.map((err, i) => (
                                 <li key={i}>{err}</li>
                             ))}
@@ -383,21 +521,21 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                                     <tr 
                                         key={i}
                                         className={
-                                            result.status === "unmatched" ? "bg-red-50 text-gray-900" :
-                                            !isSelected ? "bg-gray-50 text-gray-500" :
-                                            "text-gray-900"
+                                            result.status === "unmatched" ? "bg-red-100 text-red-900" :
+                                            !isSelected ? "bg-gray-100 text-gray-500" :
+                                            "bg-green-50 text-green-900"
                                         }
                                     >
-                                        <td className="px-3 py-2 border-t">{result.rawName}</td>
+                                        <td className="px-3 py-2 border-t font-medium">{result.rawName}</td>
                                         <td className="px-3 py-2 border-t">
                                             {result.matchedName || "—"}
                                             {result.confidence > 0 && result.confidence < 1 && (
-                                                <span className="ml-2 text-xs text-gray-600">
+                                                <span className={`ml-2 text-xs ${willImport ? 'text-green-700' : 'text-gray-500'}`}>
                                                     ({Math.round(result.confidence * 100)}%)
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-3 py-2 border-t text-right font-mono">{result.value}</td>
+                                        <td className="px-3 py-2 border-t text-right font-mono font-medium">{result.value}</td>
                                         <td className="px-3 py-2 border-t text-center">
                                             {result.status === "unmatched" ? (
                                                 <span className="px-2 py-0.5 rounded text-xs bg-red-200 text-red-800">
@@ -428,7 +566,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                 </div>
 
                 {error && (
-                    <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm">
+                    <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">
                         {error}
                     </div>
                 )}
@@ -436,15 +574,15 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                 {/* Actions */}
                 <div className="flex gap-3 justify-end">
                     <button
-                        onClick={handleReset}
-                        className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        onClick={handleBack}
+                        className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer"
                     >
-                        Cancel
+                        Back
                     </button>
                     <button
                         onClick={handleImport}
                         disabled={isPending || entriesToImport.length === 0}
-                        className="px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isPending ? "Importing..." : `Import ${entriesToImport.length} Entries`}
                     </button>
@@ -455,8 +593,8 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
 
     // Upload step
     return (
-        <div className="w-full max-w-2xl flex flex-col gap-4">
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+        <div className="w-full max-w-2xl flex flex-col gap-5">
+            <div className="border-2 border-dashed border-blue-300 rounded-lg p-8 text-center bg-blue-50 hover:bg-blue-100 transition-colors">
                 <input
                     type="file"
                     accept=".csv"
@@ -466,47 +604,44 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                 />
                 <label 
                     htmlFor="csv-upload"
-                    className="cursor-pointer flex flex-col items-center gap-2"
+                    className="cursor-pointer flex flex-col items-center gap-3"
                 >
-                    <svg className="w-12 h-12 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-12 h-12 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
-                    <span className="text-gray-700">Click to upload CSV file</span>
-                    <span className="text-xs text-gray-500">Expected format: name, value</span>
+                    <span className="text-lg font-medium text-blue-900">Click to upload CSV file</span>
+                    <span className="text-sm text-blue-700">Works with any spreadsheet export</span>
                 </label>
             </div>
 
             {error && (
-                <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm">
+                <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">
                     {error}
                 </div>
             )}
 
-            <div className="text-sm text-gray-700 bg-gray-100 p-3 rounded-md border border-gray-200">
-                <strong className="text-gray-900">CSV Format:</strong>
-                <p className="text-xs mt-1 mb-2 text-gray-600">
-                    The header&apos;s second column must match the metric name exactly (case-insensitive)
-                </p>
-                <pre className="text-xs bg-white p-2 rounded border text-gray-800">
-{`name,Kill Points
-PlayerOne,1500
-PlayerTwo,2300
-...`}
-                </pre>
+            <div className="p-4 rounded-md bg-gray-50 border border-gray-200">
+                <p className="font-semibold text-gray-900 mb-3">Requirements:</p>
+                <ul className="space-y-2 text-sm text-gray-700">
+                    <li className="flex items-start gap-2">
+                        <span className="text-green-600 mt-0.5">✓</span>
+                        <span>A column named <strong>Player</strong>, <strong>Member</strong>, <strong>Name</strong>, or <strong>IGN</strong></span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                        <span className="text-green-600 mt-0.5">✓</span>
+                        <span>At least one numeric column with whole numbers</span>
+                    </li>
+                </ul>
             </div>
 
-            <div className="text-sm text-gray-700 bg-gray-100 p-3 rounded-md border border-gray-200">
-                <strong className="text-gray-900">Configured Metrics for this Period:</strong>
-                <ul className="mt-1 list-disc list-inside text-xs text-gray-700">
-                    {metrics.map((metric) => (
-                        <li key={metric.id}>{metric.name}</li>
-                    ))}
-                </ul>
-                {metrics.length === 0 && (
-                    <p className="text-xs text-amber-700 mt-1">
-                        No metrics configured yet. Please add metrics to this period before importing.
-                    </p>
-                )}
+            <div className="p-4 rounded-md bg-gray-50 border border-gray-200">
+                <p className="font-semibold text-gray-900 mb-3">Example CSV:</p>
+                <pre className="text-sm bg-white p-3 rounded border border-gray-300 text-gray-900">
+{`Member Name,Kill Points,Captures,Score
+Dragon,1500,800,2300
+Phoenix,2300,600,2900
+...`}
+                </pre>
             </div>
         </div>
     );

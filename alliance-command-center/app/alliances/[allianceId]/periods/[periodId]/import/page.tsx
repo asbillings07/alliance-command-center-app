@@ -55,7 +55,10 @@ export default async function ImportPage({ params }: Params) {
     return (
         <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-4">
             <h1 className="text-2xl font-bold">{period.name}</h1>
-            <h2 className="text-lg text-gray-600">Import Metrics from CSV</h2>
+            <h2 className="text-lg text-gray-600">Import from Spreadsheet</h2>
+            <p className="text-sm text-gray-500 max-w-md text-center">
+                Upload any CSV with player data. You choose which columns to import.
+            </p>
             
             <div className="flex gap-4 text-sm">
                 <Link
