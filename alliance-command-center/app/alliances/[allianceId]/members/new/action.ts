@@ -89,12 +89,20 @@ export async function addMember(formData: FormData): Promise<AddMemberResult> {
 }
 
 export async function restoreMember(formData: FormData): Promise<AddMemberResult> {
-    const allianceId = formData.get("allianceId") as string;
-    const memberId = formData.get("memberId") as string;
+    const allianceId = formData.get("allianceId");
+    const memberId = formData.get("memberId");
+
+    if (
+        typeof allianceId !== "string" ||
+        allianceId.trim() === "" ||
+        typeof memberId !== "string" ||
+        memberId.trim() === ""
+    ) {
+        return { success: false, error: "Invalid request" };
+    }
 
     const user = await requireAuth();
     await requireLeadershipAccess(allianceId, user.id);
-
     const member = await prisma.allianceMember.findUnique({
         where: { id: memberId },
     });
