@@ -99,17 +99,29 @@ export async function importMembers(
     }
 
     // Create all new alliance members in a single batch query
+    // skipDuplicates handles race conditions where another request inserts between our read and write
     const errors: string[] = [];
 
     try {
-        await prisma.allianceMember.createMany({
+        const result = await prisma.allianceMember.createMany({
             data: newEntries.map((entry) => ({
                 allianceId,
                 playerName: entry.playerName.trim(),
                 thp: entry.thp ?? null,
                 role: entry.role?.trim() ?? null,
             })),
+            skipDuplicates: true,
         });
+
+        revalidatePath(`/alliances/${allianceId}/members`);
+
+        return {
+            created: result.count,
+            skippedExisting,
+            skippedDuplicates,
+            skippedEmptyNames,
+            errors,
+        };
     } catch (error) {
         console.error("Error importing alliance members:", error);
         errors.push("Failed to create members. Please try again.");
@@ -121,14 +133,4 @@ export async function importMembers(
             errors,
         };
     }
-
-    revalidatePath(`/alliances/${allianceId}/members`);
-
-    return {
-        created: newEntries.length,
-        skippedExisting,
-        skippedDuplicates,
-        skippedEmptyNames,
-        errors,
-    };
 }

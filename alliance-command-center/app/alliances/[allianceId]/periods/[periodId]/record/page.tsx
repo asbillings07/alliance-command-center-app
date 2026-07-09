@@ -17,7 +17,7 @@ export default async function PeriodRecordPage({ params }: { params: Promise<{ a
     const alliance = await prisma.alliance.findUnique({
         where: { id: allianceId },
         select: {
-            members: {
+            allianceMembers: {
                 where: { active: true },
                 select: {
                     id: true,
@@ -61,7 +61,7 @@ export default async function PeriodRecordPage({ params }: { params: Promise<{ a
             <RecordMetricsForm
                 periodId={periodId}
                 allianceId={allianceId}
-                members={alliance.members}
+                members={alliance.allianceMembers}
                 metrics={metrics}
             />
         </div>

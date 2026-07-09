@@ -185,15 +185,16 @@ Leadership Notes and Member Metric Entries represent organizational history and 
 
 ## ADR-005
 
-Users and Members are intentionally different concepts.
+Users and AllianceMembers are intentionally different concepts.
 
 User
 
 * Authenticates
 * Performs actions
 
-Member
+AllianceMember
 
+* Is the alliance's record about a tracked player
 * Is evaluated
 * Receives leadership notes
 * Receives metric entries
