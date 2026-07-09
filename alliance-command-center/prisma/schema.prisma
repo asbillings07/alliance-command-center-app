@@ -67,6 +67,7 @@ model Member {
   discordName String?
   thp         Int?
   squadPower  Int?
+  role        String?
   joinDate    DateTime?
   active      Boolean   @default(true)
   createdAt   DateTime  @default(now())

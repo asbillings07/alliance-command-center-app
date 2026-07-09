@@ -57,7 +57,13 @@ export default async function MembersPage({ params }: Params) {
         <div className="flex flex-col items-center justify-center min-h-screen">
             <h1>Members of {alliance.name}</h1>
             <div>Member Count: {members.length}</div>
-            <div className="flex flex-col items-center justify-center">
+            <Link
+                href={`/alliances/${allianceId}/members/import`}
+                className="mt-4 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+            >
+                Import Roster
+            </Link>
+            <div className="flex flex-col items-center justify-center mt-4">
                 {members.map((member) => (
                     <Link href={`/alliances/${allianceId}/members/${member.id}`} key={member.id} className="flex flex-col items-center justify-center p-5 border border-gray-300 rounded-md cursor-pointer m-5">
                     <div className="text-lg font-bold">{member.playerName}</div>
