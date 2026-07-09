@@ -44,14 +44,19 @@ export default async function MemberPage({ params }: Params) {
     });
 
     // Query 2: Member's metric entries for the active period (if exists)
-    // Filter to only active metric IDs to reduce unnecessary data transfer
+    // Skip query if no active metrics to avoid unnecessary DB round-trip
     const activeMetricIds = activePeriod?.periodMetrics.map((pm) => pm.metricId) ?? [];
-    const memberEntries = activePeriod
+    const memberEntries = activePeriod && activeMetricIds.length > 0
         ? await prisma.memberMetricEntry.findMany({
               where: {
                   memberId: member.id,
                   periodId: activePeriod.id,
                   metricId: { in: activeMetricIds },
+              },
+              select: {
+                  metricId: true,
+                  value: true,
+                  recordedAt: true,
               },
               orderBy: [
                   { metricId: "asc" },
@@ -94,13 +99,13 @@ export default async function MemberPage({ params }: Params) {
           })
         : [];
 
-    // Determine empty state
-    const performanceEmptyState: "no-period" | "no-metrics" | "has-metrics" =
+    // Build performance section props as discriminated union
+    const performanceProps: import("./MemberPerformanceSection").MemberPerformanceProps =
         !activePeriod
-            ? "no-period"
+            ? { emptyState: "no-period" }
             : activePeriod.periodMetrics.length === 0
-            ? "no-metrics"
-            : "has-metrics";
+            ? { emptyState: "no-metrics", periodName: activePeriod.name }
+            : { emptyState: "has-metrics", periodName: activePeriod.name, metrics: performanceMetrics };
 
     // Query 3: Leadership notes
     const leadershipNotes = await prisma.leadershipNote.findMany({
@@ -133,11 +138,7 @@ export default async function MemberPage({ params }: Params) {
                 </div>
             </section>
 
-            <MemberPerformanceSection
-                periodName={activePeriod?.name ?? null}
-                metrics={performanceMetrics}
-                emptyState={performanceEmptyState}
-            />
+            <MemberPerformanceSection {...performanceProps} />
 
             <section className="flex flex-col gap-4">
                 <h2 className="text-xl font-bold text-center text-gray-900">Leadership Notes</h2>

@@ -13,11 +13,10 @@ export type CurrentMetricViewModel = {
     delta?: number;
 };
 
-export type MemberPerformanceProps = {
-    periodName: string | null;
-    metrics: CurrentMetricViewModel[];
-    emptyState: "no-period" | "no-metrics" | "has-metrics";
-};
+export type MemberPerformanceProps =
+    | { emptyState: "no-period" }
+    | { emptyState: "no-metrics"; periodName: string }
+    | { emptyState: "has-metrics"; periodName: string; metrics: CurrentMetricViewModel[] };
 
 function MetricCard({ metric }: { metric: CurrentMetricViewModel }) {
     const hasCurrent = metric.current !== undefined;
@@ -53,8 +52,8 @@ function MetricCard({ metric }: { metric: CurrentMetricViewModel }) {
     );
 }
 
-export function MemberPerformanceSection({ periodName, metrics, emptyState }: MemberPerformanceProps) {
-    if (emptyState === "no-period") {
+export function MemberPerformanceSection(props: MemberPerformanceProps) {
+    if (props.emptyState === "no-period") {
         return (
             <section className="flex flex-col gap-4">
                 <h2 className="text-xl font-bold text-center text-gray-900">
@@ -70,11 +69,11 @@ export function MemberPerformanceSection({ periodName, metrics, emptyState }: Me
         );
     }
 
-    if (emptyState === "no-metrics") {
+    if (props.emptyState === "no-metrics") {
         return (
             <section className="flex flex-col gap-4">
                 <h2 className="text-xl font-bold text-center text-gray-900">
-                    {periodName}
+                    {props.periodName}
                 </h2>
                 <div className="text-center py-8 px-4 bg-gray-50 rounded-lg border border-gray-200">
                     <p className="text-gray-600">No metrics have been configured for this evaluation period.</p>
@@ -86,10 +85,10 @@ export function MemberPerformanceSection({ periodName, metrics, emptyState }: Me
     return (
         <section className="flex flex-col gap-4">
             <h2 className="text-xl font-bold text-center text-gray-900">
-                {periodName}
+                {props.periodName}
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {metrics.map((metric) => (
+                {props.metrics.map((metric) => (
                     <MetricCard key={metric.metricId} metric={metric} />
                 ))}
             </div>
