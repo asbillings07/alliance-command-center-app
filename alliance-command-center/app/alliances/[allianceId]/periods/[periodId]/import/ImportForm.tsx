@@ -50,7 +50,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     const [csvContent, setCsvContent] = useState<string>("");
     const [columns, setColumns] = useState<ColumnInfo[]>([]);
     const [rowCount, setRowCount] = useState(0);
-    const [detectedPlayerColumn, setDetectedPlayerColumn] = useState<ColumnInfo | null>(null);
+    const [autoDetectedPlayerColumn, setAutoDetectedPlayerColumn] = useState<ColumnInfo | null>(null);
     const [valueColumn, setValueColumn] = useState<number | null>(null);
     const [selectedMetricId, setSelectedMetricId] = useState(metrics[0]?.id || "");
     const [matchSummary, setMatchSummary] = useState<MatchSummary | null>(null);
@@ -99,10 +99,10 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setColumns(result.columns);
         setRowCount(result.rowCount);
 
-        // Auto-detect player column
+        // Auto-detect player column (required - must match known names)
         const textCols = result.columns.filter(c => !c.isNumeric);
         const playerCol = textCols.find(c => isPlayerColumn(c.name));
-        setDetectedPlayerColumn(playerCol || null);
+        setAutoDetectedPlayerColumn(playerCol || null);
 
         // Auto-select first numeric column
         const numCols = result.columns.filter(c => c.isNumeric);
@@ -116,13 +116,13 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     };
 
     const handleSelectComplete = () => {
-        if (!detectedPlayerColumn || valueColumn === null || !selectedMetricId) {
+        if (!autoDetectedPlayerColumn || valueColumn === null || !selectedMetricId) {
             return;
         }
 
         // Parse the CSV with the detected player column and selected value column
         const { entries, errors } = parseCSV(csvContent, {
-            nameColumn: detectedPlayerColumn.index,
+            nameColumn: autoDetectedPlayerColumn.index,
             valueColumn: valueColumn,
             hasHeader: true,
         });
@@ -204,7 +204,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setCsvContent("");
         setColumns([]);
         setRowCount(0);
-        setDetectedPlayerColumn(null);
+        setAutoDetectedPlayerColumn(null);
         setValueColumn(null);
         setMatchSummary(null);
         setParseErrors([]);
@@ -266,12 +266,12 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
 
     // Select step - validate player column, choose value column and metric
     if (step === "select") {
-        const canProceed = detectedPlayerColumn && numericColumns.length > 0 && valueColumn !== null && selectedMetricId;
+        const canProceed = autoDetectedPlayerColumn && numericColumns.length > 0 && valueColumn !== null && selectedMetricId && metrics.length > 0;
 
         return (
             <div className="w-full max-w-2xl flex flex-col gap-5">
                 <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-600">Configure Import</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">Configure Import</h3>
                     <button
                         onClick={handleBack}
                         className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
@@ -280,15 +280,15 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     </button>
                 </div>
 
-                {/* Validation Result */}
-                {detectedPlayerColumn ? (
+                {/* Player Column Status */}
+                {autoDetectedPlayerColumn ? (
                     <div className="p-4 rounded-md bg-green-50 border border-green-300">
                         <div className="flex items-center gap-2">
                             <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                             </svg>
                             <p className="text-green-900 font-medium">
-                                Player column found: <strong>{detectedPlayerColumn.name}</strong>
+                                Player column found: <strong>{autoDetectedPlayerColumn.name}</strong>
                             </p>
                         </div>
                         <p className="text-green-800 text-sm mt-1 ml-7">
@@ -316,7 +316,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     </div>
                 )}
 
-                {/* Numeric columns info */}
+                {/* Numeric columns check */}
                 {numericColumns.length === 0 && (
                     <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
                         <p className="text-red-900 font-semibold">
@@ -328,8 +328,20 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     </div>
                 )}
 
-                {/* Only show selection if validation passed */}
-                {detectedPlayerColumn && numericColumns.length > 0 && (
+                {/* No metrics configured check */}
+                {metrics.length === 0 && (
+                    <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
+                        <p className="text-red-900 font-semibold">
+                            No metrics configured for this period
+                        </p>
+                        <p className="text-sm text-red-800 mt-1">
+                            Please add metrics to this evaluation period before importing data.
+                        </p>
+                    </div>
+                )}
+
+                {/* Only show selection if we have a player column and numeric columns */}
+                {autoDetectedPlayerColumn && numericColumns.length > 0 && (
                     <>
                         {/* Question 1: Which column has the values? */}
                         <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
@@ -362,28 +374,32 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                         </div>
 
                         {/* Question 2: Which metric to save as? */}
-                        <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
-                            <label htmlFor="metric-select" className="block text-sm font-semibold text-gray-900 mb-2">
-                                2. Which metric should these values be saved as?
-                            </label>
-                            <select
-                                id="metric-select"
-                                value={selectedMetricId}
-                                onChange={(e) => setSelectedMetricId(e.target.value)}
-                                className="w-full rounded-md border-2 border-gray-300 p-3 text-base text-gray-900 bg-white focus:border-blue-500"
-                            >
-                                {metrics.map((metric) => (
-                                    <option key={metric.id} value={metric.id}>{metric.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                        {metrics.length > 0 ? (
+                            <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
+                                <label htmlFor="metric-select" className="block text-sm font-semibold text-gray-900 mb-2">
+                                    2. Which metric should these values be saved as?
+                                </label>
+                                <select
+                                    id="metric-select"
+                                    value={selectedMetricId}
+                                    onChange={(e) => setSelectedMetricId(e.target.value)}
+                                    className="w-full rounded-md border-2 border-gray-300 p-3 text-base text-gray-900 bg-white focus:border-blue-500"
+                                >
+                                    {metrics.map((metric) => (
+                                        <option key={metric.id} value={metric.id}>{metric.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        ) : null}
 
                         {/* Summary */}
-                        {selectedValueColumnName && selectedMetric && (
-                            <div className="p-4 rounded-md bg-green-50 border border-green-300">
-                                <p className="text-green-900">
-                                    <strong>{selectedValueColumnName}</strong> → <strong>{selectedMetric.name}</strong>
-                                </p>
+                        {autoDetectedPlayerColumn && selectedValueColumnName && selectedMetric && (
+                            <div className="p-4 rounded-md bg-blue-50 border border-blue-300">
+                                <p className="text-blue-900 font-medium mb-1">Ready to import:</p>
+                                <ul className="text-blue-900 text-sm list-disc list-inside">
+                                    <li>Player names from: <strong>{autoDetectedPlayerColumn.name}</strong></li>
+                                    <li>Values from: <strong>{selectedValueColumnName}</strong> → <strong>{selectedMetric.name}</strong></li>
+                                </ul>
                             </div>
                         )}
                     </>
