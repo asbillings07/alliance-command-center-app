@@ -52,6 +52,13 @@ export function InviteCollaboratorForm({
 
     startTransition(async () => {
       try {
+        // Parse numeric fields, guarding against NaN
+        const parseOptionalInt = (value: string): number | undefined => {
+          if (!value) return undefined;
+          const parsed = parseInt(value, 10);
+          return Number.isFinite(parsed) ? parsed : undefined;
+        };
+
         const response = await inviteCollaborator({
           allianceId,
           existingMemberId:
@@ -62,8 +69,8 @@ export function InviteCollaboratorForm({
               : selection.playerName,
           email: email.trim(),
           membershipRole,
-          thp: thp ? parseInt(thp, 10) : undefined,
-          squadPower: squadPower ? parseInt(squadPower, 10) : undefined,
+          thp: parseOptionalInt(thp),
+          squadPower: parseOptionalInt(squadPower),
         });
 
         if (response.error) {

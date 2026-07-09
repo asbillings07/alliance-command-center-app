@@ -198,6 +198,23 @@ export async function inviteLeadershipCollaborator(
 }
 
 export async function cancelInvitation(invitationId: string): Promise<Invitation> {
+  const invitation = await prisma.invitation.findUnique({
+    where: { id: invitationId },
+    select: { acceptedAt: true, cancelledAt: true },
+  });
+
+  if (!invitation) {
+    throw new Error("Invitation not found");
+  }
+
+  if (invitation.acceptedAt) {
+    throw new Error("Cannot cancel an invitation that has already been accepted");
+  }
+
+  if (invitation.cancelledAt) {
+    throw new Error("This invitation has already been cancelled");
+  }
+
   return prisma.invitation.update({
     where: { id: invitationId },
     data: { cancelledAt: new Date() },
@@ -209,6 +226,19 @@ export async function resendInvitation(invitationId: string): Promise<{
   inviteUrl: string;
   inviteCode: string;
 }> {
+  const existing = await prisma.invitation.findUnique({
+    where: { id: invitationId },
+    select: { acceptedAt: true },
+  });
+
+  if (!existing) {
+    throw new Error("Invitation not found");
+  }
+
+  if (existing.acceptedAt) {
+    throw new Error("Cannot resend an invitation that has already been accepted");
+  }
+
   const newToken = randomUUID();
   const newCode = generateInviteCode();
 

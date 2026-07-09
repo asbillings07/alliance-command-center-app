@@ -79,12 +79,20 @@ export async function acceptInvitation(invitationId: string): Promise<AcceptResu
     !existingRosterLink; // Skip auto-link if user already has a roster link
 
   await prisma.$transaction(async (tx) => {
-    await tx.allianceMembership.create({
-      data: {
+    // Use upsert to be idempotent in case of double-click/retry
+    await tx.allianceMembership.upsert({
+      where: {
+        allianceId_userId: {
+          allianceId: invitation.allianceId,
+          userId: user.id,
+        },
+      },
+      create: {
         allianceId: invitation.allianceId,
         userId: user.id,
         role: invitation.membershipRole,
       },
+      update: {}, // No update needed if already exists
     });
 
     await tx.invitation.update({

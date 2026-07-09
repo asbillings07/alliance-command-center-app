@@ -4,6 +4,8 @@ import {
   inviteLeadershipCollaborator,
   findPendingInvitation,
   searchMembers,
+  cancelInvitation,
+  resendInvitation,
 } from "./inviteLeadershipCollaborator";
 
 // Mock Prisma
@@ -11,7 +13,9 @@ vi.mock("./prisma", () => ({
   prisma: {
     invitation: {
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
     },
     allianceMembership: {
       findFirst: vi.fn(),
@@ -233,6 +237,131 @@ describe("inviteLeadershipCollaborator", () => {
 
       expect(result.memberCreated).toBe(false);
       expect(prisma.allianceMember.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("cancelInvitation", () => {
+    it("throws error when invitation not found", async () => {
+      vi.mocked(prisma.invitation.findUnique).mockResolvedValue(null);
+
+      await expect(cancelInvitation("nonexistent-id")).rejects.toThrow(
+        "Invitation not found"
+      );
+      expect(prisma.invitation.update).not.toHaveBeenCalled();
+    });
+
+    it("throws error when invitation already accepted", async () => {
+      vi.mocked(prisma.invitation.findUnique).mockResolvedValue({
+        acceptedAt: new Date(),
+        cancelledAt: null,
+      } as never);
+
+      await expect(cancelInvitation("inv-1")).rejects.toThrow(
+        "Cannot cancel an invitation that has already been accepted"
+      );
+      expect(prisma.invitation.update).not.toHaveBeenCalled();
+    });
+
+    it("throws error when invitation already cancelled", async () => {
+      vi.mocked(prisma.invitation.findUnique).mockResolvedValue({
+        acceptedAt: null,
+        cancelledAt: new Date(),
+      } as never);
+
+      await expect(cancelInvitation("inv-1")).rejects.toThrow(
+        "This invitation has already been cancelled"
+      );
+      expect(prisma.invitation.update).not.toHaveBeenCalled();
+    });
+
+    it("successfully cancels a pending invitation", async () => {
+      vi.mocked(prisma.invitation.findUnique).mockResolvedValue({
+        acceptedAt: null,
+        cancelledAt: null,
+      } as never);
+      vi.mocked(prisma.invitation.update).mockResolvedValue({
+        id: "inv-1",
+        cancelledAt: new Date(),
+      } as never);
+
+      const result = await cancelInvitation("inv-1");
+
+      expect(result.cancelledAt).toBeDefined();
+      expect(prisma.invitation.update).toHaveBeenCalledWith({
+        where: { id: "inv-1" },
+        data: { cancelledAt: expect.any(Date) },
+      });
+    });
+  });
+
+  describe("resendInvitation", () => {
+    it("throws error when invitation not found", async () => {
+      vi.mocked(prisma.invitation.findUnique).mockResolvedValue(null);
+
+      await expect(resendInvitation("nonexistent-id")).rejects.toThrow(
+        "Invitation not found"
+      );
+      expect(prisma.invitation.update).not.toHaveBeenCalled();
+    });
+
+    it("throws error when invitation already accepted", async () => {
+      vi.mocked(prisma.invitation.findUnique).mockResolvedValue({
+        acceptedAt: new Date(),
+      } as never);
+
+      await expect(resendInvitation("inv-1")).rejects.toThrow(
+        "Cannot resend an invitation that has already been accepted"
+      );
+      expect(prisma.invitation.update).not.toHaveBeenCalled();
+    });
+
+    it("successfully resends a pending invitation with new token and code", async () => {
+      vi.mocked(prisma.invitation.findUnique).mockResolvedValue({
+        acceptedAt: null,
+      } as never);
+      vi.mocked(prisma.invitation.update).mockResolvedValue({
+        id: "inv-1",
+        token: "new-token",
+        code: "NEW-123-XYZ",
+        expiresAt: new Date(),
+      } as never);
+
+      const result = await resendInvitation("inv-1");
+
+      expect(result.inviteUrl).toContain("/invite/");
+      expect(result.inviteCode).toBeDefined();
+      expect(prisma.invitation.update).toHaveBeenCalledWith({
+        where: { id: "inv-1" },
+        data: {
+          token: expect.any(String),
+          code: expect.any(String),
+          expiresAt: expect.any(Date),
+          cancelledAt: null,
+        },
+      });
+    });
+
+    it("resends a cancelled invitation (clears cancelledAt)", async () => {
+      vi.mocked(prisma.invitation.findUnique).mockResolvedValue({
+        acceptedAt: null,
+      } as never);
+      vi.mocked(prisma.invitation.update).mockResolvedValue({
+        id: "inv-1",
+        token: "new-token",
+        code: "NEW-456-ABC",
+        expiresAt: new Date(),
+        cancelledAt: null,
+      } as never);
+
+      await resendInvitation("inv-1");
+
+      expect(prisma.invitation.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            cancelledAt: null,
+          }),
+        })
+      );
     });
   });
 });
