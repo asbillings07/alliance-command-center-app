@@ -12,13 +12,11 @@ type Selection =
   | { type: "new"; playerName: string };
 
 type PlayerNameComboboxProps = {
-  allianceId: string;
   onSelect: (selection: Selection | null) => void;
   searchMembers: (query: string) => Promise<Member[]>;
 };
 
 export function PlayerNameCombobox({
-  allianceId,
   onSelect,
   searchMembers,
 }: PlayerNameComboboxProps) {
