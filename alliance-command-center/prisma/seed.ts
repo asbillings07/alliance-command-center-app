@@ -93,7 +93,7 @@ const createAllianceData = async () => {
     },
   });
 
-  const dragon = await prisma.member.findFirst({
+  const dragon = await prisma.allianceMember.findFirst({
     where: {
       playerName: "Dragon",
       allianceId: alliance.id,

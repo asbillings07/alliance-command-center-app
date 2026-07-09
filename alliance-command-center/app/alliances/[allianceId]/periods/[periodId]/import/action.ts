@@ -5,7 +5,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import { revalidatePath } from "next/cache";
 
 type ImportEntry = {
-  memberId: string;
+  memberId: string; // allianceMemberId
   value: number;
 };
 
@@ -64,27 +64,27 @@ export async function importMemberMetrics(
     throw new Error("Metric is not configured for this period");
   }
 
-  // Validate all memberIds belong to this alliance
-  const memberIds = dedupedEntries.map((e) => e.memberId);
-  const validMembers = await prisma.member.findMany({
+  // Validate all allianceMemberIds belong to this alliance
+  const allianceMemberIds = dedupedEntries.map((e) => e.memberId);
+  const validAllianceMembers = await prisma.allianceMember.findMany({
     where: {
-      id: { in: memberIds },
+      id: { in: allianceMemberIds },
       allianceId: allianceId,
     },
     select: { id: true },
   });
 
-  const validMemberIds = new Set(validMembers.map((m) => m.id));
-  const invalidMemberIds = memberIds.filter((id) => !validMemberIds.has(id));
+  const validAllianceMemberIds = new Set(validAllianceMembers.map((m) => m.id));
+  const invalidAllianceMemberIds = allianceMemberIds.filter((id) => !validAllianceMemberIds.has(id));
 
-  if (invalidMemberIds.length > 0) {
+  if (invalidAllianceMemberIds.length > 0) {
     throw new Error("One or more members do not belong to this alliance");
   }
 
   // Create entries (append to history)
   await prisma.memberMetricEntry.createMany({
     data: dedupedEntries.map((entry) => ({
-      memberId: entry.memberId,
+      allianceMemberId: entry.memberId,
       periodId,
       metricId,
       value: entry.value,

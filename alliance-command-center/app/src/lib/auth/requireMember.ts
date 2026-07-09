@@ -1,14 +1,19 @@
 import { prisma } from "../prisma";
 import { notFound } from "next/navigation";
 
-export async function requireMember(memberId: string) {
-  const member = await prisma.member.findUnique({
+export async function requireAllianceMember(allianceMemberId: string) {
+  const allianceMember = await prisma.allianceMember.findUnique({
     where: {
-      id: memberId,
+      id: allianceMemberId,
     },
   });
-  if (!member) {
+  if (!allianceMember) {
     notFound();
   }
-  return member;
+  return allianceMember;
 }
+
+/**
+ * @deprecated Use requireAllianceMember instead
+ */
+export const requireMember = requireAllianceMember;

@@ -24,7 +24,7 @@ export default async function ImportPage({ params }: Params) {
     const alliance = await prisma.alliance.findUnique({
         where: { id: allianceId },
         select: {
-            members: {
+            allianceMembers: {
                 where: { active: true },
                 select: {
                     id: true,
@@ -80,7 +80,7 @@ export default async function ImportPage({ params }: Params) {
             <ImportForm
                 periodId={periodId}
                 allianceId={allianceId}
-                members={alliance.members}
+                members={alliance.allianceMembers}
                 metrics={metrics}
             />
         </div>

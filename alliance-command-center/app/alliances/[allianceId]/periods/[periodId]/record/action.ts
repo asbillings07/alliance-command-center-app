@@ -51,26 +51,26 @@ export async function recordMemberMetrics(
     }
   }
 
-  // Validate all memberIds belong to this alliance
-  const memberIds = entries.map((e) => e.memberId);
-  const validMembers = await prisma.member.findMany({
+  // Validate all allianceMemberIds belong to this alliance
+  const allianceMemberIds = entries.map((e) => e.memberId);
+  const validAllianceMembers = await prisma.allianceMember.findMany({
     where: {
-      id: { in: memberIds },
+      id: { in: allianceMemberIds },
       allianceId: allianceId,
     },
     select: { id: true },
   });
 
-  const validMemberIds = new Set(validMembers.map((m) => m.id));
-  const invalidMemberIds = memberIds.filter((id) => !validMemberIds.has(id));
+  const validAllianceMemberIds = new Set(validAllianceMembers.map((m) => m.id));
+  const invalidAllianceMemberIds = allianceMemberIds.filter((id) => !validAllianceMemberIds.has(id));
 
-  if (invalidMemberIds.length > 0) {
+  if (invalidAllianceMemberIds.length > 0) {
     throw new Error("One or more members do not belong to this alliance");
   }
 
   await prisma.memberMetricEntry.createMany({
     data: entries.map((entry) => ({
-      memberId: entry.memberId,
+      allianceMemberId: entry.memberId,
       periodId,
       metricId,
       value: entry.value,

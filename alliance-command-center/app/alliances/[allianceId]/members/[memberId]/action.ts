@@ -5,19 +5,24 @@ import {
 } from "@/app/generated/prisma/client";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireMembershipAccess } from "@/app/src/lib/auth/requireMembershipAccess";
+import { requireAllianceMemberAccess } from "@/app/src/lib/auth/requireMembershipAccess";
+import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
 import { revalidatePath } from "next/cache";
 import { requireAuthorAccess } from "@/app/src/lib/auth/requireAuthorAccess";
 
 export async function createLeadershipNote(formData: FormData): Promise<void> {
   const user = await requireAuth();
 
-  const memberId = formData.get("memberId");
-  if (typeof memberId !== "string" || !memberId) {
-    throw new Error("Member is required");
+  const allianceMemberId = formData.get("memberId");
+  if (typeof allianceMemberId !== "string" || !allianceMemberId) {
+    throw new Error("Alliance member is required");
   }
 
-  const { member } = await requireMembershipAccess(memberId, user.id);
+  const { allianceMember } = await requireAllianceMemberAccess(allianceMemberId, user.id);
+  
+  // Verify user has leadership role (not just VIEWER)
+  await requireLeadershipAccess(allianceMember.allianceId, user.id);
+  
   const authorId = user.id;
   const noteType = formData.get("noteType") as LeadershipNoteType;
   if (!Object.values(LeadershipNoteType).includes(noteType)) {
@@ -33,7 +38,7 @@ export async function createLeadershipNote(formData: FormData): Promise<void> {
 
   await prisma.leadershipNote.create({
     data: {
-      memberId: member.id,
+      allianceMemberId: allianceMember.id,
       authorId,
       noteType,
       visibility,
@@ -41,7 +46,7 @@ export async function createLeadershipNote(formData: FormData): Promise<void> {
     },
   });
 
-  revalidatePath(`/alliances/${member.allianceId}/members/${member.id}`);
+  revalidatePath(`/alliances/${allianceMember.allianceId}/members/${allianceMember.id}`);
 }
 
 export async function editLeadershipNote(formData: FormData): Promise<void> {
@@ -62,13 +67,13 @@ export async function editLeadershipNote(formData: FormData): Promise<void> {
     throw new Error("Content is required");
   }
 
-  const { member } = await requireAuthorAccess(noteId, user.id);
+  const { allianceMember } = await requireAuthorAccess(noteId, user.id);
 
   await prisma.leadershipNote.update({
     where: { id: noteId },
     data: { noteType, content },
   });
-  revalidatePath(`/alliances/${member.allianceId}/members/${member.id}`);
+  revalidatePath(`/alliances/${allianceMember.allianceId}/members/${allianceMember.id}`);
 }
 
 export async function deleteLeadershipNote(formData: FormData): Promise<void> {
@@ -77,9 +82,9 @@ export async function deleteLeadershipNote(formData: FormData): Promise<void> {
   if (typeof noteId !== "string" || !noteId) {
     throw new Error("Note is required");
   }
-  const { note, member } = await requireAuthorAccess(noteId, user.id);
+  const { note, allianceMember } = await requireAuthorAccess(noteId, user.id);
   await prisma.leadershipNote.delete({
     where: { id: note.id },
   });
-  revalidatePath(`/alliances/${member.allianceId}/members/${member.id}`);
+  revalidatePath(`/alliances/${allianceMember.allianceId}/members/${allianceMember.id}`);
 }

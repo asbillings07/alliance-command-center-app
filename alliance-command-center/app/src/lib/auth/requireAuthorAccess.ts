@@ -4,7 +4,7 @@ export const requireAuthorAccess = async (noteId: string, userId: string) => {
   const note = await prisma.leadershipNote.findUnique({
     where: { id: noteId },
     include: {
-      member: true,
+      allianceMember: true,
     },
   });
   if (!note) {
@@ -13,5 +13,5 @@ export const requireAuthorAccess = async (noteId: string, userId: string) => {
   if (note.authorId !== userId) {
     redirect("/app");
   }
-  return { note, member: note.member };
+  return { note, allianceMember: note.allianceMember };
 };

@@ -32,12 +32,12 @@ role
 
 created_at
 
-## Member
+## AllianceMember
 
 id
 alliance_id
 
-player_name
+player_name (unique within alliance)
 
 discord_name
 
@@ -92,7 +92,7 @@ Following Orders
 
 id
 
-member_id
+alliance_member_id
 metric_id
 
 score
@@ -105,7 +105,7 @@ notes
 
 created_at
 
-Member: Dragon
+AllianceMember: Dragon
 
 Metric:
 Meteor
@@ -120,7 +120,7 @@ Date:
 
 id
 
-member_id
+alliance_member_id
 
 author_id
 
@@ -142,7 +142,7 @@ created_at
 
 id
 
-member_id
+alliance_member_id
 
 assessor_id
 

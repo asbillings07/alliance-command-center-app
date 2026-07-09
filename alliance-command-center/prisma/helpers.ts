@@ -30,7 +30,7 @@ const createUser = async (email: string, password: string) => {
 
 /**
  * Create a new leadership note
- * @param memberId - The ID of the member
+ * @param allianceMemberId - The ID of the alliance member
  * @param authorId - The ID of the author
  * @param noteType - The type of the note
  * @param visibility - The visibility of the note
@@ -38,7 +38,7 @@ const createUser = async (email: string, password: string) => {
  * @returns The created leadership note
  */
 const createLeadershipNote = async (
-  memberId: string,
+  allianceMemberId: string,
   authorId: string,
   noteType: LeadershipNoteType,
   visibility: LeadershipNoteVisibility,
@@ -46,7 +46,7 @@ const createLeadershipNote = async (
 ) => {
   const existing = await prisma.leadershipNote.findFirst({
     where: {
-      memberId,
+      allianceMemberId,
       authorId,
       noteType,
       visibility,
@@ -59,7 +59,7 @@ const createLeadershipNote = async (
 
   return await prisma.leadershipNote.create({
     data: {
-      memberId,
+      allianceMemberId,
       authorId,
       noteType,
       visibility,
@@ -133,8 +133,8 @@ const createMetricPeriod = async (allianceId: string, name: string) => {
 
 // example entry: 92
 /**
- * Record a new metric entry for a member (appends to history)
- * @param memberId - The ID of the member
+ * Record a new metric entry for an alliance member (appends to history)
+ * @param allianceMemberId - The ID of the alliance member
  * @param periodId - The ID of the period
  * @param metricId - The ID of the metric
  * @param value - The value of the metric
@@ -142,7 +142,7 @@ const createMetricPeriod = async (allianceId: string, name: string) => {
  * @returns The created metric entry
  */
 const recordMemberMetric = async (
-  memberId: string,
+  allianceMemberId: string,
   periodId: string,
   metricId: string,
   value: number,
@@ -150,7 +150,7 @@ const recordMemberMetric = async (
 ) => {
   return await prisma.memberMetricEntry.create({
     data: {
-      memberId,
+      allianceMemberId,
       periodId,
       metricId,
       value,
@@ -193,15 +193,18 @@ const assignMetricToPeriod = async (
 };
 
 /**
- * Create a new member
+ * Create a new alliance member
  * @param allianceId - The ID of the alliance
  * @param playerName - The name of the player
- * @returns The created member
+ * @returns The created alliance member
  */
-const createMember = async (allianceId: string, playerName: string) => {
-  return await prisma.member.upsert({
+const createAllianceMember = async (allianceId: string, playerName: string) => {
+  return await prisma.allianceMember.upsert({
     where: {
-      playerName,
+      allianceId_playerName: {
+        allianceId,
+        playerName,
+      },
     },
     update: {},
     create: {
@@ -212,10 +215,10 @@ const createMember = async (allianceId: string, playerName: string) => {
 };
 
 /**
- * Create multiple members
+ * Create multiple alliance members
  * @param allianceId - The ID of the alliance
  * @param members - The members to create
- * @returns The created members
+ * @returns The created alliance members
  */
 const createMembers = async (
   allianceId: string,
@@ -223,10 +226,14 @@ const createMembers = async (
 ) => {
   return await Promise.all(
     members.map((member) =>
-      prisma.member.upsert({
-        where: { playerName: member.playerName },
+      prisma.allianceMember.upsert({
+        where: {
+          allianceId_playerName: {
+            allianceId,
+            playerName: member.playerName,
+          },
+        },
         update: {
-          allianceId,
           thp: member.thp,
           squadPower: member.squadPower,
         },
@@ -243,7 +250,7 @@ const createMembers = async (
 
 export {
   createUser,
-  createMember,
+  createAllianceMember,
   createMembers,
   createLeadershipNote,
   createMetric,

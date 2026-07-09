@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { formatPower } from "@/app/src/lib/formatPower";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireMembershipAccess } from "@/app/src/lib/auth/requireMembershipAccess";
+import { requireAllianceMemberAccess } from "@/app/src/lib/auth/requireMembershipAccess";
 import { LeadershipNoteCard } from "./LeadershipNoteCard";
 import { MemberPerformanceSection } from "./MemberPerformanceSection";
 import type { CurrentMetricViewModel } from "./MemberPerformanceSection";
@@ -17,9 +17,9 @@ type Params = {
 export default async function MemberPage({ params }: Params) {
     const { allianceId, memberId } = await params;
     const user = await requireAuth();
-    const { member } = await requireMembershipAccess(memberId, user.id);
+    const { allianceMember } = await requireAllianceMemberAccess(memberId, user.id);
 
-    if (member.allianceId !== allianceId) {
+    if (allianceMember.allianceId !== allianceId) {
         notFound();
     }
 
@@ -43,13 +43,13 @@ export default async function MemberPage({ params }: Params) {
         },
     });
 
-    // Query 2: Member's metric entries for the active period (if exists)
+    // Query 2: AllianceMember's metric entries for the active period (if exists)
     // Skip query if no active metrics to avoid unnecessary DB round-trip
     const activeMetricIds = activePeriod?.periodMetrics.map((pm) => pm.metricId) ?? [];
     const memberEntries = activePeriod && activeMetricIds.length > 0
         ? await prisma.memberMetricEntry.findMany({
               where: {
-                  memberId: member.id,
+                  allianceMemberId: allianceMember.id,
                   periodId: activePeriod.id,
                   metricId: { in: activeMetricIds },
               },
@@ -110,7 +110,7 @@ export default async function MemberPage({ params }: Params) {
     // Query 3: Leadership notes
     const leadershipNotes = await prisma.leadershipNote.findMany({
         where: {
-            memberId: memberId,
+            allianceMemberId: memberId,
         },
         include: {
             author: {
@@ -129,12 +129,12 @@ export default async function MemberPage({ params }: Params) {
     return (
         <div className="mx-auto flex max-w-4xl flex-col gap-8 p-8">
             <section className="flex flex-col items-center justify-center">
-                <h1 className="text-2xl font-bold">{member.playerName}</h1>
+                <h1 className="text-2xl font-bold">{allianceMember.playerName}</h1>
                 <div className="text-sm text-gray-500 mt-2">
-                    THP: {member.thp == null ? "—" : formatPower(member.thp)}
+                    THP: {allianceMember.thp == null ? "—" : formatPower(allianceMember.thp)}
                 </div>
                 <div className="text-sm text-gray-500">
-                    Top Squad: {member.squadPower == null ? "—" : formatPower(member.squadPower)}
+                    Top Squad: {allianceMember.squadPower == null ? "—" : formatPower(allianceMember.squadPower)}
                 </div>
             </section>
 
@@ -142,7 +142,7 @@ export default async function MemberPage({ params }: Params) {
 
             <section className="flex flex-col gap-4">
                 <h2 className="text-xl font-bold text-center text-gray-900">Leadership Notes</h2>
-                <LeadershipNoteCard memberId={member.id} mode="create" />
+                <LeadershipNoteCard memberId={allianceMember.id} mode="create" />
                 {leadershipNotes.length > 0 ? (
                     leadershipNotes.map((note) => (
                         <LeadershipNoteCard
