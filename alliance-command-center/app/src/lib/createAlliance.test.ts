@@ -64,8 +64,8 @@ describe("createAlliance", () => {
           create: vi.fn().mockResolvedValue({ id: "membership-1" }),
         },
         betaInvitation: {
-          update: vi.fn().mockResolvedValue({ ...betaInvitation, allianceId: newAlliance.id }),
-        },
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        }
       };
       return callback(tx);
     });
