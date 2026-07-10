@@ -2,6 +2,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { MetricPeriodCard } from "./metricPeriodCard";
+import { PageLayout, EmptyState } from "@/app/src/components";
 
 type Params = {
     params: Promise<{
@@ -33,12 +34,22 @@ export default async function PeriodsPage({ params }: Params) {
     });
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-            <h1 className="text-2xl font-bold">Evaluation Periods</h1>
-            <div className="flex flex-col items-center justify-center gap-4 w-full max-w-3xl">
+        <PageLayout
+            breadcrumb={[
+                { label: "Dashboard", href: `/alliances/${allianceId}` },
+                { label: "Evaluation Periods" },
+            ]}
+            title="Evaluation Periods"
+            description="Create and manage evaluation periods for tracking member performance"
+            maxWidth="3xl"
+        >
+            <div className="flex flex-col gap-4">
                 <MetricPeriodCard allianceId={allianceId} mode="create" />
                 {periods.length === 0 ? (
-                    <p className="text-gray-500">No periods found. Create one to get started!</p>
+                    <EmptyState
+                        title="No periods yet"
+                        description="Create your first evaluation period to start tracking performance."
+                    />
                 ) : (
                     periods.map((period) => (
                         <MetricPeriodCard
@@ -58,6 +69,6 @@ export default async function PeriodsPage({ params }: Params) {
                     ))
                 )}
             </div>
-        </div>
+        </PageLayout>
     );
 }

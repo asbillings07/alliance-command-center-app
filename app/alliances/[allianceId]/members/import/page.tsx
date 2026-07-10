@@ -2,7 +2,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { RosterImportForm } from "./RosterImportForm";
-import Link from "next/link";
+import { PageLayout, Card } from "@/app/src/components";
 
 type Params = {
     params: Promise<{
@@ -17,7 +17,6 @@ export default async function MemberImportPage({ params }: Params) {
         requiredPermission: Permissions.IMPORT_MEMBERS,
     });
 
-    // Fetch existing alliance members to check for duplicates
     const existingMembersRaw = await prisma.allianceMember.findMany({
         where: { allianceId },
         select: {
@@ -28,7 +27,6 @@ export default async function MemberImportPage({ params }: Params) {
         orderBy: { playerName: "asc" },
     });
 
-    // Serialize Date to ISO string for client component
     const existingMembers = existingMembersRaw.map((m) => ({
         id: m.id,
         playerName: m.playerName,
@@ -36,26 +34,23 @@ export default async function MemberImportPage({ params }: Params) {
     }));
 
     return (
-        <div className="mx-auto flex max-w-4xl flex-col gap-6 p-8">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Import Roster</h1>
-                    <p className="text-sm text-gray-600 mt-1">
-                        Upload a CSV to add members to your alliance
-                    </p>
-                </div>
-                <Link
-                    href={`/alliances/${allianceId}/members`}
-                    className="text-sm text-gray-600 hover:text-gray-900"
-                >
-                    ← Back to Members
-                </Link>
-            </div>
-
-            <RosterImportForm
-                allianceId={allianceId}
-                existingMembers={existingMembers}
-            />
-        </div>
+        <PageLayout
+            breadcrumb={[
+                { label: "Dashboard", href: `/alliances/${allianceId}` },
+                { label: "Members", href: `/alliances/${allianceId}/members` },
+                { label: "Import" },
+            ]}
+            title="Import Roster"
+            description="Upload a CSV to add members to your alliance"
+        >
+            <Card>
+                <Card.Body>
+                    <RosterImportForm
+                        allianceId={allianceId}
+                        existingMembers={existingMembers}
+                    />
+                </Card.Body>
+            </Card>
+        </PageLayout>
     );
 }

@@ -2,6 +2,7 @@ import { auth } from "@/app/src/lib/auth";
 import { redirect } from "next/navigation";
 import { selectAlliance } from "./actions";
 import { AllianceSelector } from "./AllianceSelector";
+import { PageLayout, Card } from "@/app/src/components";
 
 export default async function SelectAlliancePage() {
     const session = await auth();
@@ -17,10 +18,16 @@ export default async function SelectAlliancePage() {
     }
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen">
-            <div>Welcome {session.user.name}!</div>
-            <h1>Choose an Alliance</h1>
-            <AllianceSelector alliances={alliances} />
-        </div>
+        <PageLayout
+            title="Choose an Alliance"
+            description={`Welcome back, ${session.user.name}!`}
+            maxWidth="md"
+        >
+            <Card>
+                <Card.Body>
+                    <AllianceSelector alliances={alliances} />
+                </Card.Body>
+            </Card>
+        </PageLayout>
     );
 }

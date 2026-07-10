@@ -1,10 +1,10 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { InviteCollaboratorForm } from "./InviteCollaboratorForm";
 import { PendingInvitations } from "./PendingInvitations";
+import { PageLayout, Card } from "@/app/src/components";
 
 type PageProps = {
   params: Promise<{ allianceId: string }>;
@@ -13,7 +13,6 @@ type PageProps = {
 export default async function InvitationsPage({ params }: PageProps) {
   const { allianceId } = await params;
   
-  // Require INVITE_COLLABORATORS to view this page (including invitation data)
   await requireAllianceAccess({
     allianceId,
     requiredPermission: Permissions.INVITE_COLLABORATORS,
@@ -53,48 +52,40 @@ export default async function InvitationsPage({ params }: PageProps) {
   }));
 
   return (
-    <div className="max-w-4xl mx-auto py-8 px-4">
-      <div className="mb-6">
-        <Link
-          href={`/alliances/${allianceId}`}
-          className="text-[#9CA3AF] hover:text-[#D1D5DB] text-sm inline-flex items-center gap-1"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
-          </svg>
-          {alliance.name}
-        </Link>
+    <PageLayout
+      breadcrumb={[
+        { label: "Dashboard", href: `/alliances/${allianceId}` },
+        { label: "Leadership Team" },
+      ]}
+      title="Leadership Team"
+      description="Invite collaborators to help manage your alliance."
+    >
+      <div className="flex flex-col gap-8">
+        <section>
+          <h2 className="text-sm font-medium text-secondary uppercase tracking-wide mb-3">
+            Invite Collaborator
+          </h2>
+          <Card>
+            <Card.Body>
+              <InviteCollaboratorForm allianceId={allianceId} />
+            </Card.Body>
+          </Card>
+        </section>
+
+        <section>
+          <h2 className="text-sm font-medium text-secondary uppercase tracking-wide mb-3">
+            Pending Invitations
+          </h2>
+          <Card>
+            <Card.Body>
+              <PendingInvitations
+                invitations={serializedInvitations}
+                allianceId={allianceId}
+              />
+            </Card.Body>
+          </Card>
+        </section>
       </div>
-
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-[#F9FAFB]">
-          Leadership Team
-        </h1>
-        <p className="text-[#9CA3AF] mt-1">
-          Invite collaborators to help manage your alliance.
-        </p>
-      </div>
-
-      <section className="mb-8">
-        <h2 className="text-sm font-medium text-[#9CA3AF] uppercase tracking-wide mb-3">
-          Invite Collaborator
-        </h2>
-        <div className="bg-[#111827] border border-[#374151] rounded-lg p-6">
-          <InviteCollaboratorForm allianceId={allianceId} />
-        </div>
-      </section>
-
-      <section>
-        <h2 className="text-sm font-medium text-[#9CA3AF] uppercase tracking-wide mb-3">
-          Pending Invitations
-        </h2>
-        <div className="bg-[#111827] border border-[#374151] rounded-lg p-6">
-          <PendingInvitations
-            invitations={serializedInvitations}
-            allianceId={allianceId}
-          />
-        </div>
-      </section>
-    </div>
+    </PageLayout>
   );
 }

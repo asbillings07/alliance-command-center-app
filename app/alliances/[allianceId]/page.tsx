@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
-import Link from "next/link";
+import { PageLayout, Card, Button, Badge } from "@/app/src/components";
 
 type Params = {
   params: Promise<{
@@ -26,8 +26,6 @@ export default async function AlliancePage({ params }: Params) {
     redirect("/app");
   }
 
-  // For users with canImportMetrics but not canConfigurePeriods (Leaders),
-  // find an active period so they can record metrics directly
   let activePeriod: { id: string; name: string } | null = null;
   if (permissions.canImportMetrics && !permissions.canConfigurePeriods) {
     const period = await prisma.metricPeriod.findFirst({
@@ -39,64 +37,109 @@ export default async function AlliancePage({ params }: Params) {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen">
-      <h1 className="text-2xl font-bold">Alliance: {alliance.name}</h1>
-      <p className="text-lg">Server: {alliance.server}</p>
-      <p className="text-lg">Role: {auth.membership.role}</p>
+    <PageLayout
+      title={alliance.name}
+      description={`Server: ${alliance.server}`}
+    >
+      <div className="flex flex-col gap-6">
+        <Card>
+          <Card.Body>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-primary">Your Role</h2>
+                <p className="text-secondary mt-1">Access level for this alliance</p>
+              </div>
+              <Badge variant="info">{auth.membership.role}</Badge>
+            </div>
+          </Card.Body>
+        </Card>
 
-      <div className="flex flex-col items-center justify-center gap-4 mt-6">
-        <h2 className="text-lg font-semibold">Modules:</h2>
+        <div>
+          <h2 className="text-lg font-semibold text-primary mb-4">Modules</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Card>
+              <Card.Body>
+                <h3 className="font-medium text-primary mb-2">Members</h3>
+                <p className="text-sm text-secondary mb-4">
+                  Manage your alliance roster and member data.
+                </p>
+                <Button href={`/alliances/${allianceId}/members`} variant="primary" size="sm">
+                  View Members
+                </Button>
+              </Card.Body>
+            </Card>
 
-        <Link
-          href={`/alliances/${allianceId}/members`}
-          className="bg-blue-500 text-white rounded-md p-2 cursor-pointer min-w-48 text-center"
-        >
-          Members
-        </Link>
+            {permissions.canConfigureMetrics && (
+              <Card>
+                <Card.Body>
+                  <h3 className="font-medium text-primary mb-2">Metrics Library</h3>
+                  <p className="text-sm text-secondary mb-4">
+                    Define the metrics you track for your alliance.
+                  </p>
+                  <Button href={`/alliances/${allianceId}/metrics`} variant="primary" size="sm">
+                    Manage Metrics
+                  </Button>
+                </Card.Body>
+              </Card>
+            )}
 
-        {permissions.canConfigureMetrics && (
-          <Link
-            href={`/alliances/${allianceId}/metrics`}
-            className="bg-blue-500 text-white rounded-md p-2 cursor-pointer min-w-48 text-center"
-          >
-            Metrics Library
-          </Link>
-        )}
+            {permissions.canConfigurePeriods && (
+              <Card>
+                <Card.Body>
+                  <h3 className="font-medium text-primary mb-2">Evaluation Periods</h3>
+                  <p className="text-sm text-secondary mb-4">
+                    Create and manage evaluation periods for tracking.
+                  </p>
+                  <Button href={`/alliances/${allianceId}/periods`} variant="primary" size="sm">
+                    Manage Periods
+                  </Button>
+                </Card.Body>
+              </Card>
+            )}
 
-        {permissions.canConfigurePeriods && (
-          <Link
-            href={`/alliances/${allianceId}/periods`}
-            className="bg-blue-500 text-white rounded-md p-2 cursor-pointer min-w-48 text-center"
-          >
-            Evaluation Periods
-          </Link>
-        )}
+            {permissions.canImportMetrics && !permissions.canConfigurePeriods && (
+              <Card>
+                <Card.Body>
+                  <h3 className="font-medium text-primary mb-2">Record Metrics</h3>
+                  <p className="text-sm text-secondary mb-4">
+                    {activePeriod 
+                      ? `Record data for ${activePeriod.name}.`
+                      : "No active evaluation period available."
+                    }
+                  </p>
+                  {activePeriod ? (
+                    <Button 
+                      href={`/alliances/${allianceId}/periods/${activePeriod.id}/record`} 
+                      variant="primary" 
+                      size="sm"
+                    >
+                      Record Now
+                    </Button>
+                  ) : (
+                    <span className="text-sm text-tertiary">
+                      Waiting for period activation
+                    </span>
+                  )}
+                </Card.Body>
+              </Card>
+            )}
 
-        {/* Leaders can import metrics but can't configure periods - give them direct access */}
-        {permissions.canImportMetrics && !permissions.canConfigurePeriods && (
-          activePeriod ? (
-            <Link
-              href={`/alliances/${allianceId}/periods/${activePeriod.id}/record`}
-              className="bg-blue-500 text-white rounded-md p-2 cursor-pointer min-w-48 text-center"
-            >
-              Record Metrics
-            </Link>
-          ) : (
-            <span className="text-gray-500 p-2 min-w-48 text-center">
-              No active evaluation period
-            </span>
-          )
-        )}
-
-        {permissions.canInviteCollaborators && (
-          <Link
-            href={`/alliances/${allianceId}/settings/invitations`}
-            className="bg-blue-500 text-white rounded-md p-2 cursor-pointer min-w-48 text-center"
-          >
-            Leadership Team
-          </Link>
-        )}
+            {permissions.canInviteCollaborators && (
+              <Card>
+                <Card.Body>
+                  <h3 className="font-medium text-primary mb-2">Leadership Team</h3>
+                  <p className="text-sm text-secondary mb-4">
+                    Invite collaborators to help manage your alliance.
+                  </p>
+                  <Button href={`/alliances/${allianceId}/settings/invitations`} variant="primary" size="sm">
+                    Manage Team
+                  </Button>
+                </Card.Body>
+              </Card>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </PageLayout>
   );
 }
