@@ -5,8 +5,8 @@ vi.mock("./prisma", () => ({
   prisma: {
     betaInvitation: {
       findUnique: vi.fn(),
-      update: vi.fn(),
-    },
+      updateMany: vi.fn(),
+    }
     alliance: {
       create: vi.fn(),
     },
