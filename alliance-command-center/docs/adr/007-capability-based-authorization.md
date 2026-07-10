@@ -124,6 +124,82 @@ Business Logic     →  What should happen?    →  createMember()
 Persistence        →  How is it stored?      →  Prisma
 ```
 
+## Implementation Guidelines
+
+These guidelines emerged from code review and ensure consistent, secure authorization:
+
+### 1. Authorize Before Database Lookups
+
+To prevent ID enumeration attacks, always authorize before loading resources:
+
+```typescript
+// Good - authorize first, then load
+await requireAllianceAccess({ allianceId, requiredPermission: Permissions.MANAGE_MEMBERS });
+const member = await prisma.allianceMember.findFirst({
+  where: { id: memberId, allianceId },
+});
+
+// Bad - loads resource before authorization
+const member = await prisma.allianceMember.findUnique({ where: { id: memberId } });
+await requireAllianceAccess({ allianceId: member.allianceId, ... });
+```
+
+### 2. Scope Queries by Alliance
+
+Always include `allianceId` in resource queries to prevent cross-alliance access:
+
+```typescript
+// Good - scoped by both id and allianceId
+const period = await prisma.metricPeriod.findFirst({
+  where: { id: periodId, allianceId },
+});
+
+// Bad - only scoped by id, requires manual check
+const period = await prisma.metricPeriod.findUnique({ where: { id: periodId } });
+if (period.allianceId !== allianceId) { ... }
+```
+
+### 3. Server Actions Return Structured Errors
+
+Client-facing server actions should return error objects, not redirect on permission failure:
+
+```typescript
+// Good - returns structured error for client handling
+const auth = await requireAllianceAccess({ allianceId });
+if (!auth.permissions.canManageMembers) {
+  return { success: false, error: "You don't have permission to manage members" };
+}
+
+// Bad - redirects bypass client error handling
+await requireAllianceAccess({ allianceId, requiredPermission: Permissions.MANAGE_MEMBERS });
+// ^ throws/redirects on failure, breaking client UI
+```
+
+### 4. Route-Level Permission Checks
+
+Pages that should be entirely inaccessible to certain roles should check permissions at the route level:
+
+```typescript
+// Invitations page - only users who can invite should see this page
+await requireAllianceAccess({
+  allianceId,
+  requiredPermission: Permissions.INVITE_COLLABORATORS,
+});
+```
+
+### 5. UI Reflects Capabilities
+
+Never show UI controls for actions the user cannot perform:
+
+```typescript
+// Good - combines authorship with capability
+const canEdit = note.authorId === user.id && permissions.canManageNotes;
+{canEdit && <EditButton />}
+
+// Bad - shows button that will fail
+{note.authorId === user.id && <EditButton />}
+```
+
 ## Consequences
 
 ### Positive
@@ -155,6 +231,15 @@ Not part of this decision, but the architecture supports:
 - Fine-grained permission editing per user
 - Audit logs for permission changes
 - Temporary/time-limited permissions
+
+## Migration Notes
+
+The following legacy authorization helpers are deprecated and should not be used in new code:
+
+- `requireLeadershipAccess` - Use `requireAllianceAccess` with appropriate permission
+- `requirePeriodAccess` - Use `requireAllianceAccess` with `CONFIGURE_PERIODS` or `IMPORT_METRICS`
+
+All pages and actions have been migrated to `requireAllianceAccess` as the single authorization entry point.
 
 ## References
 
