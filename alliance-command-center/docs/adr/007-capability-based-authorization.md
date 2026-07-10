@@ -138,21 +138,24 @@ These principles should be maintained as the codebase evolves:
 
 These guidelines emerged from code review and ensure consistent, secure authorization:
 
-### 1. Authorize Before Database Lookups
+### 1. Authorize Before Using Lookup Results for Authorization
 
-To prevent ID enumeration attacks, always authorize before loading resources:
+To prevent ID enumeration attacks, authorize before using the result of a database lookup to make authorization decisions:
 
 ```typescript
-// Good - authorize first, then load
+// Good - allianceId comes from the route, authorize first
 await requireAllianceAccess({ allianceId, requiredPermission: Permissions.MANAGE_MEMBERS });
 const member = await prisma.allianceMember.findFirst({
   where: { id: memberId, allianceId },
 });
 
-// Bad - loads resource before authorization
+// Bad - uses lookup result to determine which alliance to authorize against
 const member = await prisma.allianceMember.findUnique({ where: { id: memberId } });
 await requireAllianceAccess({ allianceId: member.allianceId, ... });
+// ^ Attacker can probe member IDs and learn which ones exist
 ```
+
+Note: Sometimes you need to load a resource to know which alliance it belongs to. The key is to not use that lookup to make the authorization decision itself.
 
 ### 2. Scope Queries by Alliance
 

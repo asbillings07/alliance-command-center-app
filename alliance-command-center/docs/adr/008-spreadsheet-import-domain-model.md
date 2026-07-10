@@ -247,6 +247,18 @@ Possible future enhancements include:
 - Multi-sheet workbook support.
 - Spreadsheet templates for common alliance workflows.
 
+## Implications for Import UI
+
+The import workflow should classify the workbook before showing mapping controls.
+
+A user uploading a spreadsheet should first answer (or the system should infer): "What kind of data is this?"
+
+- **Member Roster** → Show member attribute mapping
+- **Snapshot** → Ask for the snapshot date, then show metric mapping
+- **Historical Tracking** → Detect date columns, create multiple snapshots
+
+This classification step is the bridge between this ADR and the product UI. Without it, the importer cannot know whether to treat columns as attributes to overwrite or observations to append.
+
 ## Non-Goals
 
 This ADR does not define:
