@@ -124,6 +124,16 @@ Business Logic     →  What should happen?    →  createMember()
 Persistence        →  How is it stored?      →  Prisma
 ```
 
+## Architectural Invariants
+
+These principles should be maintained as the codebase evolves:
+
+1. **`requireAllianceAccess` is the single entry point** - All authorization flows through this function. The more the app leans on `AuthorizationContext`, the stronger the architecture.
+
+2. **No role comparisons outside the permission service** - The permission service (`permissions.ts`) is the only place that knows which roles have which capabilities. Business logic and UI code should never contain `role === "ADMIN"` checks.
+
+3. **Authorization foundation enables future features** - Invites, roster management, and the importer redesign will all build on this capability-based authorization path.
+
 ## Implementation Guidelines
 
 These guidelines emerged from code review and ensure consistent, secure authorization:
@@ -199,6 +209,31 @@ const canEdit = note.authorId === user.id && permissions.canManageNotes;
 // Bad - shows button that will fail
 {note.authorId === user.id && <EditButton />}
 ```
+
+### 6. Layered Authorization for Ownership Checks
+
+Some actions require both capability and ownership (e.g., editing your own notes). The pattern is:
+
+1. Authorize via `requireAllianceAccess` with the capability permission
+2. Load the resource (scoped by allianceId)
+3. Check ownership and return a clear error if not the owner
+
+```typescript
+const auth = await requireAllianceAccess({
+  allianceId,
+  requiredPermission: Permissions.MANAGE_NOTES,
+});
+
+const note = await prisma.leadershipNote.findFirst({
+  where: { id: noteId, allianceMember: { allianceId } },
+});
+
+if (note.authorId !== auth.user.id) {
+  throw new Error("You can only edit your own notes");
+}
+```
+
+This keeps authorization (capability) separate from business rules (ownership).
 
 ## Consequences
 
