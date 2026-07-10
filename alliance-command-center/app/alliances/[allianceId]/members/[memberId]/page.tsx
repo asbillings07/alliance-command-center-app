@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { formatPower } from "@/app/src/lib/formatPower";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireAllianceMemberAccess } from "@/app/src/lib/auth/requireMembershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { LeadershipNoteCard } from "./LeadershipNoteCard";
 import { MemberPerformanceSection } from "./MemberPerformanceSection";
 import type { CurrentMetricViewModel } from "./MemberPerformanceSection";
@@ -18,10 +17,14 @@ type Params = {
 
 export default async function MemberPage({ params }: Params) {
     const { allianceId, memberId } = await params;
-    const user = await requireAuth();
-    const { allianceMember } = await requireAllianceMemberAccess(memberId, user.id);
+    const auth = await requireAllianceAccess({ allianceId });
 
-    if (allianceMember.allianceId !== allianceId) {
+    // Load the member
+    const allianceMember = await prisma.allianceMember.findUnique({
+        where: { id: memberId },
+    });
+
+    if (!allianceMember || allianceMember.allianceId !== allianceId) {
         notFound();
     }
 
@@ -128,16 +131,8 @@ export default async function MemberPage({ params }: Params) {
     });
 
 
-    // Check if current user has leadership access
-    const membership = await prisma.allianceMembership.findUnique({
-        where: {
-            allianceId_userId: {
-                allianceId,
-                userId: user.id,
-            },
-        },
-    });
-    const isLeadership = membership?.role !== "VIEWER";
+    // Use permissions from auth context
+    const { permissions, user } = auth;
 
     // Query linked user info for account section
     const linkedUserInfo = allianceMember.userId
@@ -191,7 +186,7 @@ export default async function MemberPage({ params }: Params) {
                         Joined {allianceMember.joinedAt.toLocaleDateString()}
                     </div>
                 )}
-                {isLeadership && (
+                {permissions.canManageMembers && (
                     <MemberActions
                         allianceId={allianceId}
                         memberId={allianceMember.id}
@@ -203,7 +198,7 @@ export default async function MemberPage({ params }: Params) {
             {linkedUserInfo && linkedMembership ? (
                 <MemberAccountSection
                     allianceId={allianceId}
-                    isLeadership={isLeadership}
+                    canInvite={permissions.canInviteCollaborators}
                     connected={true}
                     email={linkedUserInfo.email}
                     membershipRole={linkedMembership.role}
@@ -211,7 +206,7 @@ export default async function MemberPage({ params }: Params) {
             ) : (
                 <MemberAccountSection
                     allianceId={allianceId}
-                    isLeadership={isLeadership}
+                    canInvite={permissions.canInviteCollaborators}
                     connected={false}
                 />
             )}

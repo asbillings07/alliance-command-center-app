@@ -2,7 +2,7 @@ import Link from "next/link";
 
 type MemberAccountSectionProps = {
   allianceId: string;
-  isLeadership: boolean;
+  canInvite: boolean;
 } & (
   | {
       connected: true;
@@ -93,7 +93,7 @@ export function MemberAccountSection(props: MemberAccountSectionProps) {
             </p>
           </div>
         </div>
-        {props.isLeadership && (
+        {props.canInvite && (
           <Link
             href={`/alliances/${props.allianceId}/settings/invitations`}
             className="text-sm text-blue-600 hover:text-blue-800"

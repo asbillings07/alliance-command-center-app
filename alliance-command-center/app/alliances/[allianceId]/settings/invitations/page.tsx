@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { prisma } from "@/app/src/lib/prisma";
 import { InviteCollaboratorForm } from "./InviteCollaboratorForm";
 import { PendingInvitations } from "./PendingInvitations";
@@ -12,8 +11,7 @@ type PageProps = {
 
 export default async function InvitationsPage({ params }: PageProps) {
   const { allianceId } = await params;
-  const user = await requireAuth();
-  const membership = await requireLeadershipAccess(allianceId, user.id);
+  const auth = await requireAllianceAccess({ allianceId });
 
   const alliance = await prisma.alliance.findUnique({
     where: { id: allianceId },
@@ -24,7 +22,7 @@ export default async function InvitationsPage({ params }: PageProps) {
     notFound();
   }
 
-  const canInvite = membership.role === "OWNER" || membership.role === "ADMIN";
+  const canInvite = auth.permissions.canInviteCollaborators;
 
   const pendingInvitations = await prisma.invitation.findMany({
     where: {
