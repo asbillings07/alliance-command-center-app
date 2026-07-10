@@ -124,4 +124,11 @@ async function main() {
   await createInvitation(email);
 }
 
-main();
+main()
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
