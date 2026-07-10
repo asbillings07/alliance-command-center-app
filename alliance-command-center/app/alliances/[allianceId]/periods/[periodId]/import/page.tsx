@@ -1,6 +1,7 @@
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requirePeriodAccess } from "@/app/src/lib/auth/requirePeriodAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
+import { notFound } from "next/navigation";
 import { ImportForm } from "./ImportForm";
 import Link from "next/link";
 
@@ -13,8 +14,25 @@ type Params = {
 
 export default async function ImportPage({ params }: Params) {
     const { allianceId, periodId } = await params;
-    const user = await requireAuth();
-    const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
+    
+    await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.IMPORT_METRICS,
+    });
+
+    const period = await prisma.metricPeriod.findFirst({
+        where: { id: periodId, allianceId },
+        include: {
+            periodMetrics: {
+                where: { active: true },
+                include: { metric: true },
+            },
+        },
+    });
+
+    if (!period) {
+        notFound();
+    }
 
     const metrics = period.periodMetrics.map((pm) => ({
         id: pm.metric.id,

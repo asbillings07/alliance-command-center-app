@@ -1,6 +1,6 @@
 import { prisma } from "@/app/src/lib/prisma";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { RosterImportForm } from "./RosterImportForm";
 import Link from "next/link";
 
@@ -12,8 +12,10 @@ type Params = {
 
 export default async function MemberImportPage({ params }: Params) {
     const { allianceId } = await params;
-    const user = await requireAuth();
-    await requireLeadershipAccess(allianceId, user.id);
+    await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.IMPORT_MEMBERS,
+    });
 
     // Fetch existing alliance members to check for duplicates
     const existingMembersRaw = await prisma.allianceMember.findMany({

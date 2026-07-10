@@ -1,7 +1,8 @@
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requirePeriodAccess } from "@/app/src/lib/auth/requirePeriodAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { PeriodMetricList } from "./PeriodMetricList";
 import { prisma } from "@/app/src/lib/prisma";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 
 type Params = {
@@ -13,11 +14,29 @@ type Params = {
 
 export default async function PeriodPage({ params }: Params) {
     const { periodId, allianceId } = await params;
-    const user = await requireAuth();
-    const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
+    
+    await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.CONFIGURE_PERIODS,
+    });
+
+    const period = await prisma.metricPeriod.findFirst({
+        where: { id: periodId, allianceId },
+        include: {
+            periodMetrics: {
+                where: { active: true },
+                include: { metric: true },
+            },
+        },
+    });
+
+    if (!period) {
+        notFound();
+    }
+
     const metrics = await prisma.metric.findMany({
         where: {
-            allianceId: period.allianceId,
+            allianceId,
             active: true,
         },
         select: {

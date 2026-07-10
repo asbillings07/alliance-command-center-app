@@ -1,5 +1,5 @@
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { notFound } from "next/navigation";
 import { EditMemberForm } from "./EditMemberForm";
@@ -13,12 +13,14 @@ type Params = {
 
 export default async function EditMemberPage({ params }: Params) {
     const { allianceId, memberId } = await params;
-    const user = await requireAuth();
 
-    await requireLeadershipAccess(allianceId, user.id);
+    await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.MANAGE_MEMBERS,
+    });
 
-    const member = await prisma.allianceMember.findUnique({
-        where: { id: memberId },
+    const member = await prisma.allianceMember.findFirst({
+        where: { id: memberId, allianceId },
         select: {
             id: true,
             playerName: true,
@@ -33,7 +35,7 @@ export default async function EditMemberPage({ params }: Params) {
         },
     });
 
-    if (!member || member.allianceId !== allianceId) {
+    if (!member) {
         notFound();
     }
 

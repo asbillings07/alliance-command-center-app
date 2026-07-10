@@ -1,6 +1,6 @@
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { prisma } from "@/app/src/lib/prisma";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { MetricCard } from "./metricCard";
 
 type Params = {
@@ -11,8 +11,10 @@ type Params = {
 
 export default async function MetricsPage({ params }: Params) {
     const { allianceId } = await params;
-    const user = await requireAuth();
-    await requireLeadershipAccess(allianceId, user.id);
+    await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.CONFIGURE_METRICS,
+    });
     const metrics = await prisma.metric.findMany({
         where: {
             allianceId: allianceId,

@@ -1,5 +1,5 @@
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { notFound } from "next/navigation";
 import { AddMemberForm } from "./AddMemberForm";
@@ -12,9 +12,11 @@ type Params = {
 
 export default async function NewMemberPage({ params }: Params) {
     const { allianceId } = await params;
-    const user = await requireAuth();
 
-    await requireLeadershipAccess(allianceId, user.id);
+    await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.MANAGE_MEMBERS,
+    });
 
     const alliance = await prisma.alliance.findUnique({
         where: { id: allianceId },
