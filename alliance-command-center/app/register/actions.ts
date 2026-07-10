@@ -63,12 +63,21 @@ export async function register(
     const betaTokenOrCode = redeemMatch[1];
     const isCodeLookup = betaTokenOrCode === "code";
     const codeMatch = callbackUrl.match(/[?&]code=([^&]+)/);
+    const decodedCode =
+      isCodeLookup && codeMatch
+        ? (() => {
+            try {
+              return decodeURIComponent(codeMatch[1]);
+            } catch {
+              return codeMatch[1];
+            }
+          })()
+        : null;
 
     const result =
-      isCodeLookup && codeMatch
-        ? await validateBetaCode(decodeURIComponent(codeMatch[1]))
+      isCodeLookup && decodedCode
+        ? await validateBetaCode(decodedCode)
         : await validateBetaToken(betaTokenOrCode);
-
     if (result.status === "not_found") {
       return { error: "Beta invitation not found" };
     }
