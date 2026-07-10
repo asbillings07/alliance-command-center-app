@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures";
+import { test, expect } from "../shared/fixtures";
 
 /**
  * Viewer Journey E2E Test

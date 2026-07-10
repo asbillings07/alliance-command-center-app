@@ -1,9 +1,9 @@
-import { test, expect } from "./fixtures";
+import { test, expect } from "../shared/fixtures";
 import {
   PERMISSION_MATRIX,
   type Role,
   type FeaturePermission,
-} from "./permission-matrix";
+} from "../shared/permission-matrix";
 
 /**
  * Permission Matrix Validation Tests

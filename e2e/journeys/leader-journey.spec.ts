@@ -1,4 +1,4 @@
-import { test, expect, AlliancePage } from "./fixtures";
+import { test, expect, AlliancePage } from "../shared/fixtures";
 
 /**
  * Leader Journey E2E Test
