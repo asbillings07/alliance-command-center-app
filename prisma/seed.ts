@@ -68,7 +68,7 @@ const createAllianceData = async () => {
 
   const user = await prisma.user.findUnique({
     where: {
-      email: "ab@example.com",
+      email: "abdevelops@gmail.com",
     },
   });
   if (!user) {
@@ -188,7 +188,7 @@ const createMetricData = async (allianceId: string, memberId: string) => {
 
 async function main() {
   // Users
-  await createUser("ab@example.com", "Password123");
+  await createUser("abdevelops@gmail.com", "Password123");
 
   // Alliance
   const { alliance, user, dragon } = await createAllianceData();
