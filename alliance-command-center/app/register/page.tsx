@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { prisma } from "@/app/src/lib/prisma";
-import { validateBetaToken, validateBetaCode } from "@/app/src/lib/betaInvitation";
+import {
+  validateBetaToken,
+  validateBetaCode,
+} from "@/app/src/lib/betaInvitation";
 import { RegisterForm } from "./RegisterForm";
 
 type PageProps = {
@@ -17,17 +20,30 @@ export default async function RegisterPage({ searchParams }: PageProps) {
     const isCodeLookup = betaTokenOrCode === "code";
     const codeMatch = callbackUrl.match(/[?&]code=([^&]+)/);
 
-    const betaInvitation = isCodeLookup && codeMatch
-      ? await validateBetaCode(decodeURIComponent(codeMatch[1]))
-      : await validateBetaToken(betaTokenOrCode);
+    const result =
+      isCodeLookup && codeMatch
+        ? await validateBetaCode(decodeURIComponent(codeMatch[1]))
+        : await validateBetaToken(betaTokenOrCode);
 
-    if (!betaInvitation) {
-      return <InvitationRequired message="Invalid or expired beta invitation" />;
+    if (result.status === "not_found") {
+      return (
+        <InvitationRequired message="We couldn't find an invitation with this code. Please check the code and try again." />
+      );
     }
 
-    if (betaInvitation.acceptedAt) {
-      return <InvitationRequired message="This beta invitation has already been accepted" />;
+    if (result.status === "expired") {
+      return (
+        <InvitationRequired message="This beta invitation has expired. Please contact us to request a new invitation." />
+      );
     }
+
+    if (result.status === "already_accepted") {
+      return (
+        <InvitationRequired message="This beta invitation has already been accepted. Please sign in instead." />
+      );
+    }
+
+    const betaInvitation = result.invitation;
 
     return (
       <main className="flex items-center justify-center min-h-screen bg-[#0F172A]">

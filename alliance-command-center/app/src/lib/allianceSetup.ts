@@ -7,16 +7,17 @@ import { prisma } from "./prisma";
 
 export type TypicalRole = "Owner" | "Admin or Leader";
 
+export type SetupTaskId = "metrics" | "period" | "team" | "members" | "data";
+
 export type SetupTaskDefinition = {
-  id: string;
+  id: SetupTaskId;
   label: string;
   typicallyCompletedBy: TypicalRole;
   href: (allianceId: string) => string;
-  detector: (allianceId: string) => Promise<boolean>;
 };
 
 export type SetupTask = {
-  id: string;
+  id: SetupTaskId;
   label: string;
   completed: boolean;
   href: string;
@@ -30,49 +31,57 @@ export type AllianceSetupStatus = {
   totalCount: number;
 };
 
-async function hasMetrics(allianceId: string): Promise<boolean> {
-  const count = await prisma.metric.count({
-    where: { allianceId },
-  });
-  return count > 0;
+type SetupCounts = {
+  metrics: number;
+  periods: number;
+  memberships: number;
+  members: number;
+  metricEntries: number;
+};
+
+/**
+ * Fetch all setup-relevant counts in a single database round-trip.
+ * This avoids N+1 queries when checking setup status.
+ */
+async function getSetupCounts(allianceId: string): Promise<SetupCounts> {
+  const [metrics, periods, memberships, members, metricEntries] =
+    await Promise.all([
+      prisma.metric.count({ where: { allianceId } }),
+      prisma.metricPeriod.count({ where: { allianceId } }),
+      prisma.allianceMembership.count({ where: { allianceId } }),
+      prisma.allianceMember.count({ where: { allianceId, archivedAt: null } }),
+      prisma.memberMetricEntry.count({
+        where: { allianceMember: { allianceId } },
+      }),
+    ]);
+
+  return { metrics, periods, memberships, members, metricEntries };
 }
 
-async function hasPeriods(allianceId: string): Promise<boolean> {
-  const count = await prisma.metricPeriod.count({
-    where: { allianceId },
-  });
-  return count > 0;
-}
-
-async function hasMultipleMemberships(allianceId: string): Promise<boolean> {
-  const count = await prisma.allianceMembership.count({
-    where: { allianceId },
-  });
-  return count > 1;
-}
-
-async function hasMembers(allianceId: string): Promise<boolean> {
-  const count = await prisma.allianceMember.count({
-    where: { allianceId, archivedAt: null },
-  });
-  return count > 0;
-}
-
-async function hasMetricEntries(allianceId: string): Promise<boolean> {
-  const count = await prisma.memberMetricEntry.count({
-    where: {
-      allianceMember: { allianceId },
-    },
-  });
-  return count > 0;
+function evaluateTaskCompletion(
+  taskId: SetupTaskId,
+  counts: SetupCounts
+): boolean {
+  switch (taskId) {
+    case "metrics":
+      return counts.metrics > 0;
+    case "period":
+      return counts.periods > 0;
+    case "team":
+      return counts.memberships > 1;
+    case "members":
+      return counts.members > 0;
+    case "data":
+      return counts.metricEntries > 0;
+  }
 }
 
 /**
  * Declarative setup task definitions.
  * Ordered for R5 delegation: owner tasks first, then admin/leader tasks.
  *
- * Adding future tasks (Discord bot, billing, API keys) requires only
- * adding to this array—no service logic changes needed.
+ * Adding future tasks (Discord bot, billing, API keys) requires adding
+ * to this array and updating evaluateTaskCompletion().
  */
 export const SETUP_TASKS: SetupTaskDefinition[] = [
   {
@@ -80,35 +89,30 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
     label: "Configure Metrics",
     typicallyCompletedBy: "Owner",
     href: (id) => `/alliances/${id}/metrics`,
-    detector: hasMetrics,
   },
   {
     id: "period",
     label: "Create Evaluation Period",
     typicallyCompletedBy: "Owner",
     href: (id) => `/alliances/${id}/periods`,
-    detector: hasPeriods,
   },
   {
     id: "team",
     label: "Invite Leadership Team",
     typicallyCompletedBy: "Owner",
     href: (id) => `/alliances/${id}/settings/invitations`,
-    detector: hasMultipleMemberships,
   },
   {
     id: "members",
     label: "Import Members",
     typicallyCompletedBy: "Admin or Leader",
     href: (id) => `/alliances/${id}/members/import`,
-    detector: hasMembers,
   },
   {
     id: "data",
     label: "Import First Dataset",
     typicallyCompletedBy: "Admin or Leader",
     href: (id) => `/alliances/${id}/periods`,
-    detector: hasMetricEntries,
   },
 ];
 
@@ -118,19 +122,22 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
  * This derives the current state from the database rather than
  * storing progress separately. Progress is alliance-level:
  * any authorized user completing a task updates progress for everyone.
+ *
+ * Efficiency: All counts are fetched in a single batch query via
+ * getSetupCounts() to avoid N+1 database round-trips.
  */
 export async function getAllianceSetupStatus(
   allianceId: string
 ): Promise<AllianceSetupStatus> {
-  const tasks: SetupTask[] = await Promise.all(
-    SETUP_TASKS.map(async (definition) => ({
-      id: definition.id,
-      label: definition.label,
-      completed: await definition.detector(allianceId),
-      href: definition.href(allianceId),
-      typicallyCompletedBy: definition.typicallyCompletedBy,
-    }))
-  );
+  const counts = await getSetupCounts(allianceId);
+
+  const tasks: SetupTask[] = SETUP_TASKS.map((definition) => ({
+    id: definition.id,
+    label: definition.label,
+    completed: evaluateTaskCompletion(definition.id, counts),
+    href: definition.href(allianceId),
+    typicallyCompletedBy: definition.typicallyCompletedBy,
+  }));
 
   const completedCount = tasks.filter((t) => t.completed).length;
   const totalCount = tasks.length;

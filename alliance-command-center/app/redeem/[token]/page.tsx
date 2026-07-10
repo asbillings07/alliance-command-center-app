@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { auth } from "@/app/src/lib/auth";
-import { validateBetaToken, validateBetaCode } from "@/app/src/lib/betaInvitation";
+import {
+  validateBetaToken,
+  validateBetaCode,
+  type BetaValidationResult,
+} from "@/app/src/lib/betaInvitation";
 import { AcceptBetaInvitationForm } from "./AcceptBetaInvitationForm";
 
 type PageProps = {
@@ -8,13 +12,81 @@ type PageProps = {
   searchParams: Promise<{ code?: string }>;
 };
 
-export default async function RedeemTokenPage({ params, searchParams }: PageProps) {
+function ErrorIcon() {
+  return (
+    <div className="w-16 h-16 mx-auto mb-4 bg-[#EF4444]/20 rounded-full flex items-center justify-center">
+      <svg
+        className="w-8 h-8 text-[#EF4444]"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M6 18L18 6M6 6l12 12"
+        />
+      </svg>
+    </div>
+  );
+}
+
+function SuccessIcon() {
+  return (
+    <div className="w-16 h-16 mx-auto mb-4 bg-[#22C55E]/20 rounded-full flex items-center justify-center">
+      <svg
+        className="w-8 h-8 text-[#22C55E]"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M5 13l4 4L19 7"
+        />
+      </svg>
+    </div>
+  );
+}
+
+function ErrorCard({
+  title,
+  message,
+  showRetry = true,
+}: {
+  title: string;
+  message: string;
+  showRetry?: boolean;
+}) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
+      <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8 text-center">
+        <ErrorIcon />
+        <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">{title}</h1>
+        <p className="text-[#9CA3AF] mb-6">{message}</p>
+        {showRetry && (
+          <Link href="/redeem" className="text-[#3B82F6] hover:text-[#60A5FA]">
+            Try entering your code again
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default async function RedeemTokenPage({
+  params,
+  searchParams,
+}: PageProps) {
   const { token } = await params;
   const { code } = await searchParams;
 
   const isCodeLookup = token === "code" && code;
-  
-  const invitation = isCodeLookup
+
+  const result: BetaValidationResult = isCodeLookup
     ? await validateBetaCode(code)
     : await validateBetaToken(token);
 
@@ -22,63 +94,36 @@ export default async function RedeemTokenPage({ params, searchParams }: PageProp
     ? `/redeem/code?code=${encodeURIComponent(code)}`
     : `/redeem/${token}`;
 
-  if (!invitation) {
+  if (result.status === "not_found") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
-        <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 bg-[#EF4444]/20 rounded-full flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-[#EF4444]"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </div>
-          <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">
-            Invalid Invitation
-          </h1>
-          <p className="text-[#9CA3AF] mb-6">
-            This invitation link is invalid or has expired.
-          </p>
-          <Link href="/redeem" className="text-[#3B82F6] hover:text-[#60A5FA]">
-            Try entering your code again
-          </Link>
-        </div>
-      </div>
+      <ErrorCard
+        title="Code Not Found"
+        message="We couldn't find an invitation with this code. Please check the code and try again."
+      />
     );
   }
 
-  if (invitation.acceptedAt) {
+  if (result.status === "expired") {
+    return (
+      <ErrorCard
+        title="Invitation Expired"
+        message="This beta invitation has expired. Please contact us to request a new invitation."
+        showRetry={false}
+      />
+    );
+  }
+
+  if (result.status === "already_accepted") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
         <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 bg-[#22C55E]/20 rounded-full flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-[#22C55E]"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5 13l4 4L19 7"
-              />
-            </svg>
-          </div>
+          <SuccessIcon />
           <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">
             Already Accepted
           </h1>
           <p className="text-[#9CA3AF] mb-6">
-            This beta invitation has already been accepted.
+            This beta invitation has already been accepted. Sign in to continue
+            to your alliance.
           </p>
           <Link
             href="/login"
@@ -90,6 +135,8 @@ export default async function RedeemTokenPage({ params, searchParams }: PageProp
       </div>
     );
   }
+
+  const { invitation } = result;
 
   const session = await auth();
   const isLoggedIn = !!session?.user;

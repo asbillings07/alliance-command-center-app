@@ -64,17 +64,24 @@ export async function register(
     const isCodeLookup = betaTokenOrCode === "code";
     const codeMatch = callbackUrl.match(/[?&]code=([^&]+)/);
 
-    const betaInvitation = isCodeLookup && codeMatch
-      ? await validateBetaCode(decodeURIComponent(codeMatch[1]))
-      : await validateBetaToken(betaTokenOrCode);
+    const result =
+      isCodeLookup && codeMatch
+        ? await validateBetaCode(decodeURIComponent(codeMatch[1]))
+        : await validateBetaToken(betaTokenOrCode);
 
-    if (!betaInvitation) {
-      return { error: "Invalid or expired beta invitation" };
+    if (result.status === "not_found") {
+      return { error: "Beta invitation not found" };
     }
 
-    if (betaInvitation.acceptedAt) {
+    if (result.status === "expired") {
+      return { error: "This beta invitation has expired" };
+    }
+
+    if (result.status === "already_accepted") {
       return { error: "This beta invitation has already been accepted" };
     }
+
+    const betaInvitation = result.invitation;
 
     if (betaInvitation.email.toLowerCase() !== email) {
       return { error: "Email does not match the invitation" };

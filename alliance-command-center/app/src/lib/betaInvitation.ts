@@ -83,35 +83,45 @@ export async function createBetaInvitation(
   };
 }
 
+export type BetaValidationResult =
+  | { status: "valid"; invitation: BetaInvitation }
+  | { status: "not_found"; invitation: null }
+  | { status: "expired"; invitation: null }
+  | { status: "already_accepted"; invitation: BetaInvitation };
+
 /**
  * Validate a beta invitation token.
- * Returns the invitation if valid, null otherwise.
+ * Returns structured result with status and invitation.
  */
 export async function validateBetaToken(
   token: string
-): Promise<BetaInvitation | null> {
+): Promise<BetaValidationResult> {
   const invitation = await prisma.betaInvitation.findUnique({
     where: { token },
   });
 
   if (!invitation) {
-    return null;
+    return { status: "not_found", invitation: null };
+  }
+
+  if (invitation.acceptedAt) {
+    return { status: "already_accepted", invitation };
   }
 
   if (invitation.expiresAt < new Date()) {
-    return null;
+    return { status: "expired", invitation: null };
   }
 
-  return invitation;
+  return { status: "valid", invitation };
 }
 
 /**
  * Validate a beta invitation code (6-digit human-readable).
- * Returns the invitation if valid, null otherwise.
+ * Returns structured result with status and invitation.
  */
 export async function validateBetaCode(
   code: string
-): Promise<BetaInvitation | null> {
+): Promise<BetaValidationResult> {
   const normalizedCode = code.toUpperCase().trim();
 
   const invitation = await prisma.betaInvitation.findUnique({
@@ -119,14 +129,18 @@ export async function validateBetaCode(
   });
 
   if (!invitation) {
-    return null;
+    return { status: "not_found", invitation: null };
+  }
+
+  if (invitation.acceptedAt) {
+    return { status: "already_accepted", invitation };
   }
 
   if (invitation.expiresAt < new Date()) {
-    return null;
+    return { status: "expired", invitation: null };
   }
 
-  return invitation;
+  return { status: "valid", invitation };
 }
 
 /**

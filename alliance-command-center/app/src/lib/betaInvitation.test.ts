@@ -109,75 +109,117 @@ describe("createBetaInvitation", () => {
 });
 
 describe("validateBetaToken", () => {
-  it("returns invitation for valid token", async () => {
+  it("returns valid status for valid token", async () => {
     const invitation = {
       id: "inv-1",
       token: "valid-token",
+      acceptedAt: null,
       expiresAt: new Date(Date.now() + 86400000),
     };
     mockPrisma.betaInvitation.findUnique.mockResolvedValue(invitation);
 
     const result = await validateBetaToken("valid-token");
 
-    expect(result).toEqual(invitation);
+    expect(result.status).toBe("valid");
+    expect(result.invitation).toEqual(invitation);
   });
 
-  it("returns null for unknown token", async () => {
+  it("returns not_found status for unknown token", async () => {
     mockPrisma.betaInvitation.findUnique.mockResolvedValue(null);
 
     const result = await validateBetaToken("unknown-token");
 
-    expect(result).toBeNull();
+    expect(result.status).toBe("not_found");
+    expect(result.invitation).toBeNull();
   });
 
-  it("returns null for expired invitation", async () => {
+  it("returns expired status for expired invitation", async () => {
     mockPrisma.betaInvitation.findUnique.mockResolvedValue({
       id: "inv-1",
       token: "expired-token",
+      acceptedAt: null,
       expiresAt: new Date(Date.now() - 86400000),
     });
 
     const result = await validateBetaToken("expired-token");
 
-    expect(result).toBeNull();
+    expect(result.status).toBe("expired");
+    expect(result.invitation).toBeNull();
+  });
+
+  it("returns already_accepted status for accepted invitation", async () => {
+    const invitation = {
+      id: "inv-1",
+      token: "accepted-token",
+      acceptedAt: new Date(),
+      acceptedByUserId: "user-1",
+      expiresAt: new Date(Date.now() + 86400000),
+    };
+    mockPrisma.betaInvitation.findUnique.mockResolvedValue(invitation);
+
+    const result = await validateBetaToken("accepted-token");
+
+    expect(result.status).toBe("already_accepted");
+    expect(result.invitation).toEqual(invitation);
   });
 });
 
 describe("validateBetaCode", () => {
-  it("returns invitation for valid code", async () => {
+  it("returns valid status for valid code", async () => {
     const invitation = {
       id: "inv-1",
       code: "ABC-123",
+      acceptedAt: null,
       expiresAt: new Date(Date.now() + 86400000),
     };
     mockPrisma.betaInvitation.findUnique.mockResolvedValue(invitation);
 
     const result = await validateBetaCode("abc-123");
 
-    expect(result).toEqual(invitation);
+    expect(result.status).toBe("valid");
+    expect(result.invitation).toEqual(invitation);
     expect(mockPrisma.betaInvitation.findUnique).toHaveBeenCalledWith({
       where: { code: "ABC-123" },
     });
   });
 
-  it("returns null for unknown code", async () => {
+  it("returns not_found status for unknown code", async () => {
     mockPrisma.betaInvitation.findUnique.mockResolvedValue(null);
 
     const result = await validateBetaCode("XYZ-999");
 
-    expect(result).toBeNull();
+    expect(result.status).toBe("not_found");
+    expect(result.invitation).toBeNull();
   });
 
-  it("returns null for expired invitation", async () => {
+  it("returns expired status for expired invitation", async () => {
     mockPrisma.betaInvitation.findUnique.mockResolvedValue({
       id: "inv-1",
       code: "ABC-123",
+      acceptedAt: null,
       expiresAt: new Date(Date.now() - 86400000),
     });
 
     const result = await validateBetaCode("ABC-123");
 
-    expect(result).toBeNull();
+    expect(result.status).toBe("expired");
+    expect(result.invitation).toBeNull();
+  });
+
+  it("returns already_accepted status for accepted invitation", async () => {
+    const invitation = {
+      id: "inv-1",
+      code: "ABC-123",
+      acceptedAt: new Date(),
+      acceptedByUserId: "user-1",
+      expiresAt: new Date(Date.now() + 86400000),
+    };
+    mockPrisma.betaInvitation.findUnique.mockResolvedValue(invitation);
+
+    const result = await validateBetaCode("ABC-123");
+
+    expect(result.status).toBe("already_accepted");
+    expect(result.invitation).toEqual(invitation);
   });
 });
 
