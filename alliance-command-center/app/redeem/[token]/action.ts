@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { auth } from "@/app/src/lib/auth";
+import { prisma } from "@/app/src/lib/prisma";
 import { acceptBetaInvitation as acceptInvitation } from "@/app/src/lib/betaInvitation";
 
 export type AcceptState = {
@@ -22,6 +23,38 @@ export async function acceptBetaInvitation(
 
   if (!invitationId || typeof invitationId !== "string") {
     return { error: "Invalid invitation" };
+  }
+
+  // Get full user record to verify email
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { email: true },
+  });
+
+  if (!user) {
+    return { error: "User not found" };
+  }
+
+  // Get invitation to verify email matches
+  const invitation = await prisma.betaInvitation.findUnique({
+    where: { id: invitationId },
+  });
+
+  if (!invitation) {
+    return { error: "Invitation not found" };
+  }
+
+  // Verify the authenticated user's email matches the invitation
+  if (invitation.email.toLowerCase() !== user.email.toLowerCase()) {
+    return { error: "This invitation was sent to a different email address" };
+  }
+
+  if (invitation.acceptedAt) {
+    return { error: "This invitation has already been accepted" };
+  }
+
+  if (invitation.expiresAt < new Date()) {
+    return { error: "This invitation has expired" };
   }
 
   try {
