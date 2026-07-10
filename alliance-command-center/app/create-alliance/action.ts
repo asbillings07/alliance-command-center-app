@@ -29,6 +29,8 @@ export async function createAllianceAction(
     return { error: "Invalid beta invitation" };
   }
 
+  let allianceId: string;
+
   try {
     const { alliance } = await createAlliance({
       name,
@@ -36,14 +38,13 @@ export async function createAllianceAction(
       betaInvitationId,
     });
 
-    redirect(`/alliances/${alliance.id}/setup`);
+    allianceId = alliance.id;
   } catch (error) {
     if (error instanceof Error) {
-      if (error.message === "NEXT_REDIRECT") {
-        throw error;
-      }
       return { error: error.message };
     }
     return { error: "Failed to create alliance" };
   }
+
+  redirect(`/alliances/${allianceId}/setup`);
 }
