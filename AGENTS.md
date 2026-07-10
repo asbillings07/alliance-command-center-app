@@ -1,6 +1,6 @@
 # AGENTS.md
 
-# Alliance Command Center - AI Engineering Guide
+## Alliance Command Center - AI Engineering Guide
 
 Welcome to the Alliance Command Center project.
 
@@ -10,7 +10,7 @@ This file serves as the entry point into the project's engineering philosophy.
 
 ---
 
-# Required Reading
+## Required Reading
 
 Before making significant changes, read these documents in order:
 
@@ -28,7 +28,7 @@ Implementation should align with these documents unless an architectural decisio
 
 ---
 
-# Project Summary
+## Project Summary
 
 Alliance Command Center is a multi-tenant SaaS application built for alliance leadership in Last War.
 
@@ -40,7 +40,7 @@ The application should become the operating system for alliance leadership.
 
 ---
 
-# Your Role
+## Your Role
 
 Act as a senior software engineer on the project.
 
@@ -60,7 +60,7 @@ Do not blindly agree with implementation ideas if they violate established proje
 
 ---
 
-# Product Philosophy
+## Product Philosophy
 
 Every feature should ultimately help answer one or more of these questions:
 
@@ -75,7 +75,7 @@ If a proposed feature does not improve leadership decision-making, challenge whe
 
 ---
 
-# Development Workflow
+## Development Workflow
 
 Every feature should follow this workflow:
 
@@ -119,7 +119,7 @@ The project intentionally prioritizes learning and architecture before implement
 
 ---
 
-# Engineering Principles
+## Engineering Principles
 
 Always prefer:
 
@@ -141,7 +141,7 @@ Avoid:
 
 ---
 
-# Architectural Decision Records
+## Architectural Decision Records
 
 These decisions are foundational unless intentionally changed.
 
@@ -215,7 +215,7 @@ Every mutation must verify permissions.
 
 ---
 
-# Database Philosophy
+## Database Philosophy
 
 Model the business domain.
 
@@ -234,7 +234,7 @@ Calculated information should generally be derived.
 
 ---
 
-# UI Philosophy
+## UI Philosophy
 
 The UI exists to support leadership workflows.
 
@@ -250,7 +250,7 @@ Member Detail pages should remain the primary surface for leadership information
 
 ---
 
-# Next.js Philosophy
+## Next.js Philosophy
 
 Prefer:
 
@@ -263,7 +263,7 @@ Use Client Components only when browser interactivity requires them.
 
 ---
 
-# Prisma Philosophy
+## Prisma Philosophy
 
 Use Prisma to model business relationships.
 
@@ -280,7 +280,7 @@ Avoid:
 
 ---
 
-# Pull Requests
+## Pull Requests
 
 Every pull request should represent a complete vertical slice.
 
@@ -298,7 +298,7 @@ Small pull requests are easier to review, test, and maintain.
 
 ---
 
-# Code Reviews
+## Code Reviews
 
 Review changes in this order:
 
@@ -318,7 +318,7 @@ Correctness and maintainability come first.
 
 ---
 
-# Challenge Assumptions
+## Challenge Assumptions
 
 Do not assume the proposed solution is the best solution.
 
@@ -332,7 +332,7 @@ Healthy technical disagreement is encouraged.
 
 ---
 
-# Long-Term Thinking
+## Long-Term Thinking
 
 Write code as if the project will be maintained for many years.
 
@@ -344,7 +344,7 @@ The goal is to build a product and an engineering culture that can scale.
 
 ---
 
-# Guiding Principle
+## Guiding Principle
 
 Every decision should move Alliance Command Center closer to becoming the trusted source of truth for alliance leadership.
 
