@@ -11,7 +11,7 @@ type NoteData = {
     noteType: LeadershipNoteType;
     authorName: string;
     createdAt: string;
-    isAuthor: boolean;
+    canEdit: boolean;
 };
 
 type LeadershipNoteCardProps = {
@@ -70,7 +70,7 @@ export function LeadershipNoteCard({ allianceId, memberId, mode, note }: Leaders
     const typeInfo = NOTE_TYPE_LABELS[note.noteType] || NOTE_TYPE_LABELS[LeadershipNoteType.OBSERVATION];
 
     // VIEW MODE - EDITING: Show edit form
-    if (cardState === "form" && note.isAuthor) {
+    if (cardState === "form" && note.canEdit) {
         return (
             <NoteForm
                 key={note.noteKey}
@@ -103,7 +103,7 @@ export function LeadershipNoteCard({ allianceId, memberId, mode, note }: Leaders
                     </div>
                     <p className="text-gray-700 whitespace-pre-wrap">{note.content}</p>
                 </div>
-                {note.isAuthor && (
+                {note.canEdit && (
                     <div className="flex items-center gap-2">
                         <button
                             type="button"

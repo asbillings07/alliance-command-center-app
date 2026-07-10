@@ -23,12 +23,12 @@ export default async function MemberPage({ params }: Params) {
         requiredPermission: Permissions.VIEW_MEMBERS,
     });
 
-    // Load the member
-    const allianceMember = await prisma.allianceMember.findUnique({
-        where: { id: memberId },
+    // Load the member, scoped by both id and allianceId
+    const allianceMember = await prisma.allianceMember.findFirst({
+        where: { id: memberId, allianceId },
     });
 
-    if (!allianceMember || allianceMember.allianceId !== allianceId) {
+    if (!allianceMember) {
         notFound();
     }
 
@@ -219,7 +219,9 @@ export default async function MemberPage({ params }: Params) {
 
             <section className="flex flex-col gap-4">
                 <h2 className="text-xl font-bold text-center text-gray-900">Leadership Notes</h2>
-                <LeadershipNoteCard allianceId={allianceId} memberId={allianceMember.id} mode="create" />
+                {permissions.canManageNotes && (
+                    <LeadershipNoteCard allianceId={allianceId} memberId={allianceMember.id} mode="create" />
+                )}
                 {leadershipNotes.length > 0 ? (
                     leadershipNotes.map((note) => (
                         <LeadershipNoteCard
@@ -234,7 +236,7 @@ export default async function MemberPage({ params }: Params) {
                                 noteType: note.noteType,
                                 authorName: note.author.displayName,
                                 createdAt: note.createdAt.toLocaleDateString(),
-                                isAuthor: note.author.id === user.id,
+                                canEdit: note.author.id === user.id && permissions.canManageNotes,
                             }}
                         />
                     ))
