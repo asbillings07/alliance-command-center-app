@@ -24,11 +24,18 @@ export default defineConfig({
     },
   ],
   webServer: process.env.CI
-    ? undefined
+    ? {
+        // In CI, start production server (app must be built first)
+        command: "npm run start",
+        url: "http://localhost:3000",
+        reuseExistingServer: false,
+        timeout: 120000,
+      }
     : {
+        // In development, use dev server
         command: "npm run dev",
         url: "http://localhost:3000",
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: true,
         timeout: 120000,
       },
 });

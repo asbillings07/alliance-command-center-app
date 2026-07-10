@@ -8,6 +8,8 @@ on:
 
 env:
   DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/acc_test"
+  PLATFORM_ADMIN_EMAILS: "platform-admin@test.local"
+  AUTH_SECRET: "test-secret-for-ci-only-not-for-production"
 
 jobs:
   # Quality Gate: Build
@@ -174,10 +176,15 @@ jobs:
         run: npx prisma migrate deploy
       
       - name: Seed test data
-        run: npx prisma db seed
+        run: npx tsx prisma/seed.ts --write-env
+      
+      - name: Build app
+        run: npm run build
       
       - name: Run Playwright tests
         run: npm run test:e2e
+        env:
+          CI: true
       
       - name: Upload Playwright Report
         uses: actions/upload-artifact@v4
@@ -228,10 +235,15 @@ jobs:
         run: npx prisma migrate deploy
       
       - name: Seed test data
-        run: npx prisma db seed
+        run: npx tsx prisma/seed.ts --write-env
+      
+      - name: Build app
+        run: npm run build
       
       - name: Run Accessibility Tests
         run: npm run test:a11y
+        env:
+          CI: true
 
   # Quality Gate: Visual Regression
   visual-regression:
@@ -274,10 +286,15 @@ jobs:
         run: npx prisma migrate deploy
       
       - name: Seed test data
-        run: npx prisma db seed
+        run: npx tsx prisma/seed.ts --write-env
+      
+      - name: Build app
+        run: npm run build
       
       - name: Run Visual Regression Tests
         run: npm run test:visual
+        env:
+          CI: true
       
       - name: Upload Visual Diff
         uses: actions/upload-artifact@v4
