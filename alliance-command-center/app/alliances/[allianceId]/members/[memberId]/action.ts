@@ -8,15 +8,22 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { revalidatePath } from "next/cache";
 
-export async function createLeadershipNote(formData: FormData): Promise<void> {
+export type NoteActionResult = {
+  error?: string;
+  success?: boolean;
+};
+
+export async function createLeadershipNote(
+  formData: FormData
+): Promise<NoteActionResult> {
   const allianceMemberId = formData.get("memberId");
   if (typeof allianceMemberId !== "string" || !allianceMemberId) {
-    throw new Error("Alliance member is required");
+    return { error: "Alliance member is required" };
   }
 
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
-    throw new Error("Alliance is required");
+    return { error: "Alliance is required" };
   }
 
   // Authorize before any DB lookup to prevent ID enumeration
@@ -31,53 +38,63 @@ export async function createLeadershipNote(formData: FormData): Promise<void> {
   });
 
   if (!allianceMember) {
-    throw new Error("Alliance member not found");
+    return { error: "Alliance member not found" };
   }
 
   const noteType = formData.get("noteType") as LeadershipNoteType;
   if (!Object.values(LeadershipNoteType).includes(noteType)) {
-    throw new Error("Invalid note type");
+    return { error: "Invalid note type" };
   }
   const visibility = LeadershipNoteVisibility.LEADERSHIP;
   const rawContent = formData.get("content");
   const content = typeof rawContent === "string" ? rawContent.trim() : "";
 
   if (!content) {
-    throw new Error("Content is required");
+    return { error: "Content is required" };
   }
 
-  await prisma.leadershipNote.create({
-    data: {
-      allianceMemberId: allianceMember.id,
-      authorId: auth.user.id,
-      noteType,
-      visibility,
-      content,
-    },
-  });
+  try {
+    await prisma.leadershipNote.create({
+      data: {
+        allianceMemberId: allianceMember.id,
+        authorId: auth.user.id,
+        noteType,
+        visibility,
+        content,
+      },
+    });
+  } catch (err) {
+    console.error("Failed to create note:", err);
+    return { error: "Failed to save note" };
+  }
 
-  revalidatePath(`/alliances/${allianceMember.allianceId}/members/${allianceMember.id}`);
+  revalidatePath(
+    `/alliances/${allianceMember.allianceId}/members/${allianceMember.id}`
+  );
+  return { success: true };
 }
 
-export async function editLeadershipNote(formData: FormData): Promise<void> {
+export async function editLeadershipNote(
+  formData: FormData
+): Promise<NoteActionResult> {
   const noteId = formData.get("noteId");
   const noteType = formData.get("noteType") as LeadershipNoteType;
   const rawContent = formData.get("content");
   const content = typeof rawContent === "string" ? rawContent.trim() : "";
 
   if (!Object.values(LeadershipNoteType).includes(noteType)) {
-    throw new Error("Invalid note type");
+    return { error: "Invalid note type" };
   }
   if (typeof noteId !== "string" || !noteId) {
-    throw new Error("Note is required");
+    return { error: "Note is required" };
   }
   if (!content) {
-    throw new Error("Content is required");
+    return { error: "Content is required" };
   }
 
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
-    throw new Error("Alliance is required");
+    return { error: "Alliance is required" };
   }
 
   // Authorize before any DB lookup to prevent ID enumeration
@@ -96,20 +113,26 @@ export async function editLeadershipNote(formData: FormData): Promise<void> {
   });
 
   if (!note) {
-    throw new Error("Note not found");
+    return { error: "Note not found" };
   }
 
   // Verify user is the author
   if (note.authorId !== auth.user.id) {
-    throw new Error("You can only edit your own notes");
+    return { error: "You can only edit your own notes" };
   }
 
-  await prisma.leadershipNote.update({
-    where: { id: noteId },
-    data: { noteType, content },
-  });
+  try {
+    await prisma.leadershipNote.update({
+      where: { id: noteId },
+      data: { noteType, content },
+    });
+  } catch (err) {
+    console.error("Failed to update note:", err);
+    return { error: "Failed to update note" };
+  }
 
   revalidatePath(`/alliances/${allianceId}/members/${note.allianceMemberId}`);
+  return { success: true };
 }
 
 export async function deleteLeadershipNote(formData: FormData): Promise<void> {
