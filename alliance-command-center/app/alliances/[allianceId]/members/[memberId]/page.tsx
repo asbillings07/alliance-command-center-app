@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { formatPower } from "@/app/src/lib/formatPower";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { LeadershipNoteCard } from "./LeadershipNoteCard";
 import { MemberPerformanceSection } from "./MemberPerformanceSection";
 import type { CurrentMetricViewModel } from "./MemberPerformanceSection";
@@ -17,7 +18,10 @@ type Params = {
 
 export default async function MemberPage({ params }: Params) {
     const { allianceId, memberId } = await params;
-    const auth = await requireAllianceAccess({ allianceId });
+    const auth = await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.VIEW_MEMBERS,
+    });
 
     // Load the member
     const allianceMember = await prisma.allianceMember.findUnique({
@@ -215,11 +219,12 @@ export default async function MemberPage({ params }: Params) {
 
             <section className="flex flex-col gap-4">
                 <h2 className="text-xl font-bold text-center text-gray-900">Leadership Notes</h2>
-                <LeadershipNoteCard memberId={allianceMember.id} mode="create" />
+                <LeadershipNoteCard allianceId={allianceId} memberId={allianceMember.id} mode="create" />
                 {leadershipNotes.length > 0 ? (
                     leadershipNotes.map((note) => (
                         <LeadershipNoteCard
                             key={note.id}
+                            allianceId={allianceId}
                             memberId={allianceMember.id}
                             mode="view"
                             note={{

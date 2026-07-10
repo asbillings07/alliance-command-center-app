@@ -110,6 +110,7 @@ export function MetricCard({ allianceId, mode, metric }: MetricCardProps) {
                     {metric.active ? (
                         <form action={archiveMetric}>
                             <input type="hidden" name="metricId" value={metric.id} />
+                            <input type="hidden" name="allianceId" value={allianceId} />
                             <button type="submit" className="text-sm text-amber-600 hover:text-amber-700 cursor-pointer">
                                 Archive
                             </button>
@@ -117,6 +118,7 @@ export function MetricCard({ allianceId, mode, metric }: MetricCardProps) {
                     ) : (
                         <form action={restoreMetric}>
                             <input type="hidden" name="metricId" value={metric.id} />
+                            <input type="hidden" name="allianceId" value={allianceId} />
                             <button type="submit" className="text-sm text-green-600 hover:text-green-700 cursor-pointer">
                                 Restore
                             </button>

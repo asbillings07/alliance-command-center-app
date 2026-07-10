@@ -14,19 +14,25 @@ export async function createLeadershipNote(formData: FormData): Promise<void> {
     throw new Error("Alliance member is required");
   }
 
-  // Load the member to get alliance ID
-  const allianceMember = await prisma.allianceMember.findUnique({
-    where: { id: allianceMemberId },
+  const allianceId = formData.get("allianceId");
+  if (typeof allianceId !== "string" || !allianceId) {
+    throw new Error("Alliance is required");
+  }
+
+  // Authorize before any DB lookup to prevent ID enumeration
+  const auth = await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.MANAGE_NOTES,
+  });
+
+  // Query scoped by both id and allianceId for safety
+  const allianceMember = await prisma.allianceMember.findFirst({
+    where: { id: allianceMemberId, allianceId },
   });
 
   if (!allianceMember) {
     throw new Error("Alliance member not found");
   }
-
-  const auth = await requireAllianceAccess({
-    allianceId: allianceMember.allianceId,
-    requiredPermission: Permissions.MANAGE_NOTES,
-  });
 
   const noteType = formData.get("noteType") as LeadershipNoteType;
   if (!Object.values(LeadershipNoteType).includes(noteType)) {
@@ -69,20 +75,29 @@ export async function editLeadershipNote(formData: FormData): Promise<void> {
     throw new Error("Content is required");
   }
 
-  // Load the note with its alliance member
-  const note = await prisma.leadershipNote.findUnique({
-    where: { id: noteId },
+  const allianceId = formData.get("allianceId");
+  if (typeof allianceId !== "string" || !allianceId) {
+    throw new Error("Alliance is required");
+  }
+
+  // Authorize before any DB lookup to prevent ID enumeration
+  const auth = await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.MANAGE_NOTES,
+  });
+
+  // Load the note with its alliance member, scoped by allianceId
+  const note = await prisma.leadershipNote.findFirst({
+    where: {
+      id: noteId,
+      allianceMember: { allianceId },
+    },
     include: { allianceMember: true },
   });
 
   if (!note) {
     throw new Error("Note not found");
   }
-
-  const auth = await requireAllianceAccess({
-    allianceId: note.allianceMember.allianceId,
-    requiredPermission: Permissions.MANAGE_NOTES,
-  });
 
   // Verify user is the author
   if (note.authorId !== auth.user.id) {
@@ -94,7 +109,7 @@ export async function editLeadershipNote(formData: FormData): Promise<void> {
     data: { noteType, content },
   });
 
-  revalidatePath(`/alliances/${note.allianceMember.allianceId}/members/${note.allianceMember.id}`);
+  revalidatePath(`/alliances/${allianceId}/members/${note.allianceMemberId}`);
 }
 
 export async function deleteLeadershipNote(formData: FormData): Promise<void> {
@@ -103,20 +118,29 @@ export async function deleteLeadershipNote(formData: FormData): Promise<void> {
     throw new Error("Note is required");
   }
 
-  // Load the note with its alliance member
-  const note = await prisma.leadershipNote.findUnique({
-    where: { id: noteId },
+  const allianceId = formData.get("allianceId");
+  if (typeof allianceId !== "string" || !allianceId) {
+    throw new Error("Alliance is required");
+  }
+
+  // Authorize before any DB lookup to prevent ID enumeration
+  const auth = await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.MANAGE_NOTES,
+  });
+
+  // Load the note with its alliance member, scoped by allianceId
+  const note = await prisma.leadershipNote.findFirst({
+    where: {
+      id: noteId,
+      allianceMember: { allianceId },
+    },
     include: { allianceMember: true },
   });
 
   if (!note) {
     throw new Error("Note not found");
   }
-
-  const auth = await requireAllianceAccess({
-    allianceId: note.allianceMember.allianceId,
-    requiredPermission: Permissions.MANAGE_NOTES,
-  });
 
   // Verify user is the author
   if (note.authorId !== auth.user.id) {
@@ -127,5 +151,5 @@ export async function deleteLeadershipNote(formData: FormData): Promise<void> {
     where: { id: note.id },
   });
 
-  revalidatePath(`/alliances/${note.allianceMember.allianceId}/members/${note.allianceMember.id}`);
+  revalidatePath(`/alliances/${allianceId}/members/${note.allianceMemberId}`);
 }

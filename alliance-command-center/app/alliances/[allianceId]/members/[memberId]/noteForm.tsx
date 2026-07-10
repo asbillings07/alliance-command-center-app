@@ -3,6 +3,7 @@ import { LeadershipNoteType } from "@/app/generated/prisma/enums";
 import { createLeadershipNote, editLeadershipNote } from "./action";
 
 type NoteFormProps = {
+    allianceId: string;
     memberId: string;
     mode: "create" | "edit";
     noteId?: string;
@@ -12,6 +13,7 @@ type NoteFormProps = {
 };
 
 export function NoteForm({
+    allianceId,
     memberId,
     mode,
     noteId,
@@ -24,6 +26,7 @@ export function NoteForm({
 
     return (
         <form className="w-full rounded-md border p-4 shadow-sm flex flex-col gap-3" action={action}>
+            <input type="hidden" name="allianceId" value={allianceId} />
             <input type="hidden" name="memberId" value={memberId} />
             {mode === "edit" && noteId && <input type="hidden" name="noteId" value={noteId} />}
 

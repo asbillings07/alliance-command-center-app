@@ -91,13 +91,13 @@ export async function cancelInvitationAction(
     return { error: "You don't have permission to cancel invitations" };
   }
 
-  // Verify invitation belongs to this alliance
-  const invitation = await prisma.invitation.findUnique({
-    where: { id: invitationId },
-    select: { allianceId: true },
+  // Query scoped by both id and allianceId for safety
+  const invitation = await prisma.invitation.findFirst({
+    where: { id: invitationId, allianceId },
+    select: { id: true },
   });
 
-  if (!invitation || invitation.allianceId !== allianceId) {
+  if (!invitation) {
     return { error: "Invitation not found" };
   }
 
@@ -123,13 +123,13 @@ export async function resendInvitationAction(
     return { error: "You don't have permission to resend invitations" };
   }
 
-  // Verify invitation belongs to this alliance
-  const invitation = await prisma.invitation.findUnique({
-    where: { id: invitationId },
-    select: { allianceId: true },
+  // Query scoped by both id and allianceId for safety
+  const invitation = await prisma.invitation.findFirst({
+    where: { id: invitationId, allianceId },
+    select: { id: true },
   });
 
-  if (!invitation || invitation.allianceId !== allianceId) {
+  if (!invitation) {
     return { error: "Invitation not found" };
   }
 

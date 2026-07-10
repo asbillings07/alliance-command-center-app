@@ -15,6 +15,7 @@ type NoteData = {
 };
 
 type LeadershipNoteCardProps = {
+    allianceId: string;
     memberId: string;
     mode: "create" | "view";
     note?: NoteData;
@@ -27,7 +28,7 @@ const NOTE_TYPE_LABELS: Record<LeadershipNoteType, { label: string; color: strin
     [LeadershipNoteType.PROMOTION]: { label: "Promotion", color: "bg-purple-100 text-purple-800" }
 };
 
-export function LeadershipNoteCard({ memberId, mode, note }: LeadershipNoteCardProps) {
+export function LeadershipNoteCard({ allianceId, memberId, mode, note }: LeadershipNoteCardProps) {
     // Single state: "closed" (button only), "form" (showing form), or "view" (showing note)
     const [cardState, setCardState] = useState<"closed" | "form" | "view">(
         mode === "create" ? "closed" : "view"
@@ -52,6 +53,7 @@ export function LeadershipNoteCard({ memberId, mode, note }: LeadershipNoteCardP
         return (
             <div className="w-full">
                 <NoteForm
+                    allianceId={allianceId}
                     memberId={memberId}
                     mode="create"
                     content=""
@@ -72,6 +74,7 @@ export function LeadershipNoteCard({ memberId, mode, note }: LeadershipNoteCardP
         return (
             <NoteForm
                 key={note.noteKey}
+                allianceId={allianceId}
                 memberId={memberId}
                 mode="edit"
                 noteId={note.id}
@@ -111,6 +114,7 @@ export function LeadershipNoteCard({ memberId, mode, note }: LeadershipNoteCardP
                         </button>
                         <form action={deleteLeadershipNote}>
                             <input type="hidden" name="noteId" value={note.id} />
+                            <input type="hidden" name="allianceId" value={allianceId} />
                             <button type="submit" className="text-sm text-red-500 hover:text-red-700 cursor-pointer">Delete</button>
                         </form>
                     </div>

@@ -113,11 +113,12 @@ export async function restoreMember(formData: FormData): Promise<AddMemberResult
         return { success: false, error: "You don't have permission to restore members" };
     }
 
-    const member = await prisma.allianceMember.findUnique({
-        where: { id: memberId },
+    // Query scoped by both id and allianceId for safety
+    const member = await prisma.allianceMember.findFirst({
+        where: { id: memberId, allianceId },
     });
 
-    if (!member || member.allianceId !== allianceId) {
+    if (!member) {
         return { success: false, error: "Member not found" };
     }
 

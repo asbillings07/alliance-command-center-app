@@ -32,12 +32,12 @@ export async function recordMemberMetrics(
     requiredPermission: Permissions.IMPORT_METRICS,
   });
 
-  // Verify period belongs to this alliance
-  const period = await prisma.metricPeriod.findUnique({
-    where: { id: periodId },
+  // Query scoped by both id and allianceId for safety
+  const period = await prisma.metricPeriod.findFirst({
+    where: { id: periodId, allianceId },
   });
 
-  if (!period || period.allianceId !== allianceId) {
+  if (!period) {
     throw new Error("Period not found");
   }
 

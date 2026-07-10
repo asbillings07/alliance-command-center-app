@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import Link from "next/link";
 import { formatPower } from "@/app/src/lib/formatPower";
 import { MembersFilter } from "./MembersFilter";
@@ -26,7 +27,10 @@ export default async function MembersPage({ params, searchParams }: Params) {
     
     const filter: FilterType = isValidFilter(filterParam) ? filterParam : "active";
 
-    const authContext = await requireAllianceAccess({ allianceId });
+    const authContext = await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.VIEW_MEMBERS,
+    });
 
     const alliance = await prisma.alliance.findUnique({
         where: {

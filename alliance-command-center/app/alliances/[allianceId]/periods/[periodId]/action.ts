@@ -39,12 +39,12 @@ export async function addMetricToPeriod(formData: FormData): Promise<void> {
     requiredPermission: Permissions.CONFIGURE_PERIODS,
   });
 
-  // Verify period belongs to this alliance
-  const period = await prisma.metricPeriod.findUnique({
-    where: { id: periodId },
+  // Query scoped by both id and allianceId for safety
+  const period = await prisma.metricPeriod.findFirst({
+    where: { id: periodId, allianceId },
   });
 
-  if (!period || period.allianceId !== allianceId) {
+  if (!period) {
     throw new Error("Period not found");
   }
 
@@ -69,12 +69,12 @@ export async function editPeriodMetric(formData: FormData): Promise<void> {
     requiredPermission: Permissions.CONFIGURE_PERIODS,
   });
 
-  // Verify period belongs to this alliance
-  const period = await prisma.metricPeriod.findUnique({
-    where: { id: periodId },
+  // Query scoped by both id and allianceId for safety
+  const period = await prisma.metricPeriod.findFirst({
+    where: { id: periodId, allianceId },
   });
 
-  if (!period || period.allianceId !== allianceId) {
+  if (!period) {
     throw new Error("Period not found");
   }
 

@@ -112,6 +112,7 @@ export function MetricPeriodCard({ allianceId, mode, period }: MetricPeriodCardP
                     {period.active ? (
                         <form action={archiveMetricPeriod}>
                             <input type="hidden" name="periodId" value={period.id} />
+                            <input type="hidden" name="allianceId" value={allianceId} />
                             <button type="submit" className="text-sm text-amber-600 hover:text-amber-700 cursor-pointer">
                                 Archive
                             </button>
@@ -119,6 +120,7 @@ export function MetricPeriodCard({ allianceId, mode, period }: MetricPeriodCardP
                     ) : (
                         <form action={restoreMetricPeriod}>
                             <input type="hidden" name="periodId" value={period.id} />
+                            <input type="hidden" name="allianceId" value={allianceId} />
                             <button type="submit" className="text-sm text-green-600 hover:text-green-700 cursor-pointer">
                                 Restore
                             </button>
