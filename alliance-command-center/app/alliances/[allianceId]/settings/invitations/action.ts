@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { prisma } from "@/app/src/lib/prisma";
 import {
   inviteLeadershipCollaborator,
@@ -34,17 +33,16 @@ type InviteResult = {
 export async function inviteCollaborator(
   input: InviteCollaboratorInput
 ): Promise<InviteResult> {
-  const user = await requireAuth();
+  const auth = await requireAllianceAccess({ allianceId: input.allianceId });
 
-  const membership = await requireLeadershipAccess(input.allianceId, user.id);
-  if (membership.role !== "OWNER" && membership.role !== "ADMIN") {
-    return { error: "Only owners and admins can invite collaborators" };
+  if (!auth.permissions.canInviteCollaborators) {
+    return { error: "You don't have permission to invite collaborators" };
   }
 
   try {
     const result = await inviteLeadershipCollaborator({
       allianceId: input.allianceId,
-      invitedById: user.id,
+      invitedById: auth.user.id,
       existingMemberId: input.existingMemberId,
       playerName: input.playerName,
       email: input.email,
@@ -74,8 +72,11 @@ export async function searchMembersAction(
   allianceId: string,
   query: string
 ): Promise<{ id: string; playerName: string }[]> {
-  const user = await requireAuth();
-  await requireLeadershipAccess(allianceId, user.id);
+  const auth = await requireAllianceAccess({ allianceId });
+
+  if (!auth.permissions.canInviteCollaborators) {
+    return [];
+  }
 
   return searchMembers(allianceId, query);
 }
@@ -84,20 +85,19 @@ export async function cancelInvitationAction(
   allianceId: string,
   invitationId: string
 ): Promise<{ error?: string }> {
-  const user = await requireAuth();
+  const auth = await requireAllianceAccess({ allianceId });
 
-  const membership = await requireLeadershipAccess(allianceId, user.id);
-  if (membership.role !== "OWNER" && membership.role !== "ADMIN") {
-    return { error: "Only owners and admins can cancel invitations" };
+  if (!auth.permissions.canInviteCollaborators) {
+    return { error: "You don't have permission to cancel invitations" };
   }
 
-  // Verify invitation belongs to this alliance
-  const invitation = await prisma.invitation.findUnique({
-    where: { id: invitationId },
-    select: { allianceId: true },
+  // Query scoped by both id and allianceId for safety
+  const invitation = await prisma.invitation.findFirst({
+    where: { id: invitationId, allianceId },
+    select: { id: true },
   });
 
-  if (!invitation || invitation.allianceId !== allianceId) {
+  if (!invitation) {
     return { error: "Invitation not found" };
   }
 
@@ -117,20 +117,19 @@ export async function resendInvitationAction(
   allianceId: string,
   invitationId: string
 ): Promise<{ data?: { inviteUrl: string; inviteCode: string }; error?: string }> {
-  const user = await requireAuth();
+  const auth = await requireAllianceAccess({ allianceId });
 
-  const membership = await requireLeadershipAccess(allianceId, user.id);
-  if (membership.role !== "OWNER" && membership.role !== "ADMIN") {
-    return { error: "Only owners and admins can resend invitations" };
+  if (!auth.permissions.canInviteCollaborators) {
+    return { error: "You don't have permission to resend invitations" };
   }
 
-  // Verify invitation belongs to this alliance
-  const invitation = await prisma.invitation.findUnique({
-    where: { id: invitationId },
-    select: { allianceId: true },
+  // Query scoped by both id and allianceId for safety
+  const invitation = await prisma.invitation.findFirst({
+    where: { id: invitationId, allianceId },
+    select: { id: true },
   });
 
-  if (!invitation || invitation.allianceId !== allianceId) {
+  if (!invitation) {
     return { error: "Invitation not found" };
   }
 

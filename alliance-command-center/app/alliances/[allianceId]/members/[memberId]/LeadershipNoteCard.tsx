@@ -11,10 +11,11 @@ type NoteData = {
     noteType: LeadershipNoteType;
     authorName: string;
     createdAt: string;
-    isAuthor: boolean;
+    canEdit: boolean;
 };
 
 type LeadershipNoteCardProps = {
+    allianceId: string;
     memberId: string;
     mode: "create" | "view";
     note?: NoteData;
@@ -27,7 +28,7 @@ const NOTE_TYPE_LABELS: Record<LeadershipNoteType, { label: string; color: strin
     [LeadershipNoteType.PROMOTION]: { label: "Promotion", color: "bg-purple-100 text-purple-800" }
 };
 
-export function LeadershipNoteCard({ memberId, mode, note }: LeadershipNoteCardProps) {
+export function LeadershipNoteCard({ allianceId, memberId, mode, note }: LeadershipNoteCardProps) {
     // Single state: "closed" (button only), "form" (showing form), or "view" (showing note)
     const [cardState, setCardState] = useState<"closed" | "form" | "view">(
         mode === "create" ? "closed" : "view"
@@ -52,6 +53,7 @@ export function LeadershipNoteCard({ memberId, mode, note }: LeadershipNoteCardP
         return (
             <div className="w-full">
                 <NoteForm
+                    allianceId={allianceId}
                     memberId={memberId}
                     mode="create"
                     content=""
@@ -68,10 +70,11 @@ export function LeadershipNoteCard({ memberId, mode, note }: LeadershipNoteCardP
     const typeInfo = NOTE_TYPE_LABELS[note.noteType] || NOTE_TYPE_LABELS[LeadershipNoteType.OBSERVATION];
 
     // VIEW MODE - EDITING: Show edit form
-    if (cardState === "form" && note.isAuthor) {
+    if (cardState === "form" && note.canEdit) {
         return (
             <NoteForm
                 key={note.noteKey}
+                allianceId={allianceId}
                 memberId={memberId}
                 mode="edit"
                 noteId={note.id}
@@ -100,7 +103,7 @@ export function LeadershipNoteCard({ memberId, mode, note }: LeadershipNoteCardP
                     </div>
                     <p className="text-gray-700 whitespace-pre-wrap">{note.content}</p>
                 </div>
-                {note.isAuthor && (
+                {note.canEdit && (
                     <div className="flex items-center gap-2">
                         <button
                             type="button"
@@ -111,6 +114,7 @@ export function LeadershipNoteCard({ memberId, mode, note }: LeadershipNoteCardP
                         </button>
                         <form action={deleteLeadershipNote}>
                             <input type="hidden" name="noteId" value={note.id} />
+                            <input type="hidden" name="allianceId" value={allianceId} />
                             <button type="submit" className="text-sm text-red-500 hover:text-red-700 cursor-pointer">Delete</button>
                         </form>
                     </div>

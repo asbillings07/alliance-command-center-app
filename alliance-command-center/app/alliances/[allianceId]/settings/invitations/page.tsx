@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { InviteCollaboratorForm } from "./InviteCollaboratorForm";
 import { PendingInvitations } from "./PendingInvitations";
@@ -12,8 +12,12 @@ type PageProps = {
 
 export default async function InvitationsPage({ params }: PageProps) {
   const { allianceId } = await params;
-  const user = await requireAuth();
-  const membership = await requireLeadershipAccess(allianceId, user.id);
+  
+  // Require INVITE_COLLABORATORS to view this page (including invitation data)
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.INVITE_COLLABORATORS,
+  });
 
   const alliance = await prisma.alliance.findUnique({
     where: { id: allianceId },
@@ -23,8 +27,6 @@ export default async function InvitationsPage({ params }: PageProps) {
   if (!alliance) {
     notFound();
   }
-
-  const canInvite = membership.role === "OWNER" || membership.role === "ADMIN";
 
   const pendingInvitations = await prisma.invitation.findMany({
     where: {
@@ -73,22 +75,14 @@ export default async function InvitationsPage({ params }: PageProps) {
         </p>
       </div>
 
-      {canInvite ? (
-        <section className="mb-8">
-          <h2 className="text-sm font-medium text-[#9CA3AF] uppercase tracking-wide mb-3">
-            Invite Collaborator
-          </h2>
-          <div className="bg-[#111827] border border-[#374151] rounded-lg p-6">
-            <InviteCollaboratorForm allianceId={allianceId} />
-          </div>
-        </section>
-      ) : (
-        <div className="bg-[#F59E0B]/10 border border-[#F59E0B]/30 rounded-lg p-4 mb-8">
-          <p className="text-[#F59E0B] text-sm">
-            Only alliance owners and admins can invite new collaborators.
-          </p>
+      <section className="mb-8">
+        <h2 className="text-sm font-medium text-[#9CA3AF] uppercase tracking-wide mb-3">
+          Invite Collaborator
+        </h2>
+        <div className="bg-[#111827] border border-[#374151] rounded-lg p-6">
+          <InviteCollaboratorForm allianceId={allianceId} />
         </div>
-      )}
+      </section>
 
       <section>
         <h2 className="text-sm font-medium text-[#9CA3AF] uppercase tracking-wide mb-3">

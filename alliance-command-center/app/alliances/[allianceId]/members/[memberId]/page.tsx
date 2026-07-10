@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { formatPower } from "@/app/src/lib/formatPower";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireAllianceMemberAccess } from "@/app/src/lib/auth/requireMembershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { LeadershipNoteCard } from "./LeadershipNoteCard";
 import { MemberPerformanceSection } from "./MemberPerformanceSection";
 import type { CurrentMetricViewModel } from "./MemberPerformanceSection";
@@ -18,10 +18,17 @@ type Params = {
 
 export default async function MemberPage({ params }: Params) {
     const { allianceId, memberId } = await params;
-    const user = await requireAuth();
-    const { allianceMember } = await requireAllianceMemberAccess(memberId, user.id);
+    const auth = await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.VIEW_MEMBERS,
+    });
 
-    if (allianceMember.allianceId !== allianceId) {
+    // Load the member, scoped by both id and allianceId
+    const allianceMember = await prisma.allianceMember.findFirst({
+        where: { id: memberId, allianceId },
+    });
+
+    if (!allianceMember) {
         notFound();
     }
 
@@ -128,16 +135,8 @@ export default async function MemberPage({ params }: Params) {
     });
 
 
-    // Check if current user has leadership access
-    const membership = await prisma.allianceMembership.findUnique({
-        where: {
-            allianceId_userId: {
-                allianceId,
-                userId: user.id,
-            },
-        },
-    });
-    const isLeadership = membership?.role !== "VIEWER";
+    // Use permissions from auth context
+    const { permissions, user } = auth;
 
     // Query linked user info for account section
     const linkedUserInfo = allianceMember.userId
@@ -191,7 +190,7 @@ export default async function MemberPage({ params }: Params) {
                         Joined {allianceMember.joinedAt.toLocaleDateString()}
                     </div>
                 )}
-                {isLeadership && (
+                {permissions.canManageMembers && (
                     <MemberActions
                         allianceId={allianceId}
                         memberId={allianceMember.id}
@@ -203,7 +202,7 @@ export default async function MemberPage({ params }: Params) {
             {linkedUserInfo && linkedMembership ? (
                 <MemberAccountSection
                     allianceId={allianceId}
-                    isLeadership={isLeadership}
+                    canInvite={permissions.canInviteCollaborators}
                     connected={true}
                     email={linkedUserInfo.email}
                     membershipRole={linkedMembership.role}
@@ -211,7 +210,7 @@ export default async function MemberPage({ params }: Params) {
             ) : (
                 <MemberAccountSection
                     allianceId={allianceId}
-                    isLeadership={isLeadership}
+                    canInvite={permissions.canInviteCollaborators}
                     connected={false}
                 />
             )}
@@ -220,11 +219,14 @@ export default async function MemberPage({ params }: Params) {
 
             <section className="flex flex-col gap-4">
                 <h2 className="text-xl font-bold text-center text-gray-900">Leadership Notes</h2>
-                <LeadershipNoteCard memberId={allianceMember.id} mode="create" />
+                {permissions.canManageNotes && (
+                    <LeadershipNoteCard allianceId={allianceId} memberId={allianceMember.id} mode="create" />
+                )}
                 {leadershipNotes.length > 0 ? (
                     leadershipNotes.map((note) => (
                         <LeadershipNoteCard
                             key={note.id}
+                            allianceId={allianceId}
                             memberId={allianceMember.id}
                             mode="view"
                             note={{
@@ -234,7 +236,7 @@ export default async function MemberPage({ params }: Params) {
                                 noteType: note.noteType,
                                 authorName: note.author.displayName,
                                 createdAt: note.createdAt.toLocaleDateString(),
-                                isAuthor: note.author.id === user.id,
+                                canEdit: note.author.id === user.id && permissions.canManageNotes,
                             }}
                         />
                     ))

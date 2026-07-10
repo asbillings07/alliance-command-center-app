@@ -1,6 +1,6 @@
 import { prisma } from "@/app/src/lib/prisma";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { MetricPeriodCard } from "./metricPeriodCard";
 
 type Params = {
@@ -11,8 +11,10 @@ type Params = {
 
 export default async function PeriodsPage({ params }: Params) {
     const { allianceId } = await params;
-    const user = await requireAuth();
-    await requireLeadershipAccess(allianceId, user.id);
+    await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.CONFIGURE_PERIODS,
+    });
 
     const periods = await prisma.metricPeriod.findMany({
         where: {

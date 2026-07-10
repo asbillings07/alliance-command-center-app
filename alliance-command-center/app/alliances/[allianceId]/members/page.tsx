@@ -1,6 +1,7 @@
-import { auth } from "@/app/src/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import Link from "next/link";
 import { formatPower } from "@/app/src/lib/formatPower";
 import { MembersFilter } from "./MembersFilter";
@@ -26,23 +27,10 @@ export default async function MembersPage({ params, searchParams }: Params) {
     
     const filter: FilterType = isValidFilter(filterParam) ? filterParam : "active";
 
-    const session = await auth();
-    if (!session || !session.user?.id) {
-        redirect("/login");
-    }
-
-    const membership = await prisma.allianceMembership.findUnique({
-        where: {
-            allianceId_userId: {
-                allianceId: allianceId,
-                userId: session.user.id,
-            },
-        },
+    const authContext = await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.VIEW_MEMBERS,
     });
-
-    if (!membership) {
-        redirect("/app");
-    }
 
     const alliance = await prisma.alliance.findUnique({
         where: {
@@ -79,7 +67,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
         }),
     ]);
 
-    const isLeadership = membership.role !== "VIEWER";
+    const { permissions } = authContext;
 
     return (
         <div className="mx-auto max-w-4xl p-8">
@@ -93,22 +81,24 @@ export default async function MembersPage({ params, searchParams }: Params) {
                         {filter !== "all" && ` (${filter})`}
                     </p>
                 </div>
-                {isLeadership && (
-                    <div className="flex gap-3">
+                <div className="flex gap-3">
+                    {permissions.canImportMembers && (
                         <Link
                             href={`/alliances/${allianceId}/members/import`}
                             className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 text-sm"
                         >
                             Import Roster
                         </Link>
+                    )}
+                    {permissions.canManageMembers && (
                         <Link
                             href={`/alliances/${allianceId}/members/new`}
                             className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
                         >
                             Add Member
                         </Link>
-                    </div>
-                )}
+                    )}
+                </div>
             </div>
 
             <MembersFilter
@@ -127,7 +117,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                             ? "No archived members."
                             : "No members yet."}
                     </p>
-                    {filter === "active" && isLeadership && (
+                    {filter === "active" && permissions.canManageMembers && (
                         <p className="text-sm text-gray-500 mt-2">
                             Import your roster or add members manually to get started.
                         </p>

@@ -1,7 +1,6 @@
 "use server";
 
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { prisma } from "@/app/src/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/app/generated/prisma/client";
@@ -32,13 +31,18 @@ export async function archiveMember(
         return { success: false, error: "Invalid request" };
     }
 
-    const user = await requireAuth();
-    await requireLeadershipAccess(allianceId, user.id);
-    const member = await prisma.allianceMember.findUnique({
-        where: { id: memberId },
+    const auth = await requireAllianceAccess({ allianceId });
+
+    if (!auth.permissions.canManageMembers) {
+        return { success: false, error: "You don't have permission to archive members" };
+    }
+
+    // Query scoped by both id and allianceId for safety
+    const member = await prisma.allianceMember.findFirst({
+        where: { id: memberId, allianceId },
     });
 
-    if (!member || member.allianceId !== allianceId) {
+    if (!member) {
         return { success: false, error: "Member not found" };
     }
 
@@ -71,14 +75,18 @@ export async function restoreMember(
         return { success: false, error: "Invalid request" };
     }
 
-    const user = await requireAuth();
-    await requireLeadershipAccess(allianceId, user.id);
+    const auth = await requireAllianceAccess({ allianceId });
 
-    const member = await prisma.allianceMember.findUnique({
-        where: { id: memberId },
+    if (!auth.permissions.canManageMembers) {
+        return { success: false, error: "You don't have permission to restore members" };
+    }
+
+    // Query scoped by both id and allianceId for safety
+    const member = await prisma.allianceMember.findFirst({
+        where: { id: memberId, allianceId },
     });
 
-    if (!member || member.allianceId !== allianceId) {
+    if (!member) {
         return { success: false, error: "Member not found" };
     }
 
@@ -115,17 +123,22 @@ export async function updateMember(
         return { success: false, error: "Invalid request" };
     }
 
-    const user = await requireAuth();
-    await requireLeadershipAccess(allianceId, user.id);
+    const auth = await requireAllianceAccess({ allianceId });
+
+    if (!auth.permissions.canManageMembers) {
+        return { success: false, error: "You don't have permission to update members" };
+    }
+
     if (!playerName) {
         return { success: false, error: "Player name is required" };
     }
 
-    const member = await prisma.allianceMember.findUnique({
-        where: { id: memberId },
+    // Query scoped by both id and allianceId for safety
+    const member = await prisma.allianceMember.findFirst({
+        where: { id: memberId, allianceId },
     });
 
-    if (!member || member.allianceId !== allianceId) {
+    if (!member) {
         return { success: false, error: "Member not found" };
     }
 

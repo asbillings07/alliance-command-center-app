@@ -1,19 +1,20 @@
 "use server";
 import { Metric_Type } from "@/app/generated/prisma/client";
 import { prisma } from "@/app/src/lib/prisma";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { revalidatePath } from "next/cache";
 
 export async function createMetric(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
     throw new Error("Alliance is required");
   }
 
-  await requireLeadershipAccess(allianceId, user.id);
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.CONFIGURE_METRICS,
+  });
 
   const name = formData.get("name");
   if (typeof name !== "string" || !name.trim()) {
@@ -42,22 +43,30 @@ export async function createMetric(formData: FormData): Promise<void> {
 }
 
 export async function editMetric(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const metricId = formData.get("metricId");
   if (typeof metricId !== "string" || !metricId) {
     throw new Error("Metric is required");
   }
 
-  const metric = await prisma.metric.findUnique({
-    where: { id: metricId },
+  const allianceId = formData.get("allianceId");
+  if (typeof allianceId !== "string" || !allianceId) {
+    throw new Error("Alliance is required");
+  }
+
+  // Authorize before any DB lookup to prevent ID enumeration
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.CONFIGURE_METRICS,
+  });
+
+  // Query scoped by both id and allianceId for safety
+  const metric = await prisma.metric.findFirst({
+    where: { id: metricId, allianceId },
   });
 
   if (!metric) {
     throw new Error("Metric not found");
   }
-
-  await requireLeadershipAccess(metric.allianceId, user.id);
 
   if (!metric.active) {
     throw new Error(
@@ -88,57 +97,73 @@ export async function editMetric(formData: FormData): Promise<void> {
     },
   });
 
-  revalidatePath(`/alliances/${metric.allianceId}/metrics`);
+  revalidatePath(`/alliances/${allianceId}/metrics`);
 }
 
 export async function archiveMetric(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const metricId = formData.get("metricId");
   if (typeof metricId !== "string" || !metricId) {
     throw new Error("Metric is required");
   }
 
-  const metric = await prisma.metric.findUnique({
-    where: { id: metricId },
+  const allianceId = formData.get("allianceId");
+  if (typeof allianceId !== "string" || !allianceId) {
+    throw new Error("Alliance is required");
+  }
+
+  // Authorize before any DB lookup to prevent ID enumeration
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.CONFIGURE_METRICS,
+  });
+
+  // Query scoped by both id and allianceId for safety
+  const metric = await prisma.metric.findFirst({
+    where: { id: metricId, allianceId },
   });
 
   if (!metric) {
     throw new Error("Metric not found");
   }
-
-  await requireLeadershipAccess(metric.allianceId, user.id);
 
   await prisma.metric.update({
     where: { id: metricId },
     data: { active: false },
   });
 
-  revalidatePath(`/alliances/${metric.allianceId}/metrics`);
+  revalidatePath(`/alliances/${allianceId}/metrics`);
 }
 
 export async function restoreMetric(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const metricId = formData.get("metricId");
   if (typeof metricId !== "string" || !metricId) {
     throw new Error("Metric is required");
   }
 
-  const metric = await prisma.metric.findUnique({
-    where: { id: metricId },
+  const allianceId = formData.get("allianceId");
+  if (typeof allianceId !== "string" || !allianceId) {
+    throw new Error("Alliance is required");
+  }
+
+  // Authorize before any DB lookup to prevent ID enumeration
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.CONFIGURE_METRICS,
+  });
+
+  // Query scoped by both id and allianceId for safety
+  const metric = await prisma.metric.findFirst({
+    where: { id: metricId, allianceId },
   });
 
   if (!metric) {
     throw new Error("Metric not found");
   }
 
-  await requireLeadershipAccess(metric.allianceId, user.id);
-
   await prisma.metric.update({
     where: { id: metricId },
     data: { active: true },
   });
 
-  revalidatePath(`/alliances/${metric.allianceId}/metrics`);
+  revalidatePath(`/alliances/${allianceId}/metrics`);
 }

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { prisma } from "@/app/src/lib/prisma";
 
 type ConfirmResult = {
@@ -12,26 +12,14 @@ export async function confirmMember(
   allianceId: string,
   memberId: string | null
 ): Promise<ConfirmResult> {
-  const user = await requireAuth();
-
-  const membership = await prisma.allianceMembership.findUnique({
-    where: {
-      allianceId_userId: {
-        allianceId,
-        userId: user.id,
-      },
-    },
-  });
-
-  if (!membership) {
-    return { error: "You are not a member of this alliance" };
-  }
+  // Authorize first - ensures user is authenticated and member of this alliance
+  const auth = await requireAllianceAccess({ allianceId });
 
   // Check if user is already linked to another AllianceMember in this alliance
   const existingRosterLink = await prisma.allianceMember.findFirst({
     where: {
       allianceId,
-      userId: user.id,
+      userId: auth.user.id,
     },
   });
 
@@ -40,16 +28,13 @@ export async function confirmMember(
   }
 
   if (memberId) {
-    const member = await prisma.allianceMember.findUnique({
-      where: { id: memberId },
+    // Query scoped by both id and allianceId to prevent enumeration
+    const member = await prisma.allianceMember.findFirst({
+      where: { id: memberId, allianceId },
     });
 
     if (!member) {
       return { error: "Member not found" };
-    }
-
-    if (member.allianceId !== allianceId) {
-      return { error: "Member does not belong to this alliance" };
     }
 
     if (member.userId !== null) {
@@ -62,7 +47,7 @@ export async function confirmMember(
 
     await prisma.allianceMember.update({
       where: { id: memberId },
-      data: { userId: user.id },
+      data: { userId: auth.user.id },
     });
   }
 
