@@ -170,13 +170,35 @@ export async function acceptBetaInvitation(
     throw new Error("This beta invitation has expired");
   }
 
-  return prisma.betaInvitation.update({
-    where: { id: invitationId },
+  const now = new Date();
+
+  const updated = await prisma.betaInvitation.updateMany({
+    where: { id: invitationId, acceptedAt: null },
     data: {
-      acceptedAt: new Date(),
+      acceptedAt: now,
       acceptedByUserId: userId,
     },
   });
+
+  if (updated.count !== 1) {
+    const current = await prisma.betaInvitation.findUnique({
+      where: { id: invitationId },
+    });
+    if (current && current.acceptedByUserId === userId) {
+      return current;
+    }
+    throw new Error("This beta invitation has already been accepted");
+  }
+
+  const accepted = await prisma.betaInvitation.findUnique({
+    where: { id: invitationId },
+  });
+
+  if (!accepted) {
+    throw new Error("Beta invitation not found");
+  }
+
+  return accepted;
 }
 
 /**
