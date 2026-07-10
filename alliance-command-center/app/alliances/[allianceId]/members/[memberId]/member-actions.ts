@@ -1,7 +1,7 @@
 "use server";
 
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/app/generated/prisma/client";
@@ -32,8 +32,11 @@ export async function archiveMember(
         return { success: false, error: "Invalid request" };
     }
 
-    const user = await requireAuth();
-    await requireLeadershipAccess(allianceId, user.id);
+    await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.MANAGE_MEMBERS,
+    });
+
     const member = await prisma.allianceMember.findUnique({
         where: { id: memberId },
     });
@@ -71,8 +74,10 @@ export async function restoreMember(
         return { success: false, error: "Invalid request" };
     }
 
-    const user = await requireAuth();
-    await requireLeadershipAccess(allianceId, user.id);
+    await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.MANAGE_MEMBERS,
+    });
 
     const member = await prisma.allianceMember.findUnique({
         where: { id: memberId },
@@ -115,8 +120,11 @@ export async function updateMember(
         return { success: false, error: "Invalid request" };
     }
 
-    const user = await requireAuth();
-    await requireLeadershipAccess(allianceId, user.id);
+    await requireAllianceAccess({
+        allianceId,
+        requiredPermission: Permissions.MANAGE_MEMBERS,
+    });
+
     if (!playerName) {
         return { success: false, error: "Player name is required" };
     }
