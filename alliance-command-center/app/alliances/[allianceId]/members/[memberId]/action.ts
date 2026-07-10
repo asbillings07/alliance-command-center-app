@@ -7,7 +7,6 @@ import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 
 export async function createLeadershipNote(formData: FormData): Promise<void> {
   const allianceMemberId = formData.get("memberId");
@@ -87,7 +86,7 @@ export async function editLeadershipNote(formData: FormData): Promise<void> {
 
   // Verify user is the author
   if (note.authorId !== auth.user.id) {
-    redirect("/app");
+    throw new Error("You can only edit your own notes");
   }
 
   await prisma.leadershipNote.update({
@@ -121,7 +120,7 @@ export async function deleteLeadershipNote(formData: FormData): Promise<void> {
 
   // Verify user is the author
   if (note.authorId !== auth.user.id) {
-    redirect("/app");
+    throw new Error("You can only delete your own notes");
   }
 
   await prisma.leadershipNote.delete({
