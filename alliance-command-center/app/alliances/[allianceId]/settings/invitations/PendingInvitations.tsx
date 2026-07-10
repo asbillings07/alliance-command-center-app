@@ -53,6 +53,7 @@ export function PendingInvitations({
 }: PendingInvitationsProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const [resendResult, setResendResult] = useState<{
     inviteUrl: string;
     inviteCode: string;
@@ -61,10 +62,11 @@ export function PendingInvitations({
   const handleCancel = (invitationId: string) => {
     if (!confirm("Are you sure you want to cancel this invitation?")) return;
 
+    setError(null);
     startTransition(async () => {
       const result = await cancelInvitationAction(allianceId, invitationId);
       if (result.error) {
-        alert(result.error);
+        setError(result.error);
       } else {
         router.refresh();
       }
@@ -72,10 +74,11 @@ export function PendingInvitations({
   };
 
   const handleResend = (invitationId: string) => {
+    setError(null);
     startTransition(async () => {
       const result = await resendInvitationAction(allianceId, invitationId);
       if (result.error) {
-        alert(result.error);
+        setError(result.error);
       } else if (result.data) {
         setResendResult({
           inviteUrl: result.data.inviteUrl,
@@ -114,6 +117,12 @@ export function PendingInvitations({
 
   return (
     <div className="space-y-4">
+      {error && (
+        <div className="p-3 bg-red-900/20 border border-red-500/30 rounded-md text-sm text-red-400">
+          {error}
+        </div>
+      )}
+
       {resendResult && (
         <div className="bg-[#1F2937] border border-[#374151] rounded-md p-4 mb-4">
           <div className="flex justify-between items-start">

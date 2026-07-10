@@ -60,18 +60,20 @@ function validateEditFormData(
   return { data: { ...baseResult.data, periodId } };
 }
 
-function validateArchiveRestoreFormData(formData: FormData) {
+function validateArchiveRestoreFormData(formData: FormData):
+  | { data: { periodId: string; allianceId: string } }
+  | { error: string } {
   const periodId = formData.get("periodId");
   if (typeof periodId !== "string" || !periodId) {
-    throw new Error("Period is required");
+    return { error: "Period is required" };
   }
 
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
-    throw new Error("Alliance is required");
+    return { error: "Alliance is required" };
   }
 
-  return { periodId, allianceId };
+  return { data: { periodId, allianceId } };
 }
 
 export async function createMetricPeriod(
@@ -150,8 +152,15 @@ export async function editMetricPeriod(
   return { success: true };
 }
 
-export async function archiveMetricPeriod(formData: FormData): Promise<void> {
-  const { periodId, allianceId } = validateArchiveRestoreFormData(formData);
+export async function archiveMetricPeriod(
+  formData: FormData
+): Promise<PeriodActionResult> {
+  const validated = validateArchiveRestoreFormData(formData);
+  if ("error" in validated) {
+    return { error: validated.error };
+  }
+
+  const { periodId, allianceId } = validated.data;
 
   // Authorize before any DB lookup to prevent ID enumeration
   await requireAllianceAccess({
@@ -165,19 +174,32 @@ export async function archiveMetricPeriod(formData: FormData): Promise<void> {
   });
 
   if (!period) {
-    throw new Error("Period not found");
+    return { error: "Period not found" };
   }
 
-  await prisma.metricPeriod.update({
-    where: { id: periodId },
-    data: { active: false },
-  });
+  try {
+    await prisma.metricPeriod.update({
+      where: { id: periodId },
+      data: { active: false },
+    });
+  } catch (err) {
+    console.error("Failed to archive period:", err);
+    return { error: "Failed to archive period" };
+  }
 
   revalidatePath(`/alliances/${allianceId}/periods`);
+  return { success: true };
 }
 
-export async function restoreMetricPeriod(formData: FormData): Promise<void> {
-  const { periodId, allianceId } = validateArchiveRestoreFormData(formData);
+export async function restoreMetricPeriod(
+  formData: FormData
+): Promise<PeriodActionResult> {
+  const validated = validateArchiveRestoreFormData(formData);
+  if ("error" in validated) {
+    return { error: validated.error };
+  }
+
+  const { periodId, allianceId } = validated.data;
 
   // Authorize before any DB lookup to prevent ID enumeration
   await requireAllianceAccess({
@@ -191,13 +213,19 @@ export async function restoreMetricPeriod(formData: FormData): Promise<void> {
   });
 
   if (!period) {
-    throw new Error("Period not found");
+    return { error: "Period not found" };
   }
 
-  await prisma.metricPeriod.update({
-    where: { id: periodId },
-    data: { active: true },
-  });
+  try {
+    await prisma.metricPeriod.update({
+      where: { id: periodId },
+      data: { active: true },
+    });
+  } catch (err) {
+    console.error("Failed to restore period:", err);
+    return { error: "Failed to restore period" };
+  }
 
   revalidatePath(`/alliances/${allianceId}/periods`);
+  return { success: true };
 }

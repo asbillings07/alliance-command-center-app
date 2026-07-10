@@ -121,15 +121,17 @@ export async function editMetric(
   return { success: true };
 }
 
-export async function archiveMetric(formData: FormData): Promise<void> {
+export async function archiveMetric(
+  formData: FormData
+): Promise<MetricActionResult> {
   const metricId = formData.get("metricId");
   if (typeof metricId !== "string" || !metricId) {
-    throw new Error("Metric is required");
+    return { error: "Metric is required" };
   }
 
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
-    throw new Error("Alliance is required");
+    return { error: "Alliance is required" };
   }
 
   // Authorize before any DB lookup to prevent ID enumeration
@@ -144,26 +146,34 @@ export async function archiveMetric(formData: FormData): Promise<void> {
   });
 
   if (!metric) {
-    throw new Error("Metric not found");
+    return { error: "Metric not found" };
   }
 
-  await prisma.metric.update({
-    where: { id: metricId },
-    data: { active: false },
-  });
+  try {
+    await prisma.metric.update({
+      where: { id: metricId },
+      data: { active: false },
+    });
+  } catch (err) {
+    console.error("Failed to archive metric:", err);
+    return { error: "Failed to archive metric" };
+  }
 
   revalidatePath(`/alliances/${allianceId}/metrics`);
+  return { success: true };
 }
 
-export async function restoreMetric(formData: FormData): Promise<void> {
+export async function restoreMetric(
+  formData: FormData
+): Promise<MetricActionResult> {
   const metricId = formData.get("metricId");
   if (typeof metricId !== "string" || !metricId) {
-    throw new Error("Metric is required");
+    return { error: "Metric is required" };
   }
 
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
-    throw new Error("Alliance is required");
+    return { error: "Alliance is required" };
   }
 
   // Authorize before any DB lookup to prevent ID enumeration
@@ -178,13 +188,19 @@ export async function restoreMetric(formData: FormData): Promise<void> {
   });
 
   if (!metric) {
-    throw new Error("Metric not found");
+    return { error: "Metric not found" };
   }
 
-  await prisma.metric.update({
-    where: { id: metricId },
-    data: { active: true },
-  });
+  try {
+    await prisma.metric.update({
+      where: { id: metricId },
+      data: { active: true },
+    });
+  } catch (err) {
+    console.error("Failed to restore metric:", err);
+    return { error: "Failed to restore metric" };
+  }
 
   revalidatePath(`/alliances/${allianceId}/metrics`);
+  return { success: true };
 }
