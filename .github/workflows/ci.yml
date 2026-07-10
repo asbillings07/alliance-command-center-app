@@ -8,7 +8,7 @@ on:
 
 env:
   DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/acc_test"
-  PLATFORM_ADMIN_EMAILS: "platform-admin@test.local"
+  PLATFORM_ADMIN_EMAILS_E2E: "platform-admin@test.local"
   AUTH_SECRET: "test-secret-for-ci-only-not-for-production"
 
 jobs:

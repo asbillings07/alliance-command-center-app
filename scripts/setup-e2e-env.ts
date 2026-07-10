@@ -140,8 +140,8 @@ async function main() {
     console.log(`TEST_PLATFORM_ADMIN_EMAIL=${platformAdmin.email}`);
     console.log(`TEST_PLATFORM_ADMIN_PASSWORD=Password123`);
     console.log("");
-    console.log("# Add this to your main .env to enable platform admin access:");
-    console.log(`PLATFORM_ADMIN_EMAILS=${platformAdmin.email}`);
+    console.log("# Add this to your main .env to enable E2E platform admin access:");
+    console.log(`PLATFORM_ADMIN_EMAILS_E2E=${platformAdmin.email}`);
     console.log("");
   } else {
     console.error(

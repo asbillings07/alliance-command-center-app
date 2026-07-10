@@ -331,8 +331,8 @@ TEST_OTHER_ALLIANCE_ID=${otherAlliance.id}
 TEST_PLATFORM_ADMIN_EMAIL=${TEST_USERS.platformAdmin}
 TEST_PLATFORM_ADMIN_PASSWORD=${TEST_PASSWORD}
 
-# Platform admin emails (add this to main .env)
-PLATFORM_ADMIN_EMAILS=${TEST_USERS.platformAdmin}
+# Platform admin emails for E2E tests (add to main .env or set in CI)
+PLATFORM_ADMIN_EMAILS_E2E=${TEST_USERS.platformAdmin}
 `;
 
   if (WRITE_ENV_FILE) {
