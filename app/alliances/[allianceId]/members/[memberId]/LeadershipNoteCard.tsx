@@ -112,7 +112,7 @@ export function LeadershipNoteCard({ allianceId, memberId, mode, note }: Leaders
                             <form action={deleteLeadershipNote}>
                                 <input type="hidden" name="noteId" value={note.id} />
                                 <input type="hidden" name="allianceId" value={allianceId} />
-                                <Button variant="link" size="sm" type="submit" className="text-danger hover:text-danger/80">
+                                <Button variant="danger-link" size="sm" type="submit">
                                     Delete
                                 </Button>
                             </form>

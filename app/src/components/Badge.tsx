@@ -26,6 +26,8 @@ export type BadgeProps = {
   size?: BadgeSize;
   /** Optional icon before the label */
   icon?: ReactNode;
+  /** Optional className for layout (margins, positioning only) */
+  className?: string;
   children: ReactNode;
 };
 
@@ -64,11 +66,12 @@ export function Badge({
   variant = "neutral",
   size = "md",
   icon,
+  className,
   children,
 }: BadgeProps) {
   return (
     <span
-      className={`inline-flex items-center gap-1 font-medium rounded-full border ${variantClasses[variant]} ${sizeClasses[size]}`}
+      className={`inline-flex items-center gap-1 font-medium rounded-full border ${variantClasses[variant]} ${sizeClasses[size]} ${className ?? ""}`}
     >
       {icon && <span className="flex-shrink-0">{icon}</span>}
       {children}

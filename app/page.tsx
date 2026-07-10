@@ -38,7 +38,7 @@ export default async function HomePage() {
         </div>
 
         <div className="space-y-4">
-          <Button href="/login" variant="primary" className="w-full justify-center py-3">
+          <Button href="/login" variant="primary" fullWidth size="lg">
             Sign In
           </Button>
 
@@ -53,7 +53,7 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <Button href="/redeem" variant="secondary" className="w-full justify-center py-3">
+          <Button href="/redeem" variant="secondary" fullWidth size="lg">
             Redeem Invitation
           </Button>
 

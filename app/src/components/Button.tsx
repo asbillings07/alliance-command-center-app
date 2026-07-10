@@ -7,10 +7,23 @@ import Link from "next/link";
  * - primary: Main action (blue, filled)
  * - secondary: Alternative action (gray border)
  * - ghost: Tertiary action (transparent)
- * - danger: Destructive action (red)
+ * - danger: Destructive action (red, filled)
+ * - danger-link: Destructive text action (red, text only)
+ * - warning: Caution action (yellow/orange, filled)
+ * - warning-link: Caution text action (yellow/orange, text only)
+ * - success-link: Positive text action (green, text only)
  * - link: Navigation (text only)
  */
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "link";
+export type ButtonVariant =
+  | "primary"
+  | "secondary"
+  | "ghost"
+  | "danger"
+  | "danger-link"
+  | "warning"
+  | "warning-link"
+  | "success-link"
+  | "link";
 
 /**
  * Button Sizes
@@ -43,6 +56,14 @@ const variantClasses: Record<ButtonVariant, string> = {
     "bg-transparent text-text-secondary hover:bg-surface-secondary hover:text-text-primary",
   danger:
     "bg-danger text-white hover:bg-danger/90",
+  "danger-link":
+    "bg-transparent text-danger hover:text-danger/80 underline-offset-4 hover:underline p-0",
+  warning:
+    "bg-warning text-white hover:bg-warning/90",
+  "warning-link":
+    "bg-transparent text-warning hover:text-warning/80 underline-offset-4 hover:underline p-0",
+  "success-link":
+    "bg-transparent text-success hover:text-success/80 underline-offset-4 hover:underline p-0",
   link:
     "bg-transparent text-primary hover:text-primary-hover underline-offset-4 hover:underline p-0",
 };
@@ -88,10 +109,15 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) {
+    const isLinkVariant =
+      variant === "link" ||
+      variant === "danger-link" ||
+      variant === "warning-link" ||
+      variant === "success-link";
     const classes = [
       baseClasses,
       variantClasses[variant],
-      variant !== "link" && sizeClasses[size],
+      !isLinkVariant && sizeClasses[size],
       fullWidth && "w-full",
     ]
       .filter(Boolean)

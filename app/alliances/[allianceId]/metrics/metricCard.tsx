@@ -150,21 +150,19 @@ export function MetricCard({ allianceId, mode, metric }: MetricCardProps) {
             )}
             {metric.active ? (
               <Button
-                variant="link"
+                variant="warning-link"
                 size="sm"
                 onClick={handleArchive}
                 disabled={isPending}
-                className="text-warning hover:text-warning/80"
               >
                 {isPending ? "Archiving..." : "Archive"}
               </Button>
             ) : (
               <Button
-                variant="link"
+                variant="success-link"
                 size="sm"
                 onClick={handleRestore}
                 disabled={isPending}
-                className="text-success hover:text-success/80"
               >
                 {isPending ? "Restoring..." : "Restore"}
               </Button>

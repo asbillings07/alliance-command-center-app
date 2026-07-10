@@ -79,7 +79,7 @@ export default async function PeriodRecordPage({
             description="Add metrics to this evaluation period before recording data."
             action={
               auth.permissions.canConfigurePeriods
-                ? { label: "Configure Metrics", href: `/alliances/${allianceId}/periods/${periodId}` }
+                ? <Button variant="primary" href={`/alliances/${allianceId}/periods/${periodId}`}>Configure Metrics</Button>
                 : undefined
             }
           />
@@ -89,7 +89,7 @@ export default async function PeriodRecordPage({
             description="Import your alliance roster before recording metrics."
             action={
               auth.permissions.canImportMembers
-                ? { label: "Import Members", href: `/alliances/${allianceId}/members/import` }
+                ? <Button variant="primary" href={`/alliances/${allianceId}/members/import`}>Import Members</Button>
                 : undefined
             }
           />

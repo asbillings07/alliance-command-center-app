@@ -88,11 +88,10 @@ export function MemberActions({
           </Button>
         ) : (
           <Button
-            variant="ghost"
+            variant="warning"
             size="sm"
             onClick={handleArchive}
             loading={isPending}
-            className="bg-warning-muted text-warning hover:bg-warning-muted/80"
           >
             {isPending ? "Archiving..." : "Archive"}
           </Button>

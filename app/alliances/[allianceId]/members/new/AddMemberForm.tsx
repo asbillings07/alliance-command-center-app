@@ -78,9 +78,9 @@ export function AddMemberForm({ allianceId }: AddMemberFormProps) {
                     </p>
                     <div className="flex gap-3">
                         <Button
+                            variant="warning"
                             onClick={handleRestore}
                             loading={isPending}
-                            className="bg-warning text-white hover:bg-warning/90"
                         >
                             {isPending ? "Restoring..." : "Restore Member"}
                         </Button>

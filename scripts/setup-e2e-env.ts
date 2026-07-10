@@ -19,8 +19,8 @@ async function main() {
   const alliance = await prisma.alliance.findFirst({
     where: { name: "DAY1" },
     include: {
-      members: {
-        where: { isActive: true },
+      allianceMembers: {
+        where: { archivedAt: null },
         take: 1,
       },
       memberships: {
@@ -37,7 +37,7 @@ async function main() {
   }
 
   const owner = alliance.memberships[0]?.user;
-  const member = alliance.members[0];
+  const member = alliance.allianceMembers[0];
 
   if (!owner) {
     console.error("❌ No owner found for test alliance.");

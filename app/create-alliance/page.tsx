@@ -29,7 +29,7 @@ export default async function CreateAlliancePage() {
   return (
     <AuthLayout
       title="Create Your Alliance"
-      description="Set up your alliance workspace to start managing your leadership team."
+      subtitle="Set up your alliance workspace to start managing your leadership team."
       icon={
         <svg
           className="w-8 h-8 text-accent-primary"

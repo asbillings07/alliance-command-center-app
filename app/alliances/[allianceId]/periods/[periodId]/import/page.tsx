@@ -82,7 +82,7 @@ export default async function ImportPage({ params }: Params) {
             description="Add metrics to this evaluation period before importing data."
             action={
               auth.permissions.canConfigurePeriods
-                ? { label: "Configure Metrics", href: `/alliances/${allianceId}/periods/${periodId}` }
+                ? <Button variant="primary" href={`/alliances/${allianceId}/periods/${periodId}`}>Configure Metrics</Button>
                 : undefined
             }
           />
@@ -92,7 +92,7 @@ export default async function ImportPage({ params }: Params) {
             description="Import your alliance roster before importing metrics."
             action={
               auth.permissions.canImportMembers
-                ? { label: "Import Members", href: `/alliances/${allianceId}/members/import` }
+                ? <Button variant="primary" href={`/alliances/${allianceId}/members/import`}>Import Members</Button>
                 : undefined
             }
           />

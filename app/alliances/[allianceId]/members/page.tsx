@@ -125,7 +125,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                     }
                     action={
                         filter === "active" && permissions.canManageMembers
-                            ? { label: "Add Member", href: `/alliances/${allianceId}/members/new` }
+                            ? <Button variant="primary" href={`/alliances/${allianceId}/members/new`}>Add Member</Button>
                             : undefined
                     }
                 />
