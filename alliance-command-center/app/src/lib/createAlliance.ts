@@ -23,8 +23,8 @@ export type CreateAllianceResult = {
  * Transaction steps:
  * 1. Check if BetaInvitation.allianceId already set → return existing alliance
  * 2. Create Alliance record
- * 3. Create AllianceMembership with role OWNER
- * 4. Update BetaInvitation.allianceId
+ * 3. Update BetaInvitation.allianceId (guarded update)
+ * 4. Create AllianceMembership with role OWNER
  */
 export async function createAlliance(
   input: CreateAllianceInput
