@@ -1,4 +1,5 @@
 import { getBetaStats, type NeedsAttentionItem } from "@/app/src/lib/betaDashboard";
+import { requirePlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 
 function StatCard({
   label,
@@ -126,7 +127,9 @@ function formatTimeAgo(date: Date): string {
   return `${diffDays}d ago`;
 }
 
-export default async function AdminDashboard() {
+export default async function PlatformDashboard() {
+  await requirePlatformAdmin();
+
   const stats = await getBetaStats();
 
   const maxFunnelCount = Math.max(...stats.funnel.map((s) => s.count), 1);
@@ -135,7 +138,7 @@ export default async function AdminDashboard() {
     <div className="min-h-screen bg-[#0F172A] text-[#F9FAFB]">
       <div className="max-w-6xl mx-auto p-8">
         <header className="mb-8">
-          <h1 className="text-2xl font-bold">Beta Dashboard</h1>
+          <h1 className="text-2xl font-bold">Platform Dashboard</h1>
           <p className="text-[#9CA3AF] text-sm mt-1">
             Operational visibility into beta progress
           </p>

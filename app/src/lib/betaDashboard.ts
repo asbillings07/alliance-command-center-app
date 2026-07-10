@@ -71,7 +71,7 @@ async function getAllianceStats() {
           {
             allianceMembers: {
               some: {
-                memberMetricEntries: { some: { recordedAt: { gte: todayStart } } },
+                metricEntries: { some: { recordedAt: { gte: todayStart } } },
               },
             },
           },
@@ -118,7 +118,7 @@ async function getFunnelStats(): Promise<FunnelStage[]> {
     prisma.alliance.count({
       where: {
         allianceMembers: {
-          some: { memberMetricEntries: { some: {} } },
+          some: { metricEntries: { some: {} } },
         },
       },
     }),
@@ -155,7 +155,7 @@ async function getAllianceReadiness(): Promise<AllianceReadiness> {
       },
       allianceMembers: {
         select: {
-          _count: { select: { memberMetricEntries: true } },
+          _count: { select: { metricEntries: true } },
         },
       },
     },
@@ -170,7 +170,7 @@ async function getAllianceReadiness(): Promise<AllianceReadiness> {
     const hasPeriods = alliance._count.metricPeriods > 0;
     const hasMembers = alliance._count.allianceMembers > 0;
     const hasData = alliance.allianceMembers.some(
-      (m) => m._count.memberMetricEntries > 0
+      (m) => m._count.metricEntries > 0
     );
 
     const isComplete = hasMetrics && hasPeriods && hasMembers && hasData;
@@ -199,7 +199,7 @@ async function getNeedsAttention(): Promise<NeedsAttentionItem[]> {
     where: {
       createdAt: { lt: weekAgo },
       allianceMembers: {
-        none: { memberMetricEntries: { some: {} } },
+        none: { metricEntries: { some: {} } },
       },
     },
     select: {
