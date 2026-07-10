@@ -1,61 +1,102 @@
-'use client'
+"use client";
 
-import { useActionState } from 'react'
-import { useSearchParams } from 'next/navigation'
-import Link from 'next/link'
-import { login, type LoginState } from './actions'
+import { useActionState } from "react";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { login, type LoginState } from "./actions";
 
-const initialState: LoginState = { error: null }
+const initialState: LoginState = { error: null };
 
 export default function LoginPage() {
-  const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get('callbackUrl') || '/app'
-  const [state, formAction, isPending] = useActionState(login, initialState)
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") || "/app";
+  const [state, formAction, isPending] = useActionState(login, initialState);
 
   return (
-    <main className="flex items-center justify-center min-h-screen">
-      <section className="flex flex-col gap-4 p-4 bg-white rounded-lg shadow-md max-w-md w-full">
-        <h1 className="text-2xl font-bold text-center text-gray-800">Alliance Command Center</h1>
+    <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
+      <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8">
+        <div className="text-center mb-6">
+          <h1 className="text-2xl font-bold text-[#F9FAFB]">
+            Alliance Command Center
+          </h1>
+          <p className="text-[#9CA3AF] mt-1">Sign in to continue</p>
+        </div>
 
-        {state.error && <p className="text-red-500 text-sm">{state.error}</p>}
+        {state.error && (
+          <div className="mb-4 p-3 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-md">
+            <p className="text-sm text-[#EF4444]">{state.error}</p>
+          </div>
+        )}
 
-        <form className="flex flex-col gap-2 w-full rounded-md border border-gray-300 p-4" action={formAction}>
+        <form action={formAction} className="space-y-4">
           <input type="hidden" name="callbackUrl" value={callbackUrl} />
-          <input
-            className="p-2 border border-gray-300 rounded-md text-gray-800"
-            name="email"
-            type="email"
-            required
-            disabled={isPending}
-            autoComplete="email"
-            aria-label="Email"
-            placeholder="Email"
-          />
-          <input
-            className="p-2 border border-gray-300 rounded-md text-gray-800"
-            name="password"
-            type="password"
-            required
-            disabled={isPending}
-            autoComplete="current-password"
-            aria-label="Password"
-            placeholder="Password"
-          />
+          <div>
+            <label
+              htmlFor="email"
+              className="block text-sm font-medium text-[#D1D5DB] mb-2"
+            >
+              Email
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              required
+              disabled={isPending}
+              autoComplete="email"
+              placeholder="you@example.com"
+              className="w-full px-4 py-3 bg-[#1F2937] border border-[#374151] rounded-md text-[#F9FAFB] placeholder-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-[#D1D5DB] mb-2"
+            >
+              Password
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              required
+              disabled={isPending}
+              autoComplete="current-password"
+              placeholder="••••••••"
+              className="w-full px-4 py-3 bg-[#1F2937] border border-[#374151] rounded-md text-[#F9FAFB] placeholder-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-transparent"
+            />
+          </div>
 
-          <button className="p-2 bg-blue-500 text-white w-full rounded-md" type="submit" disabled={isPending}>
-            {isPending ? 'Signing in...' : 'Sign In'}
+          <button
+            type="submit"
+            disabled={isPending}
+            className="w-full px-4 py-3 bg-[#3B82F6] text-white font-medium rounded-md hover:bg-[#2563EB] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isPending ? "Signing in..." : "Sign In"}
           </button>
         </form>
 
-        <div className="text-center pt-2 border-t border-gray-200">
-          <p className="text-sm text-gray-600">
-            Have an invitation code?{' '}
-            <Link href="/invite" className="text-blue-500 hover:text-blue-700">
-              Enter it here
+        <div className="mt-6 pt-6 border-t border-[#374151] space-y-3">
+          <p className="text-center text-sm text-[#9CA3AF]">
+            Have a beta code?{" "}
+            <Link
+              href="/redeem"
+              className="text-[#3B82F6] hover:text-[#60A5FA]"
+            >
+              Redeem it here
+            </Link>
+          </p>
+          <p className="text-center text-sm text-[#9CA3AF]">
+            Invited to an alliance?{" "}
+            <Link
+              href="/invite"
+              className="text-[#3B82F6] hover:text-[#60A5FA]"
+            >
+              Enter invitation code
             </Link>
           </p>
         </div>
-      </section>
-    </main>
-  )
+      </div>
+    </div>
+  );
 }
