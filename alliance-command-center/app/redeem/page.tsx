@@ -1,16 +1,32 @@
 "use client";
 
-import { useActionState } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { validateCode, type ValidateCodeState } from "./action";
-
-const initialState: ValidateCodeState = { error: null };
 
 export default function RedeemPage() {
-  const [state, formAction, isPending] = useActionState(
-    validateCode,
-    initialState
-  );
+  const router = useRouter();
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedCode = code.trim().toUpperCase();
+
+    if (!trimmedCode) {
+      setError("Please enter a beta code");
+      return;
+    }
+
+    // Validate format: ABC-123 (7 chars, letters/numbers with dash)
+    const codePattern = /^[A-Z0-9]{3}-[A-Z0-9]{3}$/;
+    if (!codePattern.test(trimmedCode)) {
+      setError("Invalid code format. Expected format: ABC-123");
+      return;
+    }
+
+    router.push(`/redeem/code?code=${encodeURIComponent(trimmedCode)}`);
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
@@ -34,33 +50,34 @@ export default function RedeemPage() {
           <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">
             Alliance Command Center
           </h1>
-          <p className="text-[#9CA3AF]">
-            Enter your beta code to get started
-          </p>
+          <p className="text-[#9CA3AF]">Enter your beta code to get started</p>
         </div>
 
-        {state.error && (
-          <div className="mb-4 p-3 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-md">
-            <p className="text-sm text-[#EF4444]">{state.error}</p>
-          </div>
-        )}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="p-3 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-md">
+              <p className="text-sm text-[#EF4444]">{error}</p>
+            </div>
+          )}
 
-        <form action={formAction} className="space-y-4">
           <div>
             <label
               htmlFor="code"
-              className="block text-sm font-medium text-[#D1D5DB] mb-2"
+              className="block text-sm font-medium text-[#D1D5DB] mb-1.5"
             >
               Beta Code
             </label>
             <input
-              id="code"
-              name="code"
               type="text"
-              required
-              disabled={isPending}
+              id="code"
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value.toUpperCase());
+                setError(null);
+              }}
               placeholder="ABC-123"
-              className="w-full px-4 py-3 bg-[#1F2937] border border-[#374151] rounded-md text-[#F9FAFB] placeholder-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-transparent uppercase tracking-widest text-center text-lg"
+              maxLength={7}
+              className="w-full px-3 py-2 border border-[#374151] rounded-md bg-[#1F2937] text-[#F9FAFB] placeholder-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-transparent text-sm text-center font-mono tracking-wider uppercase"
               autoComplete="off"
               autoFocus
             />
@@ -68,20 +85,16 @@ export default function RedeemPage() {
 
           <button
             type="submit"
-            disabled={isPending}
-            className="w-full px-4 py-3 bg-[#3B82F6] text-white font-medium rounded-md hover:bg-[#2563EB] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full px-4 py-2.5 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB] text-sm font-medium"
           >
-            {isPending ? "Validating..." : "Continue"}
+            Continue
           </button>
         </form>
 
         <div className="mt-6 pt-6 border-t border-[#374151] text-center">
           <p className="text-sm text-[#9CA3AF]">
             Already have an account?{" "}
-            <Link
-              href="/login"
-              className="text-[#3B82F6] hover:text-[#60A5FA]"
-            >
+            <Link href="/login" className="text-[#3B82F6] hover:text-[#60A5FA]">
               Sign in
             </Link>
           </p>

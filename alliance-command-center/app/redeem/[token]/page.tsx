@@ -1,16 +1,26 @@
 import Link from "next/link";
 import { auth } from "@/app/src/lib/auth";
-import { validateBetaToken } from "@/app/src/lib/betaInvitation";
+import { validateBetaToken, validateBetaCode } from "@/app/src/lib/betaInvitation";
 import { AcceptBetaInvitationForm } from "./AcceptBetaInvitationForm";
 
 type PageProps = {
   params: Promise<{ token: string }>;
+  searchParams: Promise<{ code?: string }>;
 };
 
-export default async function RedeemTokenPage({ params }: PageProps) {
+export default async function RedeemTokenPage({ params, searchParams }: PageProps) {
   const { token } = await params;
+  const { code } = await searchParams;
 
-  const invitation = await validateBetaToken(token);
+  const isCodeLookup = token === "code" && code;
+  
+  const invitation = isCodeLookup
+    ? await validateBetaCode(code)
+    : await validateBetaToken(token);
+
+  const redeemCallbackUrl = isCodeLookup
+    ? `/redeem/code?code=${encodeURIComponent(code)}`
+    : `/redeem/${token}`;
 
   if (!invitation) {
     return (
@@ -83,8 +93,6 @@ export default async function RedeemTokenPage({ params }: PageProps) {
 
   const session = await auth();
   const isLoggedIn = !!session?.user;
-
-  const redeemCallbackUrl = `/redeem/${token}`;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
