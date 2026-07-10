@@ -124,6 +124,120 @@ Business Logic     →  What should happen?    →  createMember()
 Persistence        →  How is it stored?      →  Prisma
 ```
 
+## Architectural Invariants
+
+These principles should be maintained as the codebase evolves:
+
+1. **`requireAllianceAccess` is the single entry point** - All authorization flows through this function. The more the app leans on `AuthorizationContext`, the stronger the architecture.
+
+2. **No role comparisons outside the permission service** - The permission service (`permissions.ts`) is the only place that knows which roles have which capabilities. Business logic and UI code should never contain `role === "ADMIN"` checks.
+
+3. **Authorization foundation enables future features** - Invites, roster management, and the importer redesign will all build on this capability-based authorization path.
+
+## Implementation Guidelines
+
+These guidelines emerged from code review and ensure consistent, secure authorization:
+
+### 1. Authorize Before Using Lookup Results for Authorization
+
+To prevent ID enumeration attacks, authorize before using the result of a database lookup to make authorization decisions:
+
+```typescript
+// Good - allianceId comes from the route, authorize first
+await requireAllianceAccess({ allianceId, requiredPermission: Permissions.MANAGE_MEMBERS });
+const member = await prisma.allianceMember.findFirst({
+  where: { id: memberId, allianceId },
+});
+
+// Bad - uses lookup result to determine which alliance to authorize against
+const member = await prisma.allianceMember.findUnique({ where: { id: memberId } });
+await requireAllianceAccess({ allianceId: member.allianceId, ... });
+// ^ Attacker can probe member IDs and learn which ones exist
+```
+
+Note: Sometimes you need to load a resource to know which alliance it belongs to. The key is to not use that lookup to make the authorization decision itself.
+
+### 2. Scope Queries by Alliance
+
+Always include `allianceId` in resource queries to prevent cross-alliance access:
+
+```typescript
+// Good - scoped by both id and allianceId
+const period = await prisma.metricPeriod.findFirst({
+  where: { id: periodId, allianceId },
+});
+
+// Bad - only scoped by id, requires manual check
+const period = await prisma.metricPeriod.findUnique({ where: { id: periodId } });
+if (period.allianceId !== allianceId) { ... }
+```
+
+### 3. Server Actions Return Structured Errors
+
+Client-facing server actions should return error objects, not redirect on permission failure:
+
+```typescript
+// Good - returns structured error for client handling
+const auth = await requireAllianceAccess({ allianceId });
+if (!auth.permissions.canManageMembers) {
+  return { success: false, error: "You don't have permission to manage members" };
+}
+
+// Bad - redirects bypass client error handling
+await requireAllianceAccess({ allianceId, requiredPermission: Permissions.MANAGE_MEMBERS });
+// ^ throws/redirects on failure, breaking client UI
+```
+
+### 4. Route-Level Permission Checks
+
+Pages that should be entirely inaccessible to certain roles should check permissions at the route level:
+
+```typescript
+// Invitations page - only users who can invite should see this page
+await requireAllianceAccess({
+  allianceId,
+  requiredPermission: Permissions.INVITE_COLLABORATORS,
+});
+```
+
+### 5. UI Reflects Capabilities
+
+Never show UI controls for actions the user cannot perform:
+
+```typescript
+// Good - combines authorship with capability
+const canEdit = note.authorId === user.id && permissions.canManageNotes;
+{canEdit && <EditButton />}
+
+// Bad - shows button that will fail
+{note.authorId === user.id && <EditButton />}
+```
+
+### 6. Layered Authorization for Ownership Checks
+
+Some actions require both capability and ownership (e.g., editing your own notes). The pattern is:
+
+1. Authorize via `requireAllianceAccess` with the capability permission
+2. Load the resource (scoped by allianceId)
+3. Check ownership and return a clear error if not the owner
+
+```typescript
+const auth = await requireAllianceAccess({
+  allianceId,
+  requiredPermission: Permissions.MANAGE_NOTES,
+});
+
+const note = await prisma.leadershipNote.findFirst({
+  where: { id: noteId, allianceMember: { allianceId } },
+});
+
+if (note.authorId !== auth.user.id) {
+  throw new Error("You can only edit your own notes");
+}
+```
+
+This keeps authorization (capability) separate from business rules (ownership).
+
 ## Consequences
 
 ### Positive
@@ -155,6 +269,15 @@ Not part of this decision, but the architecture supports:
 - Fine-grained permission editing per user
 - Audit logs for permission changes
 - Temporary/time-limited permissions
+
+## Migration Notes
+
+The following legacy authorization helpers are deprecated and should not be used in new code:
+
+- `requireLeadershipAccess` - Use `requireAllianceAccess` with appropriate permission
+- `requirePeriodAccess` - Use `requireAllianceAccess` with `CONFIGURE_PERIODS` or `IMPORT_METRICS`
+
+All pages and actions have been migrated to `requireAllianceAccess` as the single authorization entry point.
 
 ## References
 
