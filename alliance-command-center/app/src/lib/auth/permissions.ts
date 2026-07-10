@@ -103,9 +103,10 @@ export type AuthorizationContext = {
  * Build a PermissionSet from a role.
  * The role matrix is evaluated exactly once here.
  * All subsequent checks operate on the resolved PermissionSet.
+ * Unknown roles default to no permissions (deny by default).
  */
 export function buildPermissionSet(role: AllianceRole): PermissionSet {
-  const rolePerms = ROLE_PERMISSIONS[role];
+  const rolePerms = ROLE_PERMISSIONS[role] ?? [];
 
   return {
     canViewAlliance: rolePerms.includes(Permissions.VIEW_ALLIANCE),
@@ -145,11 +146,15 @@ const PERMISSION_TO_KEY: Record<Permission, keyof PermissionSet> = {
 /**
  * Check if a permission is granted in the resolved PermissionSet.
  * Use this instead of checking the role directly.
+ * Unknown permissions default to false (deny by default).
  */
 export function hasPermission(
   permissions: PermissionSet,
   permission: Permission
 ): boolean {
   const key = PERMISSION_TO_KEY[permission];
+  if (!key) {
+    return false;
+  }
   return permissions[key];
 }

@@ -173,4 +173,26 @@ describe("permissions", () => {
       expect(countTrue(viewerPerms)).toBe(3);  // Only view:*
     });
   });
+
+  describe("deny by default", () => {
+    it("buildPermissionSet returns no permissions for unknown role", () => {
+      // Cast to bypass TypeScript - simulates runtime unknown role
+      const unknownRole = "UNKNOWN_ROLE" as typeof AllianceRole.OWNER;
+      const permissions = buildPermissionSet(unknownRole);
+
+      const countTrue = (perms: PermissionSet) =>
+        Object.values(perms).filter(Boolean).length;
+
+      expect(countTrue(permissions)).toBe(0);
+    });
+
+    it("hasPermission returns false for unknown permission", () => {
+      const permissions = buildPermissionSet(AllianceRole.OWNER);
+      
+      // Cast to bypass TypeScript - simulates runtime unknown permission
+      const unknownPermission = "unknown:permission" as typeof Permissions.VIEW_ALLIANCE;
+      
+      expect(hasPermission(permissions, unknownPermission)).toBe(false);
+    });
+  });
 });

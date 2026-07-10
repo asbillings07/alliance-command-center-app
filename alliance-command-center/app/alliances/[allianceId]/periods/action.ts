@@ -4,7 +4,7 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { revalidatePath } from "next/cache";
 
-const validateFormData = (formData: FormData) => {
+function validateCreateFormData(formData: FormData) {
   const name = formData.get("name");
   if (typeof name !== "string" || !name.trim()) {
     throw new Error("Name is required");
@@ -25,16 +25,31 @@ const validateFormData = (formData: FormData) => {
     throw new Error("Alliance is required");
   }
 
+  return { name, startsAt, endsAt, allianceId };
+}
+
+function validateEditFormData(formData: FormData) {
+  const base = validateCreateFormData(formData);
+
   const periodId = formData.get("periodId");
   if (typeof periodId !== "string" || !periodId) {
     throw new Error("Period is required");
   }
 
-  return { name, startsAt, endsAt, allianceId, periodId };
-};
+  return { ...base, periodId };
+}
+
+function validatePeriodIdFormData(formData: FormData) {
+  const periodId = formData.get("periodId");
+  if (typeof periodId !== "string" || !periodId) {
+    throw new Error("Period is required");
+  }
+
+  return { periodId };
+}
 
 export async function createMetricPeriod(formData: FormData): Promise<void> {
-  const { name, startsAt, endsAt, allianceId } = validateFormData(formData);
+  const { name, startsAt, endsAt, allianceId } = validateCreateFormData(formData);
 
   await requireAllianceAccess({
     allianceId,
@@ -50,12 +65,12 @@ export async function createMetricPeriod(formData: FormData): Promise<void> {
     },
   });
 
-  revalidatePath(`/alliances/${allianceId}/metricPeriods`);
+  revalidatePath(`/alliances/${allianceId}/periods`);
 }
 
 export async function editMetricPeriod(formData: FormData): Promise<void> {
   const { name, startsAt, endsAt, allianceId, periodId } =
-    validateFormData(formData);
+    validateEditFormData(formData);
 
   await requireAllianceAccess({
     allianceId,
@@ -80,55 +95,55 @@ export async function editMetricPeriod(formData: FormData): Promise<void> {
     },
   });
 
-  revalidatePath(`/alliances/${allianceId}/metricPeriods`);
+  revalidatePath(`/alliances/${allianceId}/periods`);
 }
 
 export async function archiveMetricPeriod(formData: FormData): Promise<void> {
-  const { allianceId, periodId } = validateFormData(formData);
+  const { periodId } = validatePeriodIdFormData(formData);
 
-  await requireAllianceAccess({
-    allianceId,
-    requiredPermission: Permissions.CONFIGURE_PERIODS,
-  });
-
-  // Verify period belongs to this alliance
+  // Load period to get alliance ID
   const period = await prisma.metricPeriod.findUnique({
     where: { id: periodId },
   });
 
-  if (!period || period.allianceId !== allianceId) {
+  if (!period) {
     throw new Error("Period not found");
   }
+
+  await requireAllianceAccess({
+    allianceId: period.allianceId,
+    requiredPermission: Permissions.CONFIGURE_PERIODS,
+  });
 
   await prisma.metricPeriod.update({
     where: { id: periodId },
     data: { active: false },
   });
 
-  revalidatePath(`/alliances/${allianceId}/metricPeriods`);
+  revalidatePath(`/alliances/${period.allianceId}/periods`);
 }
 
 export async function restoreMetricPeriod(formData: FormData): Promise<void> {
-  const { allianceId, periodId } = validateFormData(formData);
+  const { periodId } = validatePeriodIdFormData(formData);
 
-  await requireAllianceAccess({
-    allianceId,
-    requiredPermission: Permissions.CONFIGURE_PERIODS,
-  });
-
-  // Verify period belongs to this alliance
+  // Load period to get alliance ID
   const period = await prisma.metricPeriod.findUnique({
     where: { id: periodId },
   });
 
-  if (!period || period.allianceId !== allianceId) {
+  if (!period) {
     throw new Error("Period not found");
   }
+
+  await requireAllianceAccess({
+    allianceId: period.allianceId,
+    requiredPermission: Permissions.CONFIGURE_PERIODS,
+  });
 
   await prisma.metricPeriod.update({
     where: { id: periodId },
     data: { active: true },
   });
 
-  revalidatePath(`/alliances/${allianceId}/periods`);
+  revalidatePath(`/alliances/${period.allianceId}/periods`);
 }
