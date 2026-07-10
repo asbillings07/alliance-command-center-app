@@ -1,15 +1,16 @@
 import { auth } from "@/app/src/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
+import { getPendingAllianceCreation } from "@/app/src/lib/betaInvitation";
+import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 
 export default async function AppPage() {
-    // get session 
     const session = await auth();
-    // check if session is valid
+
     if (!session || !session.user?.id) {
         redirect("/login");
     }
-    // Does this user have any memberships?
+
     const memberships = await prisma.allianceMembership.findMany({
         where: {
             userId: session.user.id,
@@ -21,33 +22,25 @@ export default async function AppPage() {
     });
 
     if (memberships.length === 0) {
-        // redirect to onboarding page
-        redirect("/onboarding");
+        const pendingCreation = await getPendingAllianceCreation(session.user.id);
+        if (pendingCreation) {
+            redirect("/create-alliance");
+        }
+        redirect("/redeem");
     }
+
     if (memberships.length === 1) {
-        redirect(`/alliances/${memberships[0].allianceId}`);
+        const allianceId = memberships[0].allianceId;
+        const status = await getAllianceSetupStatus(allianceId);
+
+        if (!status.isComplete) {
+            redirect(`/alliances/${allianceId}/setup`);
+        }
+
+        redirect(`/alliances/${allianceId}`);
     }
+
     if (memberships.length > 1) {
-        redirect('/alliances/select_alliance')
+        redirect("/alliances/select_alliance");
     }
 }
-
-//1. Verify authenticated user
-
-//2. Load memberships
-
-//3. No memberships
-      //-> redirect('/onboarding')
-
-//4. One membership
-      //-> redirect(`/alliances/${membership.allianceId}`)
-
-//5. More than one membership
-      //-> render alliance selector page
-
-/* 
-Get session
-Check authentication
-Load memberships
-Render something basic
-*/

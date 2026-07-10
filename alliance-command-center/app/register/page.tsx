@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/app/src/lib/prisma";
+import { validateBetaToken } from "@/app/src/lib/betaInvitation";
 import { RegisterForm } from "./RegisterForm";
 
 type PageProps = {
@@ -9,7 +10,49 @@ type PageProps = {
 export default async function RegisterPage({ searchParams }: PageProps) {
   const { callbackUrl = "" } = await searchParams;
 
-  // Extract invitation token from callbackUrl
+  // Check for beta invitation from /redeem/[token]
+  const redeemMatch = callbackUrl.match(/\/redeem\/([^/?]+)/);
+  if (redeemMatch) {
+    const betaToken = redeemMatch[1];
+    const betaInvitation = await validateBetaToken(betaToken);
+
+    if (!betaInvitation) {
+      return <InvitationRequired message="Invalid or expired beta invitation" />;
+    }
+
+    if (betaInvitation.acceptedAt) {
+      return <InvitationRequired message="This beta invitation has already been accepted" />;
+    }
+
+    return (
+      <main className="flex items-center justify-center min-h-screen bg-[#0F172A]">
+        <section className="flex flex-col gap-4 p-6 bg-[#111827] border border-[#374151] rounded-lg shadow-md max-w-md w-full">
+          <h1 className="text-2xl font-bold text-center text-[#F9FAFB]">
+            Create Account
+          </h1>
+          <p className="text-center text-[#9CA3AF] text-sm">
+            Create your account to continue with your beta invitation.
+          </p>
+
+          <RegisterForm callbackUrl={callbackUrl} />
+
+          <div className="text-center pt-2 border-t border-[#374151]">
+            <p className="text-sm text-[#9CA3AF]">
+              Already have an account?{" "}
+              <Link
+                href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
+                className="text-[#3B82F6] hover:text-[#60A5FA]"
+              >
+                Sign in
+              </Link>
+            </p>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  // Check for alliance invitation from /invite/[token]
   const tokenMatch = callbackUrl.match(/\/invite\/([^/?]+)/);
   
   if (!tokenMatch) {
