@@ -3,7 +3,7 @@ import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { notFound } from "next/navigation";
 import { EditMemberForm } from "./EditMemberForm";
-import Link from "next/link";
+import { PageLayout, Card } from "@/app/src/components";
 
 type Params = {
   params: Promise<{
@@ -45,26 +45,30 @@ export default async function EditMemberPage({ params }: Params) {
   }
 
   return (
-    <div className="mx-auto max-w-lg p-8">
-      <Link
-        href={`/alliances/${allianceId}/members/${memberId}`}
-        className="text-sm text-gray-600 hover:text-gray-900"
-      >
-        ← Back to {member.playerName}
-      </Link>
-      <h1 className="text-2xl font-bold text-gray-900 mt-4 mb-6">
-        Edit {member.playerName}
-      </h1>
-      <EditMemberForm
-        allianceId={allianceId}
-        memberId={memberId}
-        defaultValues={{
-          playerName: member.playerName,
-          thp: member.thp,
-          squadPower: member.squadPower,
-          role: member.role,
-        }}
-      />
-    </div>
+    <PageLayout
+      breadcrumb={[
+        { label: "Dashboard", href: `/alliances/${allianceId}` },
+        { label: "Members", href: `/alliances/${allianceId}/members` },
+        { label: member.playerName, href: `/alliances/${allianceId}/members/${memberId}` },
+        { label: "Edit" },
+      ]}
+      title={`Edit ${member.playerName}`}
+      maxWidth="lg"
+    >
+      <Card>
+        <Card.Body>
+          <EditMemberForm
+            allianceId={allianceId}
+            memberId={memberId}
+            defaultValues={{
+              playerName: member.playerName,
+              thp: member.thp,
+              squadPower: member.squadPower,
+              role: member.role,
+            }}
+          />
+        </Card.Body>
+      </Card>
+    </PageLayout>
   );
 }

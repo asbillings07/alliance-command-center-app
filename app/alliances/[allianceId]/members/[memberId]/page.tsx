@@ -8,7 +8,7 @@ import { MemberPerformanceSection } from "./MemberPerformanceSection";
 import type { CurrentMetricViewModel } from "./MemberPerformanceSection";
 import { MemberActions } from "./MemberActions";
 import { MemberAccountSection } from "./MemberAccountSection";
-import Link from "next/link";
+import { PageLayout, Card, Badge } from "@/app/src/components";
 
 type Params = {
     params: Promise<{
@@ -24,7 +24,6 @@ export default async function MemberPage({ params }: Params) {
         requiredPermission: Permissions.VIEW_MEMBERS,
     });
 
-    // Load the member, scoped by both id and allianceId
     const allianceMember = await prisma.allianceMember.findFirst({
         where: { id: memberId, allianceId },
     });
@@ -33,8 +32,6 @@ export default async function MemberPage({ params }: Params) {
         notFound();
     }
 
-    // Query 1: Active period with configured metrics
-    // orderBy ensures deterministic selection if multiple active periods exist
     const activePeriod = await prisma.metricPeriod.findFirst({
         where: {
             allianceId,
@@ -53,8 +50,6 @@ export default async function MemberPage({ params }: Params) {
         },
     });
 
-    // Query 2: AllianceMember's metric entries for the active period (if exists)
-    // Skip query if no active metrics to avoid unnecessary DB round-trip
     const activeMetricIds = activePeriod?.periodMetrics.map((pm) => pm.metricId) ?? [];
     const memberEntries = activePeriod && activeMetricIds.length > 0
         ? await prisma.memberMetricEntry.findMany({
@@ -75,7 +70,6 @@ export default async function MemberPage({ params }: Params) {
           })
         : [];
 
-    // Build view model: group entries by metricId (cap at 2 per metric)
     const entriesByMetric = new Map<string, typeof memberEntries>();
     for (const entry of memberEntries) {
         const list = entriesByMetric.get(entry.metricId) || [];
@@ -85,7 +79,6 @@ export default async function MemberPage({ params }: Params) {
         }
     }
 
-    // Build the performance view model
     const performanceMetrics: CurrentMetricViewModel[] = activePeriod
         ? activePeriod.periodMetrics.map((pm) => {
               const entries = entriesByMetric.get(pm.metricId) || [];
@@ -109,7 +102,6 @@ export default async function MemberPage({ params }: Params) {
           })
         : [];
 
-    // Build performance section props as discriminated union
     const performanceProps: import("./MemberPerformanceSection").MemberPerformanceProps =
         !activePeriod
             ? { emptyState: "no-period" }
@@ -117,7 +109,6 @@ export default async function MemberPage({ params }: Params) {
             ? { emptyState: "no-metrics", periodName: activePeriod.name }
             : { emptyState: "has-metrics", periodName: activePeriod.name, metrics: performanceMetrics };
 
-    // Query 3: Leadership notes
     const leadershipNotes = await prisma.leadershipNote.findMany({
         where: {
             allianceMemberId: memberId,
@@ -135,11 +126,8 @@ export default async function MemberPage({ params }: Params) {
         },
     });
 
-
-    // Use permissions from auth context
     const { permissions, user } = auth;
 
-    // Query linked user info for account section
     const linkedUserInfo = allianceMember.userId
         ? await prisma.user.findUnique({
               where: { id: allianceMember.userId },
@@ -160,100 +148,114 @@ export default async function MemberPage({ params }: Params) {
         : null;
 
     return (
-        <div className="mx-auto flex max-w-4xl flex-col gap-8 p-8">
-            <Link
-                href={`/alliances/${allianceId}/members`}
-                className="text-sm text-gray-600 hover:text-gray-900"
-            >
-                ← Back to Roster
-            </Link>
-
-            {allianceMember.archivedAt && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center">
-                    <p className="text-amber-800 font-medium">
-                        This member was archived on{" "}
-                        {allianceMember.archivedAt.toLocaleDateString()}
-                    </p>
-                    <p className="text-sm text-amber-600 mt-1">
-                        Historical data is preserved but they will not appear in active member lists.
-                    </p>
-                </div>
-            )}
-
-            <section className="flex flex-col items-center justify-center">
-                <h1 className="text-2xl font-bold">{allianceMember.playerName}</h1>
-                {allianceMember.role && (
-                    <div className="text-sm text-blue-600 font-medium mt-1">
-                        {allianceMember.role}
-                    </div>
+        <PageLayout
+            breadcrumb={[
+                { label: "Dashboard", href: `/alliances/${allianceId}` },
+                { label: "Members", href: `/alliances/${allianceId}/members` },
+                { label: allianceMember.playerName },
+            ]}
+            title={allianceMember.playerName}
+        >
+            <div className="flex flex-col gap-8">
+                {allianceMember.archivedAt && (
+                    <Card className="bg-warning-muted border-warning">
+                        <Card.Body>
+                            <div className="text-center">
+                                <p className="text-warning font-medium">
+                                    This member was archived on{" "}
+                                    {allianceMember.archivedAt.toLocaleDateString()}
+                                </p>
+                                <p className="text-sm text-warning/80 mt-1">
+                                    Historical data is preserved but they will not appear in active member lists.
+                                </p>
+                            </div>
+                        </Card.Body>
+                    </Card>
                 )}
-                <div className="text-sm text-gray-500 mt-2">
-                    THP: {allianceMember.thp == null ? "—" : formatPower(allianceMember.thp)}
-                </div>
-                <div className="text-sm text-gray-500">
-                    Top Squad: {allianceMember.squadPower == null ? "—" : formatPower(allianceMember.squadPower)}
-                </div>
-                {allianceMember.joinedAt && (
-                    <div className="text-sm text-gray-400 mt-2">
-                        Joined {allianceMember.joinedAt.toLocaleDateString()}
-                    </div>
-                )}
-                {permissions.canManageMembers && (
-                    <MemberActions
+
+                <Card>
+                    <Card.Body>
+                        <div className="flex flex-col items-center justify-center py-4">
+                            <h2 className="text-2xl font-bold text-primary">{allianceMember.playerName}</h2>
+                            {allianceMember.role && (
+                                <Badge variant="info" className="mt-2">
+                                    {allianceMember.role}
+                                </Badge>
+                            )}
+                            <div className="flex gap-6 mt-4 text-sm text-secondary">
+                                <div>
+                                    <span className="text-tertiary">THP:</span>{" "}
+                                    {allianceMember.thp == null ? "—" : formatPower(allianceMember.thp)}
+                                </div>
+                                <div>
+                                    <span className="text-tertiary">Top Squad:</span>{" "}
+                                    {allianceMember.squadPower == null ? "—" : formatPower(allianceMember.squadPower)}
+                                </div>
+                            </div>
+                            {allianceMember.joinedAt && (
+                                <div className="text-sm text-tertiary mt-2">
+                                    Joined {allianceMember.joinedAt.toLocaleDateString()}
+                                </div>
+                            )}
+                            {permissions.canManageMembers && (
+                                <MemberActions
+                                    allianceId={allianceId}
+                                    memberId={allianceMember.id}
+                                    isArchived={!!allianceMember.archivedAt}
+                                />
+                            )}
+                        </div>
+                    </Card.Body>
+                </Card>
+
+                {linkedUserInfo && linkedMembership ? (
+                    <MemberAccountSection
                         allianceId={allianceId}
-                        memberId={allianceMember.id}
-                        isArchived={!!allianceMember.archivedAt}
+                        canInvite={permissions.canInviteCollaborators}
+                        connected={true}
+                        email={linkedUserInfo.email}
+                        membershipRole={linkedMembership.role}
+                    />
+                ) : (
+                    <MemberAccountSection
+                        allianceId={allianceId}
+                        canInvite={permissions.canInviteCollaborators}
+                        connected={false}
                     />
                 )}
-            </section>
 
-            {linkedUserInfo && linkedMembership ? (
-                <MemberAccountSection
-                    allianceId={allianceId}
-                    canInvite={permissions.canInviteCollaborators}
-                    connected={true}
-                    email={linkedUserInfo.email}
-                    membershipRole={linkedMembership.role}
-                />
-            ) : (
-                <MemberAccountSection
-                    allianceId={allianceId}
-                    canInvite={permissions.canInviteCollaborators}
-                    connected={false}
-                />
-            )}
+                <MemberPerformanceSection {...performanceProps} />
 
-            <MemberPerformanceSection {...performanceProps} />
-
-            <section className="flex flex-col gap-4">
-                <h2 className="text-xl font-bold text-center text-gray-900">Leadership Notes</h2>
-                {permissions.canManageNotes && (
-                    <LeadershipNoteCard allianceId={allianceId} memberId={allianceMember.id} mode="create" />
-                )}
-                {leadershipNotes.length > 0 ? (
-                    leadershipNotes.map((note) => (
-                        <LeadershipNoteCard
-                            key={note.id}
-                            allianceId={allianceId}
-                            memberId={allianceMember.id}
-                            mode="view"
-                            note={{
-                                id: note.id,
-                                content: note.content,
-                                noteKey: `${note.id}-${note.updatedAt.getTime()}`,
-                                noteType: note.noteType,
-                                authorName: note.author.displayName,
-                                createdAt: note.createdAt.toLocaleDateString(),
-                                canEdit: note.author.id === user.id && permissions.canManageNotes,
-                            }}
-                        />
-                    ))
-                ) : (
-                    <div className="text-sm text-gray-500 text-center py-4">
-                        No leadership notes yet.
-                    </div>
-                )}
-            </section>
-        </div>
+                <section className="flex flex-col gap-4">
+                    <h2 className="text-xl font-bold text-center text-primary">Leadership Notes</h2>
+                    {permissions.canManageNotes && (
+                        <LeadershipNoteCard allianceId={allianceId} memberId={allianceMember.id} mode="create" />
+                    )}
+                    {leadershipNotes.length > 0 ? (
+                        leadershipNotes.map((note) => (
+                            <LeadershipNoteCard
+                                key={note.id}
+                                allianceId={allianceId}
+                                memberId={allianceMember.id}
+                                mode="view"
+                                note={{
+                                    id: note.id,
+                                    content: note.content,
+                                    noteKey: `${note.id}-${note.updatedAt.getTime()}`,
+                                    noteType: note.noteType,
+                                    authorName: note.author.displayName,
+                                    createdAt: note.createdAt.toLocaleDateString(),
+                                    canEdit: note.author.id === user.id && permissions.canManageNotes,
+                                }}
+                            />
+                        ))
+                    ) : (
+                        <div className="text-sm text-tertiary text-center py-4">
+                            No leadership notes yet.
+                        </div>
+                    )}
+                </section>
+            </div>
+        </PageLayout>
     );
 }

@@ -3,7 +3,7 @@ import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { notFound } from "next/navigation";
 import { AddMemberForm } from "./AddMemberForm";
-import Link from "next/link";
+import { PageLayout, Card } from "@/app/src/components";
 
 type Params = {
   params: Promise<{
@@ -29,17 +29,20 @@ export default async function NewMemberPage({ params }: Params) {
   }
 
   return (
-    <div className="mx-auto max-w-lg p-8">
-      <Link
-        href={`/alliances/${allianceId}/members`}
-        className="text-sm text-gray-600 hover:text-gray-900"
-      >
-        ← Back to Roster
-      </Link>
-      <h1 className="text-2xl font-bold text-gray-900 mt-4 mb-6">
-        Add Member to {alliance.name}
-      </h1>
-      <AddMemberForm allianceId={allianceId} />
-    </div>
+    <PageLayout
+      breadcrumb={[
+        { label: "Dashboard", href: `/alliances/${allianceId}` },
+        { label: "Members", href: `/alliances/${allianceId}/members` },
+        { label: "Add Member" },
+      ]}
+      title={`Add Member to ${alliance.name}`}
+      maxWidth="lg"
+    >
+      <Card>
+        <Card.Body>
+          <AddMemberForm allianceId={allianceId} />
+        </Card.Body>
+      </Card>
+    </PageLayout>
   );
 }
