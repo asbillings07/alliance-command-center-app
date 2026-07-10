@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AuthLayout, AuthError, Button, Input, Label } from "@/app/src/components";
+import { AuthLayout, AuthError, Button, Label } from "@/app/src/components";
 
 function KeyIcon() {
   return (

@@ -149,16 +149,15 @@ test.describe("Alliance Setup Flow", () => {
 
     await page.goto(`/alliances/${testAllianceId}/setup`);
 
-    // Capture initial state
-    const initialContent = await page.content();
+    // Verify initial state
+    await expect(
+      page.getByRole("heading", { name: /setup|getting started/i })
+    ).toBeVisible();
 
     // Refresh page
     await page.reload();
 
-    // Should show same state
-    const refreshedContent = await page.content();
-
-    // Basic check - setup heading should still be there
+    // Should show same state after refresh
     await expect(
       page.getByRole("heading", { name: /setup|getting started/i })
     ).toBeVisible();

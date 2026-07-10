@@ -164,8 +164,6 @@ test.describe("Alliance Member Filter Tests", () => {
   test("Active filter shows only active members", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}/members?filter=active`);
 
-    // Should not show any archived badges
-    const archivedBadges = await page.getByText(/archived/i).count();
     // The filter label itself may contain "archived" text, so check table only
     const tableArchivedBadges = await page
       .locator("table")

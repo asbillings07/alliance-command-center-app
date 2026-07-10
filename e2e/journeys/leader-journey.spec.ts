@@ -1,4 +1,4 @@
-import { test, expect, AlliancePage } from "../shared/fixtures";
+import { test, expect } from "../shared/fixtures";
 
 /**
  * Leader Journey E2E Test
@@ -135,7 +135,7 @@ test.describe("Leader Journey", () => {
   });
 
   test("record page shows empty state if no metrics configured", async ({
-    page,
+    page: _page,
   }) => {
     // This tests the empty state we added
     test.skip(!testAllianceId, "Requires alliance ID");

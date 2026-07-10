@@ -1,9 +1,11 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 import { test as base, expect, Page } from "@playwright/test";
 
 /**
  * E2E Test Fixtures for Alliance Command Center
  *
  * Provides helpers for authentication, navigation, and common test operations.
+ * Note: The `use` function in Playwright fixtures is not a React hook.
  */
 
 export type TestUser = {
@@ -79,7 +81,7 @@ export const test = base.extend<TestFixtures>({
   },
 
   createBetaInvite: async ({}, use) => {
-    const createBetaInvite = async (email: string) => {
+    const createBetaInvite = async (_email: string) => {
       // This would ideally call the API or database directly
       // For now, we'll use a placeholder that tests can override
       throw new Error(
