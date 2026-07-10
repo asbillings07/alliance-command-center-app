@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/app/src/lib/prisma";
-import { validateBetaToken } from "@/app/src/lib/betaInvitation";
+import { validateBetaToken, validateBetaCode } from "@/app/src/lib/betaInvitation";
 import { RegisterForm } from "./RegisterForm";
 
 type PageProps = {
@@ -10,11 +10,16 @@ type PageProps = {
 export default async function RegisterPage({ searchParams }: PageProps) {
   const { callbackUrl = "" } = await searchParams;
 
-  // Check for beta invitation from /redeem/[token]
+  // Check for beta invitation from /redeem/[token] or /redeem/code?code=XXX
   const redeemMatch = callbackUrl.match(/\/redeem\/([^/?]+)/);
   if (redeemMatch) {
-    const betaToken = redeemMatch[1];
-    const betaInvitation = await validateBetaToken(betaToken);
+    const betaTokenOrCode = redeemMatch[1];
+    const isCodeLookup = betaTokenOrCode === "code";
+    const codeMatch = callbackUrl.match(/[?&]code=([^&]+)/);
+
+    const betaInvitation = isCodeLookup && codeMatch
+      ? await validateBetaCode(decodeURIComponent(codeMatch[1]))
+      : await validateBetaToken(betaTokenOrCode);
 
     if (!betaInvitation) {
       return <InvitationRequired message="Invalid or expired beta invitation" />;
@@ -34,7 +39,7 @@ export default async function RegisterPage({ searchParams }: PageProps) {
             Create your account to continue with your beta invitation.
           </p>
 
-          <RegisterForm callbackUrl={callbackUrl} />
+          <RegisterForm callbackUrl={callbackUrl} email={betaInvitation.email} darkMode />
 
           <div className="text-center pt-2 border-t border-[#374151]">
             <p className="text-sm text-[#9CA3AF]">
@@ -117,24 +122,30 @@ export default async function RegisterPage({ searchParams }: PageProps) {
 
 function InvitationRequired({ message }: { message?: string }) {
   return (
-    <main className="flex items-center justify-center min-h-screen">
-      <section className="flex flex-col gap-4 p-6 bg-white rounded-lg shadow-md max-w-md w-full text-center">
-        <h1 className="text-2xl font-bold text-gray-800">
+    <main className="flex items-center justify-center min-h-screen bg-[#0F172A]">
+      <section className="flex flex-col gap-4 p-6 bg-[#111827] border border-[#374151] rounded-lg shadow-md max-w-md w-full text-center">
+        <h1 className="text-2xl font-bold text-[#F9FAFB]">
           Invitation Required
         </h1>
-        <p className="text-gray-600">
-          {message || "Registration is currently by invitation only. Please ask your alliance leader for an invitation link or code."}
+        <p className="text-[#9CA3AF]">
+          {message || "Registration is currently by invitation only."}
         </p>
         <div className="pt-4 space-y-3">
           <Link
-            href="/invite"
-            className="block w-full px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+            href="/redeem"
+            className="block w-full px-4 py-2 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB]"
           >
-            Enter Invitation Code
+            Have a Beta Code?
+          </Link>
+          <Link
+            href="/invite"
+            className="block w-full px-4 py-2 border border-[#374151] text-[#F9FAFB] rounded-md hover:border-[#3B82F6]"
+          >
+            Have an Alliance Invitation?
           </Link>
           <Link
             href="/login"
-            className="block w-full px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+            className="block w-full px-4 py-2 text-[#9CA3AF] hover:text-[#F9FAFB]"
           >
             Back to Login
           </Link>
