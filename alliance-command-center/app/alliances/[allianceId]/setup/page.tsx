@@ -87,7 +87,7 @@ export default async function AllianceSetupPage({ params }: Params) {
     redirect("/app");
   }
 
-  await requireAllianceAccess({ allianceId });
+  const auth = await requireAllianceAccess({ allianceId });
 
   const alliance = await prisma.alliance.findUnique({
     where: { id: allianceId },
@@ -97,7 +97,8 @@ export default async function AllianceSetupPage({ params }: Params) {
     redirect("/app");
   }
 
-  const status = await getAllianceSetupStatus(allianceId);
+  // Filter tasks to only those the user can complete
+  const status = await getAllianceSetupStatus(allianceId, auth.permissions);
 
   return (
     <div className="min-h-screen bg-[#0F172A]">

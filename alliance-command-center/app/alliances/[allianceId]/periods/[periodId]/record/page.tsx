@@ -5,83 +5,97 @@ import { notFound } from "next/navigation";
 import { RecordMetricsForm } from "./RecordMetricsForm";
 import Link from "next/link";
 
-export default async function PeriodRecordPage({ params }: { params: Promise<{ allianceId: string, periodId: string }> }) {
-    const { allianceId, periodId } = await params;
-    
-    await requireAllianceAccess({
-        allianceId,
-        requiredPermission: Permissions.IMPORT_METRICS,
-    });
+export default async function PeriodRecordPage({
+  params,
+}: {
+  params: Promise<{ allianceId: string; periodId: string }>;
+}) {
+  const { allianceId, periodId } = await params;
 
-    const period = await prisma.metricPeriod.findFirst({
-        where: { id: periodId, allianceId },
-        include: {
-            periodMetrics: {
-                where: { active: true },
-                include: { metric: true },
-            },
-        },
-    });
+  const auth = await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.IMPORT_METRICS,
+  });
 
-    if (!period) {
-        notFound();
-    }
-    
-    const metrics = period.periodMetrics.map((pm) => ({
-        id: pm.metric.id,
-        name: pm.metric.name,
-    }));
+  const period = await prisma.metricPeriod.findFirst({
+    where: { id: periodId, allianceId },
+    include: {
+      periodMetrics: {
+        where: { active: true },
+        include: { metric: true },
+      },
+    },
+  });
 
-    const alliance = await prisma.alliance.findUnique({
-        where: { id: allianceId },
+  if (!period) {
+    notFound();
+  }
+
+  const metrics = period.periodMetrics.map((pm) => ({
+    id: pm.metric.id,
+    name: pm.metric.name,
+  }));
+
+  const alliance = await prisma.alliance.findUnique({
+    where: { id: allianceId },
+    select: {
+      allianceMembers: {
+        where: { archivedAt: null },
         select: {
-            allianceMembers: {
-                where: { archivedAt: null },
-                select: {
-                    id: true,
-                    playerName: true,
-                },
-                orderBy: { playerName: "asc" },
-            },
+          id: true,
+          playerName: true,
         },
-    });
+        orderBy: { playerName: "asc" },
+      },
+    },
+  });
 
-    if (!alliance || metrics.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-                <h1 className="text-2xl font-bold">{period.name}</h1>
-                <p className="text-gray-500">No metrics configured for this period. Please add metrics first.</p>
-            </div>
-        );
-    }
-
+  if (!alliance || metrics.length === 0) {
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-4">
-            <h1 className="text-2xl font-bold">{period.name}</h1>
-            <h2 className="text-lg text-gray-600">Record Metrics</h2>
-            
-            <div className="flex gap-4 text-sm">
-                <Link
-                    href={`/alliances/${allianceId}/periods/${periodId}`}
-                    className="text-gray-500 hover:text-gray-700"
-                >
-                    ← Back to Period
-                </Link>
-                <Link
-                    href={`/alliances/${allianceId}/periods/${periodId}/import`}
-                    className="text-blue-500 hover:text-blue-700"
-                >
-                    Import from Spreadsheet →
-                </Link>
-            </div>
-
-            <hr className="w-full max-w-2xl border-gray-200" />
-            <RecordMetricsForm
-                periodId={periodId}
-                allianceId={allianceId}
-                members={alliance.allianceMembers}
-                metrics={metrics}
-            />
-        </div>
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <h1 className="text-2xl font-bold">{period.name}</h1>
+        <p className="text-gray-500">
+          No metrics configured for this period. Please add metrics first.
+        </p>
+        <Link
+          href={`/alliances/${allianceId}`}
+          className="text-blue-500 hover:text-blue-700"
+        >
+          ← Back to Dashboard
+        </Link>
+      </div>
     );
+  }
+
+  // Back link depends on whether user can access the period detail page
+  const backLink = auth.permissions.canConfigurePeriods
+    ? { href: `/alliances/${allianceId}/periods/${periodId}`, label: "← Back to Period" }
+    : { href: `/alliances/${allianceId}`, label: "← Back to Dashboard" };
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-4">
+      <h1 className="text-2xl font-bold">{period.name}</h1>
+      <h2 className="text-lg text-gray-600">Record Metrics</h2>
+
+      <div className="flex gap-4 text-sm">
+        <Link href={backLink.href} className="text-gray-500 hover:text-gray-700">
+          {backLink.label}
+        </Link>
+        <Link
+          href={`/alliances/${allianceId}/periods/${periodId}/import`}
+          className="text-blue-500 hover:text-blue-700"
+        >
+          Import from Spreadsheet →
+        </Link>
+      </div>
+
+      <hr className="w-full max-w-2xl border-gray-200" />
+      <RecordMetricsForm
+        periodId={periodId}
+        allianceId={allianceId}
+        members={alliance.allianceMembers}
+        metrics={metrics}
+      />
+    </div>
+  );
 }
