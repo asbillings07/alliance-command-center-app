@@ -75,14 +75,14 @@ export function PeriodMetricForm({
     <>
       {mode === "create" ? (
         <button
-          className="px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer"
+          className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary cursor-pointer"
           onClick={openDialog}
         >
           Add Metric
         </button>
       ) : (
         <button
-          className="text-sm text-blue-500 hover:text-blue-700 cursor-pointer"
+          className="text-sm text-primary-light hover:text-primary cursor-pointer"
           onClick={openDialog}
         >
           Edit
@@ -91,7 +91,7 @@ export function PeriodMetricForm({
 
       <dialog
         ref={dialogRef}
-        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg p-0 backdrop:bg-black/50 max-w-md w-full m-0"
+        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg p-0 backdrop:bg-black/50 max-w-md w-full m-0 bg-surface border border-border"
       >
         <form
           ref={formRef}
@@ -99,10 +99,10 @@ export function PeriodMetricForm({
           onSubmit={handleSubmit}
         >
           <input type="hidden" name="allianceId" value={allianceId} />
-          <h2 className="text-lg font-semibold">{title}</h2>
+          <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
 
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+            <div className="p-3 bg-danger/10 border border-danger/30 rounded-md text-sm text-danger-light">
               {error}
             </div>
           )}
@@ -111,7 +111,7 @@ export function PeriodMetricForm({
             <div>
               <label
                 htmlFor="metricId"
-                className="block text-sm font-medium text-gray-700 mb-1"
+                className="block text-sm font-medium text-text-secondary mb-1"
               >
                 Metric
               </label>
@@ -119,7 +119,7 @@ export function PeriodMetricForm({
                 name="metricId"
                 id="metricId"
                 disabled={isPending}
-                className="w-full rounded-md border border-gray-300 p-2 disabled:bg-gray-100"
+                className="w-full rounded-md border border-border bg-surface-secondary p-2 text-text-primary disabled:bg-surface-tertiary disabled:text-text-disabled"
                 required
               >
                 <option value="">Select a metric</option>
@@ -132,17 +132,17 @@ export function PeriodMetricForm({
             </div>
           ) : (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-text-secondary mb-1">
                 Metric
               </label>
-              <p className="text-gray-900 font-medium">{metricName}</p>
+              <p className="text-text-primary font-medium">{metricName}</p>
             </div>
           )}
 
           <div>
             <label
               htmlFor="weight"
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-medium text-text-secondary mb-1"
             >
               Weight (0-100)
             </label>
@@ -154,7 +154,7 @@ export function PeriodMetricForm({
               max="100"
               defaultValue={weight}
               disabled={isPending}
-              className="w-full rounded-md border border-gray-300 p-2 disabled:bg-gray-100"
+              className="w-full rounded-md border border-border bg-surface-secondary p-2 text-text-primary disabled:bg-surface-tertiary disabled:text-text-disabled"
               required
             />
           </div>
@@ -166,9 +166,9 @@ export function PeriodMetricForm({
               id="required"
               defaultChecked={required}
               disabled={isPending}
-              className="rounded border-gray-300"
+              className="rounded border-border"
             />
-            <label htmlFor="required" className="text-sm text-gray-700">
+            <label htmlFor="required" className="text-sm text-text-secondary">
               Required
             </label>
           </div>
@@ -178,14 +178,14 @@ export function PeriodMetricForm({
               type="button"
               onClick={closeDialog}
               disabled={isPending}
-              className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 rounded-md border border-border text-text-secondary hover:bg-surface-secondary cursor-pointer disabled:text-text-disabled disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isPending}
-              className="px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary cursor-pointer disabled:bg-surface-secondary disabled:text-text-disabled disabled:cursor-not-allowed"
             >
               {isPending ? pendingLabel : submitLabel}
             </button>

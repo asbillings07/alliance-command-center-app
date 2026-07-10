@@ -39,6 +39,7 @@ const ROLE_PERMISSIONS: Record<AllianceRole, Permission[]> = {
     Permissions.VIEW_NOTES,
     Permissions.MANAGE_NOTES,
     Permissions.IMPORT_METRICS,
+    Permissions.CONFIGURE_PERIODS,
   ],
 
   [AllianceRole.ADMIN]: [
