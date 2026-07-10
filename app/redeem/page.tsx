@@ -50,7 +50,7 @@ export default function RedeemPage() {
       footer={
         <p>
           Already have an account?{" "}
-          <Link href="/login" className="text-primary hover:text-primary-hover">
+          <Link href="/login" className="text-primary hover:text-primary-hover underline">
             Sign in
           </Link>
         </p>

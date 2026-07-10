@@ -32,11 +32,11 @@ export type BadgeProps = {
 };
 
 const variantClasses: Record<BadgeVariant, string> = {
-  success: "bg-success/20 text-success border-success/30",
-  warning: "bg-warning/20 text-warning border-warning/30",
-  danger: "bg-danger/20 text-danger border-danger/30",
+  success: "bg-success/20 text-success-light border-success/30",
+  warning: "bg-warning/20 text-warning-light border-warning/30",
+  danger: "bg-danger/20 text-danger-light border-danger/30",
   neutral: "bg-text-muted/20 text-text-secondary border-text-muted/30",
-  info: "bg-primary/20 text-primary border-primary/30",
+  info: "bg-primary/20 text-primary-light border-primary/30",
 };
 
 const sizeClasses: Record<BadgeSize, string> = {

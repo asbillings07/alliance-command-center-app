@@ -5,6 +5,9 @@ import {
   LabelHTMLAttributes,
   forwardRef,
   ReactNode,
+  cloneElement,
+  isValidElement,
+  useId,
 } from "react";
 
 /**
@@ -237,6 +240,7 @@ export type FormFieldProps = {
  * FormField Component
  *
  * Convenience wrapper that combines Label, input, and FormError.
+ * Automatically associates the label with the input for accessibility.
  *
  * @example
  * <FormField label="Email" required error={errors.email}>
@@ -250,10 +254,25 @@ export function FormField({
   help,
   children,
 }: FormFieldProps) {
+  const generatedId = useId();
+
+  // Clone the child element to add the id prop if it's a valid element
+  const childWithId = isValidElement(children)
+    ? cloneElement(children, {
+        id: children.props.id || generatedId,
+      } as Record<string, unknown>)
+    : children;
+
+  const inputId = isValidElement(children)
+    ? children.props.id || generatedId
+    : generatedId;
+
   return (
     <div>
-      <Label required={required}>{label}</Label>
-      {children}
+      <Label htmlFor={inputId} required={required}>
+        {label}
+      </Label>
+      {childWithId}
       {help && !error && (
         <p className="mt-1 text-sm text-text-muted">{help}</p>
       )}

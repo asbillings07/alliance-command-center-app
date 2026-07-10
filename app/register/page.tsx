@@ -65,7 +65,7 @@ export default async function RegisterPage({ searchParams }: PageProps) {
             Already have an account?{" "}
             <Link
               href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
-              className="text-primary hover:text-primary-hover"
+              className="text-primary hover:text-primary-hover underline"
             >
               Sign in
             </Link>
@@ -124,7 +124,7 @@ export default async function RegisterPage({ searchParams }: PageProps) {
           Already have an account?{" "}
           <Link
             href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
-            className="text-primary hover:text-primary-hover"
+            className="text-primary hover:text-primary-hover underline"
           >
             Sign in
           </Link>

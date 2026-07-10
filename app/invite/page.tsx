@@ -50,7 +50,7 @@ export default function InviteCodePage() {
       footer={
         <p>
           Already a member?{" "}
-          <Link href="/login" className="text-primary hover:text-primary-hover">
+          <Link href="/login" className="text-primary hover:text-primary-hover underline">
             Sign in
           </Link>
         </p>

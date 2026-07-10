@@ -45,27 +45,27 @@ export type ButtonProps = {
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className">;
 
 const baseClasses =
-  "inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed";
+  "inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:cursor-not-allowed";
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "bg-primary text-white hover:bg-primary-hover",
+    "bg-primary-hover text-white hover:bg-primary disabled:bg-surface-secondary disabled:text-text-disabled",
   secondary:
-    "bg-transparent border border-border text-text-secondary hover:bg-surface-secondary hover:text-text-primary hover:border-border-hover",
+    "bg-transparent border border-border text-text-secondary hover:bg-surface-secondary hover:text-text-primary hover:border-border-hover disabled:text-text-disabled disabled:border-border",
   ghost:
-    "bg-transparent text-text-secondary hover:bg-surface-secondary hover:text-text-primary",
+    "bg-transparent text-text-secondary hover:bg-surface-secondary hover:text-text-primary disabled:text-text-disabled",
   danger:
-    "bg-danger text-white hover:bg-danger/90",
+    "bg-danger-dark text-white hover:bg-danger disabled:bg-surface-secondary disabled:text-text-disabled",
   "danger-link":
-    "bg-transparent text-danger hover:text-danger/80 underline-offset-4 hover:underline p-0",
+    "bg-transparent text-danger hover:text-danger/80 underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
   warning:
-    "bg-warning text-white hover:bg-warning/90",
+    "bg-warning-dark text-white hover:bg-warning disabled:bg-surface-secondary disabled:text-text-disabled",
   "warning-link":
-    "bg-transparent text-warning hover:text-warning/80 underline-offset-4 hover:underline p-0",
+    "bg-transparent text-warning hover:text-warning/80 underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
   "success-link":
-    "bg-transparent text-success hover:text-success/80 underline-offset-4 hover:underline p-0",
+    "bg-transparent text-success hover:text-success/80 underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
   link:
-    "bg-transparent text-primary hover:text-primary-hover underline-offset-4 hover:underline p-0",
+    "bg-transparent text-primary hover:text-primary-hover underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
 };
 
 const sizeClasses: Record<ButtonSize, string> = {

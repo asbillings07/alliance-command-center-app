@@ -22,13 +22,13 @@ function LoginForm() {
         <div className="space-y-2">
           <p>
             Have a beta code?{" "}
-            <Link href="/redeem" className="text-primary hover:text-primary-hover">
+            <Link href="/redeem" className="text-primary hover:text-primary-hover underline">
               Redeem it here
             </Link>
           </p>
           <p>
             Invited to an alliance?{" "}
-            <Link href="/invite" className="text-primary hover:text-primary-hover">
+            <Link href="/invite" className="text-primary hover:text-primary-hover underline">
               Enter invitation code
             </Link>
           </p>
