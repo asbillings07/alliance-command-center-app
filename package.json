@@ -13,6 +13,11 @@
     "lint": "eslint",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:unit": "vitest run --dir app/src",
+    "test:integration": "vitest run --dir app/src --testNamePattern integration",
+    "test:e2e": "playwright test",
+    "test:a11y": "playwright test --grep @a11y",
+    "test:visual": "playwright test --grep @visual",
     "seedDb": "tsx prisma/seed.ts",
     "migrateDev": "prisma migrate dev",
     "migrateProd": "prisma migrate deploy",
@@ -38,6 +43,7 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
     "@types/bcrypt": "^6.0.0",
