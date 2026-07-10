@@ -22,7 +22,7 @@ import { prisma } from "./prisma";
 const mockPrisma = prisma as unknown as {
   betaInvitation: {
     findUnique: ReturnType<typeof vi.fn>;
-    update: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
   };
   alliance: {
     create: ReturnType<typeof vi.fn>;
