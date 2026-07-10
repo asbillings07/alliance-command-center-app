@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
-import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import {
   inviteLeadershipCollaborator,
@@ -34,10 +33,11 @@ type InviteResult = {
 export async function inviteCollaborator(
   input: InviteCollaboratorInput
 ): Promise<InviteResult> {
-  const auth = await requireAllianceAccess({
-    allianceId: input.allianceId,
-    requiredPermission: Permissions.INVITE_COLLABORATORS,
-  });
+  const auth = await requireAllianceAccess({ allianceId: input.allianceId });
+
+  if (!auth.permissions.canInviteCollaborators) {
+    return { error: "You don't have permission to invite collaborators" };
+  }
 
   try {
     const result = await inviteLeadershipCollaborator({
@@ -72,10 +72,11 @@ export async function searchMembersAction(
   allianceId: string,
   query: string
 ): Promise<{ id: string; playerName: string }[]> {
-  await requireAllianceAccess({
-    allianceId,
-    requiredPermission: Permissions.INVITE_COLLABORATORS,
-  });
+  const auth = await requireAllianceAccess({ allianceId });
+
+  if (!auth.permissions.canInviteCollaborators) {
+    return [];
+  }
 
   return searchMembers(allianceId, query);
 }
@@ -84,10 +85,11 @@ export async function cancelInvitationAction(
   allianceId: string,
   invitationId: string
 ): Promise<{ error?: string }> {
-  await requireAllianceAccess({
-    allianceId,
-    requiredPermission: Permissions.INVITE_COLLABORATORS,
-  });
+  const auth = await requireAllianceAccess({ allianceId });
+
+  if (!auth.permissions.canInviteCollaborators) {
+    return { error: "You don't have permission to cancel invitations" };
+  }
 
   // Verify invitation belongs to this alliance
   const invitation = await prisma.invitation.findUnique({
@@ -115,10 +117,11 @@ export async function resendInvitationAction(
   allianceId: string,
   invitationId: string
 ): Promise<{ data?: { inviteUrl: string; inviteCode: string }; error?: string }> {
-  await requireAllianceAccess({
-    allianceId,
-    requiredPermission: Permissions.INVITE_COLLABORATORS,
-  });
+  const auth = await requireAllianceAccess({ allianceId });
+
+  if (!auth.permissions.canInviteCollaborators) {
+    return { error: "You don't have permission to resend invitations" };
+  }
 
   // Verify invitation belongs to this alliance
   const invitation = await prisma.invitation.findUnique({

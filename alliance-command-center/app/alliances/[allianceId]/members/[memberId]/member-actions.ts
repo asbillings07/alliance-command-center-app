@@ -1,7 +1,6 @@
 "use server";
 
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
-import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/app/generated/prisma/client";
@@ -32,10 +31,11 @@ export async function archiveMember(
         return { success: false, error: "Invalid request" };
     }
 
-    await requireAllianceAccess({
-        allianceId,
-        requiredPermission: Permissions.MANAGE_MEMBERS,
-    });
+    const auth = await requireAllianceAccess({ allianceId });
+
+    if (!auth.permissions.canManageMembers) {
+        return { success: false, error: "You don't have permission to archive members" };
+    }
 
     const member = await prisma.allianceMember.findUnique({
         where: { id: memberId },
@@ -74,10 +74,11 @@ export async function restoreMember(
         return { success: false, error: "Invalid request" };
     }
 
-    await requireAllianceAccess({
-        allianceId,
-        requiredPermission: Permissions.MANAGE_MEMBERS,
-    });
+    const auth = await requireAllianceAccess({ allianceId });
+
+    if (!auth.permissions.canManageMembers) {
+        return { success: false, error: "You don't have permission to restore members" };
+    }
 
     const member = await prisma.allianceMember.findUnique({
         where: { id: memberId },
@@ -120,10 +121,11 @@ export async function updateMember(
         return { success: false, error: "Invalid request" };
     }
 
-    await requireAllianceAccess({
-        allianceId,
-        requiredPermission: Permissions.MANAGE_MEMBERS,
-    });
+    const auth = await requireAllianceAccess({ allianceId });
+
+    if (!auth.permissions.canManageMembers) {
+        return { success: false, error: "You don't have permission to update members" };
+    }
 
     if (!playerName) {
         return { success: false, error: "Player name is required" };

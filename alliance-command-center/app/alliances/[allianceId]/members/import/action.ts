@@ -2,7 +2,6 @@
 
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
-import { Permissions } from "@/app/src/lib/auth/permissions";
 import { normalizeName } from "@/app/src/lib/memberMatcher";
 import { revalidatePath } from "next/cache";
 
@@ -24,10 +23,11 @@ export async function importMembers(
     allianceId: string,
     entries: RosterEntry[]
 ): Promise<ImportResult> {
-    await requireAllianceAccess({
-        allianceId,
-        requiredPermission: Permissions.IMPORT_MEMBERS,
-    });
+    const auth = await requireAllianceAccess({ allianceId });
+
+    if (!auth.permissions.canImportMembers) {
+        return { created: 0, skippedExisting: 0, skippedDuplicates: 0, skippedEmptyNames: 0, errors: ["You don't have permission to import members"] };
+    }
 
     if (entries.length === 0) {
         return { created: 0, skippedExisting: 0, skippedDuplicates: 0, skippedEmptyNames: 0, errors: ["No entries to import"] };
