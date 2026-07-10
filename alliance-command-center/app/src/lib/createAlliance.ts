@@ -64,17 +64,25 @@ export async function createAlliance(
       },
     });
 
+    const updated = await tx.betaInvitation.updateMany({
+      where: {
+        id: betaInvitationId,
+        acceptedByUserId: userId,
+        allianceId: null,
+      },
+      data: { allianceId: alliance.id },
+    });
+
+    if (updated.count !== 1) {
+      throw new Error("Beta invitation already linked to an alliance");
+    }
+
     await tx.allianceMembership.create({
       data: {
         allianceId: alliance.id,
         userId,
         role: "OWNER",
       },
-    });
-
-    await tx.betaInvitation.update({
-      where: { id: betaInvitationId },
-      data: { allianceId: alliance.id },
     });
 
     return alliance;
