@@ -42,6 +42,7 @@ model Alliance {
   memberships      AllianceMembership[]
   metricPeriods    MetricPeriod[]
   invitations      Invitation[]
+  betaInvitations  BetaInvitation[]
   @@unique([name, server])
 }
 
@@ -99,6 +100,7 @@ model User {
   linkedMembers AllianceMember[]
   invitationsSent Invitation[] @relation("InvitationsSent")
   invitationsAccepted Invitation[] @relation("InvitationsAccepted")
+  betaInvitationsAccepted BetaInvitation[] @relation("BetaInvitationsAccepted")
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -219,4 +221,20 @@ model Invitation {
   createdAt DateTime @default(now())
   
   @@index([allianceId, email])
+}
+
+model BetaInvitation {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  token     String   @unique
+  code      String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  acceptedAt       DateTime?
+  acceptedByUserId String?
+  acceptedByUser   User?     @relation("BetaInvitationsAccepted", fields: [acceptedByUserId], references: [id])
+
+  allianceId String?
+  alliance   Alliance? @relation(fields: [allianceId], references: [id])
 }

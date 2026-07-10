@@ -20,7 +20,8 @@
     "generate": "prisma generate",
     "updateDb": "prisma db push",
     "syncDevDb": "prisma generate && prisma db push",
-    "db:init": "docker compose up -d && sleep 10 && npm run syncDevDb && npm run seedDb"
+    "db:init": "docker compose up -d && sleep 10 && npm run syncDevDb && npm run seedDb",
+    "beta:invite": "tsx scripts/create-beta-invite.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
