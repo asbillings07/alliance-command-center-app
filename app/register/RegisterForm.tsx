@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { register, type RegisterState } from "./actions";
+import { AuthError, Button, Input, Label } from "@/app/src/components";
 
 const initialState: RegisterState = { error: null };
 
@@ -9,56 +10,33 @@ type RegisterFormProps = {
   callbackUrl: string;
   displayName?: string;
   email?: string;
-  darkMode?: boolean;
 };
 
-export function RegisterForm({ callbackUrl, displayName, email, darkMode = false }: RegisterFormProps) {
+export function RegisterForm({ callbackUrl, displayName, email }: RegisterFormProps) {
   const [state, formAction, isPending] = useActionState(register, initialState);
-
-  const inputClass = darkMode
-    ? "w-full px-4 py-3 bg-[#1F2937] border border-[#374151] rounded-md text-[#F9FAFB] placeholder-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-transparent"
-    : "p-2 border border-gray-300 rounded-md text-gray-800";
-
-  const labelClass = darkMode
-    ? "block text-sm font-medium text-[#D1D5DB] mb-1.5"
-    : "sr-only";
-
-  const errorClass = darkMode
-    ? "p-3 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-md text-sm text-[#EF4444]"
-    : "text-red-500 text-sm text-center";
-
-  const buttonClass = darkMode
-    ? "w-full px-4 py-3 bg-[#3B82F6] text-white font-medium rounded-md hover:bg-[#2563EB] disabled:opacity-50 disabled:cursor-not-allowed"
-    : "p-2 bg-blue-500 text-white w-full rounded-md disabled:opacity-50";
 
   return (
     <>
-      {state.error && <div className={errorClass}>{state.error}</div>}
+      <AuthError>{state.error}</AuthError>
 
-      <form className="flex flex-col gap-4" action={formAction}>
+      <form className="space-y-4" action={formAction}>
         <input type="hidden" name="callbackUrl" value={callbackUrl} />
 
         {displayName ? (
           <>
             <input type="hidden" name="displayName" value={displayName} />
             <div>
-              <label className={labelClass}>Display Name</label>
-              <div className={darkMode 
-                ? "px-4 py-3 bg-[#1F2937] border border-[#374151] rounded-md text-[#9CA3AF]"
-                : "p-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700"
-              }>
+              <Label>Display Name</Label>
+              <div className="px-4 py-2 bg-surface-secondary border border-border rounded-lg text-text-muted">
                 {displayName}
               </div>
             </div>
           </>
         ) : (
           <div>
-            <label htmlFor="displayName" className={labelClass}>
-              Display Name
-            </label>
-            <input
+            <Label htmlFor="displayName">Display Name</Label>
+            <Input
               id="displayName"
-              className={inputClass}
               name="displayName"
               type="text"
               required
@@ -71,23 +49,17 @@ export function RegisterForm({ callbackUrl, displayName, email, darkMode = false
 
         {email ? (
           <div>
-            <label className={labelClass}>Email</label>
+            <Label>Email</Label>
             <input type="hidden" name="email" value={email} />
-            <div className={darkMode 
-              ? "px-4 py-3 bg-[#1F2937] border border-[#374151] rounded-md text-[#9CA3AF]"
-              : "p-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700"
-            }>
+            <div className="px-4 py-2 bg-surface-secondary border border-border rounded-lg text-text-muted">
               {email}
             </div>
           </div>
         ) : (
           <div>
-            <label htmlFor="email" className={labelClass}>
-              Email
-            </label>
-            <input
+            <Label htmlFor="email">Email</Label>
+            <Input
               id="email"
-              className={inputClass}
               name="email"
               type="email"
               required
@@ -99,12 +71,9 @@ export function RegisterForm({ callbackUrl, displayName, email, darkMode = false
         )}
 
         <div>
-          <label htmlFor="password" className={labelClass}>
-            Password
-          </label>
-          <input
+          <Label htmlFor="password">Password</Label>
+          <Input
             id="password"
-            className={inputClass}
             name="password"
             type="password"
             required
@@ -115,12 +84,9 @@ export function RegisterForm({ callbackUrl, displayName, email, darkMode = false
         </div>
 
         <div>
-          <label htmlFor="confirmPassword" className={labelClass}>
-            Confirm Password
-          </label>
-          <input
+          <Label htmlFor="confirmPassword">Confirm Password</Label>
+          <Input
             id="confirmPassword"
-            className={inputClass}
             name="confirmPassword"
             type="password"
             required
@@ -130,9 +96,9 @@ export function RegisterForm({ callbackUrl, displayName, email, darkMode = false
           />
         </div>
 
-        <button className={buttonClass} type="submit" disabled={isPending}>
+        <Button type="submit" variant="primary" fullWidth loading={isPending}>
           {isPending ? "Creating account..." : "Create Account"}
-        </button>
+        </Button>
       </form>
     </>
   );

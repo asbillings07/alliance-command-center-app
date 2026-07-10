@@ -5,6 +5,7 @@ import {
   validateBetaCode,
 } from "@/app/src/lib/betaInvitation";
 import { RegisterForm } from "./RegisterForm";
+import { AuthLayout, Button } from "@/app/src/components";
 
 type PageProps = {
   searchParams: Promise<{ callbackUrl?: string; name?: string }>;
@@ -34,6 +35,7 @@ export default async function RegisterPage({ searchParams }: PageProps) {
       isCodeLookup && decodedCode
         ? await validateBetaCode(decodedCode)
         : await validateBetaToken(betaTokenOrCode);
+
     if (result.status === "not_found") {
       return (
         <InvitationRequired message="We couldn't find an invitation with this code. Please check the code and try again." />
@@ -55,50 +57,44 @@ export default async function RegisterPage({ searchParams }: PageProps) {
     const betaInvitation = result.invitation;
 
     return (
-      <main className="flex items-center justify-center min-h-screen bg-[#0F172A]">
-        <section className="flex flex-col gap-4 p-6 bg-[#111827] border border-[#374151] rounded-lg shadow-md max-w-md w-full">
-          <h1 className="text-2xl font-bold text-center text-[#F9FAFB]">
-            Create Account
-          </h1>
-          <p className="text-center text-[#9CA3AF] text-sm">
-            Create your account to continue with your beta invitation.
+      <AuthLayout
+        title="Create Account"
+        subtitle="Create your account to continue with your beta invitation."
+        footer={
+          <p>
+            Already have an account?{" "}
+            <Link
+              href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
+              className="text-primary hover:text-primary-hover"
+            >
+              Sign in
+            </Link>
           </p>
-
-          <RegisterForm callbackUrl={callbackUrl} email={betaInvitation.email} darkMode />
-
-          <div className="text-center pt-2 border-t border-[#374151]">
-            <p className="text-sm text-[#9CA3AF]">
-              Already have an account?{" "}
-              <Link
-                href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
-                className="text-[#3B82F6] hover:text-[#60A5FA]"
-              >
-                Sign in
-              </Link>
-            </p>
-          </div>
-        </section>
-      </main>
+        }
+      >
+        <RegisterForm callbackUrl={callbackUrl} email={betaInvitation.email} />
+      </AuthLayout>
     );
   }
 
   // Check for alliance invitation from /invite/[token]
   const tokenMatch = callbackUrl.match(/\/invite\/([^/?]+)/);
-  
+
   if (!tokenMatch) {
     return <InvitationRequired />;
   }
 
   const token = tokenMatch[1];
-  
+
   // Handle code-based lookup
   const isCodeLookup = token === "code";
   const codeMatch = callbackUrl.match(/[?&]code=([^&]+)/);
-  
+
   const invitation = await prisma.invitation.findFirst({
-    where: isCodeLookup && codeMatch
-      ? { code: decodeURIComponent(codeMatch[1]) }
-      : { token },
+    where:
+      isCodeLookup && codeMatch
+        ? { code: decodeURIComponent(codeMatch[1]) }
+        : { token },
   });
 
   if (!invitation) {
@@ -106,7 +102,9 @@ export default async function RegisterPage({ searchParams }: PageProps) {
   }
 
   if (invitation.acceptedAt) {
-    return <InvitationRequired message="This invitation has already been accepted" />;
+    return (
+      <InvitationRequired message="This invitation has already been accepted" />
+    );
   }
 
   if (invitation.cancelledAt) {
@@ -118,64 +116,46 @@ export default async function RegisterPage({ searchParams }: PageProps) {
   }
 
   return (
-    <main className="flex items-center justify-center min-h-screen">
-      <section className="flex flex-col gap-4 p-4 bg-white rounded-lg shadow-md max-w-md w-full">
-        <h1 className="text-2xl font-bold text-center text-gray-800">
-          Create Account
-        </h1>
-
-        <RegisterForm
-          callbackUrl={callbackUrl}
-          displayName={invitation.playerNameSnapshot}
-        />
-
-        <div className="text-center pt-2 border-t border-gray-200">
-          <p className="text-sm text-gray-600">
-            Already have an account?{" "}
-            <Link
-              href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
-              className="text-blue-500 hover:text-blue-700"
-            >
-              Sign in
-            </Link>
-          </p>
-        </div>
-      </section>
-    </main>
+    <AuthLayout
+      title="Create Account"
+      subtitle="Create your account to join the alliance."
+      footer={
+        <p>
+          Already have an account?{" "}
+          <Link
+            href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
+            className="text-primary hover:text-primary-hover"
+          >
+            Sign in
+          </Link>
+        </p>
+      }
+    >
+      <RegisterForm
+        callbackUrl={callbackUrl}
+        displayName={invitation.playerNameSnapshot}
+      />
+    </AuthLayout>
   );
 }
 
 function InvitationRequired({ message }: { message?: string }) {
   return (
-    <main className="flex items-center justify-center min-h-screen bg-[#0F172A]">
-      <section className="flex flex-col gap-4 p-6 bg-[#111827] border border-[#374151] rounded-lg shadow-md max-w-md w-full text-center">
-        <h1 className="text-2xl font-bold text-[#F9FAFB]">
-          Invitation Required
-        </h1>
-        <p className="text-[#9CA3AF]">
-          {message || "Registration is currently by invitation only."}
-        </p>
-        <div className="pt-4 space-y-3">
-          <Link
-            href="/redeem"
-            className="block w-full px-4 py-2 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB]"
-          >
-            Have a Beta Code?
-          </Link>
-          <Link
-            href="/invite"
-            className="block w-full px-4 py-2 border border-[#374151] text-[#F9FAFB] rounded-md hover:border-[#3B82F6]"
-          >
-            Have an Alliance Invitation?
-          </Link>
-          <Link
-            href="/login"
-            className="block w-full px-4 py-2 text-[#9CA3AF] hover:text-[#F9FAFB]"
-          >
-            Back to Login
-          </Link>
-        </div>
-      </section>
-    </main>
+    <AuthLayout
+      title="Invitation Required"
+      subtitle={message || "Registration is currently by invitation only."}
+    >
+      <div className="space-y-3">
+        <Button variant="primary" fullWidth href="/redeem">
+          Have a Beta Code?
+        </Button>
+        <Button variant="secondary" fullWidth href="/invite">
+          Have an Alliance Invitation?
+        </Button>
+        <Button variant="ghost" fullWidth href="/login">
+          Back to Login
+        </Button>
+      </div>
+    </AuthLayout>
   );
 }

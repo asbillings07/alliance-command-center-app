@@ -9,6 +9,7 @@
 
 // Layout
 export { PageLayout, type PageLayoutProps, type BreadcrumbItem } from "./PageLayout";
+export { AuthLayout, AuthError, type AuthLayoutProps } from "./AuthLayout";
 
 // Containers
 export { Card, type CardProps, type CardHeaderProps, type CardBodyProps, type CardFooterProps } from "./Card";
