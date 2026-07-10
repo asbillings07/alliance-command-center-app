@@ -19,7 +19,20 @@ import { requireAuth } from "./requireAuth";
  * These are different domains with different responsibilities.
  */
 
-const PLATFORM_ADMIN_EMAILS = ["abdevelops@gmail.com"];
+/**
+ * Get the list of platform admin emails from environment config.
+ * Emails are normalized to lowercase for case-insensitive comparison.
+ */
+function getPlatformAdminEmails(): string[] {
+  const envValue = process.env.PLATFORM_ADMIN_EMAILS;
+  if (!envValue) {
+    return [];
+  }
+  return envValue
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter((email) => email.length > 0);
+}
 
 /**
  * Require the current user to be a platform administrator.
@@ -28,12 +41,13 @@ const PLATFORM_ADMIN_EMAILS = ["abdevelops@gmail.com"];
  * visibility and support tools.
  *
  * This is intentionally simple - no database, no schema, no UI.
- * Just a hardcoded list of trusted operators.
+ * Admin emails are configured via PLATFORM_ADMIN_EMAILS environment variable.
  */
 export async function requirePlatformAdmin() {
   const user = await requireAuth();
 
-  if (!PLATFORM_ADMIN_EMAILS.includes(user.email)) {
+  const adminEmails = getPlatformAdminEmails();
+  if (!adminEmails.includes(user.email.toLowerCase())) {
     redirect("/app");
   }
 
@@ -43,7 +57,9 @@ export async function requirePlatformAdmin() {
 /**
  * Check if a user is a platform admin without requiring it.
  * Useful for conditional UI elements.
+ * Comparison is case-insensitive.
  */
 export function isPlatformAdmin(email: string): boolean {
-  return PLATFORM_ADMIN_EMAILS.includes(email);
+  const adminEmails = getPlatformAdminEmails();
+  return adminEmails.includes(email.toLowerCase());
 }
