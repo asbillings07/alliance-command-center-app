@@ -90,8 +90,8 @@ export function MemberAccountSection(props: MemberAccountSectionProps) {
               </svg>
             </div>
             <div>
-              <span className="font-medium text-primary">Not Connected</span>
-              <p className="text-sm text-secondary">
+              <span className="font-medium text-primary-light">Not Connected</span>
+              <p className="text-sm text-text-secondary">
                 No account linked to this member
               </p>
             </div>

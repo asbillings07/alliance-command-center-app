@@ -57,15 +57,15 @@ const variantClasses: Record<ButtonVariant, string> = {
   danger:
     "bg-danger-dark text-white hover:bg-danger disabled:bg-surface-secondary disabled:text-text-disabled",
   "danger-link":
-    "bg-transparent text-danger hover:text-danger/80 underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
+    "bg-transparent text-danger-light hover:text-danger underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
   warning:
     "bg-warning-dark text-white hover:bg-warning disabled:bg-surface-secondary disabled:text-text-disabled",
   "warning-link":
-    "bg-transparent text-warning hover:text-warning/80 underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
+    "bg-transparent text-warning-light hover:text-warning underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
   "success-link":
-    "bg-transparent text-success hover:text-success/80 underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
+    "bg-transparent text-success-light hover:text-success underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
   link:
-    "bg-transparent text-primary hover:text-primary-hover underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
+    "bg-transparent text-primary-light hover:text-primary underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
 };
 
 const sizeClasses: Record<ButtonSize, string> = {

@@ -35,14 +35,14 @@ export function MembersFilter({
                         href={`/alliances/${allianceId}/members?filter=${filter.id}`}
                         className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                             isActive
-                                ? "bg-surface-primary text-primary shadow-sm"
-                                : "text-secondary hover:text-primary"
+                                ? "bg-surface text-primary-light shadow-sm"
+                                : "text-text-secondary hover:text-text-primary"
                         }`}
                     >
                         {filter.label}
                         <span
                             className={`ml-1.5 ${
-                                isActive ? "text-secondary" : "text-tertiary"
+                                isActive ? "text-text-secondary" : "text-text-muted"
                             }`}
                         >
                             {filter.count}
