@@ -1,19 +1,20 @@
 "use server";
 import { Metric_Type } from "@/app/generated/prisma/client";
 import { prisma } from "@/app/src/lib/prisma";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { revalidatePath } from "next/cache";
 
 export async function createMetric(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
     throw new Error("Alliance is required");
   }
 
-  await requireLeadershipAccess(allianceId, user.id);
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.CONFIGURE_METRICS,
+  });
 
   const name = formData.get("name");
   if (typeof name !== "string" || !name.trim()) {
@@ -42,8 +43,6 @@ export async function createMetric(formData: FormData): Promise<void> {
 }
 
 export async function editMetric(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const metricId = formData.get("metricId");
   if (typeof metricId !== "string" || !metricId) {
     throw new Error("Metric is required");
@@ -57,7 +56,10 @@ export async function editMetric(formData: FormData): Promise<void> {
     throw new Error("Metric not found");
   }
 
-  await requireLeadershipAccess(metric.allianceId, user.id);
+  await requireAllianceAccess({
+    allianceId: metric.allianceId,
+    requiredPermission: Permissions.CONFIGURE_METRICS,
+  });
 
   if (!metric.active) {
     throw new Error(
@@ -92,8 +94,6 @@ export async function editMetric(formData: FormData): Promise<void> {
 }
 
 export async function archiveMetric(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const metricId = formData.get("metricId");
   if (typeof metricId !== "string" || !metricId) {
     throw new Error("Metric is required");
@@ -107,7 +107,10 @@ export async function archiveMetric(formData: FormData): Promise<void> {
     throw new Error("Metric not found");
   }
 
-  await requireLeadershipAccess(metric.allianceId, user.id);
+  await requireAllianceAccess({
+    allianceId: metric.allianceId,
+    requiredPermission: Permissions.CONFIGURE_METRICS,
+  });
 
   await prisma.metric.update({
     where: { id: metricId },
@@ -118,8 +121,6 @@ export async function archiveMetric(formData: FormData): Promise<void> {
 }
 
 export async function restoreMetric(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const metricId = formData.get("metricId");
   if (typeof metricId !== "string" || !metricId) {
     throw new Error("Metric is required");
@@ -133,7 +134,10 @@ export async function restoreMetric(formData: FormData): Promise<void> {
     throw new Error("Metric not found");
   }
 
-  await requireLeadershipAccess(metric.allianceId, user.id);
+  await requireAllianceAccess({
+    allianceId: metric.allianceId,
+    requiredPermission: Permissions.CONFIGURE_METRICS,
+  });
 
   await prisma.metric.update({
     where: { id: metricId },
