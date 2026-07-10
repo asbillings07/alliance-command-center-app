@@ -4,26 +4,31 @@ import {
   LeadershipNoteVisibility,
 } from "@/app/generated/prisma/client";
 import { prisma } from "@/app/src/lib/prisma";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requireAllianceMemberAccess } from "@/app/src/lib/auth/requireMembershipAccess";
-import { requireLeadershipAccess } from "@/app/src/lib/auth/requireLeadershipAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { revalidatePath } from "next/cache";
-import { requireAuthorAccess } from "@/app/src/lib/auth/requireAuthorAccess";
+import { redirect } from "next/navigation";
 
 export async function createLeadershipNote(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const allianceMemberId = formData.get("memberId");
   if (typeof allianceMemberId !== "string" || !allianceMemberId) {
     throw new Error("Alliance member is required");
   }
 
-  const { allianceMember } = await requireAllianceMemberAccess(allianceMemberId, user.id);
-  
-  // Verify user has leadership role (not just VIEWER)
-  await requireLeadershipAccess(allianceMember.allianceId, user.id);
-  
-  const authorId = user.id;
+  // Load the member to get alliance ID
+  const allianceMember = await prisma.allianceMember.findUnique({
+    where: { id: allianceMemberId },
+  });
+
+  if (!allianceMember) {
+    throw new Error("Alliance member not found");
+  }
+
+  const auth = await requireAllianceAccess({
+    allianceId: allianceMember.allianceId,
+    requiredPermission: Permissions.MANAGE_NOTES,
+  });
+
   const noteType = formData.get("noteType") as LeadershipNoteType;
   if (!Object.values(LeadershipNoteType).includes(noteType)) {
     throw new Error("Invalid note type");
@@ -39,7 +44,7 @@ export async function createLeadershipNote(formData: FormData): Promise<void> {
   await prisma.leadershipNote.create({
     data: {
       allianceMemberId: allianceMember.id,
-      authorId,
+      authorId: auth.user.id,
       noteType,
       visibility,
       content,
@@ -50,8 +55,6 @@ export async function createLeadershipNote(formData: FormData): Promise<void> {
 }
 
 export async function editLeadershipNote(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const noteId = formData.get("noteId");
   const noteType = formData.get("noteType") as LeadershipNoteType;
   const rawContent = formData.get("content");
@@ -67,24 +70,63 @@ export async function editLeadershipNote(formData: FormData): Promise<void> {
     throw new Error("Content is required");
   }
 
-  const { allianceMember } = await requireAuthorAccess(noteId, user.id);
+  // Load the note with its alliance member
+  const note = await prisma.leadershipNote.findUnique({
+    where: { id: noteId },
+    include: { allianceMember: true },
+  });
+
+  if (!note) {
+    throw new Error("Note not found");
+  }
+
+  const auth = await requireAllianceAccess({
+    allianceId: note.allianceMember.allianceId,
+    requiredPermission: Permissions.MANAGE_NOTES,
+  });
+
+  // Verify user is the author
+  if (note.authorId !== auth.user.id) {
+    redirect("/app");
+  }
 
   await prisma.leadershipNote.update({
     where: { id: noteId },
     data: { noteType, content },
   });
-  revalidatePath(`/alliances/${allianceMember.allianceId}/members/${allianceMember.id}`);
+
+  revalidatePath(`/alliances/${note.allianceMember.allianceId}/members/${note.allianceMember.id}`);
 }
 
 export async function deleteLeadershipNote(formData: FormData): Promise<void> {
-  const user = await requireAuth();
   const noteId = formData.get("noteId");
   if (typeof noteId !== "string" || !noteId) {
     throw new Error("Note is required");
   }
-  const { note, allianceMember } = await requireAuthorAccess(noteId, user.id);
+
+  // Load the note with its alliance member
+  const note = await prisma.leadershipNote.findUnique({
+    where: { id: noteId },
+    include: { allianceMember: true },
+  });
+
+  if (!note) {
+    throw new Error("Note not found");
+  }
+
+  const auth = await requireAllianceAccess({
+    allianceId: note.allianceMember.allianceId,
+    requiredPermission: Permissions.MANAGE_NOTES,
+  });
+
+  // Verify user is the author
+  if (note.authorId !== auth.user.id) {
+    redirect("/app");
+  }
+
   await prisma.leadershipNote.delete({
     where: { id: note.id },
   });
-  revalidatePath(`/alliances/${allianceMember.allianceId}/members/${allianceMember.id}`);
+
+  revalidatePath(`/alliances/${note.allianceMember.allianceId}/members/${note.allianceMember.id}`);
 }
