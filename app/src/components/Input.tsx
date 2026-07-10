@@ -256,16 +256,21 @@ export function FormField({
 }: FormFieldProps) {
   const generatedId = useId();
 
+  // Get the existing id from the child if it has one
+  const existingId =
+    isValidElement(children) &&
+    typeof children.props === "object" &&
+    children.props !== null &&
+    "id" in children.props
+      ? (children.props as { id?: string }).id
+      : undefined;
+
+  const inputId = existingId || generatedId;
+
   // Clone the child element to add the id prop if it's a valid element
   const childWithId = isValidElement(children)
-    ? cloneElement(children, {
-        id: children.props.id || generatedId,
-      } as Record<string, unknown>)
+    ? cloneElement(children, { id: inputId } as Record<string, unknown>)
     : children;
-
-  const inputId = isValidElement(children)
-    ? children.props.id || generatedId
-    : generatedId;
 
   return (
     <div>
