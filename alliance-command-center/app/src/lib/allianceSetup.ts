@@ -1,11 +1,12 @@
 import { prisma } from "./prisma";
+import { type PermissionSet } from "./auth/permissions";
 
 /**
  * Alliance setup represents the readiness of the alliance,
  * not the progress of an individual user.
  */
 
-export type TypicalRole = "Owner" | "Admin or Leader";
+export type TypicalRole = "Owner" | "Admin" | "Leader";
 
 export type SetupTaskId = "metrics" | "period" | "team" | "members" | "data";
 
@@ -14,6 +15,7 @@ export type SetupTaskDefinition = {
   label: string;
   typicallyCompletedBy: TypicalRole;
   href: (allianceId: string) => string;
+  requiredPermission: keyof PermissionSet;
 };
 
 export type SetupTask = {
@@ -82,6 +84,9 @@ function evaluateTaskCompletion(
  *
  * Adding future tasks (Discord bot, billing, API keys) requires adding
  * to this array and updating evaluateTaskCompletion().
+ *
+ * Each task includes the required permission so the UI can filter
+ * tasks the user cannot complete.
  */
 export const SETUP_TASKS: SetupTaskDefinition[] = [
   {
@@ -89,30 +94,35 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
     label: "Configure Metrics",
     typicallyCompletedBy: "Owner",
     href: (id) => `/alliances/${id}/metrics`,
+    requiredPermission: "canConfigureMetrics",
   },
   {
     id: "period",
     label: "Create Evaluation Period",
     typicallyCompletedBy: "Owner",
     href: (id) => `/alliances/${id}/periods`,
+    requiredPermission: "canConfigurePeriods",
   },
   {
     id: "team",
     label: "Invite Leadership Team",
     typicallyCompletedBy: "Owner",
     href: (id) => `/alliances/${id}/settings/invitations`,
+    requiredPermission: "canInviteCollaborators",
   },
   {
     id: "members",
     label: "Import Members",
-    typicallyCompletedBy: "Admin or Leader",
+    typicallyCompletedBy: "Admin",
     href: (id) => `/alliances/${id}/members/import`,
+    requiredPermission: "canImportMembers",
   },
   {
     id: "data",
     label: "Import First Dataset",
-    typicallyCompletedBy: "Admin or Leader",
+    typicallyCompletedBy: "Leader",
     href: (id) => `/alliances/${id}/periods`,
+    requiredPermission: "canImportMetrics",
   },
 ];
 
@@ -125,13 +135,23 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
  *
  * Efficiency: All counts are fetched in a single batch query via
  * getSetupCounts() to avoid N+1 database round-trips.
+ *
+ * If a PermissionSet is provided, tasks are filtered to only include
+ * those the user has permission to complete. This ensures users only
+ * see tasks they can actually act on.
  */
 export async function getAllianceSetupStatus(
-  allianceId: string
+  allianceId: string,
+  permissions?: PermissionSet
 ): Promise<AllianceSetupStatus> {
   const counts = await getSetupCounts(allianceId);
 
-  const tasks: SetupTask[] = SETUP_TASKS.map((definition) => ({
+  // Filter to tasks the user can complete, if permissions provided
+  const applicableTasks = permissions
+    ? SETUP_TASKS.filter((t) => permissions[t.requiredPermission])
+    : SETUP_TASKS;
+
+  const tasks: SetupTask[] = applicableTasks.map((definition) => ({
     id: definition.id,
     label: definition.label,
     completed: evaluateTaskCompletion(definition.id, counts),

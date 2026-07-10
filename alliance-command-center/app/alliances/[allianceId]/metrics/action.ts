@@ -5,10 +5,17 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { revalidatePath } from "next/cache";
 
-export async function createMetric(formData: FormData): Promise<void> {
+export type MetricActionResult = {
+  error?: string;
+  success?: boolean;
+};
+
+export async function createMetric(
+  formData: FormData
+): Promise<MetricActionResult> {
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
-    throw new Error("Alliance is required");
+    return { error: "Alliance is required" };
   }
 
   await requireAllianceAccess({
@@ -18,7 +25,7 @@ export async function createMetric(formData: FormData): Promise<void> {
 
   const name = formData.get("name");
   if (typeof name !== "string" || !name.trim()) {
-    throw new Error("Name is required");
+    return { error: "Name is required" };
   }
 
   const rawDescription = formData.get("description");
@@ -27,30 +34,38 @@ export async function createMetric(formData: FormData): Promise<void> {
 
   const type = formData.get("type") as Metric_Type;
   if (!Object.values(Metric_Type).includes(type)) {
-    throw new Error("Invalid metric type");
+    return { error: "Invalid metric type" };
   }
 
-  await prisma.metric.create({
-    data: {
-      allianceId,
-      name: name.trim(),
-      description,
-      type,
-    },
-  });
+  try {
+    await prisma.metric.create({
+      data: {
+        allianceId,
+        name: name.trim(),
+        description,
+        type,
+      },
+    });
+  } catch (err) {
+    console.error("Failed to create metric:", err);
+    return { error: "Failed to create metric" };
+  }
 
   revalidatePath(`/alliances/${allianceId}/metrics`);
+  return { success: true };
 }
 
-export async function editMetric(formData: FormData): Promise<void> {
+export async function editMetric(
+  formData: FormData
+): Promise<MetricActionResult> {
   const metricId = formData.get("metricId");
   if (typeof metricId !== "string" || !metricId) {
-    throw new Error("Metric is required");
+    return { error: "Metric is required" };
   }
 
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
-    throw new Error("Alliance is required");
+    return { error: "Alliance is required" };
   }
 
   // Authorize before any DB lookup to prevent ID enumeration
@@ -65,18 +80,18 @@ export async function editMetric(formData: FormData): Promise<void> {
   });
 
   if (!metric) {
-    throw new Error("Metric not found");
+    return { error: "Metric not found" };
   }
 
   if (!metric.active) {
-    throw new Error(
-      "Metric is archived and cannot be edited, please restore it to edit it.",
-    );
+    return {
+      error: "Metric is archived and cannot be edited. Please restore it first.",
+    };
   }
 
   const name = formData.get("name");
   if (typeof name !== "string" || !name.trim()) {
-    throw new Error("Name is required");
+    return { error: "Name is required" };
   }
 
   const rawDescription = formData.get("description");
@@ -85,30 +100,38 @@ export async function editMetric(formData: FormData): Promise<void> {
 
   const type = formData.get("type") as Metric_Type;
   if (!Object.values(Metric_Type).includes(type)) {
-    throw new Error("Invalid metric type");
+    return { error: "Invalid metric type" };
   }
 
-  await prisma.metric.update({
-    where: { id: metricId },
-    data: {
-      name: name.trim(),
-      description,
-      type,
-    },
-  });
+  try {
+    await prisma.metric.update({
+      where: { id: metricId },
+      data: {
+        name: name.trim(),
+        description,
+        type,
+      },
+    });
+  } catch (err) {
+    console.error("Failed to update metric:", err);
+    return { error: "Failed to update metric" };
+  }
 
   revalidatePath(`/alliances/${allianceId}/metrics`);
+  return { success: true };
 }
 
-export async function archiveMetric(formData: FormData): Promise<void> {
+export async function archiveMetric(
+  formData: FormData
+): Promise<MetricActionResult> {
   const metricId = formData.get("metricId");
   if (typeof metricId !== "string" || !metricId) {
-    throw new Error("Metric is required");
+    return { error: "Metric is required" };
   }
 
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
-    throw new Error("Alliance is required");
+    return { error: "Alliance is required" };
   }
 
   // Authorize before any DB lookup to prevent ID enumeration
@@ -123,26 +146,34 @@ export async function archiveMetric(formData: FormData): Promise<void> {
   });
 
   if (!metric) {
-    throw new Error("Metric not found");
+    return { error: "Metric not found" };
   }
 
-  await prisma.metric.update({
-    where: { id: metricId },
-    data: { active: false },
-  });
+  try {
+    await prisma.metric.update({
+      where: { id: metricId },
+      data: { active: false },
+    });
+  } catch (err) {
+    console.error("Failed to archive metric:", err);
+    return { error: "Failed to archive metric" };
+  }
 
   revalidatePath(`/alliances/${allianceId}/metrics`);
+  return { success: true };
 }
 
-export async function restoreMetric(formData: FormData): Promise<void> {
+export async function restoreMetric(
+  formData: FormData
+): Promise<MetricActionResult> {
   const metricId = formData.get("metricId");
   if (typeof metricId !== "string" || !metricId) {
-    throw new Error("Metric is required");
+    return { error: "Metric is required" };
   }
 
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
-    throw new Error("Alliance is required");
+    return { error: "Alliance is required" };
   }
 
   // Authorize before any DB lookup to prevent ID enumeration
@@ -157,13 +188,19 @@ export async function restoreMetric(formData: FormData): Promise<void> {
   });
 
   if (!metric) {
-    throw new Error("Metric not found");
+    return { error: "Metric not found" };
   }
 
-  await prisma.metric.update({
-    where: { id: metricId },
-    data: { active: true },
-  });
+  try {
+    await prisma.metric.update({
+      where: { id: metricId },
+      data: { active: true },
+    });
+  } catch (err) {
+    console.error("Failed to restore metric:", err);
+    return { error: "Failed to restore metric" };
+  }
 
   revalidatePath(`/alliances/${allianceId}/metrics`);
+  return { success: true };
 }

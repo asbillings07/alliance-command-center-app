@@ -51,21 +51,29 @@ describe("SETUP_TASKS", () => {
     const ownerTasks = SETUP_TASKS.filter(
       (t) => t.typicallyCompletedBy === "Owner"
     );
-    const leaderTasks = SETUP_TASKS.filter(
-      (t) => t.typicallyCompletedBy === "Admin or Leader"
+    const nonOwnerTasks = SETUP_TASKS.filter(
+      (t) => t.typicallyCompletedBy !== "Owner"
     );
 
     expect(ownerTasks).toHaveLength(3);
-    expect(leaderTasks).toHaveLength(2);
+    expect(nonOwnerTasks).toHaveLength(2);
 
     const lastOwnerIndex = SETUP_TASKS.findLastIndex(
       (t) => t.typicallyCompletedBy === "Owner"
     );
-    const firstLeaderIndex = SETUP_TASKS.findIndex(
-      (t) => t.typicallyCompletedBy === "Admin or Leader"
+    const firstNonOwnerIndex = SETUP_TASKS.findIndex(
+      (t) => t.typicallyCompletedBy !== "Owner"
     );
 
-    expect(lastOwnerIndex).toBeLessThan(firstLeaderIndex);
+    expect(lastOwnerIndex).toBeLessThan(firstNonOwnerIndex);
+  });
+
+  it("has required permissions for each task", () => {
+    expect(SETUP_TASKS[0].requiredPermission).toBe("canConfigureMetrics");
+    expect(SETUP_TASKS[1].requiredPermission).toBe("canConfigurePeriods");
+    expect(SETUP_TASKS[2].requiredPermission).toBe("canInviteCollaborators");
+    expect(SETUP_TASKS[3].requiredPermission).toBe("canImportMembers");
+    expect(SETUP_TASKS[4].requiredPermission).toBe("canImportMetrics");
   });
 
   it("generates correct hrefs", () => {
@@ -168,5 +176,49 @@ describe("getAllianceSetupStatus", () => {
       href: "/alliances/alliance-1/metrics",
       typicallyCompletedBy: "Owner",
     });
+  });
+
+  it("filters tasks by permissions when provided", async () => {
+    mockPrisma.metric.count.mockResolvedValue(0);
+    mockPrisma.metricPeriod.count.mockResolvedValue(0);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.allianceMember.count.mockResolvedValue(0);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    // Leader permissions: can only import metrics and manage notes
+    const leaderPermissions = {
+      canViewAlliance: true,
+      canViewMembers: true,
+      canViewNotes: true,
+      canManageNotes: true,
+      canImportMetrics: true,
+      canManageMembers: false,
+      canImportMembers: false,
+      canConfigureMetrics: false,
+      canConfigurePeriods: false,
+      canInviteCollaborators: false,
+      canManageLeadership: false,
+      canManageAlliance: false,
+    };
+
+    const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
+
+    // Leader should only see the "data" task (Import First Dataset)
+    expect(status.tasks).toHaveLength(1);
+    expect(status.tasks[0].id).toBe("data");
+    expect(status.totalCount).toBe(1);
+  });
+
+  it("returns all tasks when no permissions provided", async () => {
+    mockPrisma.metric.count.mockResolvedValue(0);
+    mockPrisma.metricPeriod.count.mockResolvedValue(0);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.allianceMember.count.mockResolvedValue(0);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    const status = await getAllianceSetupStatus("alliance-1");
+
+    expect(status.tasks).toHaveLength(5);
+    expect(status.totalCount).toBe(5);
   });
 });

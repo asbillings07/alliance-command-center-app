@@ -8,6 +8,7 @@ import { MemberPerformanceSection } from "./MemberPerformanceSection";
 import type { CurrentMetricViewModel } from "./MemberPerformanceSection";
 import { MemberActions } from "./MemberActions";
 import { MemberAccountSection } from "./MemberAccountSection";
+import Link from "next/link";
 
 type Params = {
     params: Promise<{
@@ -160,6 +161,13 @@ export default async function MemberPage({ params }: Params) {
 
     return (
         <div className="mx-auto flex max-w-4xl flex-col gap-8 p-8">
+            <Link
+                href={`/alliances/${allianceId}/members`}
+                className="text-sm text-gray-600 hover:text-gray-900"
+            >
+                ← Back to Roster
+            </Link>
+
             {allianceMember.archivedAt && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center">
                     <p className="text-amber-800 font-medium">

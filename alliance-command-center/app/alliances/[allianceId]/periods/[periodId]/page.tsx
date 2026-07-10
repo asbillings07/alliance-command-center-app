@@ -56,7 +56,13 @@ export default async function PeriodPage({ params }: Params) {
     }));
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-4">
+            <Link
+                href={`/alliances/${allianceId}/periods`}
+                className="text-sm text-gray-500 hover:text-gray-700"
+            >
+                ← Back to Periods
+            </Link>
             <h1 className="text-2xl font-bold">Evaluation Period: {period.name}</h1>
             <hr className="w-full max-w-3xl border-gray-200" />
             <div className="flex flex-col items-center justify-center gap-2">
