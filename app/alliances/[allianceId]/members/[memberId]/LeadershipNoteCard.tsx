@@ -41,7 +41,7 @@ export function LeadershipNoteCard({ allianceId, memberId, mode, note }: Leaders
                     <button
                         type="button"
                         onClick={() => setCardState("form")}
-                        className="w-full rounded-md border-2 border-dashed border-primary p-4 text-secondary hover:border-accent-primary hover:text-accent-primary cursor-pointer transition-colors"
+                        className="w-full rounded-md border-2 border-dashed border-border p-4 text-text-secondary hover:border-primary hover:text-primary-light cursor-pointer transition-colors"
                     >
                         + Add Leadership Note
                     </button>
