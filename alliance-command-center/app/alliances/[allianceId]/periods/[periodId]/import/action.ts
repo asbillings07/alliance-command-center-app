@@ -1,6 +1,6 @@
 "use server";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requirePeriodAccess } from "@/app/src/lib/auth/requirePeriodAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { revalidatePath } from "next/cache";
 
@@ -19,7 +19,6 @@ type ImportMetricsInput = {
 export async function importMemberMetrics(
   input: ImportMetricsInput,
 ): Promise<{ success: boolean; count: number }> {
-  const user = await requireAuth();
   const { periodId, metricId, allianceId, entries } = input;
 
   if (!periodId || !metricId || !allianceId) {
@@ -51,7 +50,19 @@ export async function importMemberMetrics(
     return true;
   });
 
-  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.IMPORT_METRICS,
+  });
+
+  // Verify period belongs to this alliance
+  const period = await prisma.metricPeriod.findUnique({
+    where: { id: periodId },
+  });
+
+  if (!period || period.allianceId !== allianceId) {
+    throw new Error("Period not found");
+  }
 
   // Validate metric is configured for this period
   const periodMetric = await prisma.metricPeriodMetric.findUnique({

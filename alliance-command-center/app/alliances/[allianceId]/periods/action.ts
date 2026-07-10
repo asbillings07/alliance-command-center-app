@@ -1,8 +1,8 @@
 "use server";
 import { prisma } from "@/app/src/lib/prisma";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { revalidatePath } from "next/cache";
-import { requirePeriodAccess } from "@/app/src/lib/auth/requirePeriodAccess";
 
 const validateFormData = (formData: FormData) => {
   const name = formData.get("name");
@@ -34,10 +34,12 @@ const validateFormData = (formData: FormData) => {
 };
 
 export async function createMetricPeriod(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-  const { name, startsAt, endsAt, allianceId, periodId } =
-    validateFormData(formData);
-  await requirePeriodAccess(periodId, allianceId, user.id);
+  const { name, startsAt, endsAt, allianceId } = validateFormData(formData);
+
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.CONFIGURE_PERIODS,
+  });
 
   await prisma.metricPeriod.create({
     data: {
@@ -52,12 +54,22 @@ export async function createMetricPeriod(formData: FormData): Promise<void> {
 }
 
 export async function editMetricPeriod(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const { name, startsAt, endsAt, allianceId, periodId } =
     validateFormData(formData);
 
-  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.CONFIGURE_PERIODS,
+  });
+
+  // Verify period belongs to this alliance
+  const period = await prisma.metricPeriod.findUnique({
+    where: { id: periodId },
+  });
+
+  if (!period || period.allianceId !== allianceId) {
+    throw new Error("Period not found");
+  }
 
   await prisma.metricPeriod.update({
     where: { id: periodId },
@@ -68,35 +80,55 @@ export async function editMetricPeriod(formData: FormData): Promise<void> {
     },
   });
 
-  revalidatePath(`/alliances/${period.allianceId}/metricPeriods`);
+  revalidatePath(`/alliances/${allianceId}/metricPeriods`);
 }
 
 export async function archiveMetricPeriod(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const { allianceId, periodId } = validateFormData(formData);
 
-  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.CONFIGURE_PERIODS,
+  });
+
+  // Verify period belongs to this alliance
+  const period = await prisma.metricPeriod.findUnique({
+    where: { id: periodId },
+  });
+
+  if (!period || period.allianceId !== allianceId) {
+    throw new Error("Period not found");
+  }
 
   await prisma.metricPeriod.update({
     where: { id: periodId },
     data: { active: false },
   });
 
-  revalidatePath(`/alliances/${period.allianceId}/metricPeriods`);
+  revalidatePath(`/alliances/${allianceId}/metricPeriods`);
 }
 
 export async function restoreMetricPeriod(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const { allianceId, periodId } = validateFormData(formData);
 
-  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.CONFIGURE_PERIODS,
+  });
+
+  // Verify period belongs to this alliance
+  const period = await prisma.metricPeriod.findUnique({
+    where: { id: periodId },
+  });
+
+  if (!period || period.allianceId !== allianceId) {
+    throw new Error("Period not found");
+  }
 
   await prisma.metricPeriod.update({
     where: { id: periodId },
     data: { active: true },
   });
 
-  revalidatePath(`/alliances/${period.allianceId}/periods`);
+  revalidatePath(`/alliances/${allianceId}/periods`);
 }

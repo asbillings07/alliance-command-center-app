@@ -1,6 +1,6 @@
 "use server";
-import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { requirePeriodAccess } from "@/app/src/lib/auth/requirePeriodAccess";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { revalidatePath } from "next/cache";
 
@@ -31,12 +31,22 @@ const validateFormData = (formData: FormData) => {
 };
 
 export async function addMetricToPeriod(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const { periodId, metricId, weight, required, allianceId } =
     validateFormData(formData);
 
-  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.CONFIGURE_PERIODS,
+  });
+
+  // Verify period belongs to this alliance
+  const period = await prisma.metricPeriod.findUnique({
+    where: { id: periodId },
+  });
+
+  if (!period || period.allianceId !== allianceId) {
+    throw new Error("Period not found");
+  }
 
   await prisma.metricPeriodMetric.create({
     data: {
@@ -47,21 +57,31 @@ export async function addMetricToPeriod(formData: FormData): Promise<void> {
     },
   });
 
-  revalidatePath(`/alliances/${period.allianceId}/periods/${periodId}`);
+  revalidatePath(`/alliances/${allianceId}/periods/${periodId}`);
 }
 
 export async function editPeriodMetric(formData: FormData): Promise<void> {
-  const user = await requireAuth();
-
   const { periodId, metricId, weight, required, allianceId } =
     validateFormData(formData);
 
-  const { period } = await requirePeriodAccess(periodId, allianceId, user.id);
+  await requireAllianceAccess({
+    allianceId,
+    requiredPermission: Permissions.CONFIGURE_PERIODS,
+  });
+
+  // Verify period belongs to this alliance
+  const period = await prisma.metricPeriod.findUnique({
+    where: { id: periodId },
+  });
+
+  if (!period || period.allianceId !== allianceId) {
+    throw new Error("Period not found");
+  }
 
   await prisma.metricPeriodMetric.update({
     where: { periodId_metricId: { periodId, metricId } },
     data: { weight, required },
   });
 
-  revalidatePath(`/alliances/${period.allianceId}/periods/${periodId}`);
+  revalidatePath(`/alliances/${allianceId}/periods/${periodId}`);
 }
