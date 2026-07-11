@@ -45,27 +45,27 @@ test.describe("Dashboard Navigation", () => {
     await expect(page).toHaveURL(/\/members/);
   });
 
-  test("Owner sees Metrics Library link", async ({ page }) => {
+  test("Owner sees Manage Metrics link", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}`);
 
     await expect(
-      page.getByRole("link", { name: /metrics library/i })
+      page.getByRole("link", { name: /manage metrics/i })
     ).toBeVisible();
   });
 
-  test("Owner sees Evaluation Periods link", async ({ page }) => {
+  test("Owner sees Manage Periods link", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}`);
 
     await expect(
-      page.getByRole("link", { name: /evaluation periods/i })
+      page.getByRole("link", { name: /manage periods/i })
     ).toBeVisible();
   });
 
-  test("Owner sees Leadership Team link", async ({ page }) => {
+  test("Owner sees Manage Team link", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}`);
 
     await expect(
-      page.getByRole("link", { name: /leadership team/i })
+      page.getByRole("link", { name: /manage team/i })
     ).toBeVisible();
   });
 

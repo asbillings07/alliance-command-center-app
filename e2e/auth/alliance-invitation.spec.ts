@@ -15,14 +15,14 @@ test.describe("Alliance Invitation", () => {
     await expect(
       page.getByRole("heading", { name: /join|invitation/i })
     ).toBeVisible();
-    await expect(page.getByPlaceholder(/abc.*123/i)).toBeVisible();
+    await expect(page.getByPlaceholder("ABC-123-XYZ")).toBeVisible();
     await expect(page.getByRole("button", { name: /continue/i })).toBeVisible();
   });
 
   test("shows error for invalid code format", async ({ page }) => {
     await page.goto("/invite");
 
-    await page.getByPlaceholder(/abc.*123/i).fill("XYZ");
+    await page.getByPlaceholder("ABC-123-XYZ").fill("XYZ");
     await page.getByRole("button", { name: /continue/i }).click();
 
     await expect(page.getByText(/6 characters|invalid/i)).toBeVisible();
@@ -31,7 +31,7 @@ test.describe("Alliance Invitation", () => {
   test("shows error for non-existent code", async ({ page }) => {
     await page.goto("/invite");
 
-    await page.getByPlaceholder(/abc.*123/i).fill("XXXXXX");
+    await page.getByPlaceholder("ABC-123-XYZ").fill("XXXXXX");
     await page.getByRole("button", { name: /continue/i }).click();
 
     await expect(page.getByText(/invalid|not found|expired/i)).toBeVisible();
@@ -45,7 +45,7 @@ test.describe("Alliance Invitation", () => {
 
     await page.goto("/invite");
 
-    await page.getByPlaceholder(/abc.*123/i).fill(process.env.TEST_INVITE_CODE!);
+    await page.getByPlaceholder("ABC-123-XYZ").fill(process.env.TEST_INVITE_CODE!);
     await page.getByRole("button", { name: /continue/i }).click();
 
     await page.waitForURL(/\/invite\/.+/);
@@ -93,7 +93,7 @@ test.describe("Alliance Invitation", () => {
     await page.goto("/invite");
 
     await page
-      .getByPlaceholder(/abc.*123/i)
+      .getByPlaceholder("ABC-123-XYZ")
       .fill(process.env.TEST_USED_INVITE_CODE!);
     await page.getByRole("button", { name: /continue/i }).click();
 
@@ -109,7 +109,7 @@ test.describe("Alliance Invitation", () => {
     await page.goto("/invite");
 
     await page
-      .getByPlaceholder(/abc.*123/i)
+      .getByPlaceholder("ABC-123-XYZ")
       .fill(process.env.TEST_EXPIRED_INVITE_CODE!);
     await page.getByRole("button", { name: /continue/i }).click();
 
@@ -125,7 +125,7 @@ test.describe("Alliance Invitation", () => {
     await page.goto("/invite");
 
     await page
-      .getByPlaceholder(/abc.*123/i)
+      .getByPlaceholder("ABC-123-XYZ")
       .fill(process.env.TEST_CANCELLED_INVITE_CODE!);
     await page.getByRole("button", { name: /continue/i }).click();
 
@@ -159,16 +159,16 @@ test.describe("Alliance Invitation", () => {
   test("code input has max length", async ({ page }) => {
     await page.goto("/invite");
 
-    const input = page.getByPlaceholder(/abc.*123/i);
-    await input.fill("ABCDEFGHIJK");
+    const input = page.getByPlaceholder("ABC-123-XYZ");
+    await input.fill("ABCDEFGHIJKLMNOP"); // More than 11 chars
 
     const value = await input.inputValue();
-    expect(value.length).toBeLessThanOrEqual(6);
+    expect(value.length).toBeLessThanOrEqual(11);
   });
 
-  test("shows link to beta for users without invitation", async ({ page }) => {
+  test("shows link to sign in for existing users", async ({ page }) => {
     await page.goto("/invite");
 
-    await expect(page.getByRole("link", { name: /beta/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /sign in/i })).toBeVisible();
   });
 });

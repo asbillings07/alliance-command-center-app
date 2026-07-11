@@ -13,9 +13,10 @@ test.describe("Beta Redemption", () => {
     await page.goto("/redeem");
 
     await expect(
-      page.getByRole("heading", { name: /join the beta/i })
+      page.getByRole("heading", { name: /alliance command center/i })
     ).toBeVisible();
-    await expect(page.getByPlaceholder(/abc.*123/i)).toBeVisible();
+    await expect(page.getByText(/enter your beta code/i)).toBeVisible();
+    await expect(page.getByPlaceholder("ABC-123")).toBeVisible();
     await expect(page.getByRole("button", { name: /continue/i })).toBeVisible();
   });
 
@@ -23,7 +24,7 @@ test.describe("Beta Redemption", () => {
     await page.goto("/redeem");
 
     // Enter code that's too short
-    await page.getByPlaceholder(/abc.*123/i).fill("ABC");
+    await page.getByPlaceholder("ABC-123").fill("ABC");
     await page.getByRole("button", { name: /continue/i }).click();
 
     // Should show validation error
@@ -33,7 +34,7 @@ test.describe("Beta Redemption", () => {
   test("shows error for non-existent code", async ({ page }) => {
     await page.goto("/redeem");
 
-    await page.getByPlaceholder(/abc.*123/i).fill("XXXXXX");
+    await page.getByPlaceholder("ABC-123").fill("XXXXXX");
     await page.getByRole("button", { name: /continue/i }).click();
 
     // Should show error for invalid code
@@ -48,7 +49,7 @@ test.describe("Beta Redemption", () => {
 
     await page.goto("/redeem");
 
-    await page.getByPlaceholder(/abc.*123/i).fill(process.env.TEST_BETA_CODE!);
+    await page.getByPlaceholder("ABC-123").fill(process.env.TEST_BETA_CODE!);
     await page.getByRole("button", { name: /continue/i }).click();
 
     // Should redirect to token-based redemption page
@@ -82,7 +83,7 @@ test.describe("Beta Redemption", () => {
     await page.goto("/redeem");
 
     await page
-      .getByPlaceholder(/abc.*123/i)
+      .getByPlaceholder("ABC-123")
       .fill(process.env.TEST_USED_BETA_CODE!);
     await page.getByRole("button", { name: /continue/i }).click();
 
@@ -99,7 +100,7 @@ test.describe("Beta Redemption", () => {
     await page.goto("/redeem");
 
     await page
-      .getByPlaceholder(/abc.*123/i)
+      .getByPlaceholder("ABC-123")
       .fill(process.env.TEST_EXPIRED_BETA_CODE!);
     await page.getByRole("button", { name: /continue/i }).click();
 
@@ -117,7 +118,7 @@ test.describe("Beta Redemption", () => {
 
     // Enter code in lowercase
     await page
-      .getByPlaceholder(/abc.*123/i)
+      .getByPlaceholder("ABC-123")
       .fill(process.env.TEST_BETA_CODE!.toLowerCase());
     await page.getByRole("button", { name: /continue/i }).click();
 
@@ -128,22 +129,22 @@ test.describe("Beta Redemption", () => {
   test("code input has max length", async ({ page }) => {
     await page.goto("/redeem");
 
-    const input = page.getByPlaceholder(/abc.*123/i);
-    await input.fill("ABCDEFGHIJK"); // More than 6 chars
+    const input = page.getByPlaceholder("ABC-123");
+    await input.fill("ABCDEFGHIJK"); // More than 7 chars
 
-    // Should be limited to 6 characters
+    // Should be limited to 7 characters (ABC-123 format)
     const value = await input.inputValue();
-    expect(value.length).toBeLessThanOrEqual(6);
+    expect(value.length).toBeLessThanOrEqual(7);
   });
 
-  test("shows link to alliance invitation for existing users", async ({
+  test("shows link to sign in for existing users", async ({
     page,
   }) => {
     await page.goto("/redeem");
 
-    // Should mention alliance invitations
+    // Should show sign in link for existing users
     await expect(
-      page.getByRole("link", { name: /alliance invitation|invited to join/i })
+      page.getByRole("link", { name: /sign in/i })
     ).toBeVisible();
   });
 });

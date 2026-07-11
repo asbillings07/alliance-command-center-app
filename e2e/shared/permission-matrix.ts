@@ -47,43 +47,44 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
   },
   {
     feature: "dashboard.metrics_link",
-    description: "Metrics Library link visible on dashboard",
+    description: "Manage Metrics link visible on dashboard",
     verification: {
       type: "link_visible",
-      selector: 'a:has-text("Metrics Library")',
+      selector: 'a:has-text("Manage Metrics")',
       onPage: "/alliances/{allianceId}",
     },
     expected: { OWNER: true, ADMIN: true, LEADER: false, VIEWER: false },
   },
   {
     feature: "dashboard.periods_link",
-    description: "Evaluation Periods link visible on dashboard",
+    description: "Manage Periods link visible on dashboard",
     verification: {
       type: "link_visible",
-      selector: 'a:has-text("Evaluation Periods")',
+      selector: 'a:has-text("Manage Periods")',
       onPage: "/alliances/{allianceId}",
     },
     expected: { OWNER: true, ADMIN: true, LEADER: true, VIEWER: false },
   },
   {
     feature: "dashboard.team_link",
-    description: "Leadership Team link visible on dashboard",
+    description: "Manage Team link visible on dashboard",
     verification: {
       type: "link_visible",
-      selector: 'a:has-text("Leadership Team")',
+      selector: 'a:has-text("Manage Team")',
       onPage: "/alliances/{allianceId}",
     },
     expected: { OWNER: true, ADMIN: true, LEADER: false, VIEWER: false },
   },
   {
     feature: "dashboard.record_link",
-    description: "Record Metrics link visible on dashboard (for Leaders)",
+    description: "Record Now link visible on dashboard (for users without period config)",
     verification: {
       type: "link_visible",
-      selector: 'a:has-text("Record Metrics")',
+      selector: 'a:has-text("Record Now")',
       onPage: "/alliances/{allianceId}",
     },
-    expected: { OWNER: false, ADMIN: false, LEADER: true, VIEWER: false },
+    // Only visible for users with canImportMetrics but NOT canConfigurePeriods
+    expected: { OWNER: false, ADMIN: false, LEADER: false, VIEWER: false },
   },
 
   // ============================================================
@@ -209,11 +210,11 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
     expected: { OWNER: true, ADMIN: true, LEADER: true, VIEWER: true },
   },
   {
-    feature: "notes.add_form",
-    description: "Add Note form visible on member page",
+    feature: "notes.add_button",
+    description: "Add Leadership Note button visible on member page",
     verification: {
-      type: "form_functional",
-      selector: 'form:has(textarea[name="content"])',
+      type: "button_visible",
+      selector: 'button:has-text("Add Leadership Note")',
       onPage: "/alliances/{allianceId}/members/{memberId}",
     },
     expected: { OWNER: true, ADMIN: true, LEADER: true, VIEWER: false },
@@ -233,10 +234,10 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
   },
   {
     feature: "invitations.send_form",
-    description: "Send Invitation form functional",
+    description: "Invite Collaborator form visible",
     verification: {
       type: "form_functional",
-      selector: 'form:has(input[name="email"])',
+      selector: 'form:has(input[placeholder*="Search"])',
       onPage: "/alliances/{allianceId}/settings/invitations",
     },
     expected: { OWNER: true, ADMIN: true, LEADER: false, VIEWER: false },

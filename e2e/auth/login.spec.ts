@@ -11,7 +11,8 @@ test.describe("Login", () => {
   test("displays login form", async ({ page }) => {
     await page.goto("/login");
 
-    await expect(page.getByRole("heading", { name: /sign in/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /alliance command center/i })).toBeVisible();
+    await expect(page.getByText(/sign in to continue/i)).toBeVisible();
     await expect(page.getByLabel(/email/i)).toBeVisible();
     await expect(page.getByLabel(/password/i)).toBeVisible();
     await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
@@ -83,11 +84,11 @@ test.describe("Login", () => {
     await page.waitForURL(/\/(app|alliances)/);
   });
 
-  test("shows links to registration and invitation", async ({ page }) => {
+  test("shows links to redeem and invitation", async ({ page }) => {
     await page.goto("/login");
 
-    // Should show links to join beta and accept invitation
-    await expect(page.getByRole("link", { name: /beta/i })).toBeVisible();
+    // Should show links to redeem beta code and enter invitation code
+    await expect(page.getByRole("link", { name: /redeem/i })).toBeVisible();
     await expect(
       page.getByRole("link", { name: /invitation/i })
     ).toBeVisible();

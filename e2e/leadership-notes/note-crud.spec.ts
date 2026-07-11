@@ -35,9 +35,13 @@ test.describe("Leadership Notes CRUD", () => {
   test("can create note with Positive type", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}/members/${testMemberId}`);
 
-    await page.getByRole("combobox", { name: /type/i }).selectOption("POSITIVE");
-    await page.getByLabel(/content|note/i).fill("Great contribution to VS event!");
-    await page.getByRole("button", { name: /add|create|save/i }).click();
+    // Click to reveal the note form
+    await page.getByRole("button", { name: /add leadership note/i }).click();
+
+    // Fill the form
+    await page.getByLabel(/note type/i).selectOption("POSITIVE");
+    await page.getByLabel(/note content/i).fill("Great contribution to VS event!");
+    await page.getByRole("button", { name: /save note/i }).click();
 
     await expect(page.getByText(/great contribution/i)).toBeVisible();
   });
@@ -45,9 +49,13 @@ test.describe("Leadership Notes CRUD", () => {
   test("can create note with Warning type", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}/members/${testMemberId}`);
 
-    await page.getByRole("combobox", { name: /type/i }).selectOption("WARNING");
-    await page.getByLabel(/content|note/i).fill("Missed scheduled attack window");
-    await page.getByRole("button", { name: /add|create|save/i }).click();
+    // Click to reveal the note form
+    await page.getByRole("button", { name: /add leadership note/i }).click();
+
+    // Fill the form
+    await page.getByLabel(/note type/i).selectOption("WARNING");
+    await page.getByLabel(/note content/i).fill("Missed scheduled attack window");
+    await page.getByRole("button", { name: /save note/i }).click();
 
     await expect(page.getByText(/missed scheduled/i)).toBeVisible();
   });
@@ -55,9 +63,13 @@ test.describe("Leadership Notes CRUD", () => {
   test("can create note with Observation type", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}/members/${testMemberId}`);
 
-    await page.getByRole("combobox", { name: /type/i }).selectOption("OBSERVATION");
-    await page.getByLabel(/content|note/i).fill("Showing leadership potential");
-    await page.getByRole("button", { name: /add|create|save/i }).click();
+    // Click to reveal the note form
+    await page.getByRole("button", { name: /add leadership note/i }).click();
+
+    // Fill the form
+    await page.getByLabel(/note type/i).selectOption("OBSERVATION");
+    await page.getByLabel(/note content/i).fill("Showing leadership potential");
+    await page.getByRole("button", { name: /save note/i }).click();
 
     await expect(page.getByText(/leadership potential/i)).toBeVisible();
   });
@@ -65,9 +77,12 @@ test.describe("Leadership Notes CRUD", () => {
   test("shows validation error for empty content", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}/members/${testMemberId}`);
 
-    await page.getByRole("button", { name: /add|create|save/i }).click();
+    // Click to reveal the note form
+    await page.getByRole("button", { name: /add leadership note/i }).click();
 
-    await expect(page.getByText(/required|cannot be empty/i)).toBeVisible();
+    // Try to submit without content - HTML5 validation should kick in
+    const contentInput = page.getByLabel(/note content/i);
+    await expect(contentInput).toHaveAttribute("required", "");
   });
 
   test("author can edit their note", async ({ page }) => {
