@@ -31,7 +31,7 @@
   --success: #22C55E;
   --success-light: #4ADE80; /* Lighter shade for badges */
   --warning: #F59E0B;
-  --warning-dark: #D97706; /* Darker shade for button backgrounds (WCAG AA) */
+  --warning-dark: #92400E; /* Darker shade for button backgrounds (WCAG AA 5.5:1 with white) */
   --warning-light: #FBBF24; /* Lighter shade for badges */
   --danger: #EF4444;
   --danger-dark: #DC2626; /* Darker shade for button backgrounds (WCAG AA) */
