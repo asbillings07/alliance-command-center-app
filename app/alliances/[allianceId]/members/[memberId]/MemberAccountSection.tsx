@@ -74,9 +74,9 @@ export function MemberAccountSection(props: MemberAccountSectionProps) {
       <Card.Body>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-surface-tertiary rounded-full flex items-center justify-center">
+            <div className="w-10 h-10 bg-surface-secondary rounded-full flex items-center justify-center">
               <svg
-                className="w-5 h-5 text-tertiary"
+                className="w-5 h-5 text-text-muted"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"

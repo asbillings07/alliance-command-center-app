@@ -32,7 +32,7 @@ export default async function CreateAlliancePage() {
       subtitle="Set up your alliance workspace to start managing your leadership team."
       icon={
         <svg
-          className="w-8 h-8 text-accent-primary"
+          className="w-8 h-8 text-primary"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"

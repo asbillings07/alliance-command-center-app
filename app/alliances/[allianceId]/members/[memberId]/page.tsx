@@ -182,18 +182,18 @@ export default async function MemberPage({ params }: Params) {
                                     {allianceMember.role}
                                 </Badge>
                             )}
-                            <div className="flex gap-6 mt-4 text-sm text-secondary">
+                            <div className="flex gap-6 mt-4 text-sm text-text-secondary">
                                 <div>
-                                    <span className="text-tertiary">THP:</span>{" "}
+                                    <span className="text-text-muted">THP:</span>{" "}
                                     {allianceMember.thp == null ? "—" : formatPower(allianceMember.thp)}
                                 </div>
                                 <div>
-                                    <span className="text-tertiary">Top Squad:</span>{" "}
+                                    <span className="text-text-muted">Top Squad:</span>{" "}
                                     {allianceMember.squadPower == null ? "—" : formatPower(allianceMember.squadPower)}
                                 </div>
                             </div>
                             {allianceMember.joinedAt && (
-                                <div className="text-sm text-tertiary mt-2">
+                                <div className="text-sm text-text-muted mt-2">
                                     Joined {allianceMember.joinedAt.toLocaleDateString()}
                                 </div>
                             )}
@@ -250,7 +250,7 @@ export default async function MemberPage({ params }: Params) {
                             />
                         ))
                     ) : (
-                        <div className="text-sm text-tertiary text-center py-4">
+                        <div className="text-sm text-text-muted text-center py-4">
                             No leadership notes yet.
                         </div>
                     )}

@@ -119,7 +119,7 @@ export function PeriodMetricForm({
                 name="metricId"
                 id="metricId"
                 disabled={isPending}
-                className="w-full rounded-md border border-border bg-surface-secondary p-2 text-text-primary disabled:bg-surface-tertiary disabled:text-text-disabled"
+                className="w-full rounded-md border border-border bg-surface-secondary p-2 text-text-primary disabled:bg-surface-secondary disabled:text-text-disabled"
                 required
               >
                 <option value="">Select a metric</option>
@@ -154,7 +154,7 @@ export function PeriodMetricForm({
               max="100"
               defaultValue={weight}
               disabled={isPending}
-              className="w-full rounded-md border border-border bg-surface-secondary p-2 text-text-primary disabled:bg-surface-tertiary disabled:text-text-disabled"
+              className="w-full rounded-md border border-border bg-surface-secondary p-2 text-text-primary disabled:bg-surface-secondary disabled:text-text-disabled"
               required
             />
           </div>

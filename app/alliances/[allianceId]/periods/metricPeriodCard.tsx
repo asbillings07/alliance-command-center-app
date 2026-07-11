@@ -80,7 +80,7 @@ export function MetricPeriodCard({
           <button
             type="button"
             onClick={() => setCardState("form")}
-            className="w-full rounded-md border-2 border-dashed border-primary p-4 text-secondary hover:border-accent-primary hover:text-accent-primary cursor-pointer transition-colors"
+            className="w-full rounded-md border-2 border-dashed border-border p-4 text-text-secondary hover:border-primary hover:text-primary cursor-pointer transition-colors"
           >
             + Create Period
           </button>
@@ -134,7 +134,7 @@ export function MetricPeriodCard({
                 </Badge>
               )}
             </div>
-            <div className="text-sm text-secondary flex gap-4 mb-2">
+            <div className="text-sm text-text-secondary flex gap-4 mb-2">
               <span>Start: {formatDate(period.startsAt)}</span>
               <span>End: {formatDate(period.endsAt)}</span>
             </div>

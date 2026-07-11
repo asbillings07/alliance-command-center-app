@@ -11,12 +11,12 @@ export default async function HomePage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface-primary">
+    <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="max-w-md w-full px-4">
         <div className="text-center mb-10">
-          <div className="w-20 h-20 mx-auto mb-6 bg-accent-primary/20 rounded-full flex items-center justify-center">
+          <div className="w-20 h-20 mx-auto mb-6 bg-primary/20 rounded-full flex items-center justify-center">
             <svg
-              className="w-10 h-10 text-accent-primary"
+              className="w-10 h-10 text-primary"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -32,7 +32,7 @@ export default async function HomePage() {
           <h1 className="text-3xl font-bold text-primary mb-3">
             Alliance Command Center
           </h1>
-          <p className="text-secondary text-lg">
+          <p className="text-text-secondary text-lg">
             Leadership tools for Last War alliances.
           </p>
         </div>
@@ -44,10 +44,10 @@ export default async function HomePage() {
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-primary" />
+              <div className="w-full border-t border-border" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-surface-primary text-tertiary">
+              <span className="px-2 bg-background text-text-muted">
                 Have a beta code?
               </span>
             </div>
@@ -59,10 +59,10 @@ export default async function HomePage() {
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-primary" />
+              <div className="w-full border-t border-border" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-surface-primary text-tertiary">
+              <span className="px-2 bg-background text-text-muted">
                 Want access?
               </span>
             </div>
@@ -70,13 +70,13 @@ export default async function HomePage() {
 
           <Link
             href="/request-access"
-            className="block w-full px-4 py-3 bg-surface-secondary text-secondary text-center font-medium rounded-md border border-primary hover:border-accent-primary hover:text-primary transition-colors"
+            className="block w-full px-4 py-3 bg-surface-secondary text-text-secondary text-center font-medium rounded-md border border-border hover:border-primary hover:text-primary transition-colors"
           >
             Request Beta Access
           </Link>
         </div>
 
-        <p className="mt-8 text-center text-xs text-tertiary">
+        <p className="mt-8 text-center text-xs text-text-muted">
           Alliance Command Center is currently in private beta.
         </p>
       </div>

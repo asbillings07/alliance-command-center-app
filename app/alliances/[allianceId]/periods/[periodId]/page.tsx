@@ -67,19 +67,17 @@ export default async function PeriodPage({ params }: Params) {
         >
             <div className="flex flex-col gap-6">
                 <Card>
-                    <Card.Header>
-                        <h2 className="text-lg font-semibold text-primary">Overview</h2>
-                    </Card.Header>
+                    <Card.Header>Overview</Card.Header>
                     <Card.Body>
                         <div className="grid grid-cols-2 gap-4 text-sm">
                             <div>
-                                <span className="text-secondary">Start Date:</span>
+                                <span className="text-text-secondary">Start Date:</span>
                                 <span className="ml-2 text-primary">
                                     {period.startsAt?.toLocaleDateString() || 'Not Set'}
                                 </span>
                             </div>
                             <div>
-                                <span className="text-secondary">End Date:</span>
+                                <span className="text-text-secondary">End Date:</span>
                                 <span className="ml-2 text-primary">
                                     {period.endsAt?.toLocaleDateString() || 'Not Set'}
                                 </span>

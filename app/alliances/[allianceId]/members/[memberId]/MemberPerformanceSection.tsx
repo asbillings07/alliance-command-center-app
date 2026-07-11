@@ -31,7 +31,7 @@ function MetricCard({ metric }: { metric: CurrentMetricViewModel }) {
     return (
         <Card>
             <Card.Body className="p-4">
-                <div className="text-sm font-medium text-secondary mb-1">
+                <div className="text-sm font-medium text-text-secondary mb-1">
                     {metric.metricName}
                 </div>
                 {hasCurrent ? (
@@ -40,13 +40,13 @@ function MetricCard({ metric }: { metric: CurrentMetricViewModel }) {
                             {formatPower(metric.current!.value)}
                         </div>
                         {hasDelta && (
-                            <div className="text-sm text-tertiary mt-1">
+                            <div className="text-sm text-text-muted mt-1">
                                 {formatDelta(metric.delta!)} since last entry
                             </div>
                         )}
                     </>
                 ) : (
-                    <div className="text-lg text-tertiary">
+                    <div className="text-lg text-text-muted">
                         Not recorded
                     </div>
                 )}

@@ -74,7 +74,7 @@ export function MetricCard({ allianceId, mode, metric }: MetricCardProps) {
           <button
             type="button"
             onClick={() => setCardState("form")}
-            className="w-full rounded-md border-2 border-dashed border-primary p-4 text-secondary hover:border-accent-primary hover:text-accent-primary cursor-pointer transition-colors"
+            className="w-full rounded-md border-2 border-dashed border-border p-4 text-text-secondary hover:border-primary hover:text-primary cursor-pointer transition-colors"
           >
             + Create Metric
           </button>
@@ -134,7 +134,7 @@ export function MetricCard({ allianceId, mode, metric }: MetricCardProps) {
               )}
             </div>
             {metric.description && (
-              <p className="text-secondary">{metric.description}</p>
+              <p className="text-text-secondary">{metric.description}</p>
             )}
           </div>
           <div className="flex items-center gap-2">

@@ -47,7 +47,7 @@ export default async function AlliancePage({ params }: Params) {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-primary">Your Role</h2>
-                <p className="text-secondary mt-1">Access level for this alliance</p>
+                <p className="text-text-secondary mt-1">Access level for this alliance</p>
               </div>
               <Badge variant="info">{auth.membership.role}</Badge>
             </div>
@@ -60,7 +60,7 @@ export default async function AlliancePage({ params }: Params) {
             <Card>
               <Card.Body>
                 <h3 className="font-medium text-primary mb-2">Members</h3>
-                <p className="text-sm text-secondary mb-4">
+                <p className="text-sm text-text-secondary mb-4">
                   Manage your alliance roster and member data.
                 </p>
                 <Button href={`/alliances/${allianceId}/members`} variant="primary" size="sm">
@@ -73,7 +73,7 @@ export default async function AlliancePage({ params }: Params) {
               <Card>
                 <Card.Body>
                   <h3 className="font-medium text-primary mb-2">Metrics Library</h3>
-                  <p className="text-sm text-secondary mb-4">
+                  <p className="text-sm text-text-secondary mb-4">
                     Define the metrics you track for your alliance.
                   </p>
                   <Button href={`/alliances/${allianceId}/metrics`} variant="primary" size="sm">
@@ -87,7 +87,7 @@ export default async function AlliancePage({ params }: Params) {
               <Card>
                 <Card.Body>
                   <h3 className="font-medium text-primary mb-2">Evaluation Periods</h3>
-                  <p className="text-sm text-secondary mb-4">
+                  <p className="text-sm text-text-secondary mb-4">
                     Create and manage evaluation periods for tracking.
                   </p>
                   <Button href={`/alliances/${allianceId}/periods`} variant="primary" size="sm">
@@ -101,7 +101,7 @@ export default async function AlliancePage({ params }: Params) {
               <Card>
                 <Card.Body>
                   <h3 className="font-medium text-primary mb-2">Record Metrics</h3>
-                  <p className="text-sm text-secondary mb-4">
+                  <p className="text-sm text-text-secondary mb-4">
                     {activePeriod 
                       ? `Record data for ${activePeriod.name}.`
                       : "No active evaluation period available."
@@ -116,7 +116,7 @@ export default async function AlliancePage({ params }: Params) {
                       Record Now
                     </Button>
                   ) : (
-                    <span className="text-sm text-tertiary">
+                    <span className="text-sm text-text-muted">
                       Waiting for period activation
                     </span>
                   )}
@@ -128,7 +128,7 @@ export default async function AlliancePage({ params }: Params) {
               <Card>
                 <Card.Body>
                   <h3 className="font-medium text-primary mb-2">Leadership Team</h3>
-                  <p className="text-sm text-secondary mb-4">
+                  <p className="text-sm text-text-secondary mb-4">
                     Invite collaborators to help manage your alliance.
                   </p>
                   <Button href={`/alliances/${allianceId}/settings/invitations`} variant="primary" size="sm">

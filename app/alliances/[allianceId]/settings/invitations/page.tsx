@@ -62,7 +62,7 @@ export default async function InvitationsPage({ params }: PageProps) {
     >
       <div className="flex flex-col gap-8">
         <section>
-          <h2 className="text-sm font-medium text-secondary uppercase tracking-wide mb-3">
+          <h2 className="text-sm font-medium text-text-secondary uppercase tracking-wide mb-3">
             Invite Collaborator
           </h2>
           <Card>
@@ -73,7 +73,7 @@ export default async function InvitationsPage({ params }: PageProps) {
         </section>
 
         <section>
-          <h2 className="text-sm font-medium text-secondary uppercase tracking-wide mb-3">
+          <h2 className="text-sm font-medium text-text-secondary uppercase tracking-wide mb-3">
             Pending Invitations
           </h2>
           <Card>

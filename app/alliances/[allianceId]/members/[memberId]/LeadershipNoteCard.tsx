@@ -91,10 +91,10 @@ export function LeadershipNoteCard({ allianceId, memberId, mode, note }: Leaders
                             <Badge variant={typeInfo.variant} size="sm">
                                 {typeInfo.label}
                             </Badge>
-                            <span className="text-sm text-secondary">
+                            <span className="text-sm text-text-secondary">
                                 by {note.authorName}
                             </span>
-                            <span className="text-sm text-tertiary">
+                            <span className="text-sm text-text-muted">
                                 • {note.createdAt}
                             </span>
                         </div>

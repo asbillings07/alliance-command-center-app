@@ -133,18 +133,18 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 <Card>
                     <div className="overflow-x-auto">
                         <table className="w-full">
-                            <thead className="bg-surface-secondary border-b border-primary">
+                            <thead className="bg-surface-secondary border-b border-border">
                                 <tr>
-                                    <th className="text-left px-4 py-3 text-sm font-medium text-secondary">
+                                    <th className="text-left px-4 py-3 text-sm font-medium text-text-secondary">
                                         Player
                                     </th>
-                                    <th className="text-right px-4 py-3 text-sm font-medium text-secondary">
+                                    <th className="text-right px-4 py-3 text-sm font-medium text-text-secondary">
                                         THP
                                     </th>
-                                    <th className="text-right px-4 py-3 text-sm font-medium text-secondary">
+                                    <th className="text-right px-4 py-3 text-sm font-medium text-text-secondary">
                                         Squad Power
                                     </th>
-                                    <th className="text-left px-4 py-3 text-sm font-medium text-secondary">
+                                    <th className="text-left px-4 py-3 text-sm font-medium text-text-secondary">
                                         Role
                                     </th>
                                 </tr>
@@ -153,12 +153,12 @@ export default async function MembersPage({ params, searchParams }: Params) {
                                 {allianceMembers.map((member) => (
                                     <tr
                                         key={member.id}
-                                        className="border-b border-secondary hover:bg-surface-secondary transition-colors"
+                                        className="border-b border-border hover:bg-surface-secondary transition-colors"
                                     >
                                         <td className="px-4 py-3">
                                             <Link
                                                 href={`/alliances/${allianceId}/members/${member.id}`}
-                                                className="font-medium text-accent-primary hover:text-accent-hover"
+                                                className="font-medium text-primary hover:text-primary-light"
                                             >
                                                 {member.playerName}
                                             </Link>
@@ -168,13 +168,13 @@ export default async function MembersPage({ params, searchParams }: Params) {
                                                 </Badge>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-right text-secondary">
+                                        <td className="px-4 py-3 text-right text-text-secondary">
                                             {member.thp == null ? "—" : formatPower(member.thp)}
                                         </td>
-                                        <td className="px-4 py-3 text-right text-secondary">
+                                        <td className="px-4 py-3 text-right text-text-secondary">
                                             {member.squadPower == null ? "—" : formatPower(member.squadPower)}
                                         </td>
-                                        <td className="px-4 py-3 text-secondary">
+                                        <td className="px-4 py-3 text-text-secondary">
                                             {member.role || "—"}
                                         </td>
                                     </tr>

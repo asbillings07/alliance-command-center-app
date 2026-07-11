@@ -19,41 +19,21 @@ const paddingClasses = {
 };
 
 /**
- * Card Component
- *
- * A consistent content container following the design system.
- * Uses design tokens for surface color, border, and radius.
- *
- * @example
- * <Card>
- *   <Card.Header>Section Title</Card.Header>
- *   <Card.Body>Content here</Card.Body>
- *   <Card.Footer>Actions</Card.Footer>
- * </Card>
- */
-export function Card({ children, className = "", padding = "md" }: CardProps) {
-  return (
-    <div
-      className={`bg-surface border border-border rounded-lg ${paddingClasses[padding]} ${className}`}
-    >
-      {children}
-    </div>
-  );
-}
-
-/**
  * Card.Header - Section title area
  */
 export type CardHeaderProps = {
   children: ReactNode;
   /** Optional action element (button, link) */
   action?: ReactNode;
+  /** Render as div instead of h2 (use when content already contains heading) */
+  as?: "h2" | "div";
 };
 
-function CardHeader({ children, action }: CardHeaderProps) {
+function CardHeader({ children, action, as = "h2" }: CardHeaderProps) {
+  const Title = as;
   return (
     <div className="flex items-center justify-between mb-4">
-      <h2 className="text-lg font-semibold text-text-primary">{children}</h2>
+      <Title className="text-lg font-semibold text-text-primary">{children}</Title>
       {action && <div>{action}</div>}
     </div>
   );
@@ -97,6 +77,31 @@ function CardFooter({ children, align = "right" }: CardFooterProps) {
   );
 }
 
-Card.Header = CardHeader;
-Card.Body = CardBody;
-Card.Footer = CardFooter;
+/**
+ * Card Component
+ *
+ * A consistent content container following the design system.
+ * Uses design tokens for surface color, border, and radius.
+ *
+ * @example
+ * <Card>
+ *   <Card.Header>Section Title</Card.Header>
+ *   <Card.Body>Content here</Card.Body>
+ *   <Card.Footer>Actions</Card.Footer>
+ * </Card>
+ */
+function CardBase({ children, className = "", padding = "md" }: CardProps) {
+  return (
+    <div
+      className={`bg-surface border border-border rounded-lg ${paddingClasses[padding]} ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+export const Card = Object.assign(CardBase, {
+  Header: CardHeader,
+  Body: CardBody,
+  Footer: CardFooter,
+});
