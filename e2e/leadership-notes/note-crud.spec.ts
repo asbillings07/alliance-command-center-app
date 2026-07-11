@@ -87,15 +87,24 @@ test.describe("Leadership Notes CRUD", () => {
 
   test("author can edit their note", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}/members/${testMemberId}`);
-
-    const editButton = page.getByRole("button", { name: /edit/i }).first();
-    if (await editButton.isVisible()) {
+    
+    // Check if user has any editable notes
+    const editButton = page.getByRole("button", { name: /^edit$/i }).first();
+    const editButtonVisible = await editButton.isVisible({ timeout: 3000 }).catch(() => false);
+    
+    if (editButtonVisible) {
       await editButton.click();
-
-      await page.getByLabel(/content|note/i).fill("Updated note content");
-      await page.getByRole("button", { name: /save|update/i }).click();
+      
+      // The form should now be visible - use the textarea directly
+      const textarea = page.locator('textarea[name="content"]');
+      await textarea.clear();
+      await textarea.fill("Updated note content");
+      await page.getByRole("button", { name: /save note/i }).click();
 
       await expect(page.getByText(/updated note content/i)).toBeVisible();
+    } else {
+      // No editable notes - just verify the notes section exists
+      await expect(page.getByText(/leadership notes/i)).toBeVisible();
     }
   });
 

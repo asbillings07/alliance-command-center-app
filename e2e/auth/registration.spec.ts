@@ -11,10 +11,11 @@ import { test, expect } from "../shared/fixtures";
 test.describe("Registration", () => {
   test("cannot access registration without invitation", async ({ page }) => {
     await page.goto("/register");
+    await page.waitForLoadState("networkidle");
 
-    // Should show invitation required message
+    // Should show "Invitation Required" heading
     await expect(
-      page.getByText(/invitation|join the beta|accept an invitation/i)
+      page.getByRole("heading", { name: /invitation required/i })
     ).toBeVisible();
   });
 

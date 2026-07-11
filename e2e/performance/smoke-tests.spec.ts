@@ -113,7 +113,7 @@ test.describe("Performance Smoke Tests", () => {
     // Auth pages should be very fast
     expect(loadTime).toBeLessThan(3000);
 
-    await expect(page.getByRole("heading", { name: /sign in/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /alliance command center/i })).toBeVisible();
   });
 });
 

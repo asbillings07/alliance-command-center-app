@@ -29,8 +29,8 @@ test.describe("Leadership Notes Permissions", () => {
 
     await page.goto(`/alliances/${testAllianceId}/members/${testMemberId}`);
 
-    // Viewer should NOT see the add note form
-    await expect(page.getByLabel(/content|note/i)).not.toBeVisible();
+    // Viewer should NOT see the add note button
+    await expect(page.getByRole("button", { name: /add leadership note/i })).not.toBeVisible();
   });
 
   test("Leaders can add notes", async ({ page }) => {
@@ -50,8 +50,8 @@ test.describe("Leadership Notes Permissions", () => {
 
     await page.goto(`/alliances/${testAllianceId}/members/${testMemberId}`);
 
-    // Leader SHOULD see the add note form
-    await expect(page.getByLabel(/content|note/i)).toBeVisible();
+    // Leader SHOULD see the add note button
+    await expect(page.getByRole("button", { name: /add leadership note/i })).toBeVisible();
   });
 
   test("Only authors can edit their own notes", async ({ page }) => {

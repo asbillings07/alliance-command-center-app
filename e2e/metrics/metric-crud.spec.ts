@@ -69,15 +69,14 @@ test.describe("Metrics CRUD", () => {
     }
   });
 
-  test("shows empty state when no metrics", async ({ page }) => {
-    // This depends on test data - if no metrics, should show empty state
+  test("metrics page loads successfully", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}/metrics`);
 
-    // Either metrics exist or empty state is shown
-    const hasMetrics = await page.locator('[data-testid="metric-card"]').count() > 0;
-    const hasEmptyState = await page.getByText(/no metrics|create your first/i).isVisible();
-
-    expect(hasMetrics || hasEmptyState).toBe(true);
+    // Should show the Metrics Library heading
+    await expect(page.getByRole("heading", { name: /metrics library/i })).toBeVisible();
+    
+    // Should show either Create Metric button or existing metrics
+    await expect(page.getByRole("button", { name: /create metric/i })).toBeVisible();
   });
 });
 

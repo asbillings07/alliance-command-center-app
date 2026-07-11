@@ -33,8 +33,10 @@ test.describe("Dashboard Navigation", () => {
   test("shows alliance name", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}`);
 
-    // Alliance name should be visible somewhere on the page
-    await expect(page.getByText(/alliance/i)).toBeVisible();
+    // Alliance name should be visible in the h1 heading
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    // The dashboard should show the role badge
+    await expect(page.getByText(/your role/i)).toBeVisible();
   });
 
   test("Members link works", async ({ page }) => {

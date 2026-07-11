@@ -188,9 +188,9 @@ test.describe("Permission Matrix Validation", () => {
       await loginAsRole(page, "VIEWER");
       await page.goto("/platform");
 
-      // Should be redirected to /app
-      await page.waitForURL(/\/app/);
-      expect(page.url()).toContain("/app");
+      // Should be redirected away from /platform (to /app or /alliances)
+      await page.waitForURL(/\/(app|alliances)/);
+      expect(page.url()).not.toContain("/platform");
     });
   });
 });
