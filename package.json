@@ -16,7 +16,7 @@
     "test:run": "vitest run",
     "test:unit": "vitest run --dir app/src",
     "test:integration": "vitest run --dir app/src --testNamePattern integration",
-    "test:e2e": "tsx ./node_modules/@playwright/test/cli.js test",
+    "test:e2e": "tsx ./node_modules/@playwright/test/cli.js test --grep-invert @visual",
     "test:a11y": "tsx ./node_modules/@playwright/test/cli.js test --grep @a11y",
     "test:visual": "tsx ./node_modules/@playwright/test/cli.js test --grep @visual",
     "test:ci:quick": "npm run typecheck && npm run lint && npm run test:unit",
