@@ -45,18 +45,18 @@ test.describe("Viewer Journey", () => {
 
     await page.goto(`/alliances/${testAllianceId}`);
 
-    // Viewer should NOT see these links
+    // Viewer should NOT see these dashboard action links
     await expect(
-      page.locator('a:has-text("Metrics Library")')
+      page.locator('a:has-text("Manage Metrics")')
     ).not.toBeVisible();
     await expect(
-      page.locator('a:has-text("Evaluation Periods")')
+      page.locator('a:has-text("Manage Periods")')
     ).not.toBeVisible();
     await expect(
-      page.locator('a:has-text("Leadership Team")')
+      page.locator('a:has-text("Manage Team")')
     ).not.toBeVisible();
     await expect(
-      page.locator('a:has-text("Record Metrics")')
+      page.locator('a:has-text("Record Now")')
     ).not.toBeVisible();
   });
 

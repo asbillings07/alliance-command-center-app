@@ -247,14 +247,17 @@ jobs:
           CI: true
 
   # Quality Gate: Visual Regression
-  # NOTE: Visual regression tests require baseline snapshots for Linux.
-  # On first run, snapshots are generated and uploaded as artifacts.
-  # Download them and commit to e2e/design-system/visual-regression.spec.ts-snapshots/
+  # NOTE: This job COMPARES against committed Linux baselines; it never rewrites
+  # them (updating baselines is an explicit, manual action — run
+  # `npm run test:visual -- --update-snapshots` locally on Linux and commit the
+  # resulting *-chromium-linux.png files). Until those baselines are committed,
+  # the job stays non-blocking via continue-on-error and its diffs are uploaded
+  # as artifacts for inspection.
   visual-regression:
     name: Visual Regression
     runs-on: ubuntu-latest
     needs: [build]
-    continue-on-error: true  # Don't block CI until baseline snapshots are committed
+    continue-on-error: true  # Don't block CI until Linux baseline snapshots are committed
     services:
       postgres:
         image: postgres:15
@@ -297,16 +300,16 @@ jobs:
         run: npm run build
       
       - name: Run Visual Regression Tests
-        run: npm run test:visual -- --update-snapshots
+        run: npm run test:visual
         env:
           CI: true
       
-      - name: Upload Visual Snapshots
+      - name: Upload Visual Diffs
         uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
-          name: visual-snapshots
+          name: visual-diffs
           path: |
-            e2e/**/*-snapshots/
             test-results/
+            playwright-report/
           retention-days: 30

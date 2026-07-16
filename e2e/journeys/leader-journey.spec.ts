@@ -41,46 +41,42 @@ test.describe("Leader Journey", () => {
     await expect(page).toHaveURL(/\/alliances\//);
   });
 
-  test("dashboard shows Record Metrics link (not Periods)", async ({
+  test("dashboard shows Manage Periods link (not Record Metrics)", async ({
     page,
   }) => {
     test.skip(!testAllianceId, "Requires alliance ID");
 
     await page.goto(`/alliances/${testAllianceId}`);
 
-    // Leader should see Record Metrics, not Evaluation Periods
+    // Leaders can configure periods, so they see the "Manage Periods" action
     await expect(
-      page.locator('a:has-text("Evaluation Periods")')
+      page.locator('a:has-text("Manage Periods")')
+    ).toBeVisible();
+
+    // The "Record Now" shortcut is only for roles that cannot configure
+    // periods, so it should not be shown to leaders.
+    await expect(
+      page.locator('a:has-text("Record Now")')
     ).not.toBeVisible();
-
-    // Should see Record Metrics if there's an active period
-    // Or a message about no active period
-    const recordLink = page.locator('a:has-text("Record Metrics")');
-    const noPeriodMessage = page.locator('text="No active evaluation period"');
-
-    const hasRecordLink = await recordLink.isVisible();
-    const hasNoPeriodMessage = await noPeriodMessage.isVisible();
-
-    expect(hasRecordLink || hasNoPeriodMessage).toBe(true);
   });
 
   test("cannot access Metrics Library directly", async ({ page }) => {
     test.skip(!testAllianceId, "Requires alliance ID");
 
-    // Leader should not see Metrics Library link on dashboard
+    // Leader should not see the Metrics Library action on the dashboard
     await page.goto(`/alliances/${testAllianceId}`);
     await expect(
-      page.locator('a:has-text("Metrics Library")')
+      page.locator('a:has-text("Manage Metrics")')
     ).not.toBeVisible();
   });
 
   test("cannot access Leadership Team page", async ({ page }) => {
     test.skip(!testAllianceId, "Requires alliance ID");
 
-    // Leader should not see Leadership Team link
+    // Leader should not see the Leadership Team action
     await page.goto(`/alliances/${testAllianceId}`);
     await expect(
-      page.locator('a:has-text("Leadership Team")')
+      page.locator('a:has-text("Manage Team")')
     ).not.toBeVisible();
 
     // Direct navigation should redirect or show unauthorized

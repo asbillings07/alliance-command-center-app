@@ -160,12 +160,12 @@ test.describe("Owner Journey", () => {
 
     await page.goto(`/alliances/${allianceId}`);
 
-    // Owner should see all navigation links
-    await expect(page.locator('a:has-text("Metrics Library")')).toBeVisible();
+    // Owner should see all dashboard action links
+    await expect(page.locator('a:has-text("Manage Metrics")')).toBeVisible();
     await expect(
-      page.locator('a:has-text("Evaluation Periods")')
+      page.locator('a:has-text("Manage Periods")')
     ).toBeVisible();
-    await expect(page.locator('a:has-text("Leadership Team")')).toBeVisible();
+    await expect(page.locator('a:has-text("Manage Team")')).toBeVisible();
   });
 
   test("can access leadership team and invite collaborators", async ({

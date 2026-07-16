@@ -85,7 +85,7 @@ test.describe("Dashboard Navigation", () => {
 test.describe("Dashboard Role-Based Navigation", () => {
   const testAllianceId = process.env.TEST_ALLIANCE_ID;
 
-  test("Viewer does NOT see Metrics Library link", async ({ page }) => {
+  test("Viewer does NOT see Manage Metrics link", async ({ page }) => {
     test.skip(
       !testAllianceId ||
         !process.env.TEST_VIEWER_EMAIL ||
@@ -102,11 +102,11 @@ test.describe("Dashboard Role-Based Navigation", () => {
     await page.goto(`/alliances/${testAllianceId}`);
 
     await expect(
-      page.getByRole("link", { name: /metrics library/i })
+      page.getByRole("link", { name: /manage metrics/i })
     ).not.toBeVisible();
   });
 
-  test("Viewer does NOT see Evaluation Periods link", async ({ page }) => {
+  test("Viewer does NOT see Manage Periods link", async ({ page }) => {
     test.skip(
       !testAllianceId ||
         !process.env.TEST_VIEWER_EMAIL ||
@@ -123,11 +123,11 @@ test.describe("Dashboard Role-Based Navigation", () => {
     await page.goto(`/alliances/${testAllianceId}`);
 
     await expect(
-      page.getByRole("link", { name: /evaluation periods/i })
+      page.getByRole("link", { name: /manage periods/i })
     ).not.toBeVisible();
   });
 
-  test("Viewer does NOT see Leadership Team link", async ({ page }) => {
+  test("Viewer does NOT see Manage Team link", async ({ page }) => {
     test.skip(
       !testAllianceId ||
         !process.env.TEST_VIEWER_EMAIL ||
@@ -144,7 +144,7 @@ test.describe("Dashboard Role-Based Navigation", () => {
     await page.goto(`/alliances/${testAllianceId}`);
 
     await expect(
-      page.getByRole("link", { name: /leadership team/i })
+      page.getByRole("link", { name: /manage team/i })
     ).not.toBeVisible();
   });
 });
