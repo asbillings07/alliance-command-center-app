@@ -2,6 +2,7 @@ import { requirePlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import { PlatformNav } from "./components/PlatformNav";
 import { PlatformSearch } from "./components/PlatformSearch";
 import { PlatformFooter } from "./components/PlatformFooter";
+import { MobileNavWrapper } from "./components/MobileNavWrapper";
 
 export const metadata = {
   title: "Platform Operations - Alliance Command Center",
@@ -21,8 +22,8 @@ export default async function PlatformLayout({
       <header className="sticky top-0 z-30 bg-surface border-b border-border">
         <div className="flex items-center justify-between px-4 py-3 lg:px-6">
           <div className="flex items-center gap-3">
-            {/* Mobile menu button placeholder - client component will handle */}
-            <div className="lg:hidden w-8" />
+            {/* Mobile menu button */}
+            <MobileNavWrapper />
             <h1 className="text-lg font-semibold text-text-primary">
               Platform Operations
             </h1>
