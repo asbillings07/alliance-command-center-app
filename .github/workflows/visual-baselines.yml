@@ -1,0 +1,76 @@
+name: Update Visual Baselines
+
+# Manually-triggered workflow to (re)generate the Linux visual-regression
+# baselines that the CI "Visual Regression" job compares against.
+#
+# Regular CI never rewrites baselines. When the UI intentionally changes, run
+# this workflow from the Actions tab, download the "visual-baselines-linux"
+# artifact, and commit the *-chromium-linux.png files it contains into
+# e2e/design-system/visual-regression.spec.ts-snapshots/.
+on:
+  workflow_dispatch:
+
+env:
+  DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/acc_test"
+  PLATFORM_ADMIN_EMAILS_E2E: "platform-admin@test.local"
+  AUTH_SECRET: "test-secret-for-ci-only-not-for-production"
+  AUTH_TRUST_HOST: "true"
+
+jobs:
+  update-baselines:
+    name: Generate Linux Baselines
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: acc_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run database migrations
+        run: npx prisma migrate deploy
+
+      - name: Seed test data
+        run: npx tsx prisma/seed.ts --write-env
+
+      - name: Build app
+        run: npm run build
+
+      - name: Generate visual baselines
+        run: npm run test:visual -- --update-snapshots
+        env:
+          CI: true
+
+      - name: Upload generated Linux baselines
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visual-baselines-linux
+          path: '**/*-chromium-linux.png'
+          retention-days: 30
+          if-no-files-found: error
