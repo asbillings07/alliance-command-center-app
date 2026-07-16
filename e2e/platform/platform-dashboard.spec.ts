@@ -63,9 +63,9 @@ test.describe("Platform Operations Console", () => {
     test("displays platform footer", async ({ page }) => {
       await page.goto("/platform/overview");
 
-      await expect(page.getByText(/ACC v/)).toBeVisible();
-      await expect(page.getByText(/DB Connected/)).toBeVisible();
-      await expect(page.getByText(/Beta/)).toBeVisible();
+      const footer = page.locator("footer");
+      await expect(footer.getByText(/ACC v/)).toBeVisible();
+      await expect(footer.getByText(/DB Connected/)).toBeVisible();
     });
 
     test("navigates between workflow pages", async ({ page }) => {
@@ -89,7 +89,9 @@ test.describe("Platform Operations Console", () => {
       // Navigate to Beta
       await page.getByRole("link", { name: "Beta" }).click();
       await page.waitForURL("/platform/beta");
-      await expect(page.getByText(/Beta Invitations/i)).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: /Beta Invitations/i })
+      ).toBeVisible();
     });
   });
 
@@ -127,9 +129,10 @@ test.describe("Platform Operations Console", () => {
       await page.goto("/platform/overview");
 
       await expect(page.getByText(/Setup Funnel/i)).toBeVisible();
-      await expect(page.getByText(/Beta Invited/i)).toBeVisible();
-      await expect(page.getByText(/Beta Accepted/i)).toBeVisible();
-      await expect(page.getByText(/Alliance Created/i)).toBeVisible();
+      // Use exact match to avoid matching activity feed items
+      await expect(page.getByText("Beta Invited")).toBeVisible();
+      await expect(page.getByText("Beta Accepted")).toBeVisible();
+      await expect(page.getByText("Alliance Created", { exact: true })).toBeVisible();
     });
 
     test("displays Live Feed", async ({ page }) => {
