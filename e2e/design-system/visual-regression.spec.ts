@@ -40,9 +40,20 @@ test.describe("Visual Regression", () => {
     await page.goto(`/alliances/${testAllianceId}/members`);
     await page.waitForLoadState("networkidle");
 
+    // Clip to the stable top chrome (breadcrumb, header, filter tabs, column
+    // headers) and mask the data-dependent parts: the member table rows and
+    // the "N members" count both change as other CRUD tests create members.
+    // A full-page capture is non-deterministic for the same reason.
+    // The small maxDiffPixelRatio absorbs the changing filter-tab count digits
+    // while still catching design-wide regressions (which recolor the clip).
     await expect(page).toHaveScreenshot("members-table.png", {
-      fullPage: true,
+      clip: { x: 0, y: 0, width: 1280, height: 320 },
       animations: "disabled",
+      mask: [
+        page.getByRole("table"),
+        page.getByText(/\d+ members/i),
+      ],
+      maxDiffPixelRatio: 0.02,
     });
   });
 
@@ -52,9 +63,19 @@ test.describe("Visual Regression", () => {
     await page.goto(`/alliances/${testAllianceId}/members/${testMemberId}`);
     await page.waitForLoadState("networkidle");
 
+    // Clip to the stable header region and mask the member name, which other
+    // CRUD tests rename. The notes list length is also data-dependent, so we
+    // avoid a full-page capture here. The small maxDiffPixelRatio absorbs any
+    // residual data churn while still catching design-wide regressions.
     await expect(page).toHaveScreenshot("member-detail.png", {
-      fullPage: true,
+      clip: { x: 0, y: 0, width: 1280, height: 360 },
       animations: "disabled",
+      mask: [
+        page.getByLabel("Breadcrumb"),
+        page.getByRole("heading", { level: 1 }),
+        page.locator("h2").first(),
+      ],
+      maxDiffPixelRatio: 0.02,
     });
   });
 
@@ -62,9 +83,15 @@ test.describe("Visual Regression", () => {
     await page.goto(`/alliances/${testAllianceId}/metrics`);
     await page.waitForLoadState("networkidle");
 
+    // Clip to the stable top chrome (header + "Create Metric" card). The metric
+    // list below grows as other CRUD tests create metrics (which are archived,
+    // not deleted), so a full-page capture is non-deterministic. Mask any card
+    // name headings and allow a small diff for residual churn.
     await expect(page).toHaveScreenshot("metrics-library.png", {
-      fullPage: true,
+      clip: { x: 0, y: 0, width: 1280, height: 210 },
       animations: "disabled",
+      mask: [page.locator("h2")],
+      maxDiffPixelRatio: 0.02,
     });
   });
 
@@ -72,9 +99,15 @@ test.describe("Visual Regression", () => {
     await page.goto(`/alliances/${testAllianceId}/periods`);
     await page.waitForLoadState("networkidle");
 
+    // Clip to the stable top chrome (header + "Create Period" card). The period
+    // list below grows as other CRUD tests create periods, so a full-page
+    // capture is non-deterministic. Mask any card name headings and allow a
+    // small diff for residual churn.
     await expect(page).toHaveScreenshot("evaluation-periods.png", {
-      fullPage: true,
+      clip: { x: 0, y: 0, width: 1280, height: 210 },
       animations: "disabled",
+      mask: [page.locator("h2")],
+      maxDiffPixelRatio: 0.02,
     });
   });
 

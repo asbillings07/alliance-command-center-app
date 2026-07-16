@@ -62,7 +62,7 @@ export function AddMemberForm({ allianceId }: AddMemberFormProps) {
 
     if (archivedPrompt) {
         return (
-            <Card className="bg-warning-muted border-warning">
+            <Card className="bg-warning/10 border-warning">
                 <Card.Body>
                     <h2 className="text-lg font-semibold text-warning mb-2">
                         Archived Member Found
@@ -102,7 +102,7 @@ export function AddMemberForm({ allianceId }: AddMemberFormProps) {
             <input type="hidden" name="allianceId" value={allianceId} />
 
             {error && (
-                <div className="p-3 bg-danger-muted border border-danger text-danger rounded-md text-sm">
+                <div className="p-3 bg-danger/10 border border-danger text-danger rounded-md text-sm">
                     {error}
                 </div>
             )}

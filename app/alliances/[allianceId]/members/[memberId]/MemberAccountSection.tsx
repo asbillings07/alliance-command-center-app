@@ -32,7 +32,7 @@ function formatRole(role: string): string {
 export function MemberAccountSection(props: MemberAccountSectionProps) {
   if (props.connected) {
     return (
-      <Card className="bg-success-muted border-success">
+      <Card className="bg-success/10 border-success">
         <Card.Body>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">

@@ -120,7 +120,7 @@ export function MetricPeriodCard({
     <Card className={!period.active ? "opacity-60" : ""}>
       <Card.Body>
         {error && (
-          <div className="mb-3 p-2 bg-danger-muted border border-danger rounded text-sm text-danger">
+          <div className="mb-3 p-2 bg-danger/10 border border-danger rounded text-sm text-danger">
             {error}
           </div>
         )}

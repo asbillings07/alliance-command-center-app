@@ -26,7 +26,8 @@
 
   /* Accent Colors */
   --primary: #3B82F6;
-  --primary-hover: #2563EB;
+  --primary-hover: #2563EB; /* Accessible fill for white text (5.1:1); button resting color */
+  --primary-active: #1D4ED8; /* Darker shade for button hover/active (6.5:1) */
   --primary-light: #60A5FA; /* Lighter shade for badges/low-contrast backgrounds */
   --success: #22C55E;
   --success-light: #4ADE80; /* Lighter shade for badges */
@@ -58,6 +59,7 @@
   /* Accent Colors */
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
   --color-primary-light: var(--primary-light);
   --color-success: var(--success);
   --color-success-light: var(--success-light);

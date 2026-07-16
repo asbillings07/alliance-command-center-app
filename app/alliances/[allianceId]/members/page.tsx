@@ -158,7 +158,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                                         <td className="px-4 py-3">
                                             <Link
                                                 href={`/alliances/${allianceId}/members/${member.id}`}
-                                                className="font-medium text-primary hover:text-primary-light"
+                                                className="font-medium text-primary-light hover:text-primary"
                                             >
                                                 {member.playerName}
                                             </Link>

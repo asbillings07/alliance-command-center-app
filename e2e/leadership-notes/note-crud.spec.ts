@@ -38,12 +38,14 @@ test.describe("Leadership Notes CRUD", () => {
     // Click to reveal the note form
     await page.getByRole("button", { name: /add leadership note/i }).click();
 
-    // Fill the form
+    // Use unique content so this note is distinguishable from notes created
+    // by previous runs (leadership notes are historical and never deleted).
+    const content = `Great contribution to VS event! ${Date.now()}`;
     await page.getByLabel(/note type/i).selectOption("POSITIVE");
-    await page.getByLabel(/note content/i).fill("Great contribution to VS event!");
+    await page.getByLabel(/note content/i).fill(content);
     await page.getByRole("button", { name: /save note/i }).click();
 
-    await expect(page.getByText(/great contribution/i)).toBeVisible();
+    await expect(page.getByText(content).first()).toBeVisible();
   });
 
   test("can create note with Warning type", async ({ page }) => {
@@ -52,12 +54,12 @@ test.describe("Leadership Notes CRUD", () => {
     // Click to reveal the note form
     await page.getByRole("button", { name: /add leadership note/i }).click();
 
-    // Fill the form
+    const content = `Missed scheduled attack window ${Date.now()}`;
     await page.getByLabel(/note type/i).selectOption("WARNING");
-    await page.getByLabel(/note content/i).fill("Missed scheduled attack window");
+    await page.getByLabel(/note content/i).fill(content);
     await page.getByRole("button", { name: /save note/i }).click();
 
-    await expect(page.getByText(/missed scheduled/i)).toBeVisible();
+    await expect(page.getByText(content).first()).toBeVisible();
   });
 
   test("can create note with Observation type", async ({ page }) => {
@@ -66,12 +68,12 @@ test.describe("Leadership Notes CRUD", () => {
     // Click to reveal the note form
     await page.getByRole("button", { name: /add leadership note/i }).click();
 
-    // Fill the form
+    const content = `Showing leadership potential ${Date.now()}`;
     await page.getByLabel(/note type/i).selectOption("OBSERVATION");
-    await page.getByLabel(/note content/i).fill("Showing leadership potential");
+    await page.getByLabel(/note content/i).fill(content);
     await page.getByRole("button", { name: /save note/i }).click();
 
-    await expect(page.getByText(/leadership potential/i)).toBeVisible();
+    await expect(page.getByText(content).first()).toBeVisible();
   });
 
   test("shows validation error for empty content", async ({ page }) => {
@@ -95,13 +97,18 @@ test.describe("Leadership Notes CRUD", () => {
     if (editButtonVisible) {
       await editButton.click();
       
-      // The form should now be visible - use the textarea directly
+      // The form should now be visible - use the textarea directly.
+      // Unique content distinguishes this edit from notes left by prior runs.
+      const content = `Updated note content ${Date.now()}`;
       const textarea = page.locator('textarea[name="content"]');
       await textarea.clear();
-      await textarea.fill("Updated note content");
-      await page.getByRole("button", { name: /save note/i }).click();
+      await textarea.fill(content);
+      await page.getByRole("button", { name: /save note|update note/i }).click();
 
-      await expect(page.getByText(/updated note content/i)).toBeVisible();
+      // Assert on the rendered note paragraph (not the transient form textarea)
+      await expect(
+        page.locator("p").filter({ hasText: content }).first()
+      ).toBeVisible();
     } else {
       // No editable notes - just verify the notes section exists
       await expect(page.getByText(/leadership notes/i)).toBeVisible();

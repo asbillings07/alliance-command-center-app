@@ -63,7 +63,7 @@ export function MemberActions({
   return (
     <div className="mt-4 space-y-3">
       {error && (
-        <div className="p-3 bg-danger-muted border border-danger rounded-md text-sm text-danger">
+        <div className="p-3 bg-danger/10 border border-danger rounded-md text-sm text-danger">
           {error}
         </div>
       )}

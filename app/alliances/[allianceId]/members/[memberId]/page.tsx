@@ -158,7 +158,7 @@ export default async function MemberPage({ params }: Params) {
         >
             <div className="flex flex-col gap-8">
                 {allianceMember.archivedAt && (
-                    <Card className="bg-warning-muted border-warning">
+                    <Card className="bg-warning/10 border-warning">
                         <Card.Body>
                             <div className="text-center">
                                 <p className="text-warning font-medium">

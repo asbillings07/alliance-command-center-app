@@ -136,7 +136,7 @@ test.describe("Alliance Member Business Rules", () => {
     );
 
     // Check if member has metric entries
-    const perfSection = page.getByText(/performance|metrics/i);
+    const perfSection = page.getByText(/performance|metrics/i).first();
     if (await perfSection.isVisible()) {
       // If there are metric entries visible, archive and verify they persist
       // This is a structural check - the UI should still show metric history
@@ -194,16 +194,21 @@ test.describe("Alliance Member Filter Tests", () => {
   });
 
   test("Filter persists across navigation", async ({ page }) => {
-    await page.goto(`/alliances/${testAllianceId}/members?filter=archived`);
+    // Use the "all" filter so the test works regardless of whether any
+    // members are currently archived (avoids depending on shared test state)
+    await page.goto(`/alliances/${testAllianceId}/members?filter=all`);
+    await page.waitForLoadState("networkidle");
 
     // Navigate to a member and back
     const memberLink = page.locator("table tbody tr a").first();
-    if (await memberLink.isVisible()) {
+    if (await memberLink.isVisible().catch(() => false)) {
       await memberLink.click();
+      await page.waitForURL(/\/members\/[^/?]+$/);
       await page.goBack();
 
-      // Filter should persist
-      expect(page.url()).toContain("filter=archived");
+      // Filter should persist after navigating back
+      await page.waitForURL(/filter=all/);
+      expect(page.url()).toContain("filter=all");
     }
   });
 

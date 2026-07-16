@@ -87,9 +87,7 @@ export default async function PeriodPage({ params }: Params) {
                 </Card>
 
                 <Card>
-                    <Card.Header>
-                        <h2 className="text-lg font-semibold text-primary">Configured Metrics</h2>
-                    </Card.Header>
+                    <Card.Header>Configured Metrics</Card.Header>
                     <Card.Body>
                         <PeriodMetricList
                             metrics={metrics}
@@ -101,9 +99,7 @@ export default async function PeriodPage({ params }: Params) {
                 </Card>
 
                 <Card>
-                    <Card.Header>
-                        <h2 className="text-lg font-semibold text-primary">Actions</h2>
-                    </Card.Header>
+                    <Card.Header>Actions</Card.Header>
                     <Card.Body>
                         <div className="flex gap-4">
                             <Button

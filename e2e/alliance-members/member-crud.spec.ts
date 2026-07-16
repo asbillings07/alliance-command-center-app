@@ -117,18 +117,22 @@ test.describe("Alliance Member CRUD", () => {
       test.skip(true, "Archive button not visible");
     }
 
+    // Archive uses a native window.confirm() dialog - auto-accept it
+    page.on("dialog", (dialog) => dialog.accept());
+
     await archiveButton.click();
 
-    // May have confirmation dialog
-    const confirmButton = page.getByRole("button", { name: /confirm|yes/i });
-    if (await confirmButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await confirmButton.click();
-    }
+    // After archiving, page reloads/updates - the archived banner confirms success
+    await expect(page.getByText(/was archived on/i)).toBeVisible({
+      timeout: 10000,
+    });
 
-    // After archiving, page reloads/updates - wait for archived banner or button change
-    await expect(
-      page.getByText(/was archived on/i).or(page.getByRole("button", { name: /restore/i }))
-    ).toBeVisible({ timeout: 10000 });
+    // Restore the member afterward to avoid polluting shared test state
+    // (Restore has no confirm dialog)
+    await page.getByRole("button", { name: /restore/i }).click();
+    await expect(page.getByRole("button", { name: /archive/i })).toBeVisible({
+      timeout: 10000,
+    });
   });
 
   test("can restore archived member", async ({ page }) => {

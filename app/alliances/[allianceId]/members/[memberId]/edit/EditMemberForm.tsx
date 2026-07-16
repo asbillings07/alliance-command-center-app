@@ -46,7 +46,7 @@ export function EditMemberForm({
             <input type="hidden" name="memberId" value={memberId} />
 
             {error && (
-                <div className="p-3 bg-danger-muted border border-danger text-danger rounded-md text-sm">
+                <div className="p-3 bg-danger/10 border border-danger text-danger rounded-md text-sm">
                     {error}
                 </div>
             )}

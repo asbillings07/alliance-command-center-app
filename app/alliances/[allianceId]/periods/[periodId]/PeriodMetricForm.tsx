@@ -75,7 +75,7 @@ export function PeriodMetricForm({
     <>
       {mode === "create" ? (
         <button
-          className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary cursor-pointer"
+          className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active cursor-pointer"
           onClick={openDialog}
         >
           Add Metric
@@ -185,7 +185,7 @@ export function PeriodMetricForm({
             <button
               type="submit"
               disabled={isPending}
-              className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary cursor-pointer disabled:bg-surface-secondary disabled:text-text-disabled disabled:cursor-not-allowed"
+              className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active cursor-pointer disabled:bg-surface-secondary disabled:text-text-disabled disabled:cursor-not-allowed"
             >
               {isPending ? pendingLabel : submitLabel}
             </button>

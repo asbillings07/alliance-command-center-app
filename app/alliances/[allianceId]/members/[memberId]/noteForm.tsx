@@ -66,7 +66,7 @@ export function NoteForm({
           )}
 
           {error && (
-            <div className="p-3 bg-danger-muted border border-danger rounded-md text-sm text-danger">
+            <div className="p-3 bg-danger/10 border border-danger rounded-md text-sm text-danger">
               {error}
             </div>
           )}
