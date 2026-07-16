@@ -14,6 +14,7 @@ vi.mock("./prisma", () => ({
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     user: {
       findUnique: vi.fn(),
@@ -32,6 +33,7 @@ const mockPrisma = prisma as unknown as {
     findFirst: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
   };
   user: {
     findUnique: ReturnType<typeof vi.fn>;
@@ -231,11 +233,16 @@ describe("acceptBetaInvitation", () => {
       acceptedByUserId: null,
       expiresAt: new Date(Date.now() + 86400000),
     };
-    mockPrisma.betaInvitation.findUnique.mockResolvedValue(invitation);
-    mockPrisma.betaInvitation.update.mockImplementation(async ({ data }) => ({
-      ...invitation,
-      ...data,
-    }));
+    const acceptedInvitation = {
+      id: "inv-1",
+      acceptedAt: new Date(),
+      acceptedByUserId: "user-1",
+      expiresAt: invitation.expiresAt,
+    };
+    mockPrisma.betaInvitation.findUnique
+      .mockResolvedValueOnce(invitation)
+      .mockResolvedValueOnce(acceptedInvitation);
+    mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 1 });
 
     const result = await acceptBetaInvitation("inv-1", "user-1");
 

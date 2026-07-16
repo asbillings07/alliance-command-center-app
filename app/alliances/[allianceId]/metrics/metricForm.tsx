@@ -3,6 +3,8 @@
 import { useState, useTransition, useRef } from "react";
 import { Metric_Type } from "@/app/generated/prisma/enums";
 import { createMetric, editMetric } from "./action";
+import { Card } from "@/app/src/components";
+import { Button, Input, Textarea, Select, Label } from "@/app/src/components/client";
 
 type MetricFormProps = {
   allianceId: string;
@@ -50,95 +52,81 @@ export function MetricForm({
   };
 
   return (
-    <form
-      ref={formRef}
-      className="w-full rounded-md border p-4 shadow-sm flex flex-col gap-3 max-w-3xl"
-      onSubmit={handleSubmit}
-    >
-      <input type="hidden" name="allianceId" value={allianceId} />
-      {mode === "edit" && metricId && (
-        <input type="hidden" name="metricId" value={metricId} />
-      )}
+    <Card>
+      <Card.Body>
+        <form
+          ref={formRef}
+          className="flex flex-col gap-4"
+          onSubmit={handleSubmit}
+        >
+          <input type="hidden" name="allianceId" value={allianceId} />
+          {mode === "edit" && metricId && (
+            <input type="hidden" name="metricId" value={metricId} />
+          )}
 
-      {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
-          {error}
-        </div>
-      )}
+          {error && (
+            <div className="p-3 bg-danger/10 border border-danger rounded-md text-sm text-danger">
+              {error}
+            </div>
+          )}
 
-      <div>
-        <label
-          htmlFor="name"
-          className="block text-sm font-medium text-gray-700 mb-1"
-        >
-          Name
-        </label>
-        <input
-          id="name"
-          name="name"
-          type="text"
-          defaultValue={name}
-          disabled={isPending}
-          className="w-full rounded-md border border-gray-300 p-2 disabled:bg-gray-100"
-          placeholder="e.g., VS Score"
-          required
-        />
-      </div>
+          <div>
+            <Label htmlFor="name" required>Name</Label>
+            <Input
+              id="name"
+              name="name"
+              type="text"
+              defaultValue={name}
+              disabled={isPending}
+              placeholder="e.g., VS Score"
+              required
+            />
+          </div>
 
-      <div>
-        <label
-          htmlFor="description"
-          className="block text-sm font-medium text-gray-700 mb-1"
-        >
-          Description (optional)
-        </label>
-        <textarea
-          id="description"
-          name="description"
-          rows={2}
-          disabled={isPending}
-          className="w-full rounded-md border border-gray-300 p-2 disabled:bg-gray-100"
-          placeholder="Describe what this metric measures..."
-          defaultValue={description}
-        />
-      </div>
+          <div>
+            <Label htmlFor="description">Description (optional)</Label>
+            <Textarea
+              id="description"
+              name="description"
+              rows={2}
+              disabled={isPending}
+              placeholder="Describe what this metric measures..."
+              defaultValue={description}
+            />
+          </div>
 
-      <div>
-        <label
-          htmlFor="type"
-          className="block text-sm font-medium text-gray-700 mb-1"
-        >
-          Type
-        </label>
-        <select
-          id="type"
-          name="type"
-          defaultValue={type}
-          disabled={isPending}
-          className="w-full rounded-md border border-gray-300 p-2 disabled:bg-gray-100"
-        >
-          <option value={Metric_Type.NUMERIC}>Numeric</option>
-          <option value={Metric_Type.BOOLEAN}>Boolean</option>
-        </select>
-      </div>
+          <div>
+            <Label htmlFor="type">Type</Label>
+            <Select
+              id="type"
+              name="type"
+              defaultValue={type}
+              disabled={isPending}
+            >
+              <option value={Metric_Type.NUMERIC}>Numeric</option>
+              <option value={Metric_Type.BOOLEAN}>Boolean</option>
+            </Select>
+          </div>
 
-      <div className="flex gap-2 justify-end">
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={isPending}
-          className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={isPending}
-          className="px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isPending ? pendingLabel : submitLabel}
-        </button>
-      </div>
-    </form>
+          <div className="flex gap-2 justify-end">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onCancel}
+              disabled={isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={isPending}
+            >
+              {isPending ? pendingLabel : submitLabel}
+            </Button>
+          </div>
+        </form>
+      </Card.Body>
+    </Card>
   );
 }

@@ -70,6 +70,7 @@ describe("permissions", () => {
         expect(permissions.canViewNotes).toBe(true);
         expect(permissions.canManageNotes).toBe(true);
         expect(permissions.canImportMetrics).toBe(true);
+        expect(permissions.canConfigurePeriods).toBe(true);
       });
 
       it("does not have admin permissions", () => {
@@ -78,7 +79,6 @@ describe("permissions", () => {
         expect(permissions.canManageMembers).toBe(false);
         expect(permissions.canImportMembers).toBe(false);
         expect(permissions.canConfigureMetrics).toBe(false);
-        expect(permissions.canConfigurePeriods).toBe(false);
         expect(permissions.canInviteCollaborators).toBe(false);
         expect(permissions.canManageLeadership).toBe(false);
         expect(permissions.canManageAlliance).toBe(false);
@@ -169,7 +169,7 @@ describe("permissions", () => {
 
       expect(countTrue(ownerPerms)).toBe(12); // All 12 permissions
       expect(countTrue(adminPerms)).toBe(10); // All except manage:leadership and manage:alliance
-      expect(countTrue(leaderPerms)).toBe(5);  // view:* + manage:notes + import:metrics
+      expect(countTrue(leaderPerms)).toBe(6);  // view:* + manage:notes + import:metrics + configure:periods
       expect(countTrue(viewerPerms)).toBe(3);  // Only view:*
     });
   });

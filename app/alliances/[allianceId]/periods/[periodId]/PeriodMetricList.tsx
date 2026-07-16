@@ -1,5 +1,6 @@
 'use client'
 import type { Metric } from "@/app/generated/prisma/client";
+import Link from "next/link";
 import { PeriodMetricForm } from "./PeriodMetricForm";
 
 type PeriodMetricData = {
@@ -23,19 +24,19 @@ export function PeriodMetricList({ metrics, periodId, allianceId, periodMetrics 
     return (
         <div className="flex flex-col gap-4 w-full max-w-md items-center">
             {periodMetrics.length === 0 ? (
-                <p className="text-gray-500">No metrics have been configured yet. Add the metrics you want leaders to evaluate during this period.</p>
+                <p className="text-text-muted">No metrics have been configured yet. Add the metrics you want leaders to evaluate during this period.</p>
             ) : (
                 <ul className="flex flex-col gap-2 w-full">
                     {periodMetrics.map((pm) => (
-                        <li key={pm.metricId} className="flex items-center justify-between p-3 border rounded-md">
-                            <span className="font-medium">{pm.metricName}</span>
+                        <li key={pm.metricId} className="flex items-center justify-between p-3 border border-border rounded-md">
+                            <span className="font-medium text-text-primary">{pm.metricName}</span>
                             <div className="flex items-center gap-3 text-sm">
                                 {pm.required && (
-                                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-danger/20 text-danger-light">
                                         Required
                                     </span>
                                 )}
-                                <span className="text-gray-600">Weight: {pm.weight}</span>
+                                <span className="text-text-secondary">Weight: {pm.weight}</span>
                                 <PeriodMetricForm
                                     metrics={metrics}
                                     periodId={periodId}
@@ -61,7 +62,16 @@ export function PeriodMetricList({ metrics, periodId, allianceId, periodMetrics 
                     onClose={() => {}}
                 />
             ) : (
-                <p className="text-gray-500 text-sm">All metrics have been assigned to this period.</p>
+                <p className="text-text-muted text-sm">
+                    All metrics have been assigned to this period.{' '}
+                    <Link
+                        href={`/alliances/${allianceId}/metrics`}
+                        className="text-primary-light hover:text-primary underline"
+                    >
+                        Create more metrics
+                    </Link>{' '}
+                    in the Metrics Library to add them here.
+                </p>
             )}
         </div>
     );

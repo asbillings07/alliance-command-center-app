@@ -6,7 +6,8 @@ import { MetricPeriodForm } from "./metricPeriodForm";
 import { archiveMetricPeriod, restoreMetricPeriod } from "./action";
 import { MetricPeriodMetric } from "@/app/generated/prisma/client";
 import { Metric } from "@/app/generated/prisma/client";
-import Link from "next/link";
+import { Card, Badge } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type MetricPeriodData = {
   id: string;
@@ -73,117 +74,112 @@ export function MetricPeriodCard({
     });
   };
 
-    // CREATE MODE: Show button or create form
-    if (mode === "create") {
-        if (cardState === "closed") {
-            return (
-                <div className="w-full max-w-3xl">
-                    <button
-                        type="button"
-                        onClick={() => setCardState("form")}
-                        className="w-full rounded-md border-2 border-dashed border-gray-300 p-4 text-gray-500 hover:border-blue-400 hover:text-blue-500 cursor-pointer"
-                    >
-                        + Create Period
-                    </button>
-                </div>
-            );
-        }
-
-        return (
-            <div className="w-full max-w-3xl">
-                <MetricPeriodForm
-                    allianceId={allianceId}
-                    mode="create"
-                    onCancel={() => setCardState("closed")}
-                />
-            </div>
-        );
-    }
-
-    // VIEW MODE: Need period data
-    if (!period) return null;
-
-    // VIEW MODE - EDITING: Show edit form
-    if (cardState === "form") {
-        return (
-            <MetricPeriodForm
-                key={period.periodKey}
-                allianceId={allianceId}
-                mode="edit"
-                periodId={period.id}
-                name={period.name}
-                startsAt={period.startsAt || undefined}
-                endsAt={period.endsAt || undefined}
-                onCancel={() => setCardState("view")}
-            />
-        );
-    }
-
-  // VIEW MODE - VIEWING: Show the period
-  return (
-    <div
-      className={`w-full rounded-md border p-4 shadow-sm max-w-3xl ${!period.active ? "opacity-60 bg-gray-50" : ""}`}
-    >
-      {error && (
-        <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-          {error}
+  if (mode === "create") {
+    if (cardState === "closed") {
+      return (
+        <div className="w-full">
+          <button
+            type="button"
+            onClick={() => setCardState("form")}
+            className="w-full rounded-md border-2 border-dashed border-border p-4 text-text-secondary hover:border-primary hover:text-primary cursor-pointer transition-colors"
+          >
+            + Create Period
+          </button>
         </div>
-      )}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <h2 className="text-lg font-semibold">{period.name}</h2>
-            {!period.active && (
-              <span className="px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-600">
-                Archived
-              </span>
-            )}
+      );
+    }
+
+    return (
+      <div className="w-full">
+        <MetricPeriodForm
+          allianceId={allianceId}
+          mode="create"
+          onCancel={() => setCardState("closed")}
+        />
+      </div>
+    );
+  }
+
+  if (!period) return null;
+
+  if (cardState === "form") {
+    return (
+      <MetricPeriodForm
+        key={period.periodKey}
+        allianceId={allianceId}
+        mode="edit"
+        periodId={period.id}
+        name={period.name}
+        startsAt={period.startsAt || undefined}
+        endsAt={period.endsAt || undefined}
+        onCancel={() => setCardState("view")}
+      />
+    );
+  }
+
+  return (
+    <Card className={!period.active ? "opacity-60" : ""}>
+      <Card.Body>
+        {error && (
+          <div className="mb-3 p-2 bg-danger/10 border border-danger rounded text-sm text-danger">
+            {error}
           </div>
-          <div className="text-sm text-gray-600 flex gap-4">
-            <span>Start: {formatDate(period.startsAt)}</span>
-            <span>End: {formatDate(period.endsAt)}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
+        )}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <h2 className="text-lg font-semibold text-primary">{period.name}</h2>
+              {!period.active && (
+                <Badge variant="neutral" size="sm">
+                  Archived
+                </Badge>
+              )}
+            </div>
+            <div className="text-sm text-text-secondary flex gap-4 mb-2">
+              <span>Start: {formatDate(period.startsAt)}</span>
+              <span>End: {formatDate(period.endsAt)}</span>
+            </div>
+            <Button
+              variant="link"
+              size="sm"
               href={`/alliances/${allianceId}/periods/${period.id}`}
-              className="text-sm text-blue-500 hover:text-blue-700 cursor-pointer"
             >
               Configure Metrics
-            </Link>
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            {period.active && (
+              <Button
+                variant="link"
+                size="sm"
+                onClick={() => setCardState("form")}
+                disabled={isPending}
+              >
+                Edit
+              </Button>
+            )}
+            {period.active ? (
+              <Button
+                variant="warning-link"
+                size="sm"
+                onClick={handleArchive}
+                disabled={isPending}
+              >
+                {isPending ? "Archiving..." : "Archive"}
+              </Button>
+            ) : (
+              <Button
+                variant="success-link"
+                size="sm"
+                onClick={handleRestore}
+                disabled={isPending}
+              >
+                {isPending ? "Restoring..." : "Restore"}
+              </Button>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {period.active && (
-            <button
-              type="button"
-              onClick={() => setCardState("form")}
-              disabled={isPending}
-              className="text-sm text-blue-500 hover:text-blue-700 cursor-pointer disabled:opacity-50"
-            >
-              Edit
-            </button>
-          )}
-          {period.active ? (
-            <button
-              type="button"
-              onClick={handleArchive}
-              disabled={isPending}
-              className="text-sm text-amber-600 hover:text-amber-700 cursor-pointer disabled:opacity-50"
-            >
-              {isPending ? "Archiving..." : "Archive"}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleRestore}
-              disabled={isPending}
-              className="text-sm text-green-600 hover:text-green-700 cursor-pointer disabled:opacity-50"
-            >
-              {isPending ? "Restoring..." : "Restore"}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+      </Card.Body>
+    </Card>
   );
 }

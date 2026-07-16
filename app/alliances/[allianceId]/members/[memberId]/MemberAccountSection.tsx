@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { Card, Badge } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type MemberAccountSectionProps = {
   allianceId: string;
@@ -32,12 +33,51 @@ function formatRole(role: string): string {
 export function MemberAccountSection(props: MemberAccountSectionProps) {
   if (props.connected) {
     return (
-      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+      <Card className="bg-success/10 border-success">
+        <Card.Body>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-success/20 rounded-full flex items-center justify-center">
+                <svg
+                  className="w-5 h-5 text-success"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-success">
+                    Account Connected
+                  </span>
+                  <Badge variant="success" size="sm">
+                    {formatRole(props.membershipRole)}
+                  </Badge>
+                </div>
+                <span className="text-sm text-success/80">{props.email}</span>
+              </div>
+            </div>
+          </div>
+        </Card.Body>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="bg-surface-secondary">
+      <Card.Body>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+            <div className="w-10 h-10 bg-surface-secondary rounded-full flex items-center justify-center">
               <svg
-                className="w-5 h-5 text-green-600"
+                className="w-5 h-5 text-text-muted"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -46,62 +86,28 @@ export function MemberAccountSection(props: MemberAccountSectionProps) {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M5 13l4 4L19 7"
+                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
                 />
               </svg>
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-green-800">
-                  Account Connected
-                </span>
-                <span className="px-2 py-0.5 bg-green-200 text-green-800 text-xs rounded-full">
-                  {formatRole(props.membershipRole)}
-                </span>
-              </div>
-              <span className="text-sm text-green-600">{props.email}</span>
+              <span className="font-medium text-primary-light">Not Connected</span>
+              <p className="text-sm text-text-secondary">
+                No account linked to this member
+              </p>
             </div>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-            <svg
-              className="w-5 h-5 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          {props.canInvite && (
+            <Button
+              variant="link"
+              size="sm"
+              href={`/alliances/${props.allianceId}/settings/invitations`}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-              />
-            </svg>
-          </div>
-          <div>
-            <span className="font-medium text-gray-700">Not Connected</span>
-            <p className="text-sm text-gray-500">
-              No account linked to this member
-            </p>
-          </div>
+              Invite →
+            </Button>
+          )}
         </div>
-        {props.canInvite && (
-          <Link
-            href={`/alliances/${props.allianceId}/settings/invitations`}
-            className="text-sm text-blue-600 hover:text-blue-800"
-          >
-            Invite →
-          </Link>
-        )}
-      </div>
-    </div>
+      </Card.Body>
+    </Card>
   );
 }

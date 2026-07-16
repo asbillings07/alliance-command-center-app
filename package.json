@@ -11,8 +11,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:unit": "vitest run --dir app/src",
+    "test:integration": "vitest run --dir app/src --testNamePattern integration",
+    "test:e2e": "tsx ./node_modules/@playwright/test/cli.js test --grep-invert \"@visual|@a11y\"",
+    "test:a11y": "tsx ./node_modules/@playwright/test/cli.js test --grep @a11y",
+    "test:visual": "tsx ./node_modules/@playwright/test/cli.js test --grep @visual",
+    "test:ci:quick": "npm run typecheck && npm run lint && npm run test:unit",
+    "test:ci": "npm run typecheck && npm run lint && npm run test:unit && npm run test:integration && npx prisma migrate deploy && npx tsx prisma/seed.ts --write-env && npm run build && CI=true npm run test:e2e && CI=true npm run test:a11y",
     "seedDb": "tsx prisma/seed.ts",
     "migrateDev": "prisma migrate dev",
     "migrateProd": "prisma migrate deploy",
@@ -22,9 +30,10 @@
     "syncDevDb": "prisma generate && prisma db push",
     "db:init": "docker compose up -d && sleep 10 && npm run syncDevDb && npm run seedDb",
     "beta:invite": "tsx scripts/create-beta-invite.ts",
-    "e2e": "playwright test",
-    "e2e:ui": "playwright test --ui",
-    "e2e:headed": "playwright test --headed",
+    "e2e:setup": "tsx scripts/setup-e2e-env.ts",
+    "e2e": "tsx ./node_modules/@playwright/test/cli.js test",
+    "e2e:ui": "tsx ./node_modules/@playwright/test/cli.js test --ui",
+    "e2e:headed": "tsx ./node_modules/@playwright/test/cli.js test --headed",
     "e2e:report": "playwright show-report"
   },
   "dependencies": {
@@ -38,6 +47,7 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
     "@types/bcrypt": "^6.0.0",

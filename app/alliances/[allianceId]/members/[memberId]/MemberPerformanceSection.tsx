@@ -1,4 +1,5 @@
 import { formatPower } from "@/app/src/lib/formatPower";
+import { Card, EmptyState } from "@/app/src/components";
 
 export type MetricEntryViewModel = {
     value: number;
@@ -28,27 +29,29 @@ function MetricCard({ metric }: { metric: CurrentMetricViewModel }) {
     };
 
     return (
-        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-            <div className="text-sm font-medium text-gray-600 mb-1">
-                {metric.metricName}
-            </div>
-            {hasCurrent ? (
-                <>
-                    <div className="text-2xl font-bold text-gray-900">
-                        {formatPower(metric.current!.value)}
-                    </div>
-                    {hasDelta && (
-                        <div className="text-sm text-gray-500 mt-1">
-                            {formatDelta(metric.delta!)} since last entry
-                        </div>
-                    )}
-                </>
-            ) : (
-                <div className="text-lg text-gray-400">
-                    Not recorded
+        <Card>
+            <Card.Body className="p-4">
+                <div className="text-sm font-medium text-text-secondary mb-1">
+                    {metric.metricName}
                 </div>
-            )}
-        </div>
+                {hasCurrent ? (
+                    <>
+                        <div className="text-2xl font-bold text-primary">
+                            {formatPower(metric.current!.value)}
+                        </div>
+                        {hasDelta && (
+                            <div className="text-sm text-text-muted mt-1">
+                                {formatDelta(metric.delta!)} since last entry
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <div className="text-lg text-text-muted">
+                        Not recorded
+                    </div>
+                )}
+            </Card.Body>
+        </Card>
     );
 }
 
@@ -56,15 +59,13 @@ export function MemberPerformanceSection(props: MemberPerformanceProps) {
     if (props.emptyState === "no-period") {
         return (
             <section className="flex flex-col gap-4">
-                <h2 className="text-xl font-bold text-center text-gray-900">
+                <h2 className="text-xl font-bold text-center text-primary">
                     Performance
                 </h2>
-                <div className="text-center py-8 px-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-gray-600">No active evaluation period.</p>
-                    <p className="text-sm text-gray-500 mt-1">
-                        Create or activate a period to begin tracking member performance.
-                    </p>
-                </div>
+                <EmptyState
+                    title="No active evaluation period"
+                    description="Create or activate a period to begin tracking member performance."
+                />
             </section>
         );
     }
@@ -72,19 +73,20 @@ export function MemberPerformanceSection(props: MemberPerformanceProps) {
     if (props.emptyState === "no-metrics") {
         return (
             <section className="flex flex-col gap-4">
-                <h2 className="text-xl font-bold text-center text-gray-900">
+                <h2 className="text-xl font-bold text-center text-primary">
                     {props.periodName}
                 </h2>
-                <div className="text-center py-8 px-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-gray-600">No metrics have been configured for this evaluation period.</p>
-                </div>
+                <EmptyState
+                    title="No metrics configured"
+                    description="No metrics have been configured for this evaluation period."
+                />
             </section>
         );
     }
 
     return (
         <section className="flex flex-col gap-4">
-            <h2 className="text-xl font-bold text-center text-gray-900">
+            <h2 className="text-xl font-bold text-center text-primary">
                 {props.periodName}
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">

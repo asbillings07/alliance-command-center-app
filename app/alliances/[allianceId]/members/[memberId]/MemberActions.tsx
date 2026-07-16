@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { archiveMember, restoreMember } from "./member-actions";
+import { Button } from "@/app/src/components/client";
 
 interface MemberActionsProps {
   allianceId: string;
@@ -63,35 +63,38 @@ export function MemberActions({
   return (
     <div className="mt-4 space-y-3">
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+        <div className="p-3 bg-danger/10 border border-danger rounded-md text-sm text-danger">
           {error}
         </div>
       )}
       <div className="flex gap-3">
         {!isArchived && (
-          <Link
+          <Button
+            variant="secondary"
+            size="sm"
             href={`/alliances/${allianceId}/members/${memberId}/edit`}
-            className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
           >
             Edit
-          </Link>
+          </Button>
         )}
         {isArchived ? (
-          <button
+          <Button
+            variant="primary"
+            size="sm"
             onClick={handleRestore}
-            disabled={isPending}
-            className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+            loading={isPending}
           >
             {isPending ? "Restoring..." : "Restore"}
-          </button>
+          </Button>
         ) : (
-          <button
+          <Button
+            variant="warning"
+            size="sm"
             onClick={handleArchive}
-            disabled={isPending}
-            className="px-4 py-2 text-sm bg-amber-100 text-amber-700 rounded-md hover:bg-amber-200 disabled:opacity-50"
+            loading={isPending}
           >
             {isPending ? "Archiving..." : "Archive"}
-          </button>
+          </Button>
         )}
       </div>
     </div>

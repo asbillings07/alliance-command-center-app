@@ -10,19 +10,25 @@ import { LeadershipNoteVisibility } from "@/app/generated/prisma/enums";
  * @returns The created user
  */
 
-const createUser = async (email: string, password: string) => {
+const createUser = async (
+  email: string,
+  password: string,
+  options?: { displayName?: string }
+) => {
   const existing = await prisma.user.findUnique({
     where: { email },
   });
 
-  if (existing) return existing;
+  if (existing) {
+    return existing;
+  }
 
   const passwordHash = await bcrypt.hash(password, 12);
 
   return await prisma.user.create({
     data: {
       email,
-      displayName: "AB",
+      displayName: options?.displayName ?? email.split("@")[0],
       passwordHash,
     },
   });
@@ -248,9 +254,61 @@ const createMembers = async (
   );
 };
 
+/**
+ * Create an alliance membership (user to alliance link with role)
+ * @param allianceId - The ID of the alliance
+ * @param userId - The ID of the user
+ * @param role - The role of the user in the alliance
+ * @returns The created alliance membership
+ */
+const createAllianceMembership = async (
+  allianceId: string,
+  userId: string,
+  role: "OWNER" | "ADMIN" | "LEADER" | "VIEWER"
+) => {
+  return await prisma.allianceMembership.upsert({
+    where: {
+      allianceId_userId: {
+        allianceId,
+        userId,
+      },
+    },
+    update: { role },
+    create: {
+      allianceId,
+      userId,
+      role,
+    },
+  });
+};
+
+/**
+ * Create an alliance
+ * @param name - The name of the alliance
+ * @param server - The server of the alliance
+ * @returns The created alliance
+ */
+const createAlliance = async (name: string, server: string) => {
+  return await prisma.alliance.upsert({
+    where: {
+      name_server: {
+        name,
+        server,
+      },
+    },
+    update: {},
+    create: {
+      name,
+      server,
+    },
+  });
+};
+
 export {
   createUser,
+  createAlliance,
   createAllianceMember,
+  createAllianceMembership,
   createMembers,
   createLeadershipNote,
   createMetric,

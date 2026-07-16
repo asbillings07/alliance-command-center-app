@@ -12,7 +12,7 @@ type AcceptInvitationFormProps = {
 
 export function AcceptInvitationForm({
   invitationId,
-  allianceId,
+  allianceId: _allianceId,
   allianceName,
 }: AcceptInvitationFormProps) {
   const router = useRouter();

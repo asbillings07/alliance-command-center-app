@@ -26,7 +26,7 @@ export function MembersFilter({
     ];
 
     return (
-        <div className="flex gap-1 p-1 bg-gray-100 rounded-lg mb-6 w-fit">
+        <div className="flex gap-1 p-1 bg-surface-secondary rounded-lg mb-6 w-fit">
             {filters.map((filter) => {
                 const isActive = currentFilter === filter.id;
                 return (
@@ -35,14 +35,14 @@ export function MembersFilter({
                         href={`/alliances/${allianceId}/members?filter=${filter.id}`}
                         className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                             isActive
-                                ? "bg-white text-gray-900 shadow-sm"
-                                : "text-gray-600 hover:text-gray-900"
+                                ? "bg-surface text-primary-light shadow-sm"
+                                : "text-text-secondary hover:text-text-primary"
                         }`}
                     >
                         {filter.label}
                         <span
                             className={`ml-1.5 ${
-                                isActive ? "text-gray-500" : "text-gray-400"
+                                isActive ? "text-text-secondary" : "text-text-muted"
                             }`}
                         >
                             {filter.count}

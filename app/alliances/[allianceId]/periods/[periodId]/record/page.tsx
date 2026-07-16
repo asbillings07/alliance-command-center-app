@@ -3,7 +3,8 @@ import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { notFound } from "next/navigation";
 import { RecordMetricsForm } from "./RecordMetricsForm";
-import Link from "next/link";
+import { PageLayout, Card, EmptyState } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 export default async function PeriodRecordPage({
   params,
@@ -50,110 +51,80 @@ export default async function PeriodRecordPage({
     },
   });
 
-  // Back link depends on whether user can access the period detail page
-  const backLink = auth.permissions.canConfigurePeriods
-    ? { href: `/alliances/${allianceId}/periods/${periodId}`, label: "← Back to Period" }
-    : { href: `/alliances/${allianceId}`, label: "← Back to Dashboard" };
+  const breadcrumb = auth.permissions.canConfigurePeriods
+    ? [
+        { label: "Dashboard", href: `/alliances/${allianceId}` },
+        { label: "Periods", href: `/alliances/${allianceId}/periods` },
+        { label: period.name, href: `/alliances/${allianceId}/periods/${periodId}` },
+        { label: "Record" },
+      ]
+    : [
+        { label: "Dashboard", href: `/alliances/${allianceId}` },
+        { label: "Record Metrics" },
+      ];
 
   const hasNoMembers = !alliance || alliance.allianceMembers.length === 0;
   const hasNoMetrics = metrics.length === 0;
 
   if (hasNoMetrics || hasNoMembers) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen gap-6 p-4">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-2">{period.name}</h1>
-          <h2 className="text-lg text-gray-600">Record Metrics</h2>
-        </div>
-
-        <div className="w-full max-w-md bg-gray-50 rounded-lg border border-gray-200 p-8 text-center">
-          <div className="w-12 h-12 mx-auto mb-4 bg-gray-200 rounded-full flex items-center justify-center">
-            <svg
-              className="w-6 h-6 text-gray-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          </div>
-
-          {hasNoMetrics ? (
-            <>
-              <p className="text-gray-900 font-medium mb-2">
-                No metrics configured
-              </p>
-              <p className="text-sm text-gray-600 mb-4">
-                Add metrics to this evaluation period before recording data.
-              </p>
-              {auth.permissions.canConfigurePeriods && (
-                <Link
-                  href={`/alliances/${allianceId}/periods/${periodId}`}
-                  className="inline-block px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
-                >
-                  Configure Metrics
-                </Link>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="text-gray-900 font-medium mb-2">
-                No active members
-              </p>
-              <p className="text-sm text-gray-600 mb-4">
-                Import your alliance roster before recording metrics.
-              </p>
-              {auth.permissions.canImportMembers && (
-                <Link
-                  href={`/alliances/${allianceId}/members/import`}
-                  className="inline-block px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
-                >
-                  Import Members
-                </Link>
-              )}
-            </>
-          )}
-        </div>
-
-        <Link
-          href={backLink.href}
-          className="text-sm text-gray-500 hover:text-gray-700"
-        >
-          {backLink.label}
-        </Link>
-      </div>
+      <PageLayout
+        breadcrumb={breadcrumb}
+        title={period.name}
+        description="Record Metrics"
+        maxWidth="md"
+      >
+        {hasNoMetrics ? (
+          <EmptyState
+            title="No metrics configured"
+            description="Add metrics to this evaluation period before recording data."
+            action={
+              auth.permissions.canConfigurePeriods
+                ? <Button variant="primary" href={`/alliances/${allianceId}/periods/${periodId}`}>Configure Metrics</Button>
+                : undefined
+            }
+          />
+        ) : (
+          <EmptyState
+            title="No active members"
+            description="Import your alliance roster before recording metrics."
+            action={
+              auth.permissions.canImportMembers
+                ? <Button variant="primary" href={`/alliances/${allianceId}/members/import`}>Import Members</Button>
+                : undefined
+            }
+          />
+        )}
+      </PageLayout>
     );
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-4">
-      <h1 className="text-2xl font-bold">{period.name}</h1>
-      <h2 className="text-lg text-gray-600">Record Metrics</h2>
-
-      <div className="flex gap-4 text-sm">
-        <Link href={backLink.href} className="text-gray-500 hover:text-gray-700">
-          {backLink.label}
-        </Link>
-        <Link
+    <PageLayout
+      breadcrumb={breadcrumb}
+      title={period.name}
+      description="Record Metrics"
+      action={
+        <Button
           href={`/alliances/${allianceId}/periods/${periodId}/import`}
-          className="text-blue-500 hover:text-blue-700"
+          variant="secondary"
+          size="sm"
         >
-          Import from Spreadsheet →
-        </Link>
-      </div>
-
-      <hr className="w-full max-w-2xl border-gray-200" />
-      <RecordMetricsForm
-        periodId={periodId}
-        allianceId={allianceId}
-        members={alliance.allianceMembers}
-        metrics={metrics}
-      />
-    </div>
+          Import from Spreadsheet
+        </Button>
+      }
+      maxWidth="2xl"
+    >
+      <Card>
+        <Card.Body>
+          <RecordMetricsForm
+            periodId={periodId}
+            allianceId={allianceId}
+            members={alliance.allianceMembers}
+            metrics={metrics}
+          />
+        </Card.Body>
+      </Card>
+    </PageLayout>
   );
 }

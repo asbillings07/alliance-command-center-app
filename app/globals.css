@@ -1,26 +1,82 @@
 @import "tailwindcss";
 
+/*
+ * Alliance Command Center Design System
+ * 
+ * Design tokens from docs/color-design-principles.md
+ * Dark mode is the primary design target.
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surface Colors */
+  --background: #0F172A;
+  --surface: #111827;
+  --surface-secondary: #1F2937;
+  --surface-elevated: #273449;
+
+  /* Border Colors */
+  --border: #374151;
+  --border-hover: #4B5563;
+
+  /* Text Colors */
+  --text-primary: #F9FAFB;
+  --text-secondary: #D1D5DB;
+  --text-muted: #9CA3AF;
+  --text-disabled: #8B929F; /* Lightened for WCAG AA contrast (was #6B7280) */
+
+  /* Accent Colors */
+  --primary: #3B82F6;
+  --primary-hover: #2563EB; /* Accessible fill for white text (5.1:1); button resting color */
+  --primary-active: #1D4ED8; /* Darker shade for button hover/active (6.5:1) */
+  --primary-light: #60A5FA; /* Lighter shade for badges/low-contrast backgrounds */
+  --success: #22C55E;
+  --success-light: #4ADE80; /* Lighter shade for badges */
+  --warning: #F59E0B;
+  --warning-dark: #92400E; /* Darker shade for button backgrounds (WCAG AA 5.5:1 with white) */
+  --warning-light: #FBBF24; /* Lighter shade for badges */
+  --danger: #EF4444;
+  --danger-dark: #DC2626; /* Darker shade for button backgrounds (WCAG AA) */
+  --danger-light: #F87171; /* Lighter shade for badges */
 }
 
 @theme inline {
+  /* Surface Colors */
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-surface-elevated: var(--surface-elevated);
+
+  /* Border Colors */
+  --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
+
+  /* Text Colors */
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-disabled: var(--text-disabled);
+
+  /* Accent Colors */
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-primary-light: var(--primary-light);
+  --color-success: var(--success);
+  --color-success-light: var(--success-light);
+  --color-warning: var(--warning);
+  --color-warning-dark: var(--warning-dark);
+  --color-warning-light: var(--warning-light);
+  --color-danger: var(--danger);
+  --color-danger-dark: var(--danger-dark);
+  --color-danger-light: var(--danger-light);
+
+  /* Fonts - Use Geist */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
 }

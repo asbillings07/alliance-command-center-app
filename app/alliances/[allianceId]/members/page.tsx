@@ -5,6 +5,8 @@ import { Permissions } from "@/app/src/lib/auth/permissions";
 import Link from "next/link";
 import { formatPower } from "@/app/src/lib/formatPower";
 import { MembersFilter } from "./MembersFilter";
+import { PageLayout, Card, Badge, EmptyState } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type Params = {
     params: Promise<{
@@ -42,12 +44,10 @@ export default async function MembersPage({ params, searchParams }: Params) {
         redirect("/app");
     }
 
-    // Build where clause based on filter
     const whereClause = {
         allianceId: allianceId,
         ...(filter === "active" ? { archivedAt: null } : {}),
         ...(filter === "archived" ? { archivedAt: { not: null } } : {}),
-        // "all" has no additional filter
     };
 
     const allianceMembers = await prisma.allianceMember.findMany({
@@ -57,7 +57,6 @@ export default async function MembersPage({ params, searchParams }: Params) {
         },
     });
 
-    // Get counts for filter badges
     const [activeCount, archivedCount] = await Promise.all([
         prisma.allianceMember.count({
             where: { allianceId, archivedAt: null },
@@ -69,38 +68,41 @@ export default async function MembersPage({ params, searchParams }: Params) {
 
     const { permissions } = authContext;
 
-    return (
-        <div className="mx-auto max-w-4xl p-8">
-            <div className="flex items-center justify-between mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">
-                        {alliance.name} Roster
-                    </h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        {allianceMembers.length} member{allianceMembers.length !== 1 ? "s" : ""}
-                        {filter !== "all" && ` (${filter})`}
-                    </p>
-                </div>
-                <div className="flex gap-3">
-                    {permissions.canImportMembers && (
-                        <Link
-                            href={`/alliances/${allianceId}/members/import`}
-                            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 text-sm"
-                        >
-                            Import Roster
-                        </Link>
-                    )}
-                    {permissions.canManageMembers && (
-                        <Link
-                            href={`/alliances/${allianceId}/members/new`}
-                            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
-                        >
-                            Add Member
-                        </Link>
-                    )}
-                </div>
-            </div>
+    const description = `${allianceMembers.length} member${allianceMembers.length !== 1 ? "s" : ""}${filter !== "all" ? ` (${filter})` : ""}`;
 
+    const actionButtons = (
+        <div className="flex gap-3">
+            {permissions.canImportMembers && (
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    href={`/alliances/${allianceId}/members/import`}
+                >
+                    Import Roster
+                </Button>
+            )}
+            {permissions.canManageMembers && (
+                <Button
+                    variant="primary"
+                    size="sm"
+                    href={`/alliances/${allianceId}/members/new`}
+                >
+                    Add Member
+                </Button>
+            )}
+        </div>
+    );
+
+    return (
+        <PageLayout
+            breadcrumb={[
+                { label: "Dashboard", href: `/alliances/${allianceId}` },
+                { label: "Members" },
+            ]}
+            title={`${alliance.name} Roster`}
+            description={description}
+            action={actionButtons}
+        >
             <MembersFilter
                 currentFilter={filter}
                 activeCount={activeCount}
@@ -109,73 +111,80 @@ export default async function MembersPage({ params, searchParams }: Params) {
             />
 
             {allianceMembers.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-gray-600">
-                        {filter === "active"
-                            ? "No active members yet."
+                <EmptyState
+                    title={
+                        filter === "active"
+                            ? "No active members yet"
                             : filter === "archived"
-                            ? "No archived members."
-                            : "No members yet."}
-                    </p>
-                    {filter === "active" && permissions.canManageMembers && (
-                        <p className="text-sm text-gray-500 mt-2">
-                            Import your roster or add members manually to get started.
-                        </p>
-                    )}
-                </div>
+                            ? "No archived members"
+                            : "No members yet"
+                    }
+                    description={
+                        filter === "active" && permissions.canManageMembers
+                            ? "Import your roster or add members manually to get started."
+                            : undefined
+                    }
+                    action={
+                        filter === "active" && permissions.canManageMembers
+                            ? <Button variant="primary" href={`/alliances/${allianceId}/members/new`}>Add Member</Button>
+                            : undefined
+                    }
+                />
             ) : (
-                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                    <table className="w-full">
-                        <thead className="bg-gray-50 border-b border-gray-200">
-                            <tr>
-                                <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">
-                                    Player
-                                </th>
-                                <th className="text-right px-4 py-3 text-sm font-medium text-gray-700">
-                                    THP
-                                </th>
-                                <th className="text-right px-4 py-3 text-sm font-medium text-gray-700">
-                                    Squad Power
-                                </th>
-                                <th className="text-left px-4 py-3 text-sm font-medium text-gray-700">
-                                    Role
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {allianceMembers.map((member) => (
-                                <tr
-                                    key={member.id}
-                                    className="border-b border-gray-100 hover:bg-gray-50"
-                                >
-                                    <td className="px-4 py-3">
-                                        <Link
-                                            href={`/alliances/${allianceId}/members/${member.id}`}
-                                            className="font-medium text-blue-600 hover:text-blue-800"
-                                        >
-                                            {member.playerName}
-                                        </Link>
-                                        {member.archivedAt && (
-                                            <span className="ml-2 px-1.5 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
-                                                Archived
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 text-right text-gray-600">
-                                        {member.thp == null ? "—" : formatPower(member.thp)}
-                                    </td>
-                                    <td className="px-4 py-3 text-right text-gray-600">
-                                        {member.squadPower == null ? "—" : formatPower(member.squadPower)}
-                                    </td>
-                                    <td className="px-4 py-3 text-gray-600">
-                                        {member.role || "—"}
-                                    </td>
+                <Card>
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-surface-secondary border-b border-border">
+                                <tr>
+                                    <th className="text-left px-4 py-3 text-sm font-medium text-text-secondary">
+                                        Player
+                                    </th>
+                                    <th className="text-right px-4 py-3 text-sm font-medium text-text-secondary">
+                                        THP
+                                    </th>
+                                    <th className="text-right px-4 py-3 text-sm font-medium text-text-secondary">
+                                        Squad Power
+                                    </th>
+                                    <th className="text-left px-4 py-3 text-sm font-medium text-text-secondary">
+                                        Role
+                                    </th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody>
+                                {allianceMembers.map((member) => (
+                                    <tr
+                                        key={member.id}
+                                        className="border-b border-border hover:bg-surface-secondary transition-colors"
+                                    >
+                                        <td className="px-4 py-3">
+                                            <Link
+                                                href={`/alliances/${allianceId}/members/${member.id}`}
+                                                className="font-medium text-primary-light hover:text-primary"
+                                            >
+                                                {member.playerName}
+                                            </Link>
+                                            {member.archivedAt && (
+                                                <Badge variant="neutral" size="sm" className="ml-2">
+                                                    Archived
+                                                </Badge>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 text-right text-text-secondary">
+                                            {member.thp == null ? "—" : formatPower(member.thp)}
+                                        </td>
+                                        <td className="px-4 py-3 text-right text-text-secondary">
+                                            {member.squadPower == null ? "—" : formatPower(member.squadPower)}
+                                        </td>
+                                        <td className="px-4 py-3 text-text-secondary">
+                                            {member.role || "—"}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
             )}
-        </div>
+        </PageLayout>
     );
 }

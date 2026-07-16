@@ -3,6 +3,8 @@ import { LeadershipNoteType } from "@/app/generated/prisma/enums";
 import { useState } from "react";
 import { NoteForm } from "./noteForm";
 import { deleteLeadershipNote } from "./action";
+import { Card, Badge } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type NoteData = {
     id: string;
@@ -21,20 +23,18 @@ type LeadershipNoteCardProps = {
     note?: NoteData;
 };
 
-const NOTE_TYPE_LABELS: Record<LeadershipNoteType, { label: string; color: string }> = {
-    [LeadershipNoteType.POSITIVE]: { label: "Positive", color: "bg-green-100 text-green-800" },
-    [LeadershipNoteType.WARNING]: { label: "Warning", color: "bg-yellow-100 text-yellow-800" },
-    [LeadershipNoteType.OBSERVATION]: { label: "Observation", color: "bg-blue-100 text-blue-800" },
-    [LeadershipNoteType.PROMOTION]: { label: "Promotion", color: "bg-purple-100 text-purple-800" }
+const NOTE_TYPE_VARIANTS: Record<LeadershipNoteType, { label: string; variant: "success" | "warning" | "info" | "neutral" }> = {
+    [LeadershipNoteType.POSITIVE]: { label: "Positive", variant: "success" },
+    [LeadershipNoteType.WARNING]: { label: "Warning", variant: "warning" },
+    [LeadershipNoteType.OBSERVATION]: { label: "Observation", variant: "info" },
+    [LeadershipNoteType.PROMOTION]: { label: "Promotion", variant: "neutral" }
 };
 
 export function LeadershipNoteCard({ allianceId, memberId, mode, note }: LeadershipNoteCardProps) {
-    // Single state: "closed" (button only), "form" (showing form), or "view" (showing note)
     const [cardState, setCardState] = useState<"closed" | "form" | "view">(
         mode === "create" ? "closed" : "view"
     );
 
-    // CREATE MODE: Show button or create form
     if (mode === "create") {
         if (cardState === "closed") {
             return (
@@ -42,7 +42,7 @@ export function LeadershipNoteCard({ allianceId, memberId, mode, note }: Leaders
                     <button
                         type="button"
                         onClick={() => setCardState("form")}
-                        className="w-full rounded-md border-2 border-dashed border-gray-300 p-4 text-gray-500 hover:border-blue-400 hover:text-blue-500 cursor-pointer"
+                        className="w-full rounded-md border-2 border-dashed border-border p-4 text-text-secondary hover:border-primary hover:text-primary-light cursor-pointer transition-colors"
                     >
                         + Add Leadership Note
                     </button>
@@ -64,12 +64,10 @@ export function LeadershipNoteCard({ allianceId, memberId, mode, note }: Leaders
         );
     }
 
-    // VIEW MODE: Need note data
     if (!note) return null;
 
-    const typeInfo = NOTE_TYPE_LABELS[note.noteType] || NOTE_TYPE_LABELS[LeadershipNoteType.OBSERVATION];
+    const typeInfo = NOTE_TYPE_VARIANTS[note.noteType] || NOTE_TYPE_VARIANTS[LeadershipNoteType.OBSERVATION];
 
-    // VIEW MODE - EDITING: Show edit form
     if (cardState === "form" && note.canEdit) {
         return (
             <NoteForm
@@ -85,42 +83,45 @@ export function LeadershipNoteCard({ allianceId, memberId, mode, note }: Leaders
         );
     }
 
-    // VIEW MODE - VIEWING: Show the note
     return (
-        <div className="w-full rounded-md border p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${typeInfo.color}`}>
-                            {typeInfo.label}
-                        </span>
-                        <span className="text-sm text-gray-500">
-                            by {note.authorName}
-                        </span>
-                        <span className="text-sm text-gray-400">
-                            • {note.createdAt}
-                        </span>
+        <Card>
+            <Card.Body>
+                <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Badge variant={typeInfo.variant} size="sm">
+                                {typeInfo.label}
+                            </Badge>
+                            <span className="text-sm text-text-secondary">
+                                by {note.authorName}
+                            </span>
+                            <span className="text-sm text-text-muted">
+                                • {note.createdAt}
+                            </span>
+                        </div>
+                        <p className="text-primary whitespace-pre-wrap">{note.content}</p>
                     </div>
-                    <p className="text-gray-700 whitespace-pre-wrap">{note.content}</p>
+                    {note.canEdit && (
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="link"
+                                size="sm"
+                                onClick={() => setCardState("form")}
+                            >
+                                Edit
+                            </Button>
+                            <form action={deleteLeadershipNote}>
+                                <input type="hidden" name="noteId" value={note.id} />
+                                <input type="hidden" name="allianceId" value={allianceId} />
+                                <Button variant="danger-link" size="sm" type="submit">
+                                    Delete
+                                </Button>
+                            </form>
+                        </div>
+                    )}
                 </div>
-                {note.canEdit && (
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={() => setCardState("form")}
-                            className="text-sm text-blue-500 hover:text-blue-700 cursor-pointer"
-                        >
-                            Edit
-                        </button>
-                        <form action={deleteLeadershipNote}>
-                            <input type="hidden" name="noteId" value={note.id} />
-                            <input type="hidden" name="allianceId" value={allianceId} />
-                            <button type="submit" className="text-sm text-red-500 hover:text-red-700 cursor-pointer">Delete</button>
-                        </form>
-                    </div>
-                )}
-            </div>
-        </div>
+            </Card.Body>
+        </Card>
     );
 }
 

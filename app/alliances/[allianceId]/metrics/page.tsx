@@ -2,6 +2,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { MetricCard } from "./metricCard";
+import { PageLayout, EmptyState } from "@/app/src/components";
 
 type Params = {
     params: Promise<{
@@ -25,12 +26,22 @@ export default async function MetricsPage({ params }: Params) {
     });
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-            <h1 className="text-2xl font-bold">Metrics Library</h1>
-            <div className="flex flex-col items-center justify-center gap-4 w-full max-w-3xl">
+        <PageLayout
+            breadcrumb={[
+                { label: "Dashboard", href: `/alliances/${allianceId}` },
+                { label: "Metrics Library" },
+            ]}
+            title="Metrics Library"
+            description="Define the metrics you track for your alliance"
+            maxWidth="3xl"
+        >
+            <div className="flex flex-col gap-4">
                 <MetricCard allianceId={allianceId} mode="create" />
                 {metrics.length === 0 ? (
-                    <p className="text-gray-500">No metrics found. Create one to get started!</p>
+                    <EmptyState
+                        title="No metrics yet"
+                        description="Create your first metric to start tracking alliance performance."
+                    />
                 ) : (
                     metrics.map((metric) => (
                         <MetricCard
@@ -49,6 +60,6 @@ export default async function MetricsPage({ params }: Params) {
                     ))
                 )}
             </div>
-        </div>
+        </PageLayout>
     );
 }

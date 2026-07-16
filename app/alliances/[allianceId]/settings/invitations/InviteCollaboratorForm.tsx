@@ -86,7 +86,7 @@ export function InviteCollaboratorForm({
           setThp("");
           setSquadPower("");
         }
-      } catch (err) {
+      } catch {
         setError("An unexpected error occurred");
       }
     });

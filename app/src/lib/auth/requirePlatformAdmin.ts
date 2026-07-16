@@ -22,16 +22,25 @@ import { requireAuth } from "./requireAuth";
 /**
  * Get the list of platform admin emails from environment config.
  * Emails are normalized to lowercase for case-insensitive comparison.
+ *
+ * Checks both PLATFORM_ADMIN_EMAILS and PLATFORM_ADMIN_EMAILS_E2E,
+ * combining them into a single list. This allows E2E tests to use
+ * separate test accounts without affecting production admin list.
  */
 function getPlatformAdminEmails(): string[] {
-  const envValue = process.env.PLATFORM_ADMIN_EMAILS;
-  if (!envValue) {
-    return [];
-  }
-  return envValue
-    .split(",")
-    .map((email) => email.trim().toLowerCase())
-    .filter((email) => email.length > 0);
+  const parseEmails = (envValue: string | undefined): string[] => {
+    if (!envValue) return [];
+    return envValue
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter((email) => email.length > 0);
+  };
+
+  const prodEmails = parseEmails(process.env.PLATFORM_ADMIN_EMAILS);
+  const e2eEmails = parseEmails(process.env.PLATFORM_ADMIN_EMAILS_E2E);
+
+  // Combine and deduplicate
+  return [...new Set([...prodEmails, ...e2eEmails])];
 }
 
 /**
