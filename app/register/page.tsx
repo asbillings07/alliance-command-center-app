@@ -5,7 +5,8 @@ import {
   validateBetaCode,
 } from "@/app/src/lib/betaInvitation";
 import { RegisterForm } from "./RegisterForm";
-import { AuthLayout, Button } from "@/app/src/components";
+import { AuthLayout } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type PageProps = {
   searchParams: Promise<{ callbackUrl?: string; name?: string }>;

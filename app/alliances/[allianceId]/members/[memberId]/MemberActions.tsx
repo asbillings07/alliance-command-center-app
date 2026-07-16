@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { archiveMember, restoreMember } from "./member-actions";
-import { Button } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 interface MemberActionsProps {
   allianceId: string;

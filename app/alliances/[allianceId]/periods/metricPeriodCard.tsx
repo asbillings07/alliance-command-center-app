@@ -6,7 +6,8 @@ import { MetricPeriodForm } from "./metricPeriodForm";
 import { archiveMetricPeriod, restoreMetricPeriod } from "./action";
 import { MetricPeriodMetric } from "@/app/generated/prisma/client";
 import { Metric } from "@/app/generated/prisma/client";
-import { Card, Badge, Button } from "@/app/src/components";
+import { Card, Badge } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type MetricPeriodData = {
   id: string;

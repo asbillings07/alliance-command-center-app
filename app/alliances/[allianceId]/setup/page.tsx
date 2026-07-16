@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { getAllianceSetupStatus, type SetupTask } from "@/app/src/lib/allianceSetup";
-import { PageLayout, Button } from "@/app/src/components";
+import { PageLayout } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type Params = {
   params: Promise<{

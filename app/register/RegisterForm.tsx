@@ -2,7 +2,8 @@
 
 import { useActionState } from "react";
 import { register, type RegisterState } from "./actions";
-import { AuthError, Button, Input, Label } from "@/app/src/components";
+import { AuthError } from "@/app/src/components";
+import { Button, Input, Label } from "@/app/src/components/client";
 
 const initialState: RegisterState = { error: null };
 

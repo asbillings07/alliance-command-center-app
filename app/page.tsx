@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/app/src/lib/auth";
 import { redirect } from "next/navigation";
-import { Button } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 export default async function HomePage() {
   const session = await auth();

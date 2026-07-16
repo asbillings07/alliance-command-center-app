@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
-import { PageLayout, Card, Button, Badge } from "@/app/src/components";
+import { PageLayout, Card, Badge } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type Params = {
   params: Promise<{
@@ -24,16 +25,6 @@ export default async function AlliancePage({ params }: Params) {
 
   if (!alliance) {
     redirect("/app");
-  }
-
-  let activePeriod: { id: string; name: string } | null = null;
-  if (permissions.canImportMetrics && !permissions.canConfigurePeriods) {
-    const period = await prisma.metricPeriod.findFirst({
-      where: { allianceId, active: true },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, name: true },
-    });
-    activePeriod = period;
   }
 
   return (
@@ -93,33 +84,6 @@ export default async function AlliancePage({ params }: Params) {
                   <Button href={`/alliances/${allianceId}/periods`} variant="primary" size="sm">
                     Manage Periods
                   </Button>
-                </Card.Body>
-              </Card>
-            )}
-
-            {permissions.canImportMetrics && !permissions.canConfigurePeriods && (
-              <Card>
-                <Card.Body>
-                  <h3 className="font-medium text-primary mb-2">Record Metrics</h3>
-                  <p className="text-sm text-text-secondary mb-4">
-                    {activePeriod 
-                      ? `Record data for ${activePeriod.name}.`
-                      : "No active evaluation period available."
-                    }
-                  </p>
-                  {activePeriod ? (
-                    <Button 
-                      href={`/alliances/${allianceId}/periods/${activePeriod.id}/record`} 
-                      variant="primary" 
-                      size="sm"
-                    >
-                      Record Now
-                    </Button>
-                  ) : (
-                    <span className="text-sm text-text-muted">
-                      Waiting for period activation
-                    </span>
-                  )}
                 </Card.Body>
               </Card>
             )}

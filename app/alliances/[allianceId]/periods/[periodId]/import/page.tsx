@@ -3,7 +3,8 @@ import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { notFound } from "next/navigation";
 import { ImportForm } from "./ImportForm";
-import { PageLayout, Card, Button, EmptyState } from "@/app/src/components";
+import { PageLayout, Card, EmptyState } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type Params = {
   params: Promise<{

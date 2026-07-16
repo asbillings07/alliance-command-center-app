@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addMember, restoreMember } from "./action";
-import { Button, Input, Label, Card } from "@/app/src/components";
+import { Card } from "@/app/src/components";
+import { Button, Input, Label } from "@/app/src/components/client";
 
 interface AddMemberFormProps {
     allianceId: string;

@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { createMetricPeriod, editMetricPeriod } from "./action";
-import { Card, Button, Input, Label } from "@/app/src/components";
+import { Card } from "@/app/src/components";
+import { Button, Input, Label } from "@/app/src/components/client";
 
 type MetricPeriodFormProps = {
   allianceId: string;

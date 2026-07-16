@@ -3,7 +3,8 @@ import { LeadershipNoteType } from "@/app/generated/prisma/enums";
 import { useState } from "react";
 import { NoteForm } from "./noteForm";
 import { deleteLeadershipNote } from "./action";
-import { Card, Badge, Button } from "@/app/src/components";
+import { Card, Badge } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type NoteData = {
     id: string;

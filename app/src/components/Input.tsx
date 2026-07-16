@@ -1,3 +1,5 @@
+"use client";
+
 import {
   InputHTMLAttributes,
   TextareaHTMLAttributes,

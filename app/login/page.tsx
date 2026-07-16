@@ -5,7 +5,8 @@ import { useActionState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { login, type LoginState } from "./actions";
-import { AuthLayout, AuthError, Button, Input, Label } from "@/app/src/components";
+import { AuthLayout, AuthError } from "@/app/src/components";
+import { Button, Input, Label } from "@/app/src/components/client";
 
 const initialState: LoginState = { error: null };
 

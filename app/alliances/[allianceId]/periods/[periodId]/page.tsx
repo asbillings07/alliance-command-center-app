@@ -3,7 +3,8 @@ import { Permissions } from "@/app/src/lib/auth/permissions";
 import { PeriodMetricList } from "./PeriodMetricList";
 import { prisma } from "@/app/src/lib/prisma";
 import { notFound } from "next/navigation";
-import { PageLayout, Card, Button } from "@/app/src/components";
+import { PageLayout, Card } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type Params = {
     params: Promise<{

@@ -1,4 +1,5 @@
-import { Card, Badge, Button } from "@/app/src/components";
+import { Card, Badge } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type MemberAccountSectionProps = {
   allianceId: string;

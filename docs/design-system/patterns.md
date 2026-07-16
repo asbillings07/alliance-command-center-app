@@ -23,7 +23,8 @@ Content
 Use the `PageLayout` component:
 
 ```tsx
-import { PageLayout, Button } from "@/app/src/components";
+import { PageLayout } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 export default function MembersPage() {
   return (
@@ -80,7 +81,8 @@ Action
 Use the `EmptyState` component:
 
 ```tsx
-import { EmptyState, Button } from "@/app/src/components";
+import { EmptyState } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 // Icon can be any 24x24 SVG
 function UsersIcon() {
@@ -135,7 +137,8 @@ Footer (optional)
 Use the `Card` component:
 
 ```tsx
-import { Card, Button } from "@/app/src/components";
+import { Card } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 <Card>
   <Card.Header action={<Button variant="link">Edit</Button>}>
@@ -181,7 +184,8 @@ Actions
 Use the form components:
 
 ```tsx
-import { Card, FormField, Input, Select, Button } from "@/app/src/components";
+import { Card } from "@/app/src/components";
+import { FormField, Input, Select, Button } from "@/app/src/components/client";
 
 <Card>
   <form className="space-y-4">

@@ -5,7 +5,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { MetricForm } from "./metricForm";
 import { archiveMetric, restoreMetric } from "./action";
-import { Card, Badge, Button } from "@/app/src/components";
+import { Card, Badge } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type MetricData = {
   id: string;

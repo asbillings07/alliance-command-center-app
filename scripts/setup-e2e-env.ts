@@ -49,10 +49,15 @@ async function main() {
     process.exit(1);
   }
 
-  // Find a second alliance for tenant isolation tests (or create indicator that it's needed)
+  // Find a second alliance for tenant isolation tests. It must be one the owner
+  // is NOT a member of, otherwise the owner would legitimately have access and
+  // the isolation assertions would produce false results.
   const otherAlliance = await prisma.alliance.findFirst({
     where: {
       id: { not: alliance.id },
+      memberships: {
+        none: { userId: owner.id },
+      },
     },
   });
 

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updateMember } from "../member-actions";
 import { formatPower } from "@/app/src/lib/formatPower";
-import { Button, Input, Label } from "@/app/src/components";
+import { Button, Input, Label } from "@/app/src/components/client";
 
 interface EditMemberFormProps {
     allianceId: string;

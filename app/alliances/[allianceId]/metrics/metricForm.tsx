@@ -3,7 +3,8 @@
 import { useState, useTransition, useRef } from "react";
 import { Metric_Type } from "@/app/generated/prisma/enums";
 import { createMetric, editMetric } from "./action";
-import { Card, Button, Input, Textarea, Select, Label } from "@/app/src/components";
+import { Card } from "@/app/src/components";
+import { Button, Input, Textarea, Select, Label } from "@/app/src/components/client";
 
 type MetricFormProps = {
   allianceId: string;

@@ -5,7 +5,8 @@ import { Permissions } from "@/app/src/lib/auth/permissions";
 import Link from "next/link";
 import { formatPower } from "@/app/src/lib/formatPower";
 import { MembersFilter } from "./MembersFilter";
-import { PageLayout, Card, Button, Badge, EmptyState } from "@/app/src/components";
+import { PageLayout, Card, Badge, EmptyState } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type Params = {
     params: Promise<{

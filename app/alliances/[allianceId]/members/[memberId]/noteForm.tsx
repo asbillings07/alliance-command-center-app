@@ -3,7 +3,8 @@
 import { useState, useTransition, useRef } from "react";
 import { LeadershipNoteType } from "@/app/generated/prisma/enums";
 import { createLeadershipNote, editLeadershipNote } from "./action";
-import { Card, Button, Label, Select, Textarea } from "@/app/src/components";
+import { Card } from "@/app/src/components";
+import { Button, Label, Select, Textarea } from "@/app/src/components/client";
 
 type NoteFormProps = {
   allianceId: string;
