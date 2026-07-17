@@ -78,3 +78,10 @@ export {
   type SearchResults,
   type SearchResultType,
 } from "./search";
+
+// Bootstrap domain
+export {
+  isPlatformInitialized,
+  getBootstrapAllowedEmails,
+  canInitializePlatform,
+} from "./bootstrap";

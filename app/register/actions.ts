@@ -89,6 +89,10 @@ export async function register(
       return { error: "This beta invitation has expired" };
     }
 
+    if (result.status === "revoked") {
+      return { error: "This beta invitation has been revoked" };
+    }
+
     if (result.status === "already_accepted") {
       return { error: "This beta invitation has already been accepted" };
     }

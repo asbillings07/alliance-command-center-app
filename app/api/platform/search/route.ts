@@ -6,7 +6,7 @@ import { searchPlatform } from "@/app/src/lib/platform";
 export async function GET(request: NextRequest) {
   const session = await auth();
 
-  if (!session?.user?.email || !isPlatformAdmin(session.user.email)) {
+  if (!session?.user?.id || !(await isPlatformAdmin(session.user.id))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -5,6 +5,8 @@ import {
   getInvitationStats,
   type BetaInvitationItem,
 } from "@/app/src/lib/platform";
+import { InviteBetaTester } from "./InviteBetaTester";
+import { InvitationActions, InvitationCardActions } from "./InvitationActions";
 
 /**
  * Platform Beta
@@ -12,9 +14,10 @@ import {
  * Answers: "Manage the beta program."
  *
  * Features:
+ * - Create beta invitations
  * - Beta invitation list
  * - Invitation status
- * - Actions (resend, expire)
+ * - Actions (copy, revoke)
  */
 
 function formatDate(date: Date): string {
@@ -26,13 +29,14 @@ function formatDate(date: Date): string {
   });
 }
 
-function InvitationCard({ invitation }: { invitation: BetaInvitationItem }) {
-  const statusConfig = {
-    pending: { variant: "info" as const, label: "Pending" },
-    accepted: { variant: "success" as const, label: "Accepted" },
-    expired: { variant: "danger" as const, label: "Expired" },
-  };
+const statusConfig = {
+  pending: { variant: "info" as const, label: "Pending" },
+  accepted: { variant: "success" as const, label: "Accepted" },
+  expired: { variant: "danger" as const, label: "Expired" },
+  revoked: { variant: "warning" as const, label: "Revoked" },
+};
 
+function InvitationCard({ invitation }: { invitation: BetaInvitationItem }) {
   const config = statusConfig[invitation.status];
 
   return (
@@ -48,6 +52,11 @@ function InvitationCard({ invitation }: { invitation: BetaInvitationItem }) {
               invitation.acceptedAt &&
               ` • Accepted ${formatDate(invitation.acceptedAt)}`}
           </p>
+          {invitation.notes && (
+            <p className="text-xs text-text-muted mt-1 italic">
+              {invitation.notes}
+            </p>
+          )}
         </div>
         <Badge variant={config.variant} size="sm">
           {config.label}
@@ -70,6 +79,81 @@ function InvitationCard({ invitation }: { invitation: BetaInvitationItem }) {
           )}
         </div>
       )}
+
+      {invitation.status === "pending" && (
+        <InvitationCardActions
+          invitationId={invitation.id}
+          code={invitation.code}
+          token={invitation.token}
+        />
+      )}
+    </div>
+  );
+}
+
+function PendingInvitationTable({
+  invitations,
+}: {
+  invitations: BetaInvitationItem[];
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border">
+            <th className="text-left py-3 px-4 text-text-muted font-medium">
+              Email
+            </th>
+            <th className="text-left py-3 px-4 text-text-muted font-medium">
+              Code
+            </th>
+            <th className="text-left py-3 px-4 text-text-muted font-medium">
+              Sent
+            </th>
+            <th className="text-left py-3 px-4 text-text-muted font-medium">
+              Expires
+            </th>
+            <th className="text-left py-3 px-4 text-text-muted font-medium">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {invitations.map((invitation) => (
+            <tr
+              key={invitation.id}
+              className="border-b border-border hover:bg-surface-secondary transition-colors"
+            >
+              <td className="py-3 px-4">
+                <div className="text-text-primary">{invitation.email}</div>
+                {invitation.notes && (
+                  <div className="text-xs text-text-muted italic">
+                    {invitation.notes}
+                  </div>
+                )}
+              </td>
+              <td className="py-3 px-4">
+                <code className="text-xs bg-surface-secondary px-1.5 py-0.5 rounded">
+                  {invitation.code}
+                </code>
+              </td>
+              <td className="py-3 px-4 text-text-muted">
+                {formatDate(invitation.createdAt)}
+              </td>
+              <td className="py-3 px-4 text-text-muted">
+                {formatDate(invitation.expiresAt)}
+              </td>
+              <td className="py-3 px-4">
+                <InvitationActions
+                  invitationId={invitation.id}
+                  code={invitation.code}
+                  token={invitation.token}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -79,12 +163,6 @@ function InvitationTable({
 }: {
   invitations: BetaInvitationItem[];
 }) {
-  const statusConfig = {
-    pending: { variant: "info" as const, label: "Pending" },
-    accepted: { variant: "success" as const, label: "Accepted" },
-    expired: { variant: "danger" as const, label: "Expired" },
-  };
-
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -161,8 +239,11 @@ export default async function PlatformBeta() {
   ]);
 
   const pendingInvitations = invitations.filter((i) => i.status === "pending");
-  const acceptedInvitations = invitations.filter((i) => i.status === "accepted");
+  const acceptedInvitations = invitations.filter(
+    (i) => i.status === "accepted"
+  );
   const expiredInvitations = invitations.filter((i) => i.status === "expired");
+  const revokedInvitations = invitations.filter((i) => i.status === "revoked");
 
   const acceptedWithoutAlliance = acceptedInvitations.filter(
     (i) => !i.hasAlliance
@@ -170,6 +251,11 @@ export default async function PlatformBeta() {
 
   return (
     <div className="space-y-8 max-w-6xl">
+      {/* Invite Beta Tester Form */}
+      <section>
+        <InviteBetaTester />
+      </section>
+
       {/* Stats Summary */}
       <section>
         <h2 className="text-lg font-semibold text-text-secondary mb-4">
@@ -249,9 +335,9 @@ export default async function PlatformBeta() {
               <InvitationCard key={invitation.id} invitation={invitation} />
             ))}
           </div>
-          {/* Desktop: Table */}
+          {/* Desktop: Table with Actions */}
           <div className="hidden md:block bg-surface rounded-lg border border-border">
-            <InvitationTable invitations={pendingInvitations} />
+            <PendingInvitationTable invitations={pendingInvitations} />
           </div>
         </section>
       )}
@@ -300,12 +386,34 @@ export default async function PlatformBeta() {
         </section>
       )}
 
+      {/* Revoked Invitations */}
+      {revokedInvitations.length > 0 && (
+        <section>
+          <h2 className="text-lg font-semibold text-text-secondary mb-4">
+            Revoked
+            <span className="ml-2 text-sm font-normal text-warning">
+              ({revokedInvitations.length})
+            </span>
+          </h2>
+          {/* Mobile: Cards */}
+          <div className="md:hidden space-y-3">
+            {revokedInvitations.map((invitation) => (
+              <InvitationCard key={invitation.id} invitation={invitation} />
+            ))}
+          </div>
+          {/* Desktop: Table */}
+          <div className="hidden md:block bg-surface rounded-lg border border-border">
+            <InvitationTable invitations={revokedInvitations} />
+          </div>
+        </section>
+      )}
+
       {/* Empty State */}
       {invitations.length === 0 && (
         <div className="text-center py-12 text-text-muted">
           <p>No beta invitations yet.</p>
           <p className="text-sm mt-1">
-            Use the CLI to create beta invitations.
+            Use the form above to invite your first beta tester.
           </p>
         </div>
       )}

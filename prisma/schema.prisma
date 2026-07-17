@@ -94,6 +94,7 @@ model User {
   email       String @unique
   displayName String
   passwordHash String
+  isPlatformAdmin Boolean @default(false)
 
   memberships AllianceMembership[]
   authoredNotes LeadershipNote[]
@@ -228,12 +229,15 @@ model BetaInvitation {
   email     String   @unique
   token     String   @unique
   code      String   @unique
+  notes     String?
   expiresAt DateTime
   createdAt DateTime @default(now())
 
   acceptedAt       DateTime?
   acceptedByUserId String?
   acceptedByUser   User?     @relation("BetaInvitationsAccepted", fields: [acceptedByUserId], references: [id])
+
+  revokedAt DateTime?
 
   allianceId String?
   alliance   Alliance? @relation(fields: [allianceId], references: [id])

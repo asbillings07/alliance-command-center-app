@@ -55,6 +55,13 @@ export default async function RegisterPage({ searchParams }: PageProps) {
       );
     }
 
+    if (result.status === "revoked") {
+      return (
+        <InvitationRequired message="This beta invitation has been revoked. Please contact us to request a new invitation." />
+      );
+    }
+
+    // At this point, status is "valid" and invitation is guaranteed to exist
     const betaInvitation = result.invitation;
 
     return (

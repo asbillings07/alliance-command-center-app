@@ -34,9 +34,13 @@ export type CreateBetaInvitationResult = {
 /**
  * Create a beta invitation for a new user.
  * Used by admin to invite beta testers.
+ *
+ * @param email - The email address to invite
+ * @param notes - Optional context about the invitation (e.g., "Met at conference")
  */
 export async function createBetaInvitation(
-  email: string
+  email: string,
+  notes?: string
 ): Promise<CreateBetaInvitationResult> {
   const normalizedEmail = email.toLowerCase().trim();
 
@@ -70,6 +74,7 @@ export async function createBetaInvitation(
       email: normalizedEmail,
       token,
       code,
+      notes: notes?.trim() || null,
       expiresAt: addDays(new Date(), 30),
     },
   });
@@ -95,15 +100,46 @@ export async function createBetaInvitation(
   };
 }
 
+/**
+ * Revoke a beta invitation.
+ * Sets revokedAt timestamp to prevent the invitation from being used.
+ * Does not delete the invitation, preserving audit history.
+ */
+export async function revokeBetaInvitation(invitationId: string): Promise<void> {
+  const invitation = await prisma.betaInvitation.findUnique({
+    where: { id: invitationId },
+  });
+
+  if (!invitation) {
+    throw new Error("Beta invitation not found");
+  }
+
+  if (invitation.acceptedAt) {
+    throw new Error("Cannot revoke an accepted invitation");
+  }
+
+  if (invitation.revokedAt) {
+    throw new Error("Invitation has already been revoked");
+  }
+
+  await prisma.betaInvitation.update({
+    where: { id: invitationId },
+    data: { revokedAt: new Date() },
+  });
+}
+
 export type BetaValidationResult =
   | { status: "valid"; invitation: BetaInvitation }
   | { status: "not_found"; invitation: null }
   | { status: "expired"; invitation: null }
+  | { status: "revoked"; invitation: null }
   | { status: "already_accepted"; invitation: BetaInvitation };
 
 /**
  * Validate a beta invitation token.
  * Returns structured result with status and invitation.
+ *
+ * Validation order: accepted? → revoked? → expired? → valid
  */
 export async function validateBetaToken(
   token: string
@@ -120,6 +156,10 @@ export async function validateBetaToken(
     return { status: "already_accepted", invitation };
   }
 
+  if (invitation.revokedAt) {
+    return { status: "revoked", invitation: null };
+  }
+
   if (invitation.expiresAt < new Date()) {
     return { status: "expired", invitation: null };
   }
@@ -130,6 +170,8 @@ export async function validateBetaToken(
 /**
  * Validate a beta invitation code (6-digit human-readable).
  * Returns structured result with status and invitation.
+ *
+ * Validation order: accepted? → revoked? → expired? → valid
  */
 export async function validateBetaCode(
   code: string
@@ -146,6 +188,10 @@ export async function validateBetaCode(
 
   if (invitation.acceptedAt) {
     return { status: "already_accepted", invitation };
+  }
+
+  if (invitation.revokedAt) {
+    return { status: "revoked", invitation: null };
   }
 
   if (invitation.expiresAt < new Date()) {
