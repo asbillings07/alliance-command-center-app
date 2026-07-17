@@ -205,7 +205,7 @@ export default async function RedeemTokenPage({
                   />
                   <button
                     type="submit"
-                    className="flex w-full items-center justify-center gap-2 px-4 py-2 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB]"
+                    className="flex w-full items-center justify-center gap-2 px-4 py-2 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60A5FA] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111827]"
                   >
                     <svg
                       className="h-4 w-4"
