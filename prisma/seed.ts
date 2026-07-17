@@ -257,12 +257,13 @@ const createSecondAlliance = async () => {
 
 // ---------------------------------------
 // Create platform admin user
-// (Must also be added to PLATFORM_ADMIN_EMAILS env var)
+// Platform admin status is stored in the database (isPlatformAdmin field)
 // ---------------------------------------
 
 const createPlatformAdmin = async () => {
   return await createUser(TEST_USERS.platformAdmin, TEST_PASSWORD, {
     displayName: "Platform Admin",
+    isPlatformAdmin: true,
   });
 };
 

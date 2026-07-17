@@ -13,13 +13,20 @@ import { LeadershipNoteVisibility } from "@/app/generated/prisma/enums";
 const createUser = async (
   email: string,
   password: string,
-  options?: { displayName?: string }
+  options?: { displayName?: string; isPlatformAdmin?: boolean }
 ) => {
   const existing = await prisma.user.findUnique({
     where: { email },
   });
 
   if (existing) {
+    // Update isPlatformAdmin if needed (for re-running seed)
+    if (options?.isPlatformAdmin && !existing.isPlatformAdmin) {
+      return await prisma.user.update({
+        where: { id: existing.id },
+        data: { isPlatformAdmin: true },
+      });
+    }
     return existing;
   }
 
@@ -30,6 +37,7 @@ const createUser = async (
       email,
       displayName: options?.displayName ?? email.split("@")[0],
       passwordHash,
+      isPlatformAdmin: options?.isPlatformAdmin ?? false,
     },
   });
 };

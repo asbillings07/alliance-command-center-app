@@ -108,6 +108,23 @@ test.describe("Beta Redemption", () => {
     await expect(page.getByText(/expired/i)).toBeVisible();
   });
 
+  test("cannot redeem revoked code", async ({ page }) => {
+    test.skip(
+      !process.env.TEST_REVOKED_BETA_CODE,
+      "TEST_REVOKED_BETA_CODE required for revoked code test"
+    );
+
+    await page.goto("/redeem");
+
+    await page
+      .getByPlaceholder("ABC-123")
+      .fill(process.env.TEST_REVOKED_BETA_CODE!);
+    await page.getByRole("button", { name: /continue/i }).click();
+
+    // Should show error for revoked code
+    await expect(page.getByText(/revoked/i)).toBeVisible();
+  });
+
   test("code input is case insensitive", async ({ page }) => {
     test.skip(
       !process.env.TEST_BETA_CODE,
