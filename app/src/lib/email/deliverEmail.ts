@@ -1,31 +1,45 @@
-import type { ReactElement } from "react";
-import { render } from "@react-email/render";
-import type { EmailMetadata, EmailResult } from "./types";
+import type { EmailContent, EmailMetadata, EmailResult } from "./types";
 import { transport } from "./transport";
 
 export type DeliverEmailInput = {
   to: string;
   subject: string;
-  react: ReactElement;
+  content: EmailContent;
   metadata?: EmailMetadata;
 };
 
 /**
- * Render a React Email component to HTML + plain text and hand it to the
- * selected transport. This is the single low-level delivery primitive: it
- * coordinates rendering, delegates delivery, and returns a canonical
- * {@link EmailResult}. Business intent lives in the email service, not here.
+ * Hand a rendered message to the selected transport. This is the single
+ * low-level delivery primitive: it delegates delivery and returns a canonical
+ * {@link EmailResult}. Business intent lives in the email service; rendering
+ * lives in the templates.
+ *
+ * Never throws: an unexpected transport failure is mapped onto a `failed`
+ * result so callers keep the non-blocking guarantee (a persisted invitation is
+ * never invalidated by an email problem).
  */
 export async function deliverEmail({
   to,
   subject,
-  react,
+  content,
   metadata,
 }: DeliverEmailInput): Promise<EmailResult> {
-  const [html, text] = await Promise.all([
-    render(react),
-    render(react, { plainText: true }),
-  ]);
-
-  return transport.deliver({ to, subject, html, text, metadata });
+  try {
+    return await transport.deliver({
+      to,
+      subject,
+      html: content.html,
+      text: content.text,
+      metadata,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[email] deliverEmail failed to deliver", {
+      error: err,
+      to,
+      subject,
+      metadata,
+    });
+    return { status: "failed", error: message };
+  }
 }

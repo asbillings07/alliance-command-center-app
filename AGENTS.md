@@ -258,7 +258,7 @@ Transactional email is a replaceable infrastructure concern. The invitation is t
 * Email is sent from the platform action layer, after persistence, never inside domain services.
 * Delivery is non-blocking: transports return an `EmailResult` (`sent` | `failed` | `skipped`) and never throw, so a provider outage cannot invalidate an invitation.
 * Nothing outside `app/src/lib/email/` imports Resend; the provider lives behind `EmailTransport` (`ResendTransport` in prod, `LoggingTransport` locally).
-* Templates use React Email so they stay provider-agnostic.
+* Templates are hand-rolled HTML + plain text (no template framework), keeping the dependency footprint minimal.
 
 See `docs/adr/014-transactional-email.md` for full details.
 

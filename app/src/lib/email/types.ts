@@ -28,6 +28,12 @@ export type EmailMetadata = {
   userId?: string;
 };
 
+/** Rendered email body (HTML + plain text fallback). */
+export type EmailContent = {
+  html: string;
+  text: string;
+};
+
 /** A fully rendered message handed to a transport. */
 export type DeliverEmailRequest = {
   to: string;

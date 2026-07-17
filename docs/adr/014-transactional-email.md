@@ -14,7 +14,7 @@ Beta invitations currently generate a shareable link and code that a platform ad
 
 The existing architecture already separates domain services from infrastructure adapters (see ADR-012, ADR-013). Email should follow the same layering so the provider stays interchangeable and the invitation domain stays pure.
 
-We chose **Resend** as the provider (generous free tier, official SDK, React Email support) and **React Email** for templates (provider-agnostic; only the transport is Resend-specific).
+We chose **Resend** as the provider (generous free tier, official SDK). Templates are **hand-rolled HTML + plain text** (inline styles, no template framework); only the transport is Resend-specific. We evaluated React Email but `@react-email/components` is deprecated in favor of the unified `react-email` package, which ships the CLI/preview stack as runtime dependencies. For a small number of simple templates, a hand-rolled builder keeps the dependency footprint minimal (aligned with "avoid unnecessary libraries") while staying fully provider-agnostic.
 
 ## Decision
 
@@ -29,7 +29,7 @@ Platform Action (createInvitationAction / resendInvitationEmailAction)
 emailService.sendBetaInvitation()      (business intent)
       |
       v
-deliverEmail()                          (render React Email -> html + text)
+deliverEmail()                          (non-blocking delivery wrapper)
       |
       v
 EmailTransport.deliver()                (boundary)
@@ -43,10 +43,10 @@ ResendTransport | LoggingTransport      (adapter)
 | Layer | Responsibility | Location |
 |-------|----------------|----------|
 | Platform action | Who needs to know? Orchestrates side effects. | `app/platform/beta/actions.ts` |
-| Email service | Which business email is this? Builds subject + template. | `email/emailService.ts` |
-| Delivery primitive | Render template to html/text, delegate delivery. | `email/deliverEmail.ts` |
+| Email service | Which business email is this? Builds subject + renders content. | `email/emailService.ts` |
+| Delivery primitive | Delegate delivery; guarantee non-blocking (never throws). | `email/deliverEmail.ts` |
 | Transport | Deliver a rendered message. | `email/transport/*` |
-| Template | How does the email look? | `email/templates/*` |
+| Template | How does the email look? Renders html + text. | `email/templates/*` |
 
 ### Email after persistence
 
@@ -78,7 +78,7 @@ Email is enabled only when **both** `RESEND_API_KEY` and `EMAIL_FROM` are set (`
 - Provider is replaceable: swap `ResendTransport` without touching templates, service, or callers.
 - Invitation domain stays pure.
 - Failures degrade gracefully instead of breaking invitation creation.
-- Templates are provider-agnostic (React Email).
+- Templates are provider-agnostic and dependency-free (plain HTML + text).
 
 ### Trade-offs
 

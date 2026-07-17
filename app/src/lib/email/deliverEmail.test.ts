@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createElement } from "react";
 import type { DeliverEmailRequest, EmailResult } from "./types";
 
 const deliverMock = vi.fn<(req: DeliverEmailRequest) => Promise<EmailResult>>();
@@ -12,9 +11,7 @@ vi.mock("./transport", () => ({
 
 import { deliverEmail } from "./deliverEmail";
 
-function Sample({ name }: { name: string }) {
-  return createElement("p", null, `Hello ${name}`);
-}
+const content = { html: "<p>Hello World</p>", text: "Hello World" };
 
 describe("deliverEmail", () => {
   beforeEach(() => {
@@ -22,11 +19,11 @@ describe("deliverEmail", () => {
     deliverMock.mockResolvedValue({ status: "sent", messageId: "msg_1" });
   });
 
-  it("renders the component to html + text and forwards to the transport", async () => {
+  it("forwards the rendered content to the transport", async () => {
     const result = await deliverEmail({
       to: "user@example.com",
       subject: "Hi",
-      react: createElement(Sample, { name: "World" }),
+      content,
       metadata: { invitationId: "inv_1" },
     });
 
@@ -37,8 +34,8 @@ describe("deliverEmail", () => {
     expect(request.to).toBe("user@example.com");
     expect(request.subject).toBe("Hi");
     expect(request.metadata).toEqual({ invitationId: "inv_1" });
-    expect(request.html).toContain("Hello World");
-    expect(request.text).toContain("Hello World");
+    expect(request.html).toBe(content.html);
+    expect(request.text).toBe(content.text);
   });
 
   it("propagates a skipped status from the transport", async () => {
@@ -47,9 +44,22 @@ describe("deliverEmail", () => {
     const result = await deliverEmail({
       to: "user@example.com",
       subject: "Hi",
-      react: createElement(Sample, { name: "World" }),
+      content,
     });
 
     expect(result.status).toBe("skipped");
+  });
+
+  it("returns failed (does not throw) when the transport throws unexpectedly", async () => {
+    deliverMock.mockRejectedValue(new Error("transport exploded"));
+
+    const result = await deliverEmail({
+      to: "user@example.com",
+      subject: "Hi",
+      content,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toBe("transport exploded");
   });
 });

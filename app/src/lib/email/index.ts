@@ -17,6 +17,7 @@ export type {
   EmailResult,
   EmailService,
   EmailTransport,
+  EmailContent,
   DeliverEmailRequest,
   EmailMetadata,
   BetaInvitationView,
