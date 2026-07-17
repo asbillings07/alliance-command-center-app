@@ -127,18 +127,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     // Invariant: after authentication, token.sub is always our internal User.id,
     // regardless of provider. For Google, the incoming user.id is the Google
-    // subject, so we resolve our cuid by verified email.
+    // subject, so we resolve our cuid by verified email. If we cannot resolve
+    // it (missing/unverified email, or no matching user), we throw rather than
+    // leave token.sub as the Google subject — a broken invariant would cause
+    // downstream authorization/data-loading failures. This branch only runs at
+    // initial sign-in (when `account` is present); later requests reuse token.
     async jwt({ token, user, account, profile }) {
       if (account?.provider === "google") {
-        const email = (profile as GoogleProfile | undefined)?.email
-          ?.toLowerCase()
-          .trim();
-        if (email) {
-          const dbUser = await prisma.user.findUnique({ where: { email } });
-          if (dbUser) {
-            token.sub = dbUser.id;
-          }
+        const email = assertVerifiedGoogleEmail(profile as GoogleProfile);
+        const dbUser = await prisma.user.findUnique({ where: { email } });
+        if (!dbUser) {
+          throw new Error(
+            "Could not resolve internal user for Google sign-in during token issuance",
+          );
         }
+        token.sub = dbUser.id;
       } else if (user) {
         token.sub = user.id as string;
       }
