@@ -101,7 +101,7 @@ export async function getRecentActivity(
         allianceName: metric.alliance.name,
         description: "Configured metrics",
         timestamp: metric.createdAt,
-        href: `/alliances/${metric.alliance.id}/metrics`,
+        href: `/platform/support/alliance/${metric.alliance.id}`,
       });
     }
   }
@@ -128,7 +128,7 @@ export async function getRecentActivity(
         allianceName: period.alliance.name,
         description: `Created period "${period.name}"`,
         timestamp: period.createdAt,
-        href: `/alliances/${period.alliance.id}/periods/${period.id}`,
+        href: `/platform/support/alliance/${period.alliance.id}`,
       });
     }
   }
@@ -178,7 +178,7 @@ export async function getRecentActivity(
         allianceName: data.alliance.name,
         description: `Imported ${data.count} member${data.count === 1 ? "" : "s"}`,
         timestamp: data.timestamp,
-        href: `/alliances/${data.alliance.id}/members`,
+        href: `/platform/support/alliance/${data.alliance.id}`,
       });
     }
   }
@@ -232,7 +232,7 @@ export async function getRecentActivity(
         allianceName: data.alliance.name,
         description: `Imported ${data.count} metric entr${data.count === 1 ? "y" : "ies"}`,
         timestamp: data.timestamp,
-        href: `/alliances/${data.alliance.id}/periods`,
+        href: `/platform/support/alliance/${data.alliance.id}`,
       });
     }
   }
@@ -242,7 +242,10 @@ export async function getRecentActivity(
     const recentInvites = await prisma.invitation.findMany({
       take: limit,
       orderBy: { createdAt: "desc" },
-      where: filters?.allianceId ? { allianceId: filters.allianceId } : {},
+      where: {
+        ...(filters?.allianceId ? { allianceId: filters.allianceId } : {}),
+        acceptedAt: null, // Only pending/expired invitations
+      },
       include: {
         alliance: { select: { id: true, name: true } },
       },
@@ -256,7 +259,35 @@ export async function getRecentActivity(
         allianceName: invite.alliance.name,
         description: `Invited ${invite.email} as ${invite.membershipRole}`,
         timestamp: invite.createdAt,
-        href: `/alliances/${invite.alliance.id}/settings/invitations`,
+        href: `/platform/support/alliance/${invite.alliance.id}`,
+      });
+    }
+  }
+
+  // Recent collaborator acceptances
+  if (!filters?.type || filters.type === "collaborator_accepted") {
+    const acceptedInvites = await prisma.invitation.findMany({
+      take: limit,
+      orderBy: { acceptedAt: "desc" },
+      where: {
+        ...(filters?.allianceId ? { allianceId: filters.allianceId } : {}),
+        acceptedAt: { not: null },
+      },
+      include: {
+        alliance: { select: { id: true, name: true } },
+      },
+    });
+
+    for (const invite of acceptedInvites) {
+      if (!invite.acceptedAt) continue;
+      items.push({
+        id: `invite-accepted-${invite.id}`,
+        type: "collaborator_accepted",
+        allianceId: invite.alliance.id,
+        allianceName: invite.alliance.name,
+        description: `${invite.email} joined as ${invite.membershipRole}`,
+        timestamp: invite.acceptedAt,
+        href: `/platform/support/alliance/${invite.alliance.id}`,
       });
     }
   }

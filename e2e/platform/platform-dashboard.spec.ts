@@ -263,11 +263,11 @@ test.describe("Platform Operations Console", () => {
       await page.waitForTimeout(400);
 
       // Should show either results or "No results" message
-      const hasResults = await page.locator('[class*="dropdown"], [class*="results"]').count() > 0;
+      const hasResults = await page.locator('button:has-text("🏰"), button:has-text("👤")').count() > 0;
       const hasNoResults = await page.getByText(/No results/i).isVisible();
 
-      // Search was triggered (either found results or not)
-      expect(hasResults || hasNoResults || true).toBe(true);
+      // Search was triggered - either found results or showed empty state
+      expect(hasResults || hasNoResults).toBe(true);
     });
   });
 

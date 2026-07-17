@@ -34,9 +34,14 @@ export function PlatformSearch() {
       if (response.ok) {
         const data = await response.json();
         setResults(data.results);
+      } else {
+        // Clear results on non-ok response to avoid showing stale data
+        setResults([]);
       }
     } catch (error) {
       console.error("Search error:", error);
+      // Clear results on error to avoid showing stale data
+      setResults([]);
     } finally {
       setIsLoading(false);
     }

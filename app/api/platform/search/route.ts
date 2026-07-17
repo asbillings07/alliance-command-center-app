@@ -1,24 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/app/src/lib/auth";
+import { isPlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import { searchPlatform } from "@/app/src/lib/platform";
-
-function isPlatformAdmin(email: string | null | undefined): boolean {
-  if (!email) return false;
-
-  const parseEmails = (envValue: string | undefined): string[] => {
-    if (!envValue) return [];
-    return envValue
-      .split(",")
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean);
-  };
-
-  const prodEmails = parseEmails(process.env.PLATFORM_ADMIN_EMAILS);
-  const e2eEmails = parseEmails(process.env.PLATFORM_ADMIN_EMAILS_E2E);
-  const adminEmails = [...new Set([...prodEmails, ...e2eEmails])];
-
-  return adminEmails.includes(email.toLowerCase());
-}
 
 export async function GET(request: NextRequest) {
   const session = await auth();

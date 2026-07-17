@@ -122,16 +122,19 @@ export async function searchMembers(query: string): Promise<SearchResult[]> {
     take: 10,
   });
 
+  // Link to platform support alliance page (membership not required)
+  // instead of /alliances/* which requires alliance membership
   return members.map((m) => ({
     id: m.id,
     type: "member" as const,
     title: m.playerName,
     subtitle: `${m.alliance.name}${m.discordName ? ` • ${m.discordName}` : ""}`,
-    href: `/alliances/${m.alliance.id}/members/${m.id}`,
+    href: `/platform/support/alliance/${m.alliance.id}`,
     metadata: {
       allianceId: m.alliance.id,
       allianceName: m.alliance.name,
       discordName: m.discordName,
+      memberId: m.id,
     },
   }));
 }
@@ -186,6 +189,8 @@ export async function searchInvitations(query: string): Promise<SearchResult[]> 
     });
   }
 
+  // Link to platform support alliance page (membership not required)
+  // instead of /alliances/* which requires alliance membership
   for (const inv of collabInvites) {
     const now = new Date();
     const status = inv.acceptedAt
@@ -199,7 +204,7 @@ export async function searchInvitations(query: string): Promise<SearchResult[]> 
       type: "invitation",
       title: inv.email,
       subtitle: `Collaborator for ${inv.alliance.name} (${status})`,
-      href: `/alliances/${inv.alliance.id}/settings/invitations`,
+      href: `/platform/support/alliance/${inv.alliance.id}`,
       metadata: {
         status,
         type: "collaborator",

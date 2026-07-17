@@ -59,7 +59,19 @@ export async function getSetupFunnel(): Promise<SetupFunnel> {
     }),
   ]);
 
-  const maxCount = Math.max(betaInvitesSent, 1);
+  // Use max across all stages to prevent percentages > 100%
+  const allCounts = [
+    betaInvitesSent,
+    betaInvitesAccepted,
+    alliancesCreated,
+    alliancesWithMetrics,
+    alliancesWithPeriods,
+    alliancesWithMembers,
+    alliancesWithData,
+    collaboratorsInvited,
+    collaboratorsAccepted,
+  ];
+  const maxCount = Math.max(...allCounts, 1);
 
   const stages: FunnelStage[] = [
     {
@@ -116,9 +128,6 @@ export async function getSetupFunnel(): Promise<SetupFunnel> {
  * Get stalled alliances (no activity in 7+ days, setup incomplete).
  */
 export async function getStalledAlliances() {
-  const stalledThreshold = new Date();
-  stalledThreshold.setDate(stalledThreshold.getDate() - 7);
-
   const weekAgo = new Date();
   weekAgo.setDate(weekAgo.getDate() - 7);
 

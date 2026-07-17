@@ -132,7 +132,8 @@ export async function getAllianceReadiness(): Promise<AllianceReadinessItem[]> {
   return alliances.map((alliance) => {
     const hasMetrics = alliance._count.metrics > 0;
     const hasPeriods = alliance._count.metricPeriods > 0;
-    const hasMembers = alliance._count.allianceMembers > 0;
+    // Use filtered allianceMembers array (archivedAt: null), not _count which includes archived
+    const hasMembers = alliance.allianceMembers.length > 0;
     const hasData = alliance.allianceMembers.some(
       (m) => m._count.metricEntries > 0
     );
@@ -317,9 +318,15 @@ export async function getAllianceTimeline(
 
 /**
  * Get jump links for an alliance.
+ *
+ * Note: These link to alliance pages which require membership.
+ * Platform admins who are not members will be redirected away.
+ * Consider this a convenience for platform admins who are also
+ * members, or as a future enhancement for platform-admin bypass.
  */
 export function getJumpLinks(allianceId: string): JumpLink[] {
   return [
+    { label: "View in Platform", href: `/platform/support/alliance/${allianceId}` },
     { label: "Open Dashboard", href: `/alliances/${allianceId}` },
     { label: "Open Setup", href: `/alliances/${allianceId}/setup` },
     { label: "Open Members", href: `/alliances/${allianceId}/members` },
