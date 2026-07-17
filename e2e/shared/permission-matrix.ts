@@ -77,14 +77,14 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
   },
   {
     feature: "dashboard.record_link",
-    description: "Record Now link visible on dashboard (for users without period config)",
+    description: "Record Now link visible on dashboard (when active period exists)",
     verification: {
       type: "link_visible",
       selector: 'a:has-text("Record Now")',
       onPage: "/alliances/{allianceId}",
     },
-    // Only visible for users with canImportMetrics but NOT canConfigurePeriods
-    expected: { OWNER: false, ADMIN: false, LEADER: false, VIEWER: false },
+    // Visible for users with canImportMetrics when there's an active period with metrics
+    expected: { OWNER: true, ADMIN: true, LEADER: true, VIEWER: false },
   },
 
   // ============================================================
