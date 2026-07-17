@@ -81,9 +81,13 @@ export async function getBetaInvitations(): Promise<BetaInvitationItem[]> {
     orderBy: { issuedAt: "desc" },
   });
 
+  // BetaInvitation is a history table, so an email can appear many times.
+  // Deduplicate before the IN query to avoid bloating the SQL parameter list.
+  const uniqueEmails = [...new Set(invitations.map((i) => i.email))];
+
   const users = await prisma.user.findMany({
     where: {
-      email: { in: invitations.map((i) => i.email) },
+      email: { in: uniqueEmails },
     },
     select: {
       email: true,
@@ -246,9 +250,13 @@ export async function getInvitationStats(): Promise<InvitationStats> {
  * Get count of pending beta invitations that were accepted but user hasn't created an alliance.
  */
 export async function getAcceptedWithoutAlliance(): Promise<number> {
+  // History table: an email can have many accepted invitations. Deduplicate so
+  // the count reflects distinct invited people, not raw history rows, and to
+  // keep the IN query small.
   const acceptedInvitations = await prisma.betaInvitation.findMany({
     where: { acceptedAt: { not: null } },
     select: { email: true },
+    distinct: ["email"],
   });
 
   const emails = acceptedInvitations.map((i) => i.email);
@@ -260,5 +268,5 @@ export async function getAcceptedWithoutAlliance(): Promise<number> {
     },
   });
 
-  return acceptedInvitations.length - usersWithAlliances;
+  return emails.length - usersWithAlliances;
 }

@@ -46,6 +46,21 @@ export function isPendingInvitation(invitation: BetaInvitation): boolean {
 }
 
 /**
+ * Build the "pending invitation" query filter for an email.
+ *
+ * Single source of truth for the pending rule at the query layer, mirroring
+ * isPendingInvitation() for in-memory records.
+ */
+function pendingInvitationWhere(normalizedEmail: string, now: Date) {
+  return {
+    email: normalizedEmail,
+    acceptedAt: null,
+    revokedAt: null,
+    expiresAt: { gt: now },
+  };
+}
+
+/**
  * Get the pending invitation for an email, if one exists.
  *
  * Answers the business question: "Is there a valid, usable invitation
@@ -58,12 +73,7 @@ export async function getPendingInvitation(
   const normalizedEmail = email.toLowerCase().trim();
 
   return prisma.betaInvitation.findFirst({
-    where: {
-      email: normalizedEmail,
-      acceptedAt: null,
-      revokedAt: null,
-      expiresAt: { gt: new Date() },
-    },
+    where: pendingInvitationWhere(normalizedEmail, new Date()),
     orderBy: { issuedAt: "desc" },
   });
 }
@@ -92,44 +102,62 @@ export async function issueBetaInvitation(
 ): Promise<IssueBetaInvitationResult> {
   const normalizedEmail = email.toLowerCase().trim();
 
-  // Only one pending invitation per email
-  const pending = await getPendingInvitation(normalizedEmail);
-  if (pending) {
-    throw new Error("A pending beta invitation already exists for this email");
-  }
-
-  // Cannot invite a user who already has alliance access
-  const existingUser = await prisma.user.findUnique({
-    where: { email: normalizedEmail },
-  });
-
-  if (existingUser) {
-    const membership = await prisma.allianceMembership.findFirst({
-      where: { userId: existingUser.id },
-    });
-
-    if (membership) {
-      throw new Error("This user already has access to an alliance");
-    }
-  }
-
   const now = new Date();
   const token = randomUUID();
   const code = generateBetaCode();
 
-  // Always create a new record - never mutate history
-  const invitation = await prisma.betaInvitation.create({
-    data: {
-      email: normalizedEmail,
-      token,
-      code,
-      notes: options?.notes?.trim() || null,
-      campaign: options?.campaign?.trim() || null,
-      expiresAt: addDays(now, 30),
-      createdAt: now,
-      issuedAt: now,
+  // The "one pending invitation per email" invariant cannot be expressed as a
+  // database constraint: a partial unique index can't reference expiresAt
+  // (pending-ness is time-dependent), and a full unique index would break
+  // re-issuing after an invitation expires or is revoked. A plain read-then-
+  // create also races: two concurrent callers can both see no pending
+  // invitation and both insert. A serializable transaction closes that gap by
+  // forcing conflicting check+create pairs to serialize (one will fail to commit
+  // and retry, then observe the other's pending invitation).
+  const invitation = await prisma.$transaction(
+    async (tx) => {
+      // Only one pending invitation per email
+      const pending = await tx.betaInvitation.findFirst({
+        where: pendingInvitationWhere(normalizedEmail, now),
+        orderBy: { issuedAt: "desc" },
+      });
+      if (pending) {
+        throw new Error(
+          "A pending beta invitation already exists for this email"
+        );
+      }
+
+      // Cannot invite a user who already has alliance access
+      const existingUser = await tx.user.findUnique({
+        where: { email: normalizedEmail },
+      });
+
+      if (existingUser) {
+        const membership = await tx.allianceMembership.findFirst({
+          where: { userId: existingUser.id },
+        });
+
+        if (membership) {
+          throw new Error("This user already has access to an alliance");
+        }
+      }
+
+      // Always create a new record - never mutate history
+      return tx.betaInvitation.create({
+        data: {
+          email: normalizedEmail,
+          token,
+          code,
+          notes: options?.notes?.trim() || null,
+          campaign: options?.campaign?.trim() || null,
+          expiresAt: addDays(now, 30),
+          createdAt: now,
+          issuedAt: now,
+        },
+      });
     },
-  });
+    { isolationLevel: "Serializable" }
+  );
 
   return buildInvitationResult(invitation);
 }

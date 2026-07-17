@@ -26,6 +26,7 @@ vi.mock("./prisma", () => ({
     allianceMembership: {
       findFirst: vi.fn(),
     },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -45,10 +46,15 @@ const mockPrisma = prisma as unknown as {
   allianceMembership: {
     findFirst: ReturnType<typeof vi.fn>;
   };
+  $transaction: ReturnType<typeof vi.fn>;
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Run transaction callbacks against the same mocked client (tx === prisma).
+  mockPrisma.$transaction.mockImplementation(
+    async (fn: (tx: typeof prisma) => unknown) => fn(prisma)
+  );
 });
 
 function makeInvitation(
@@ -225,6 +231,26 @@ describe("issueBetaInvitation", () => {
       "This user already has access to an alliance"
     );
     expect(mockPrisma.betaInvitation.create).not.toHaveBeenCalled();
+  });
+
+  it("enforces the pending check and create in a serializable transaction", async () => {
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.betaInvitation.create.mockImplementation(async ({ data }) => ({
+      id: "inv-1",
+      ...data,
+      acceptedAt: null,
+      acceptedByUserId: null,
+      revokedAt: null,
+      allianceId: null,
+    }));
+
+    await issueBetaInvitation("test@example.com");
+
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
   });
 });
 

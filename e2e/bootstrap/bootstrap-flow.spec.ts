@@ -18,8 +18,10 @@ import { test, expect } from "../shared/fixtures";
  *
  * Notes:
  * - The email must be authorized via PLATFORM_ADMIN_EMAILS / PLATFORM_ADMIN_EMAILS_E2E.
- * - The bootstrap secret field is left empty: when PLATFORM_BOOTSTRAP_SECRET is
- *   not configured, verifyBootstrapSecret() permits initialization in non-production.
+ * - The bootstrap secret field is filled only when PLATFORM_BOOTSTRAP_SECRET is
+ *   configured (common in deployed/staging setups). When it is not set,
+ *   verifyBootstrapSecret() permits initialization in non-production, so the
+ *   field is left empty. This keeps the spec independent of the environment.
  */
 
 const BOOTSTRAP_EMAIL =
@@ -27,6 +29,8 @@ const BOOTSTRAP_EMAIL =
   process.env.PLATFORM_ADMIN_EMAILS_E2E?.split(",")[0]?.trim() ||
   process.env.TEST_PLATFORM_ADMIN_EMAIL ||
   "platform-admin@test.local";
+
+const BOOTSTRAP_SECRET = process.env.PLATFORM_BOOTSTRAP_SECRET?.trim();
 
 test.describe("Platform Bootstrap - Success Path", () => {
   test("initializes the platform and locks the initialize page", async ({
@@ -45,6 +49,12 @@ test.describe("Platform Bootstrap - Success Path", () => {
     await page.getByLabel(/display name/i).fill("Bootstrap Admin");
     await page.getByLabel(/^password$/i).fill("BootstrapPass123");
     await page.getByLabel(/confirm password/i).fill("BootstrapPass123");
+
+    // Provide the bootstrap secret when the environment requires one, so the
+    // spec passes in both secret-configured and secret-less setups.
+    if (BOOTSTRAP_SECRET) {
+      await page.getByLabel(/bootstrap secret/i).fill(BOOTSTRAP_SECRET);
+    }
 
     // 3. Submit and verify the operator lands in the Platform Console
     await page
