@@ -267,10 +267,10 @@ jobs:
           CI: true
 
   # Quality Gate: Visual Regression
-  # NOTE: This job COMPARES against committed chromium-linux baselines; it never
+  # NOTE: This job COMPARES against committed application-linux baselines; it never
   # rewrites them. Updating baselines is an explicit, manual action: run the
   # "Update Visual Baselines" workflow (.github/workflows/visual-baselines.yml),
-  # download the artifact, and commit the resulting *-chromium-linux.png files.
+  # download the artifact, and commit the resulting *-application-linux.png files.
   # Diffs are uploaded as artifacts on failure for inspection.
   visual-regression:
     name: Visual Regression

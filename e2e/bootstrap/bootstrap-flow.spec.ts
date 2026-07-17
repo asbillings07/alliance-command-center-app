@@ -56,12 +56,14 @@ test.describe("Platform Bootstrap - Success Path", () => {
       await page.getByLabel(/bootstrap secret/i).fill(BOOTSTRAP_SECRET);
     }
 
-    // 3. Submit and verify the operator lands in the Platform Console
+    // 3. Submit and verify the operator lands in the Platform Console.
+    // /platform immediately redirects to /platform/overview, so wait for the
+    // final destination rather than the intermediate /platform URL.
     await page
       .getByRole("button", { name: /Initialize Platform/i })
       .click();
-    await page.waitForURL("/platform");
-    expect(page.url()).toContain("/platform");
+    await page.waitForURL(/\/platform\/overview\/?$/);
+    expect(page.url()).toContain("/platform/overview");
 
     // 4. The platform is now initialized: /initialize is permanently locked
     await page.goto("/initialize");

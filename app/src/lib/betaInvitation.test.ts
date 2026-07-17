@@ -118,7 +118,7 @@ describe("getPendingInvitation", () => {
         email: "test@example.com",
         acceptedAt: null,
         revokedAt: null,
-        expiresAt: { gt: expect.any(Date) },
+        expiresAt: { gte: expect.any(Date) },
       },
       orderBy: { issuedAt: "desc" },
     });

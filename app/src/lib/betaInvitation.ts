@@ -38,10 +38,13 @@ export type IssueBetaInvitationResult = {
  * This is the single source of truth for the "pending" business rule.
  */
 export function isPendingInvitation(invitation: BetaInvitation): boolean {
+  // Expiry boundary matches the rest of the module: an invitation is expired
+  // only when expiresAt < now (validateBetaToken/validateBetaCode), so it is
+  // still valid — and therefore pending — when expiresAt >= now.
   return (
     !invitation.acceptedAt &&
     !invitation.revokedAt &&
-    invitation.expiresAt > new Date()
+    invitation.expiresAt >= new Date()
   );
 }
 
@@ -56,7 +59,9 @@ function pendingInvitationWhere(normalizedEmail: string, now: Date) {
     email: normalizedEmail,
     acceptedAt: null,
     revokedAt: null,
-    expiresAt: { gt: now },
+    // gte mirrors the module's expiry semantics (expired only when expiresAt < now)
+    // and matches getInvitationStats, which counts pending with expiresAt >= now.
+    expiresAt: { gte: now },
   };
 }
 
