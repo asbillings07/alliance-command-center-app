@@ -32,7 +32,7 @@ This shift from entities to questions is intentional and should guide all future
 
 ### Core Principle
 
-> **The Platform Console is an Operations Center, not an Admin Dashboard.**
+> **The Platform Console is an Operations Console, not an Admin Dashboard.**
 
 An admin dashboard edits configuration. An operations console helps humans run the platform.
 
@@ -71,7 +71,7 @@ Each subdomain owns its responsibilities. Subdomains share data through well-def
 
 #### 3. Support pages are the platform's "lens" into alliances
 
-Platform operators should never need alliance membership to investigate an issue.
+Platform operators should never require alliance membership in order to investigate operational issues.
 
 ```
 ✓ /platform/support/alliance/[id]     → Platform's view into alliance
@@ -90,7 +90,7 @@ Without pretending to be the alliance UI.
 
 #### 4. Read models over entity CRUD
 
-Platform pages consume **read models** that answer questions, not entity APIs that expose tables.
+Platform pages consume **read models** that answer questions, not entity-oriented APIs that mirror persistence models.
 
 ```
 Question → Read Model → UI
@@ -106,7 +106,7 @@ Read models may aggregate data from multiple domain entities in order to answer 
 
 #### 5. Operational features SHOULD consume a shared event stream
 
-When historical events become a first-class domain concept, operational features should consume from a common event source rather than each feature inventing its own history model:
+As historical events become a first-class domain concept, operational features should consume from a common event source rather than each feature inventing its own history model:
 
 ```
 Activity page     → queries events
@@ -137,7 +137,7 @@ Platform authorization is completely separate from alliance authorization:
 | Alliance | `requireAllianceAccess()` | Single alliance, role-based |
 | Platform | `requirePlatformAdmin()` | All alliances, admin-only |
 
-These authorization systems are intentionally independent. Platform admins see operational data across all alliances. Alliance members see tenant data within their alliance.
+These authorization systems are intentionally independent. Platform authorization governs **operational capabilities**, while alliance authorization governs **tenant capabilities**. Platform admins see operational data across all alliances. Alliance members see tenant data within their alliance.
 
 ## Non-Goals
 
@@ -179,11 +179,11 @@ As the platform matures, these patterns will likely emerge:
 Every platform PR should satisfy:
 
 - [ ] Page answers a clear operational question
-- [ ] Links route to platform support pages, not tenant UI
-- [ ] Services organized by subdomain, not utility
 - [ ] Read models answer questions, not expose entities
-- [ ] No new CRUD patterns introduced
+- [ ] Services organized by subdomain, not utility
 - [ ] Authorization uses `requirePlatformAdmin()` only
+- [ ] Links route to platform support pages, not tenant UI
+- [ ] No new CRUD patterns introduced
 - [ ] Activity types are implemented if declared
 
 ## Related Documents
