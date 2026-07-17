@@ -178,8 +178,10 @@ test.describe("Permission Matrix Validation", () => {
       await page.waitForURL(/\/(app|alliances|platform)/);
 
       await page.goto("/platform");
+      // Platform redirects to /platform/overview
+      await page.waitForURL("/platform/overview");
       await expect(
-        page.locator("h1:has-text('Platform Dashboard')")
+        page.locator("h1:has-text('Platform Operations')")
       ).toBeVisible();
     });
 

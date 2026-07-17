@@ -216,6 +216,25 @@ Every mutation must verify permissions.
 
 ---
 
+## ADR-010
+
+The Platform Console is an Operations Center, not an Admin Dashboard.
+
+Platform pages answer operational questions:
+
+* Overview → Is beta healthy?
+* Setup → Who is onboarding?
+* Support → Help me investigate
+* Activity → What happened?
+
+Platform services are organized by domain (activity, search, support, beta).
+
+Support pages are the platform's "lens" into alliances—operators never need alliance membership to investigate.
+
+See `docs/adr/010-platform-operations-architecture.md` for full details.
+
+---
+
 ## Database Philosophy
 
 Model the business domain.

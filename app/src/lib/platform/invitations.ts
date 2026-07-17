@@ -1,0 +1,222 @@
+import { prisma } from "../prisma";
+
+/**
+ * Invitations Domain Service
+ *
+ * Provides queries for beta and collaborator invitations.
+ */
+
+export type BetaInvitationStatus = "pending" | "accepted" | "expired";
+
+export type BetaInvitationItem = {
+  id: string;
+  email: string;
+  status: BetaInvitationStatus;
+  createdAt: Date;
+  expiresAt: Date;
+  acceptedAt: Date | null;
+  hasAlliance: boolean;
+  allianceId: string | null;
+  allianceName: string | null;
+};
+
+export type CollaboratorInvitationItem = {
+  id: string;
+  email: string;
+  allianceId: string;
+  allianceName: string;
+  role: string;
+  createdAt: Date;
+  expiresAt: Date;
+  acceptedAt: Date | null;
+  status: "pending" | "accepted" | "expired";
+};
+
+export type InvitationStats = {
+  betaInvites: {
+    total: number;
+    pending: number;
+    accepted: number;
+    expired: number;
+  };
+  collaboratorInvites: {
+    total: number;
+    pending: number;
+    accepted: number;
+    expired: number;
+  };
+};
+
+/**
+ * Get all beta invitations.
+ */
+export async function getBetaInvitations(): Promise<BetaInvitationItem[]> {
+  const now = new Date();
+
+  const invitations = await prisma.betaInvitation.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+
+  const users = await prisma.user.findMany({
+    where: {
+      email: { in: invitations.map((i) => i.email) },
+    },
+    select: {
+      email: true,
+      memberships: {
+        select: {
+          alliance: { select: { id: true, name: true } },
+        },
+        where: { role: "OWNER" },
+        take: 1,
+      },
+    },
+  });
+
+  const userMap = new Map(
+    users.map((u) => [
+      u.email,
+      u.memberships[0]
+        ? {
+            allianceId: u.memberships[0].alliance.id,
+            allianceName: u.memberships[0].alliance.name,
+          }
+        : null,
+    ])
+  );
+
+  return invitations.map((inv) => {
+    let status: BetaInvitationStatus;
+    if (inv.acceptedAt) {
+      status = "accepted";
+    } else if (inv.expiresAt < now) {
+      status = "expired";
+    } else {
+      status = "pending";
+    }
+
+    const alliance = userMap.get(inv.email);
+
+    return {
+      id: inv.id,
+      email: inv.email,
+      status,
+      createdAt: inv.createdAt,
+      expiresAt: inv.expiresAt,
+      acceptedAt: inv.acceptedAt,
+      hasAlliance: !!alliance,
+      allianceId: alliance?.allianceId || null,
+      allianceName: alliance?.allianceName || null,
+    };
+  });
+}
+
+/**
+ * Get all collaborator invitations.
+ */
+export async function getCollaboratorInvitations(): Promise<
+  CollaboratorInvitationItem[]
+> {
+  const now = new Date();
+
+  const invitations = await prisma.invitation.findMany({
+    include: {
+      alliance: { select: { id: true, name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return invitations.map((inv) => {
+    let status: "pending" | "accepted" | "expired";
+    if (inv.acceptedAt) {
+      status = "accepted";
+    } else if (inv.expiresAt < now) {
+      status = "expired";
+    } else {
+      status = "pending";
+    }
+
+    return {
+      id: inv.id,
+      email: inv.email,
+      allianceId: inv.alliance.id,
+      allianceName: inv.alliance.name,
+      role: inv.membershipRole,
+      createdAt: inv.createdAt,
+      expiresAt: inv.expiresAt,
+      acceptedAt: inv.acceptedAt,
+      status,
+    };
+  });
+}
+
+/**
+ * Get invitation statistics.
+ */
+export async function getInvitationStats(): Promise<InvitationStats> {
+  const now = new Date();
+
+  const [
+    betaTotal,
+    betaPending,
+    betaAccepted,
+    betaExpired,
+    collabTotal,
+    collabPending,
+    collabAccepted,
+    collabExpired,
+  ] = await Promise.all([
+    prisma.betaInvitation.count(),
+    prisma.betaInvitation.count({
+      where: { acceptedAt: null, expiresAt: { gte: now } },
+    }),
+    prisma.betaInvitation.count({ where: { acceptedAt: { not: null } } }),
+    prisma.betaInvitation.count({
+      where: { acceptedAt: null, expiresAt: { lt: now } },
+    }),
+    prisma.invitation.count(),
+    prisma.invitation.count({
+      where: { acceptedAt: null, expiresAt: { gte: now } },
+    }),
+    prisma.invitation.count({ where: { acceptedAt: { not: null } } }),
+    prisma.invitation.count({
+      where: { acceptedAt: null, expiresAt: { lt: now } },
+    }),
+  ]);
+
+  return {
+    betaInvites: {
+      total: betaTotal,
+      pending: betaPending,
+      accepted: betaAccepted,
+      expired: betaExpired,
+    },
+    collaboratorInvites: {
+      total: collabTotal,
+      pending: collabPending,
+      accepted: collabAccepted,
+      expired: collabExpired,
+    },
+  };
+}
+
+/**
+ * Get count of pending beta invitations that were accepted but user hasn't created an alliance.
+ */
+export async function getAcceptedWithoutAlliance(): Promise<number> {
+  const acceptedInvitations = await prisma.betaInvitation.findMany({
+    where: { acceptedAt: { not: null } },
+    select: { email: true },
+  });
+
+  const emails = acceptedInvitations.map((i) => i.email);
+
+  const usersWithAlliances = await prisma.user.count({
+    where: {
+      email: { in: emails },
+      memberships: { some: { role: "OWNER" } },
+    },
+  });
+
+  return acceptedInvitations.length - usersWithAlliances;
+}
