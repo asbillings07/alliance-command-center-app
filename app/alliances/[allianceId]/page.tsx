@@ -52,8 +52,8 @@ export default async function AlliancePage({ params }: Params) {
       description={`Server: ${alliance.server}`}
     >
       <div className="flex flex-col gap-6">
-        {/* Setup Banner */}
-        {!setupStatus.isComplete && (
+        {/* Setup Banner - only show if user has required tasks they can complete */}
+        {!setupStatus.isComplete && setupStatus.tasks.some((t) => t.required && !t.completed) && (
           <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div>

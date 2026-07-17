@@ -81,11 +81,11 @@ export const test = base.extend<TestFixtures>({
   },
 
   createBetaInvite: async ({}, use) => {
-    const createBetaInvite = async (_email: string) => {
+    const createBetaInvite = async (email: string) => {
       // This would ideally call the API or database directly
       // For now, we'll use a placeholder that tests can override
       throw new Error(
-        "createBetaInvite requires database access. Use test database seeding."
+        `createBetaInvite for ${email} requires database access. Use test database seeding.`
       );
     };
     await use(createBetaInvite);

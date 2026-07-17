@@ -11,11 +11,15 @@ const requiredVars = [
   "NEXTAUTH_URL",
 ] as const;
 
+// Optional vars (not validated at startup, but typed for getEnv)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const optionalVars = [
   "PLATFORM_ADMIN_EMAILS",
   "SENTRY_DSN",
   "FEATURE_PLATFORM_CONSOLE",
   "FEATURE_RECOGNITION",
+  "FEATURE_DISCORD",
+  "FEATURE_ANALYTICS",
 ] as const;
 
 type RequiredVar = (typeof requiredVars)[number];
@@ -28,6 +32,13 @@ type OptionalVar = (typeof optionalVars)[number];
 export function validateEnv(): void {
   // Skip validation in test environment (tests set their own env)
   if (process.env.NODE_ENV === "test") {
+    return;
+  }
+
+  // Skip validation during Next.js build phase
+  // Build doesn't need runtime env vars - they're only needed at runtime
+  // NEXT_PHASE is set by Next.js during build/generate phases
+  if (process.env.NEXT_PHASE === "phase-production-build") {
     return;
   }
 

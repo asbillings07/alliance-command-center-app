@@ -10,16 +10,22 @@ name: Update Visual Baselines
 on:
   workflow_dispatch:
 
+# Deny all permissions by default
+permissions: {}
+
 env:
   DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/acc_test"
   PLATFORM_ADMIN_EMAILS_E2E: "platform-admin@test.local"
   AUTH_SECRET: "test-secret-for-ci-only-not-for-production"
   AUTH_TRUST_HOST: "true"
+  NEXTAUTH_URL: "http://localhost:3000"
 
 jobs:
   update-baselines:
     name: Generate Linux Baselines
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:15

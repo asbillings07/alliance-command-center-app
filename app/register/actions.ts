@@ -7,7 +7,6 @@ import { redirect } from "next/navigation";
 import {
   validateBetaToken,
   validateBetaCode,
-  acceptBetaInvitation,
 } from "@/app/src/lib/betaInvitation";
 
 export type RegisterState = {
@@ -103,16 +102,27 @@ export async function register(
     try {
       const passwordHash = await bcrypt.hash(password, 12);
 
-      const user = await prisma.user.create({
-        data: {
-          email,
-          displayName,
-          passwordHash,
-        },
-      });
+      // Use a transaction to ensure user creation and invitation acceptance
+      // are atomic. If either fails, the entire operation rolls back.
+      // This prevents orphaned users if acceptBetaInvitation fails.
+      await prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            email,
+            displayName,
+            passwordHash,
+          },
+        });
 
-      // Auto-accept the beta invitation to skip the manual accept step
-      await acceptBetaInvitation(betaInvitation.id, user.id);
+        // Auto-accept the beta invitation to skip the manual accept step
+        await tx.betaInvitation.update({
+          where: { id: betaInvitation.id },
+          data: {
+            acceptedAt: new Date(),
+            acceptedByUserId: user.id,
+          },
+        });
+      });
 
       await signIn("credentials", {
         email,

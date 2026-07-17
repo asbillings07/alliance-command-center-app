@@ -5,19 +5,21 @@
 
 import * as Sentry from "@sentry/nextjs";
 
-Sentry.init({
-  dsn: "https://e46c4727c3773b59fdf6b4be24254986@o4511748619829248.ingest.us.sentry.io/4511748626972672",
+const dsn = process.env.SENTRY_DSN;
 
-  // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
-  tracesSampleRate: 1,
+// Only initialize Sentry if a DSN is configured
+if (dsn) {
+  Sentry.init({
+    dsn,
 
-  // Enable logs to be sent to Sentry
-  enableLogs: true,
+    // Conservative sampling in production to avoid excessive telemetry
+    // Development uses 100% for debugging, production uses 10%
+    tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
 
-  dataCollection: {
-    // To disable sending user data and HTTP bodies, uncomment the lines below. For more info visit:
-    // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#dataCollection
-    // userInfo: false,
-    // httpBodies: [],
-  },
-});
+    // Enable logs in development only
+    enableLogs: process.env.NODE_ENV !== "production",
+
+    // Environment tag for filtering in Sentry dashboard
+    environment: process.env.NODE_ENV || "development",
+  });
+}

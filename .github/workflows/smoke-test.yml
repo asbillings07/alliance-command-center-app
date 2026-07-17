@@ -4,6 +4,9 @@ on:
   deployment_status:
     states: [success]
 
+# Deny all permissions by default
+permissions: {}
+
 jobs:
   smoke-test:
     if: github.event.deployment_status.state == 'success' && github.event.deployment_status.environment == 'Production'

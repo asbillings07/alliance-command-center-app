@@ -1,34 +1,40 @@
 // This file configures the initialization of Sentry on the client.
-// The added config here will be used whenever a users loads a page in their browser.
+// The config here will be used whenever a user loads a page in their browser.
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
 
-Sentry.init({
-  dsn: "https://e46c4727c3773b59fdf6b4be24254986@o4511748619829248.ingest.us.sentry.io/4511748626972672",
+const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+const isProduction = process.env.NODE_ENV === "production";
 
-  // Add optional integrations for additional features
-  integrations: [Sentry.replayIntegration()],
+// Session Replay can capture sensitive on-screen data.
+// Only enable when explicitly configured via environment variable.
+const enableReplay = process.env.NEXT_PUBLIC_SENTRY_REPLAY === "true";
 
-  // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
-  tracesSampleRate: 1,
-  // Enable logs to be sent to Sentry
-  enableLogs: true,
+// Only initialize Sentry if a DSN is configured
+if (dsn) {
+  Sentry.init({
+    dsn,
 
-  // Define how likely Replay events are sampled.
-  // This sets the sample rate to be 10%. You may want this to be 100% while
-  // in development and sample at a lower rate in production
-  replaysSessionSampleRate: 0.1,
+    // Add Session Replay only when explicitly enabled
+    integrations: enableReplay ? [Sentry.replayIntegration()] : [],
 
-  // Define how likely Replay events are sampled when an error occurs.
-  replaysOnErrorSampleRate: 1.0,
+    // Conservative sampling in production to avoid excessive telemetry
+    tracesSampleRate: isProduction ? 0.1 : 1.0,
 
-  dataCollection: {
-    // To disable sending user data and HTTP bodies, uncomment the lines below. For more info visit:
-    // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#dataCollection
-    // userInfo: false,
-    // httpBodies: [],
-  },
-});
+    // Enable logs in development only
+    enableLogs: !isProduction,
+
+    // Session Replay sampling (only applies if replay integration is enabled)
+    // Sample 1% of sessions in production, 10% in development
+    replaysSessionSampleRate: isProduction ? 0.01 : 0.1,
+
+    // Capture 100% of sessions with errors for debugging
+    replaysOnErrorSampleRate: 1.0,
+
+    // Environment tag for filtering in Sentry dashboard
+    environment: process.env.NODE_ENV || "development",
+  });
+}
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

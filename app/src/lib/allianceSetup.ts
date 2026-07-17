@@ -174,8 +174,10 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
  * those the user has permission to complete. This ensures users only
  * see tasks they can actually act on.
  *
- * isComplete is true when all REQUIRED tasks are complete. Optional
- * tasks don't block the setup gate.
+ * IMPORTANT: isComplete and requiredComplete/requiredTotal are always
+ * computed against the FULL SETUP_TASKS list, not the filtered list.
+ * This ensures that a Viewer seeing 0 applicable tasks doesn't incorrectly
+ * see setup as "complete". The filtered `tasks` list is only for display.
  */
 export async function getAllianceSetupStatus(
   allianceId: string,
@@ -183,7 +185,16 @@ export async function getAllianceSetupStatus(
 ): Promise<AllianceSetupStatus> {
   const counts = await getSetupCounts(allianceId);
 
+  // Compute actual alliance-wide completion status from ALL tasks
+  // This is independent of what the current user can see/do
+  const allRequiredTasks = SETUP_TASKS.filter((t) => t.required);
+  const allRequiredComplete = allRequiredTasks.filter((t) =>
+    evaluateTaskCompletion(t.id, counts)
+  ).length;
+  const allRequiredTotal = allRequiredTasks.length;
+
   // Filter to tasks the user can complete, if permissions provided
+  // This is for display purposes only
   const applicableTasks = permissions
     ? SETUP_TASKS.filter((t) => permissions[t.requiredPermission])
     : SETUP_TASKS;
@@ -201,17 +212,14 @@ export async function getAllianceSetupStatus(
   const completedCount = tasks.filter((t) => t.completed).length;
   const totalCount = tasks.length;
 
-  // Only required tasks determine if setup is complete
-  const requiredTasks = tasks.filter((t) => t.required);
-  const requiredComplete = requiredTasks.filter((t) => t.completed).length;
-  const requiredTotal = requiredTasks.length;
-
   return {
     tasks,
-    isComplete: requiredComplete === requiredTotal,
+    // Setup is complete when ALL required tasks (alliance-wide) are done
+    isComplete: allRequiredComplete === allRequiredTotal,
     completedCount,
     totalCount,
-    requiredComplete,
-    requiredTotal,
+    // These reflect alliance-wide required task status, not user-filtered
+    requiredComplete: allRequiredComplete,
+    requiredTotal: allRequiredTotal,
   };
 }

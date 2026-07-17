@@ -90,7 +90,7 @@ See `.env.example` for all available configuration options.
 
 Alliance Command Center is built with:
 
-- **Framework:** Next.js 15 (App Router)
+- **Framework:** Next.js 16 (App Router)
 - **Database:** PostgreSQL with Prisma ORM
 - **Authentication:** Auth.js (NextAuth v5)
 - **Styling:** Tailwind CSS

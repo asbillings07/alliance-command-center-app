@@ -12,9 +12,8 @@ type AcceptInvitationFormProps = {
 
 export function AcceptInvitationForm({
   invitationId,
-  allianceId: _allianceId,
   allianceName,
-}: AcceptInvitationFormProps) {
+}: Omit<AcceptInvitationFormProps, "allianceId">) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);

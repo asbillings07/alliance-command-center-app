@@ -1,5 +1,5 @@
-import { test, expect } from "../shared/fixtures";
-import { checkA11y, checkA11yLevelAA } from "../shared/accessibility";
+import { test } from "../shared/fixtures";
+import { checkA11yLevelAA } from "../shared/accessibility";
 
 /**
  * Accessibility E2E Tests

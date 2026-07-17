@@ -135,7 +135,10 @@ export default async function AllianceSetupPage({ params }: Params) {
 
   const requiredTasks = status.tasks.filter((t) => t.required);
   const optionalTasks = status.tasks.filter((t) => !t.required);
-  const allRequiredComplete = requiredTasks.every((t) => t.completed);
+  // Use status.isComplete which is computed against ALL required tasks,
+  // not just those visible to the current user. This prevents roles that
+  // can't see any required tasks from incorrectly seeing "complete".
+  const allRequiredComplete = status.isComplete;
 
   return (
     <PageLayout
