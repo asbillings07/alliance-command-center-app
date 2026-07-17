@@ -10,12 +10,14 @@ import {
   type GoogleProfile,
 } from "@/app/src/lib/auth/identity/google";
 import { isInvitationEligible } from "@/app/src/lib/auth/identity/eligibility";
-import { InvitationRequiredError } from "@/app/src/lib/auth/identity/errors";
+import {
+  AuthenticationError,
+  InvitationRequiredError,
+} from "@/app/src/lib/auth/identity/errors";
 import { provisionOAuthUser } from "@/app/src/lib/auth/provisionOAuthUser";
 
 // Google is registered only when credentials are configured, so environments
-// without OAuth (local, CI) are unaffected. Auth.js auto-reads AUTH_GOOGLE_ID
-// and AUTH_GOOGLE_SECRET.
+// without OAuth (local, CI) are unaffected.
 const providers: NextAuthConfig["providers"] = [
   Credentials({
     async authorize(credentials) {
@@ -24,9 +26,13 @@ const providers: NextAuthConfig["providers"] = [
           return null;
         }
 
+        // Match registration, which normalizes emails (trim + lowercase),
+        // so casing/whitespace differences don't block sign-in.
+        const email = (credentials.email as string).toLowerCase().trim();
+
         const user = await prisma.user.findUnique({
           where: {
-            email: credentials.email as string,
+            email,
           },
         });
 
@@ -61,7 +67,12 @@ const providers: NextAuthConfig["providers"] = [
 ];
 
 if (isGoogleAuthEnabled()) {
-  providers.push(Google);
+  providers.push(
+    Google({
+      clientId: process.env.AUTH_GOOGLE_ID,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET,
+    }),
+  );
 }
 
 // authentication engine
@@ -76,8 +87,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   callbacks: {
     // Google is authentication only. The invitation model remains authoritative
-    // for eligibility. Failures throw typed errors, which we translate to a
-    // denial (Auth.js AccessDenied).
+    // for eligibility. Expected denials (unverified email, no invitation) throw
+    // typed AuthenticationErrors that we translate into a denial (Auth.js
+    // AccessDenied). Unexpected failures (e.g. a database outage) are rethrown
+    // so they surface as real errors rather than being masked as a denial.
     async signIn({ account, profile }) {
       if (account?.provider !== "google") {
         return true; // credentials already authorized in authorize()
@@ -103,8 +116,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         return true;
       } catch (error) {
-        console.error("Google sign-in denied", error);
-        return false;
+        if (error instanceof AuthenticationError) {
+          console.warn("Google sign-in denied:", error.message);
+          return false;
+        }
+        // Unexpected: don't mask operational issues as an access denial.
+        console.error("Unexpected error during Google sign-in", error);
+        throw error;
       }
     },
     // Invariant: after authentication, token.sub is always our internal User.id,

@@ -97,8 +97,10 @@ test.describe("Login", () => {
   test("login form is keyboard accessible", async ({ page }) => {
     await page.goto("/login");
 
-    // Tab through the form
-    await page.keyboard.press("Tab");
+    // Focus the email field directly rather than assuming it is the first tab
+    // stop: a "Continue with Google" CTA precedes the form when OAuth is
+    // enabled. We only assert the form's internal tab order here.
+    await page.getByLabel(/email/i).focus();
     await expect(page.getByLabel(/email/i)).toBeFocused();
 
     await page.keyboard.press("Tab");

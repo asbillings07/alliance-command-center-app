@@ -11,13 +11,13 @@ const initialState: LoginState = { error: null };
 
 /**
  * Map an Auth.js OAuth error code (surfaced as ?error=) to a friendly message.
- * Denials from the Google sign-in callback (unverified email, no invitation)
- * arrive as AccessDenied.
+ * AccessDenied covers the expected Google denials (unverified email, no
+ * invitation). Kept non-specific so it stays accurate across those causes.
  */
 function oauthErrorMessage(error: string | null): string | null {
   if (!error) return null;
   if (error === "AccessDenied") {
-    return "You need an invitation to sign in with Google, and your Google email must be verified.";
+    return "We couldn't sign you in with Google. This usually means your Google email isn't invited or isn't verified.";
   }
   return "Sign-in failed. Please try again.";
 }
