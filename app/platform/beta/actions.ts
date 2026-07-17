@@ -8,6 +8,30 @@ import {
 } from "@/app/src/lib/betaInvitation";
 
 /**
+ * Validate email format.
+ * More robust than just checking for "@" - validates structure server-side
+ * since browser validation can be bypassed.
+ */
+function isValidEmail(email: string): boolean {
+  if (!email || typeof email !== "string") return false;
+
+  const trimmed = email.trim();
+
+  // Basic length checks
+  if (trimmed.length < 5 || trimmed.length > 254) return false;
+
+  // No whitespace allowed
+  if (/\s/.test(trimmed)) return false;
+
+  // RFC 5322 simplified: local@domain.tld
+  // - Local part: at least 1 char before @
+  // - Domain: at least 1 char, must contain a dot, at least 2 chars after last dot
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+  return emailRegex.test(trimmed);
+}
+
+/**
  * Structured result types for beta invitation actions.
  * Keeps error handling simple and predictable in client components.
  */
@@ -40,7 +64,7 @@ export async function createInvitationAction(
 ): Promise<CreateInvitationResult> {
   await requirePlatformAdmin();
 
-  if (!email || !email.includes("@")) {
+  if (!isValidEmail(email)) {
     return { success: false, error: "Please enter a valid email address" };
   }
 
