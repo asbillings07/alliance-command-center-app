@@ -1,5 +1,6 @@
 import { randomUUID, randomBytes } from "node:crypto";
 import { prisma } from "./prisma";
+import { getRedeemUrl } from "./appUrl";
 import type { BetaInvitation } from "@/app/generated/prisma/client";
 
 function generateBetaCode(): string {
@@ -169,28 +170,13 @@ export async function issueBetaInvitation(
 
 /**
  * Build the invitation result with URL.
- * Centralizes the NEXTAUTH_URL logic to avoid duplication.
  */
 function buildInvitationResult(
   invitation: BetaInvitation
 ): IssueBetaInvitationResult {
-  const origin = process.env.NEXTAUTH_URL;
-
-  if (!origin) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("NEXTAUTH_URL must be configured in production");
-    }
-    // Development/test fallback
-    return {
-      invitation,
-      inviteUrl: `http://localhost:3000/redeem/${invitation.token}`,
-      inviteCode: invitation.code,
-    };
-  }
-
   return {
     invitation,
-    inviteUrl: `${origin}/redeem/${invitation.token}`,
+    inviteUrl: getRedeemUrl(invitation.token),
     inviteCode: invitation.code,
   };
 }

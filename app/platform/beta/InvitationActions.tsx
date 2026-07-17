@@ -1,9 +1,29 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { revokeInvitationAction } from "./actions";
+import {
+  resendInvitationEmailAction,
+  revokeInvitationAction,
+} from "./actions";
+import type { EmailStatus } from "@/app/src/lib/email";
 
 type CopyState = "idle" | "copied";
+
+type ResendState = "idle" | EmailStatus;
+
+function resendLabel(state: ResendState, isPending: boolean): string {
+  if (isPending) return "...";
+  switch (state) {
+    case "sent":
+      return "Sent!";
+    case "skipped":
+      return "Logged";
+    case "failed":
+      return "Failed";
+    default:
+      return "Email";
+  }
+}
 
 function useCopy() {
   const [state, setState] = useState<CopyState>("idle");
@@ -40,6 +60,8 @@ export function InvitationActions({
   inviteUrl,
 }: InvitationActionsProps) {
   const [isPending, startTransition] = useTransition();
+  const [isResending, startResend] = useTransition();
+  const [resendState, setResendState] = useState<ResendState>("idle");
   const [error, setError] = useState<string | null>(null);
   const { state: codeState, copy: copyCode } = useCopy();
   const { state: urlState, copy: copyUrl } = useCopy();
@@ -55,6 +77,20 @@ export function InvitationActions({
       if (!result.success) {
         setError(result.error);
       }
+    });
+  };
+
+  const handleResend = () => {
+    setError(null);
+    startResend(async () => {
+      const result = await resendInvitationEmailAction(invitationId);
+      if (result.success) {
+        setResendState(result.emailStatus);
+      } else {
+        setResendState("failed");
+        setError(result.error);
+      }
+      setTimeout(() => setResendState("idle"), 2500);
     });
   };
 
@@ -76,6 +112,16 @@ export function InvitationActions({
         title="Copy invite code"
       >
         {codeState === "copied" ? "Copied!" : "Code"}
+      </button>
+      <span className="text-text-disabled">·</span>
+      <button
+        type="button"
+        onClick={handleResend}
+        disabled={isResending}
+        className="text-xs text-primary hover:text-primary-hover disabled:opacity-50"
+        title="Resend invitation email"
+      >
+        {resendLabel(resendState, isResending)}
       </button>
       <span className="text-text-disabled">·</span>
       <button
@@ -105,6 +151,8 @@ export function InvitationCardActions({
   inviteUrl,
 }: InvitationActionsProps) {
   const [isPending, startTransition] = useTransition();
+  const [isResending, startResend] = useTransition();
+  const [resendState, setResendState] = useState<ResendState>("idle");
   const [error, setError] = useState<string | null>(null);
   const { state: codeState, copy: copyCode } = useCopy();
   const { state: urlState, copy: copyUrl } = useCopy();
@@ -123,6 +171,20 @@ export function InvitationCardActions({
     });
   };
 
+  const handleResend = () => {
+    setError(null);
+    startResend(async () => {
+      const result = await resendInvitationEmailAction(invitationId);
+      if (result.success) {
+        setResendState(result.emailStatus);
+      } else {
+        setResendState("failed");
+        setError(result.error);
+      }
+      setTimeout(() => setResendState("idle"), 2500);
+    });
+  };
+
   return (
     <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-border">
       <button
@@ -138,6 +200,18 @@ export function InvitationCardActions({
         className="px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-tertiary border border-border rounded-lg transition-colors"
       >
         {codeState === "copied" ? "Copied!" : "Copy Code"}
+      </button>
+      <button
+        type="button"
+        onClick={handleResend}
+        disabled={isResending}
+        className="px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-tertiary border border-border rounded-lg transition-colors disabled:opacity-50"
+      >
+        {isResending
+          ? "Resending..."
+          : resendState === "idle"
+            ? "Resend Email"
+            : resendLabel(resendState, false)}
       </button>
       <button
         type="button"

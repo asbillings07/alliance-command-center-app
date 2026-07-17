@@ -394,6 +394,12 @@ TEST_PLATFORM_ADMIN_PASSWORD=${TEST_PASSWORD}
 
 # Platform admin emails for E2E tests (add to main .env or set in CI)
 PLATFORM_ADMIN_EMAILS_E2E=${TEST_USERS.platformAdmin}
+
+# Disable transactional email during E2E so the web server uses the logging
+# transport instead of making live Resend API calls. These empty values are
+# inherited by the dev/start server and take precedence over .env.
+RESEND_API_KEY=
+EMAIL_FROM=
 `;
 
   if (WRITE_ENV_FILE) {
