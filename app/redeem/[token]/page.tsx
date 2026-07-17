@@ -6,7 +6,7 @@ import {
   type BetaValidationResult,
 } from "@/app/src/lib/betaInvitation";
 import { isGoogleAuthEnabled } from "@/app/src/lib/auth/identity/google";
-import { signInWithGoogle } from "@/app/src/lib/auth/googleSignInAction";
+import { GoogleSignInButton } from "@/app/src/components/client";
 import { AcceptBetaInvitationForm } from "./AcceptBetaInvitationForm";
 
 type PageProps = {
@@ -197,30 +197,10 @@ export default async function RedeemTokenPage({
           <div className="space-y-4">
             {isGoogleAuthEnabled() && (
               <>
-                <form action={signInWithGoogle}>
-                  <input
-                    type="hidden"
-                    name="callbackUrl"
-                    value={redeemCallbackUrl}
-                  />
-                  <button
-                    type="submit"
-                    className="flex w-full items-center justify-center gap-2 px-4 py-2 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60A5FA] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111827]"
-                  >
-                    <svg
-                      className="h-4 w-4"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                      focusable="false"
-                    >
-                      <path
-                        fill="currentColor"
-                        d="M12 10.2v3.9h5.5c-.24 1.4-1.66 4.1-5.5 4.1-3.31 0-6-2.74-6-6.1s2.69-6.1 6-6.1c1.88 0 3.15.8 3.87 1.49l2.64-2.54C16.9 2.9 14.7 2 12 2 6.98 2 2.9 6.03 2.9 11.1S6.98 20.2 12 20.2c6.05 0 7.86-4.24 7.86-6.44 0-.44-.05-.78-.11-1.12H12z"
-                      />
-                    </svg>
-                    Continue with Google
-                  </button>
-                </form>
+                <GoogleSignInButton
+                  callbackUrl={redeemCallbackUrl}
+                  className="flex w-full items-center justify-center px-4 py-2 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60A5FA] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111827]"
+                />
                 <div className="flex items-center gap-3">
                   <span className="h-px flex-1 bg-[#374151]" />
                   <span className="text-xs uppercase tracking-wide text-[#9CA3AF]">

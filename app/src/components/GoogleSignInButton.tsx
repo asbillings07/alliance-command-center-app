@@ -3,21 +3,43 @@
 import { signInWithGoogle } from "@/app/src/lib/auth/googleSignInAction";
 import { Button } from "@/app/src/components/client";
 
+type GoogleSignInButtonProps = {
+  callbackUrl: string;
+  /**
+   * Optional class override for contexts that don't use the design-token
+   * {@link Button} (e.g. the dark-themed redeem page). When provided, a native
+   * button is rendered with these classes; otherwise the shared Button is used.
+   * The form, glyph, label and ARIA stay shared so the two flows can't drift.
+   */
+  className?: string;
+};
+
 /**
  * "Continue with Google" button.
  *
  * Renders a form that posts to the {@link signInWithGoogle} server action,
  * preserving `callbackUrl` through the OAuth round-trip. Only render this when
- * Google OAuth is enabled (see isGoogleAuthEnabled).
+ * Google OAuth is enabled (see isGoogleAuthEnabled). Safe to use from Server
+ * Components (it is itself a Client Component).
  */
-export function GoogleSignInButton({ callbackUrl }: { callbackUrl: string }) {
+export function GoogleSignInButton({
+  callbackUrl,
+  className,
+}: GoogleSignInButtonProps) {
   return (
     <form action={signInWithGoogle}>
       <input type="hidden" name="callbackUrl" value={callbackUrl} />
-      <Button type="submit" variant="primary" fullWidth>
-        <GoogleGlyph />
-        Continue with Google
-      </Button>
+      {className ? (
+        <button type="submit" className={className}>
+          <GoogleGlyph />
+          Continue with Google
+        </button>
+      ) : (
+        <Button type="submit" variant="primary" fullWidth>
+          <GoogleGlyph />
+          Continue with Google
+        </Button>
+      )}
     </form>
   );
 }

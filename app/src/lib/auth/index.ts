@@ -97,7 +97,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       try {
-        const email = assertVerifiedGoogleEmail(profile as GoogleProfile);
+        const googleProfile = profile as GoogleProfile | undefined;
+        if (!googleProfile) {
+          // Unexpected: Google always returns a profile. Throw so this
+          // surfaces as an error rather than a TypeError/500 downstream.
+          throw new Error("Google sign-in callback received no profile");
+        }
+
+        const email = assertVerifiedGoogleEmail(googleProfile);
 
         const existing = await prisma.user.findUnique({ where: { email } });
         if (existing) {
@@ -110,7 +117,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         await provisionOAuthUser({
           email,
-          displayName: (profile as GoogleProfile).name?.trim() || email,
+          displayName: googleProfile.name?.trim() || email,
           provider: "GOOGLE",
         });
 
@@ -134,7 +141,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // initial sign-in (when `account` is present); later requests reuse token.
     async jwt({ token, user, account, profile }) {
       if (account?.provider === "google") {
-        const email = assertVerifiedGoogleEmail(profile as GoogleProfile);
+        const googleProfile = profile as GoogleProfile | undefined;
+        if (!googleProfile) {
+          throw new Error("Google jwt callback received no profile");
+        }
+        const email = assertVerifiedGoogleEmail(googleProfile);
         const dbUser = await prisma.user.findUnique({ where: { email } });
         if (!dbUser) {
           throw new Error(
