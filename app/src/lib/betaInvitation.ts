@@ -54,13 +54,24 @@ export async function createBetaInvitation(
       throw new Error("A beta invitation for this email has already been accepted");
     }
 
-    // Still pending (not revoked, not expired) - cannot re-issue
+    // Revoked - cannot re-issue (preserve audit history)
+    // Revocation is a deliberate action; re-inviting requires manual intervention
+    if (existing.revokedAt) {
+      throw new Error(
+        "A beta invitation for this email was revoked. " +
+          "Contact support to issue a new invitation."
+      );
+    }
+
     const now = new Date();
-    if (!existing.revokedAt && existing.expiresAt > now) {
+
+    // Still pending (not expired) - cannot re-issue
+    if (existing.expiresAt > now) {
       throw new Error("A pending beta invitation already exists for this email");
     }
 
-    // Revoked or expired - allow re-issue by updating the existing record
+    // Expired only - allow re-issue by updating the existing record
+    // Expiration is automatic, not a deliberate action, so no audit concern
     const token = randomUUID();
     const code = generateBetaCode();
 
@@ -71,7 +82,6 @@ export async function createBetaInvitation(
         code,
         notes: notes?.trim() || null,
         expiresAt: addDays(now, 30),
-        revokedAt: null, // Clear revocation
       },
     });
 
@@ -140,28 +150,41 @@ function buildInvitationResult(
  * Revoke a beta invitation.
  * Sets revokedAt timestamp to prevent the invitation from being used.
  * Does not delete the invitation, preserving audit history.
+ *
+ * Uses atomic update to prevent race conditions.
  */
 export async function revokeBetaInvitation(invitationId: string): Promise<void> {
-  const invitation = await prisma.betaInvitation.findUnique({
-    where: { id: invitationId },
-  });
-
-  if (!invitation) {
-    throw new Error("Beta invitation not found");
-  }
-
-  if (invitation.acceptedAt) {
-    throw new Error("Cannot revoke an accepted invitation");
-  }
-
-  if (invitation.revokedAt) {
-    throw new Error("Invitation has already been revoked");
-  }
-
-  await prisma.betaInvitation.update({
-    where: { id: invitationId },
+  // Atomic update: only revoke if not already accepted or revoked
+  const result = await prisma.betaInvitation.updateMany({
+    where: {
+      id: invitationId,
+      acceptedAt: null,
+      revokedAt: null,
+    },
     data: { revokedAt: new Date() },
   });
+
+  if (result.count === 0) {
+    // Re-fetch to determine why update failed
+    const invitation = await prisma.betaInvitation.findUnique({
+      where: { id: invitationId },
+    });
+
+    if (!invitation) {
+      throw new Error("Beta invitation not found");
+    }
+
+    if (invitation.acceptedAt) {
+      throw new Error("Cannot revoke an accepted invitation");
+    }
+
+    if (invitation.revokedAt) {
+      throw new Error("Invitation has already been revoked");
+    }
+
+    // Shouldn't reach here, but handle gracefully
+    throw new Error("Failed to revoke invitation");
+  }
 }
 
 export type BetaValidationResult =
