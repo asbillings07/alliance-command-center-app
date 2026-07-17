@@ -7,6 +7,9 @@ export const metadata = {
   description: "Create the first platform administrator",
 };
 
+// Prevent static generation - this page requires database access
+export const dynamic = "force-dynamic";
+
 /**
  * Platform Bootstrap Page
  *
