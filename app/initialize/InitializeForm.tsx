@@ -70,6 +70,18 @@ export function InitializeForm() {
           />
         </div>
 
+        <div>
+          <Label htmlFor="bootstrapSecret">Bootstrap Secret</Label>
+          <Input
+            id="bootstrapSecret"
+            name="bootstrapSecret"
+            type="password"
+            disabled={isPending}
+            autoComplete="off"
+            placeholder="Bootstrap Secret"
+          />
+        </div>
+
         <Button type="submit" variant="primary" fullWidth loading={isPending}>
           {isPending ? "Initializing..." : "Initialize Platform"}
         </Button>

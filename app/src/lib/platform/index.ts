@@ -84,4 +84,5 @@ export {
   isPlatformInitialized,
   getBootstrapAllowedEmails,
   canInitializePlatform,
+  verifyBootstrapSecret,
 } from "./bootstrap";

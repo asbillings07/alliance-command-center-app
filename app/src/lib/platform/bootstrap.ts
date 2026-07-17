@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { prisma } from "../prisma";
 
 /**
@@ -50,4 +51,45 @@ export function getBootstrapAllowedEmails(): string[] {
 export function canInitializePlatform(email: string): boolean {
   const allowedEmails = getBootstrapAllowedEmails();
   return allowedEmails.includes(email.toLowerCase());
+}
+
+/**
+ * Verify the bootstrap secret supplied during initialization.
+ *
+ * Knowing an allowed email is not proof of ownership. On a fresh
+ * (uninitialized) deployment, anyone who guesses an email in
+ * PLATFORM_ADMIN_EMAILS could otherwise claim the first platform admin
+ * account. Requiring a separate deployment-only secret closes that gap.
+ *
+ * Behavior:
+ * - If PLATFORM_BOOTSTRAP_SECRET is configured, the provided value must
+ *   match it exactly (compared in constant time).
+ * - If it is NOT configured, bootstrap is refused in production (fail closed)
+ *   and allowed in development/test for local convenience.
+ */
+export function verifyBootstrapSecret(
+  providedSecret: string | undefined | null
+): boolean {
+  const expected = process.env.PLATFORM_BOOTSTRAP_SECRET?.trim();
+
+  if (!expected) {
+    // No secret configured: refuse in production so a fresh deployment can't
+    // be claimed with only an allowed email; permit in dev/test.
+    return process.env.NODE_ENV !== "production";
+  }
+
+  const provided = providedSecret?.trim();
+  if (!provided) {
+    return false;
+  }
+
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const providedBuffer = Buffer.from(provided, "utf8");
+
+  // timingSafeEqual requires equal-length buffers; unequal length is a mismatch.
+  if (expectedBuffer.length !== providedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuffer, providedBuffer);
 }

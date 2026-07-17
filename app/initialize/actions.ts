@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import {
   isPlatformInitialized,
   canInitializePlatform,
+  verifyBootstrapSecret,
 } from "@/app/src/lib/platform";
 
 export type InitializeState = {
@@ -18,10 +19,11 @@ export type InitializeState = {
  *
  * This action:
  * 1. Verifies the platform is not already initialized (race protection)
- * 2. Validates the email is in PLATFORM_ADMIN_EMAILS (bootstrap authorization)
- * 3. Creates a user with isPlatformAdmin: true
- * 4. Signs them in
- * 5. Redirects to /platform
+ * 2. Verifies the bootstrap secret (proof of deployment ownership)
+ * 3. Validates the email is in PLATFORM_ADMIN_EMAILS (bootstrap authorization)
+ * 4. Creates a user with isPlatformAdmin: true
+ * 5. Signs them in
+ * 6. Redirects to /platform
  *
  * Note: This does NOT create a beta invitation. Bootstrap users are operators,
  * not beta testers. These are separate concepts.
@@ -34,6 +36,7 @@ export async function initializePlatform(
   const password = formData.get("password")?.toString();
   const confirmPassword = formData.get("confirmPassword")?.toString();
   const displayName = formData.get("displayName")?.toString().trim();
+  const bootstrapSecret = formData.get("bootstrapSecret")?.toString();
 
   if (!email || !password || !displayName) {
     return { error: "All fields are required" };
@@ -51,6 +54,17 @@ export async function initializePlatform(
   const alreadyInitialized = await isPlatformInitialized();
   if (alreadyInitialized) {
     return { error: "Platform has already been initialized" };
+  }
+
+  // Bootstrap secret: proof of deployment ownership. Checked before the email
+  // authorization so a caller without the secret can't probe which emails are
+  // allowed to initialize.
+  if (!verifyBootstrapSecret(bootstrapSecret)) {
+    return {
+      error:
+        "Invalid or missing bootstrap secret. " +
+        "Contact the system administrator.",
+    };
   }
 
   // Bootstrap authorization: only emails in PLATFORM_ADMIN_EMAILS can initialize

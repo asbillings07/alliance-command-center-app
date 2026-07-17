@@ -50,7 +50,8 @@ export default async function InitializePage() {
         </div>
 
         <p className="text-center text-xs text-text-disabled mt-4">
-          Your email must be in the PLATFORM_ADMIN_EMAILS configuration.
+          Your email must be in the PLATFORM_ADMIN_EMAILS configuration, and you
+          must provide the deployment&apos;s PLATFORM_BOOTSTRAP_SECRET.
         </p>
       </div>
     </div>

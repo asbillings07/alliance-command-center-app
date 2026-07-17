@@ -119,11 +119,13 @@ export async function register(
         });
 
         // Auto-accept the beta invitation with a race-safe update.
-        // Only update if acceptedAt is still null (prevents double-acceptance).
+        // Require the invitation to still be unaccepted AND unrevoked: it may
+        // have been revoked after validation but before this transaction ran.
         const result = await tx.betaInvitation.updateMany({
           where: {
             id: betaInvitation.id,
-            acceptedAt: null, // Only update if not already accepted
+            acceptedAt: null,
+            revokedAt: null,
           },
           data: {
             acceptedAt: new Date(),
@@ -131,9 +133,16 @@ export async function register(
           },
         });
 
-        // If no rows were updated, the invitation was already accepted (race condition)
+        // No rows updated means the invitation changed state between validation
+        // and this transaction. Determine why so we can surface an accurate error.
         if (result.count === 0) {
-          throw new Error("Invitation was already accepted");
+          const current = await tx.betaInvitation.findUnique({
+            where: { id: betaInvitation.id },
+            select: { revokedAt: true },
+          });
+          throw new Error(
+            current?.revokedAt ? "INVITATION_REVOKED" : "INVITATION_ALREADY_ACCEPTED"
+          );
         }
       });
 
@@ -143,6 +152,14 @@ export async function register(
         redirect: false,
       });
     } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === "INVITATION_REVOKED") {
+          return { error: "This beta invitation has been revoked" };
+        }
+        if (error.message === "INVITATION_ALREADY_ACCEPTED") {
+          return { error: "This beta invitation has already been accepted" };
+        }
+      }
       console.error("Error creating account", error);
       return { error: "Failed to create account" };
     }

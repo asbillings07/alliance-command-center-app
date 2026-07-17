@@ -21,9 +21,18 @@ The platform supports a one-time initialization flow that separates **bootstrap 
 ### Bootstrap Authorization (Day 0)
 
 1. When no platform administrators exist in the database, `/initialize` is accessible
-2. The initializing user must provide an email from `PLATFORM_ADMIN_EMAILS` env var
-3. The first user is created with `isPlatformAdmin: true` in the database
-4. After successful initialization, `/initialize` is permanently disabled
+2. The initializing user must provide the deployment's `PLATFORM_BOOTSTRAP_SECRET` (proof of ownership)
+3. The initializing user must provide an email from `PLATFORM_ADMIN_EMAILS` env var
+4. The first user is created with `isPlatformAdmin: true` in the database
+5. After successful initialization, `/initialize` is permanently disabled
+
+Knowing an allowed email is not proof of ownership. Without a second factor, anyone
+who guessed an email in `PLATFORM_ADMIN_EMAILS` could claim the first platform admin
+account on a fresh deployment. The `PLATFORM_BOOTSTRAP_SECRET` is a deployment-only
+value (never exposed to clients) that must be supplied on the `/initialize` form and
+is compared in constant time. It is required in production; when unset, bootstrap is
+refused in production (fail closed) and permitted without a secret only in
+development/test for local convenience.
 
 ### Runtime Authorization (Day 1+)
 
@@ -67,7 +76,7 @@ model BetaInvitation {
 
 ### Negative
 
-- First admin must be in `PLATFORM_ADMIN_EMAILS` env var
+- First admin must be in `PLATFORM_ADMIN_EMAILS` env var and know `PLATFORM_BOOTSTRAP_SECRET`
 - No UI for managing platform admins (future work)
 - If all platform admins are deleted, recovery requires database access
 
@@ -90,6 +99,26 @@ export async function isPlatformInitialized(): Promise<boolean> {
 export function canInitializePlatform(email: string): boolean {
   const allowedEmails = getBootstrapAllowedEmails();
   return allowedEmails.includes(email.toLowerCase());
+}
+
+export function verifyBootstrapSecret(
+  providedSecret: string | undefined | null
+): boolean {
+  const expected = process.env.PLATFORM_BOOTSTRAP_SECRET?.trim();
+
+  if (!expected) {
+    // Fail closed in production; allow in dev/test for local convenience.
+    return process.env.NODE_ENV !== "production";
+  }
+
+  const provided = providedSecret?.trim();
+  if (!provided) return false;
+
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const providedBuffer = Buffer.from(provided, "utf8");
+  if (expectedBuffer.length !== providedBuffer.length) return false;
+
+  return timingSafeEqual(expectedBuffer, providedBuffer);
 }
 ```
 
