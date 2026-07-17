@@ -161,11 +161,11 @@ export default async function RedeemTokenPage({
             </svg>
           </div>
           <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">
-            Welcome to Alliance Command Center
+            Welcome to the Beta!
           </h1>
           <p className="text-[#9CA3AF]">
-            You&apos;ve been invited to the beta. Accept this invitation to
-            create your alliance workspace.
+            You&apos;ve been invited to create your own alliance workspace 
+            in Alliance Command Center.
           </p>
         </div>
 
@@ -186,8 +186,11 @@ export default async function RedeemTokenPage({
               href={`/register?callbackUrl=${encodeURIComponent(redeemCallbackUrl)}`}
               className="block w-full px-4 py-2 bg-[#3B82F6] text-white text-center rounded-md hover:bg-[#2563EB]"
             >
-              Create Account to Continue
+              Create Account
             </Link>
+            <p className="text-center text-sm text-[#9CA3AF]">
+              After creating your account, you&apos;ll set up your alliance.
+            </p>
             <p className="text-center text-sm text-[#9CA3AF]">
               Already have an account?{" "}
               <Link

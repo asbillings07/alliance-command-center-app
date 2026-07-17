@@ -47,8 +47,8 @@ export default async function PeriodsPage({ params }: Params) {
                 <MetricPeriodCard allianceId={allianceId} mode="create" />
                 {periods.length === 0 ? (
                     <EmptyState
-                        title="No periods yet"
-                        description="Create your first evaluation period to start tracking performance."
+                        title="No evaluation periods"
+                        description="Evaluation periods are time-boxed windows for tracking member performance. Create a period (e.g., 'Week 1' or 'June Evaluation'), assign your metrics to it, then record or import data for each member."
                     />
                 ) : (
                     periods.map((period) => (

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { getPendingAllianceCreation } from "@/app/src/lib/betaInvitation";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
+import { AllianceRole } from "@/app/generated/prisma/enums";
 
 export default async function AppPage() {
     const session = await auth();
@@ -17,6 +18,7 @@ export default async function AppPage() {
         },
         select: {
             allianceId: true,
+            role: true,
         },
         take: 2,
     });
@@ -30,11 +32,15 @@ export default async function AppPage() {
     }
 
     if (memberships.length === 1) {
-        const allianceId = memberships[0].allianceId;
-        const status = await getAllianceSetupStatus(allianceId);
+        const { allianceId, role } = memberships[0];
 
-        if (!status.isComplete) {
-            redirect(`/alliances/${allianceId}/setup`);
+        // Only redirect owners to setup if incomplete
+        // Collaborators go directly to dashboard - they can't complete owner tasks
+        if (role === AllianceRole.OWNER) {
+            const status = await getAllianceSetupStatus(allianceId);
+            if (!status.isComplete) {
+                redirect(`/alliances/${allianceId}/setup`);
+            }
         }
 
         redirect(`/alliances/${allianceId}`);

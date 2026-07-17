@@ -4,7 +4,10 @@ import bcrypt from "bcrypt";
 import { signIn } from "@/app/src/lib/auth";
 import { prisma } from "@/app/src/lib/prisma";
 import { redirect } from "next/navigation";
-import { validateBetaToken, validateBetaCode } from "@/app/src/lib/betaInvitation";
+import {
+  validateBetaToken,
+  validateBetaCode,
+} from "@/app/src/lib/betaInvitation";
 
 export type RegisterState = {
   error: string | null;
@@ -99,12 +102,35 @@ export async function register(
     try {
       const passwordHash = await bcrypt.hash(password, 12);
 
-      await prisma.user.create({
-        data: {
-          email,
-          displayName,
-          passwordHash,
-        },
+      // Use a transaction to ensure user creation and invitation acceptance
+      // are atomic. If either fails, the entire operation rolls back.
+      // This prevents orphaned users if acceptBetaInvitation fails.
+      await prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            email,
+            displayName,
+            passwordHash,
+          },
+        });
+
+        // Auto-accept the beta invitation with a race-safe update.
+        // Only update if acceptedAt is still null (prevents double-acceptance).
+        const result = await tx.betaInvitation.updateMany({
+          where: {
+            id: betaInvitation.id,
+            acceptedAt: null, // Only update if not already accepted
+          },
+          data: {
+            acceptedAt: new Date(),
+            acceptedByUserId: user.id,
+          },
+        });
+
+        // If no rows were updated, the invitation was already accepted (race condition)
+        if (result.count === 0) {
+          throw new Error("Invitation was already accepted");
+        }
       });
 
       await signIn("credentials", {
@@ -117,7 +143,8 @@ export async function register(
       return { error: "Failed to create account" };
     }
 
-    redirect(callbackUrl);
+    // Redirect to create-alliance since the beta is now auto-accepted
+    redirect("/create-alliance");
   }
 
   // Check for alliance invitation from /invite/[token]

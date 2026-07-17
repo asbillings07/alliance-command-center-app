@@ -19,6 +19,63 @@ import {
   recordMemberMetric,
 } from "./helpers";
 
+// =============================================================================
+// PRODUCTION GUARD
+// =============================================================================
+// Refuse to run seed script against production databases
+const dbUrl = process.env.DATABASE_URL || "";
+const isProduction = process.env.NODE_ENV === "production";
+
+// Parse the hostname from the database URL to avoid substring injection attacks
+// e.g., a malicious URL like "postgresql://user@evil.com?fake=neon.tech" would
+// pass a naive .includes() check
+function isProductionHost(url: string): boolean {
+  // Empty or missing URL is a configuration error, not a production database
+  if (!url || url.trim() === "") {
+    return false;
+  }
+
+  try {
+    // PostgreSQL URLs use postgresql:// or postgres:// scheme
+    const parsed = new URL(url.replace(/^postgres(ql)?:\/\//, "http://"));
+    const hostname = parsed.hostname.toLowerCase();
+    
+    // Check if hostname ends with known production database providers
+    const productionHosts = [
+      ".neon.tech",
+      ".supabase.co",
+      ".rds.amazonaws.com",
+      ".amazonaws.com",
+      ".pooler.supabase.com",
+    ];
+    
+    return productionHosts.some(suffix => hostname.endsWith(suffix));
+  } catch {
+    // If URL parsing fails, treat as suspicious and block
+    // A malformed URL could be an attempt to bypass the guard
+    console.warn("Warning: Could not parse DATABASE_URL - treating as production for safety");
+    return true;
+  }
+}
+
+const isProductionDb = isProductionHost(dbUrl);
+
+if (isProduction || isProductionDb) {
+  console.error("========================================");
+  console.error("ERROR: Seed script cannot run against production database!");
+  console.error("========================================");
+  console.error(`NODE_ENV: ${process.env.NODE_ENV}`);
+  console.error(`DATABASE_URL contains production indicator`);
+  console.error("");
+  console.error("If this is intentional for a staging environment,");
+  console.error("set ALLOW_SEED_IN_PRODUCTION=true");
+  console.error("========================================");
+
+  if (process.env.ALLOW_SEED_IN_PRODUCTION !== "true") {
+    process.exit(1);
+  }
+}
+
 // Test password used for all seeded users
 const TEST_PASSWORD = "Password123";
 

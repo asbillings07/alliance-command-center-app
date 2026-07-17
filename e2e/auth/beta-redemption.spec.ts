@@ -13,7 +13,7 @@ test.describe("Beta Redemption", () => {
     await page.goto("/redeem");
 
     await expect(
-      page.getByRole("heading", { name: /alliance command center/i })
+      page.getByRole("heading", { name: /beta access/i })
     ).toBeVisible();
     await expect(page.getByText(/enter your beta code/i)).toBeVisible();
     await expect(page.getByPlaceholder("ABC-123")).toBeVisible();

@@ -46,8 +46,8 @@ export default function RedeemPage() {
   return (
     <AuthLayout
       icon={<KeyIcon />}
-      title="Alliance Command Center"
-      subtitle="Enter your beta code to get started"
+      title="Beta Access"
+      subtitle="Enter your beta code to create your alliance workspace"
       footer={
         <p>
           Already have an account?{" "}

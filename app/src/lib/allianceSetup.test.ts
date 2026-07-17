@@ -12,6 +12,9 @@ vi.mock("./prisma", () => ({
     allianceMembership: {
       count: vi.fn(),
     },
+    invitation: {
+      count: vi.fn(),
+    },
     allianceMember: {
       count: vi.fn(),
     },
@@ -27,6 +30,7 @@ const mockPrisma = prisma as unknown as {
   metric: { count: ReturnType<typeof vi.fn> };
   metricPeriod: { count: ReturnType<typeof vi.fn> };
   allianceMembership: { count: ReturnType<typeof vi.fn> };
+  invitation: { count: ReturnType<typeof vi.fn> };
   allianceMember: { count: ReturnType<typeof vi.fn> };
   memberMetricEntry: { count: ReturnType<typeof vi.fn> };
 };
@@ -92,6 +96,7 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.metric.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.count.mockResolvedValue(0);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
     mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
@@ -107,6 +112,7 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.metric.count.mockResolvedValue(3);
     mockPrisma.metricPeriod.count.mockResolvedValue(1);
     mockPrisma.allianceMembership.count.mockResolvedValue(4);
+    mockPrisma.invitation.count.mockResolvedValue(2);
     mockPrisma.allianceMember.count.mockResolvedValue(50);
     mockPrisma.memberMetricEntry.count.mockResolvedValue(150);
 
@@ -122,6 +128,7 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.metric.count.mockResolvedValue(2);
     mockPrisma.metricPeriod.count.mockResolvedValue(1);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
     mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
@@ -140,10 +147,11 @@ describe("getAllianceSetupStatus", () => {
     expect(teamTask?.completed).toBe(false);
   });
 
-  it("team task requires more than 1 membership", async () => {
+  it("team task completes when pending invitation exists or membership > 1", async () => {
     mockPrisma.metric.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.count.mockResolvedValue(0);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
     mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
@@ -152,17 +160,28 @@ describe("getAllianceSetupStatus", () => {
 
     expect(teamTask?.completed).toBe(false);
 
-    mockPrisma.allianceMembership.count.mockResolvedValue(2);
+    // Team task completes when a pending invitation exists
+    // (Note: the actual Prisma query filters for non-cancelled, non-expired, non-accepted)
+    mockPrisma.invitation.count.mockResolvedValue(1);
     const status2 = await getAllianceSetupStatus("alliance-1");
     const teamTask2 = status2.tasks.find((t) => t.id === "team");
 
     expect(teamTask2?.completed).toBe(true);
+
+    // Or when membership > 1 (collaborator has joined)
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMembership.count.mockResolvedValue(2);
+    const status3 = await getAllianceSetupStatus("alliance-1");
+    const teamTask3 = status3.tasks.find((t) => t.id === "team");
+
+    expect(teamTask3?.completed).toBe(true);
   });
 
   it("includes correct task metadata", async () => {
     mockPrisma.metric.count.mockResolvedValue(1);
     mockPrisma.metricPeriod.count.mockResolvedValue(0);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
     mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
@@ -172,9 +191,11 @@ describe("getAllianceSetupStatus", () => {
     expect(metricsTask).toEqual({
       id: "metrics",
       label: "Configure Metrics",
+      description: "Define what your alliance evaluates (e.g., VS Points, Donations)",
       completed: true,
       href: "/alliances/alliance-1/metrics",
       typicallyCompletedBy: "Owner",
+      required: true,
     });
   });
 
@@ -182,6 +203,7 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.metric.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.count.mockResolvedValue(0);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
     mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
@@ -207,12 +229,18 @@ describe("getAllianceSetupStatus", () => {
     expect(status.tasks).toHaveLength(1);
     expect(status.tasks[0].id).toBe("data");
     expect(status.totalCount).toBe(1);
+    
+    // But isComplete reflects the alliance-wide status (all required tasks incomplete)
+    expect(status.isComplete).toBe(false);
+    expect(status.requiredTotal).toBe(3); // metrics, period, team are required
+    expect(status.requiredComplete).toBe(0);
   });
 
   it("returns all tasks when no permissions provided", async () => {
     mockPrisma.metric.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.count.mockResolvedValue(0);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
     mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
@@ -220,5 +248,43 @@ describe("getAllianceSetupStatus", () => {
 
     expect(status.tasks).toHaveLength(5);
     expect(status.totalCount).toBe(5);
+  });
+
+  it("isComplete reflects alliance-wide status even when tasks are filtered", async () => {
+    // All required tasks complete: metrics, period, team
+    mockPrisma.metric.count.mockResolvedValue(1);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(2);
+    mockPrisma.invitation.count.mockResolvedValue(1);
+    mockPrisma.allianceMember.count.mockResolvedValue(0);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    // Viewer permissions: can't see any setup tasks
+    const viewerPermissions = {
+      canViewAlliance: true,
+      canViewMembers: true,
+      canViewNotes: true,
+      canManageNotes: false,
+      canImportMetrics: false,
+      canManageMembers: false,
+      canImportMembers: false,
+      canConfigureMetrics: false,
+      canConfigurePeriods: false,
+      canInviteCollaborators: false,
+      canManageLeadership: false,
+      canManageAlliance: false,
+    };
+
+    const status = await getAllianceSetupStatus("alliance-1", viewerPermissions);
+
+    // Viewer sees no tasks
+    expect(status.tasks).toHaveLength(0);
+    expect(status.totalCount).toBe(0);
+    
+    // But isComplete correctly reflects alliance-wide status
+    // Required tasks (metrics, period, team) are all complete
+    expect(status.isComplete).toBe(true);
+    expect(status.requiredTotal).toBe(3);
+    expect(status.requiredComplete).toBe(3);
   });
 });

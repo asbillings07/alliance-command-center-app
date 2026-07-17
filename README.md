@@ -1,36 +1,140 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Alliance Command Center
 
-## Getting Started
+Leadership intelligence platform for alliance management in Last War.
 
-First, run the development server:
+Alliance Command Center helps alliance leaders make better decisions by combining historical participation data, configurable metrics, and qualitative leadership observations into a single source of truth.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Features
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **Member Management:** Track your alliance roster with detailed profiles
+- **Configurable Metrics:** Define what matters to your alliance (VS Points, Donations, Participation)
+- **Evaluation Periods:** Run time-boxed evaluations with weighted scoring
+- **Leadership Notes:** Document observations, warnings, and recognition
+- **Role-Based Access:** Owner, Admin, Leader, and Viewer roles with appropriate permissions
+- **Multi-Tenant:** Each alliance has isolated data and configuration
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Quick Start
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Prerequisites
 
-## Learn More
+- Node.js 20+
+- Docker (for local PostgreSQL)
 
-To learn more about Next.js, take a look at the following resources:
+### Local Development
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Clone and install dependencies:**
+   ```bash
+   git clone <repository-url>
+   cd alliance-command-center-app
+   npm install
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+2. **Set up environment:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your local settings (defaults work for local dev)
+   ```
 
-## Deploy on Vercel
+3. **Start the database and seed data:**
+   ```bash
+   npm run db:init
+   ```
+   This starts PostgreSQL via Docker, runs migrations, and seeds test data.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+4. **Start the development server:**
+   ```bash
+   npm run dev
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+5. **Open the app:**
+   - http://localhost:3000
+   - Login with seeded test user: `owner@day1.com` / `Password123`
+
+### Available Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start development server |
+| `npm run build` | Build for production |
+| `npm run start` | Start production server |
+| `npm run lint` | Run ESLint |
+| `npm run typecheck` | Run TypeScript type checking |
+| `npm run test` | Run all tests |
+| `npm run test:unit` | Run unit tests |
+| `npm run test:e2e` | Run Playwright E2E tests |
+| `npm run db:init` | Initialize local database with seed data |
+| `npm run studio` | Open Prisma Studio for database inspection |
+| `npm run beta:invite` | Create a beta invitation |
+
+## Environment Variables
+
+See `.env.example` for all available configuration options.
+
+### Required
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `AUTH_SECRET` | Secret for signing sessions |
+| `NEXTAUTH_URL` | Base URL for authentication |
+
+### Optional
+
+| Variable | Description |
+|----------|-------------|
+| `PLATFORM_ADMIN_EMAILS` | Comma-separated list of platform admin emails |
+| `SENTRY_DSN` | Sentry DSN for error tracking |
+| `FEATURE_*` | Feature flags |
+
+## Architecture
+
+Alliance Command Center is built with:
+
+- **Framework:** Next.js 16 (App Router)
+- **Database:** PostgreSQL with Prisma ORM
+- **Authentication:** Auth.js (NextAuth v5)
+- **Styling:** Tailwind CSS
+- **Testing:** Vitest (unit), Playwright (E2E)
+
+### Key Architectural Decisions
+
+- **ADR-002:** Multi-tenant - every feature respects tenant boundaries
+- **ADR-007:** Capability-based authorization
+- **ADR-009:** Design system architecture
+- **ADR-010:** Platform Operations Console
+- **ADR-011:** Continuous Delivery
+
+See `docs/adr/` for all architectural decision records.
+
+## Deployment
+
+### Vercel (Recommended)
+
+1. Connect your repository to Vercel
+2. Configure environment variables in Vercel dashboard
+3. Deploy automatically on merge to `main`
+
+Build command is configured to:
+- Generate Prisma client
+- Run database migrations
+- Build Next.js application
+
+### Database
+
+Use a managed PostgreSQL provider:
+- [Neon](https://neon.tech) - Recommended for Vercel
+- [Supabase](https://supabase.com)
+- [AWS RDS](https://aws.amazon.com/rds/)
+
+## Operations
+
+- `docs/operations/rollback.md` - Rollback procedures
+- `docs/operations/backups.md` - Backup and restore
+
+## Contributing
+
+See `AGENTS.md` for engineering guidelines and `docs/` for detailed documentation.
+
+## License
+
+Private - All rights reserved.

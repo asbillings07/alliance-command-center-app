@@ -76,8 +76,8 @@ function SetupTaskCard({ task }: { task: SetupTask }) {
           >
             {task.label}
           </div>
-          <div className="text-xs text-text-disabled mt-1">
-            Typically completed by: {task.typicallyCompletedBy}
+          <div className="text-sm text-text-muted mt-1">
+            {task.description}
           </div>
         </div>
         {!task.completed && <ChevronIcon />}
@@ -133,32 +133,74 @@ export default async function AllianceSetupPage({ params }: Params) {
   // Filter tasks to only those the user can complete
   const status = await getAllianceSetupStatus(allianceId, auth.permissions);
 
+  const requiredTasks = status.tasks.filter((t) => t.required);
+  const optionalTasks = status.tasks.filter((t) => !t.required);
+  // Use status.isComplete which is computed against ALL required tasks,
+  // not just those visible to the current user. This prevents roles that
+  // can't see any required tasks from incorrectly seeing "complete".
+  const allRequiredComplete = status.isComplete;
+
   return (
     <PageLayout
       title="Alliance Setup"
       description={`Get ${alliance.name} ready for your leadership team.`}
       maxWidth="2xl"
     >
-      {!status.isComplete && (
+      {!allRequiredComplete && (
         <ProgressBar
-          completed={status.completedCount}
-          total={status.totalCount}
+          completed={status.requiredComplete}
+          total={status.requiredTotal}
         />
       )}
 
-      <div className="space-y-3 mb-8">
-        {status.tasks.map((task) => (
-          <SetupTaskCard key={task.id} task={task} />
-        ))}
-      </div>
+      {/* Required Tasks */}
+      {requiredTasks.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-sm font-medium text-text-muted uppercase tracking-wide mb-3">
+            Required Setup
+          </h2>
+          <div className="space-y-3">
+            {requiredTasks.map((task) => (
+              <SetupTaskCard key={task.id} task={task} />
+            ))}
+          </div>
+        </div>
+      )}
 
-      <div className="text-center">
-        <Button variant="primary" size="lg" href={`/alliances/${allianceId}`}>
-          Continue to Dashboard →
-        </Button>
-        <p className="mt-3 text-xs text-text-disabled">
-          You can always return to setup from your alliance settings
-        </p>
+      {/* Optional Tasks */}
+      {optionalTasks.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-sm font-medium text-text-muted uppercase tracking-wide mb-3">
+            Next Steps
+          </h2>
+          <div className="space-y-3">
+            {optionalTasks.map((task) => (
+              <SetupTaskCard key={task.id} task={task} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="text-center pt-4 border-t border-border">
+        {allRequiredComplete ? (
+          <>
+            <Button variant="primary" size="lg" href={`/alliances/${allianceId}`}>
+              Continue to Dashboard →
+            </Button>
+            <p className="mt-3 text-sm text-success">
+              All required setup is complete!
+            </p>
+          </>
+        ) : (
+          <>
+            <Button variant="secondary" size="lg" href={`/alliances/${allianceId}`}>
+              Skip to Dashboard
+            </Button>
+            <p className="mt-3 text-xs text-text-disabled">
+              You can complete setup later from the dashboard
+            </p>
+          </>
+        )}
       </div>
     </PageLayout>
   );

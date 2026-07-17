@@ -31,7 +31,7 @@ test.describe("Alliance Setup Flow", () => {
     await page.goto(`/alliances/${testAllianceId}/setup`);
 
     await expect(
-      page.getByRole("heading", { name: /setup|getting started/i })
+      page.getByRole("heading", { name: "Alliance Setup", level: 1 })
     ).toBeVisible();
   });
 
@@ -151,7 +151,7 @@ test.describe("Alliance Setup Flow", () => {
 
     // Verify initial state
     await expect(
-      page.getByRole("heading", { name: /setup|getting started/i })
+      page.getByRole("heading", { name: "Alliance Setup", level: 1 })
     ).toBeVisible();
 
     // Refresh page
@@ -159,7 +159,7 @@ test.describe("Alliance Setup Flow", () => {
 
     // Should show same state after refresh
     await expect(
-      page.getByRole("heading", { name: /setup|getting started/i })
+      page.getByRole("heading", { name: "Alliance Setup", level: 1 })
     ).toBeVisible();
   });
 });

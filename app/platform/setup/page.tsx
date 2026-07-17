@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Badge } from "@/app/src/components";
 import {
   getAllianceReadiness,
-  getSetupFunnel,
   type AllianceReadinessItem,
 } from "@/app/src/lib/platform";
 
@@ -215,10 +214,7 @@ function AllianceTable({ alliances }: { alliances: AllianceReadinessItem[] }) {
 }
 
 export default async function PlatformSetup() {
-  const [alliances, funnel] = await Promise.all([
-    getAllianceReadiness(),
-    getSetupFunnel(),
-  ]);
+  const alliances = await getAllianceReadiness();
 
   const stalledAlliances = alliances.filter((a) => a.status === "stalled");
   const newAlliances = alliances.filter((a) => a.status === "new");

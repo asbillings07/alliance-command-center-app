@@ -120,8 +120,12 @@ export default async function MembersPage({ params, searchParams }: Params) {
                             : "No members yet"
                     }
                     description={
-                        filter === "active" && permissions.canManageMembers
-                            ? "Import your roster or add members manually to get started."
+                        filter === "active"
+                            ? permissions.canManageMembers
+                                ? "Import your roster or add members manually to get started."
+                                : "The alliance roster hasn't been set up yet. An admin will import members soon."
+                            : filter === "archived"
+                            ? "Members that have been archived will appear here."
                             : undefined
                     }
                     action={

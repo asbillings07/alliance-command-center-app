@@ -261,12 +261,16 @@ test.describe("Platform Operations Console", () => {
       const searchInput = page.getByPlaceholder(/search alliances/i);
       await searchInput.fill("DA");
 
-      // Wait for debounce and results
-      await page.waitForTimeout(400);
+      // Wait for debounce and API response
+      await page.waitForTimeout(600);
 
-      // Should show either results or "No results" message
-      const hasResults = await page.locator('button:has-text("🏰"), button:has-text("👤")').count() > 0;
-      const hasNoResults = await page.getByText(/No results/i).isVisible();
+      // Should show either results dropdown or "No results" message
+      // Results appear as list items with buttons inside
+      const resultsDropdown = page.locator('ul.max-h-64');
+      const noResultsMessage = page.getByText(/No results for/i);
+
+      const hasResults = await resultsDropdown.isVisible().catch(() => false);
+      const hasNoResults = await noResultsMessage.isVisible().catch(() => false);
 
       // Search was triggered - either found results or showed empty state
       expect(hasResults || hasNoResults).toBe(true);

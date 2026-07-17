@@ -297,7 +297,6 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
         {isLoggedIn ? (
           <AcceptInvitationForm
             invitationId={invitation.id}
-            allianceId={invitation.allianceId}
             allianceName={invitation.alliance.name}
           />
         ) : (

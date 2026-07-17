@@ -68,7 +68,7 @@ test.describe("Create Alliance", () => {
     await expect(page.getByText(allianceName)).toBeVisible();
   });
 
-  test("alliance creation is idempotent", async ({ page: _page }) => {
+  test("alliance creation is idempotent", async () => {
     test.skip(
       !process.env.TEST_BETA_USER_EMAIL,
       "Requires beta user authentication"

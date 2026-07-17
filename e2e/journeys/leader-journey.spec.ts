@@ -130,9 +130,7 @@ test.describe("Leader Journey", () => {
     ).toBeVisible();
   });
 
-  test("record page shows empty state if no metrics configured", async ({
-    page: _page,
-  }) => {
+  test("record page shows empty state if no metrics configured", async () => {
     // This tests the empty state we added
     test.skip(!testAllianceId, "Requires alliance ID");
 

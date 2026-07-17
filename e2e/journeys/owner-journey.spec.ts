@@ -18,7 +18,7 @@ test.describe("Owner Journey", () => {
 
   let allianceId: string;
 
-  test.beforeAll(async ({ browser: _browser }) => {
+  test.beforeAll(async () => {
     // This test requires a beta invitation to be seeded in the database
     // For CI, you would seed this via a test database setup script
     // For local testing, you can create one with: npm run beta:invite <email>
