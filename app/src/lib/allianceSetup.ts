@@ -68,7 +68,15 @@ async function getSetupCounts(allianceId: string): Promise<SetupCounts> {
       prisma.metric.count({ where: { allianceId } }),
       prisma.metricPeriod.count({ where: { allianceId } }),
       prisma.allianceMembership.count({ where: { allianceId } }),
-      prisma.invitation.count({ where: { allianceId } }),
+      // Only count pending invitations: not cancelled, not expired, not yet accepted
+      prisma.invitation.count({
+        where: {
+          allianceId,
+          cancelledAt: null,
+          acceptedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+      }),
       prisma.allianceMember.count({ where: { allianceId, archivedAt: null } }),
       prisma.memberMetricEntry.count({
         where: { allianceMember: { allianceId } },
@@ -88,8 +96,9 @@ function evaluateTaskCompletion(
     case "period":
       return counts.periods > 0;
     case "team":
-      // Changed: Complete when an invitation has been SENT, not when accepted
-      // This prevents owners from being blocked waiting for collaborators
+      // Complete when a pending invitation exists OR a collaborator has joined
+      // Pending = not cancelled, not expired, not yet accepted
+      // memberships > 1 covers accepted invitations (owner + at least one collaborator)
       return counts.invitations > 0 || counts.memberships > 1;
     case "members":
       return counts.members > 0;

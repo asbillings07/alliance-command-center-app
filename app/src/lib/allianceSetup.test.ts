@@ -147,7 +147,7 @@ describe("getAllianceSetupStatus", () => {
     expect(teamTask?.completed).toBe(false);
   });
 
-  it("team task completes when invitation sent or membership > 1", async () => {
+  it("team task completes when pending invitation exists or membership > 1", async () => {
     mockPrisma.metric.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.count.mockResolvedValue(0);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
@@ -160,14 +160,15 @@ describe("getAllianceSetupStatus", () => {
 
     expect(teamTask?.completed).toBe(false);
 
-    // Team task completes when an invitation is sent
+    // Team task completes when a pending invitation exists
+    // (Note: the actual Prisma query filters for non-cancelled, non-expired, non-accepted)
     mockPrisma.invitation.count.mockResolvedValue(1);
     const status2 = await getAllianceSetupStatus("alliance-1");
     const teamTask2 = status2.tasks.find((t) => t.id === "team");
 
     expect(teamTask2?.completed).toBe(true);
 
-    // Or when membership > 1 (invitation accepted)
+    // Or when membership > 1 (collaborator has joined)
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMembership.count.mockResolvedValue(2);
     const status3 = await getAllianceSetupStatus("alliance-1");
