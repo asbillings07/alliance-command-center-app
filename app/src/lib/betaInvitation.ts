@@ -25,71 +25,80 @@ function addDays(date: Date, days: number): Date {
   return result;
 }
 
-export type CreateBetaInvitationResult = {
+export type IssueBetaInvitationResult = {
   invitation: BetaInvitation;
   inviteUrl: string;
   inviteCode: string;
 };
 
 /**
- * Create a beta invitation for a new user.
- * Used by admin to invite beta testers.
+ * Determine whether an invitation is currently pending.
+ * Pending = not accepted, not revoked, and not expired.
  *
- * @param email - The email address to invite
- * @param notes - Optional context about the invitation (e.g., "Met at conference")
+ * This is the single source of truth for the "pending" business rule.
  */
-export async function createBetaInvitation(
-  email: string,
-  notes?: string
-): Promise<CreateBetaInvitationResult> {
+export function isPendingInvitation(invitation: BetaInvitation): boolean {
+  return (
+    !invitation.acceptedAt &&
+    !invitation.revokedAt &&
+    invitation.expiresAt > new Date()
+  );
+}
+
+/**
+ * Get the pending invitation for an email, if one exists.
+ *
+ * Answers the business question: "Is there a valid, usable invitation
+ * for this email right now?" Queries directly for pending state rather
+ * than fetching the latest record and evaluating it afterward.
+ */
+export async function getPendingInvitation(
+  email: string
+): Promise<BetaInvitation | null> {
   const normalizedEmail = email.toLowerCase().trim();
 
-  const existing = await prisma.betaInvitation.findUnique({
-    where: { email: normalizedEmail },
+  return prisma.betaInvitation.findFirst({
+    where: {
+      email: normalizedEmail,
+      acceptedAt: null,
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { issuedAt: "desc" },
   });
+}
 
-  if (existing) {
-    // Already accepted - cannot re-issue
-    if (existing.acceptedAt) {
-      throw new Error("A beta invitation for this email has already been accepted");
-    }
+export type IssueBetaInvitationOptions = {
+  notes?: string;
+  campaign?: string;
+};
 
-    // Revoked - cannot re-issue (preserve audit history)
-    // Revocation is a deliberate action; re-inviting requires manual intervention
-    if (existing.revokedAt) {
-      throw new Error(
-        "A beta invitation for this email was revoked. " +
-          "Contact support to issue a new invitation."
-      );
-    }
+/**
+ * Issue a beta invitation for an email address.
+ *
+ * BetaInvitation is a history table: every issuance creates a new record,
+ * preserving revoked and expired invitations for audit history.
+ *
+ * Business rules (owned entirely by this service):
+ * - Only one pending invitation per email at a time
+ * - Cannot invite a user who already has alliance access
+ *
+ * @param email - The email address to invite
+ * @param options - Optional notes and campaign/wave label
+ */
+export async function issueBetaInvitation(
+  email: string,
+  options?: IssueBetaInvitationOptions
+): Promise<IssueBetaInvitationResult> {
+  const normalizedEmail = email.toLowerCase().trim();
 
-    const now = new Date();
-
-    // Still pending (not expired) - cannot re-issue
-    if (existing.expiresAt > now) {
-      throw new Error("A pending beta invitation already exists for this email");
-    }
-
-    // Expired only - allow re-issue by updating the existing record
-    // Expiration is automatic, not a deliberate action, so no audit concern
-    // Bump createdAt so it appears as newly sent in the UI
-    const token = randomUUID();
-    const code = generateBetaCode();
-
-    const invitation = await prisma.betaInvitation.update({
-      where: { email: normalizedEmail },
-      data: {
-        token,
-        code,
-        notes: notes?.trim() || null,
-        expiresAt: addDays(now, 30),
-        createdAt: now,
-      },
-    });
-
-    return buildInvitationResult(invitation);
+  // Only one pending invitation per email
+  const pending = await getPendingInvitation(normalizedEmail);
+  if (pending) {
+    throw new Error("A pending beta invitation already exists for this email");
   }
 
+  // Cannot invite a user who already has alliance access
   const existingUser = await prisma.user.findUnique({
     where: { email: normalizedEmail },
   });
@@ -104,16 +113,21 @@ export async function createBetaInvitation(
     }
   }
 
+  const now = new Date();
   const token = randomUUID();
   const code = generateBetaCode();
 
+  // Always create a new record - never mutate history
   const invitation = await prisma.betaInvitation.create({
     data: {
       email: normalizedEmail,
       token,
       code,
-      notes: notes?.trim() || null,
-      expiresAt: addDays(new Date(), 30),
+      notes: options?.notes?.trim() || null,
+      campaign: options?.campaign?.trim() || null,
+      expiresAt: addDays(now, 30),
+      createdAt: now,
+      issuedAt: now,
     },
   });
 
@@ -126,7 +140,7 @@ export async function createBetaInvitation(
  */
 function buildInvitationResult(
   invitation: BetaInvitation
-): CreateBetaInvitationResult {
+): IssueBetaInvitationResult {
   const origin = process.env.NEXTAUTH_URL;
 
   if (!origin) {

@@ -15,8 +15,10 @@ export type BetaInvitationItem = {
   token: string;
   inviteUrl: string;
   notes: string | null;
+  campaign: string | null;
   status: BetaInvitationStatus;
   createdAt: Date;
+  issuedAt: Date;
   expiresAt: Date;
   acceptedAt: Date | null;
   hasAlliance: boolean;
@@ -76,7 +78,7 @@ export async function getBetaInvitations(): Promise<BetaInvitationItem[]> {
   const origin = getInviteOrigin();
 
   const invitations = await prisma.betaInvitation.findMany({
-    orderBy: { createdAt: "desc" },
+    orderBy: { issuedAt: "desc" },
   });
 
   const users = await prisma.user.findMany({
@@ -128,8 +130,10 @@ export async function getBetaInvitations(): Promise<BetaInvitationItem[]> {
       token: inv.token,
       inviteUrl: `${origin}/redeem/${inv.token}`,
       notes: inv.notes,
+      campaign: inv.campaign,
       status,
       createdAt: inv.createdAt,
+      issuedAt: inv.issuedAt,
       expiresAt: inv.expiresAt,
       acceptedAt: inv.acceptedAt,
       hasAlliance: !!alliance,

@@ -45,7 +45,7 @@ function InvitationCard({ invitation }: { invitation: BetaInvitationItem }) {
         <div>
           <h3 className="font-medium text-text-primary">{invitation.email}</h3>
           <p className="text-xs text-text-muted mt-1">
-            Sent {formatDate(invitation.createdAt)}
+            Sent {formatDate(invitation.issuedAt)}
             {invitation.status === "pending" &&
               ` • Expires ${formatDate(invitation.expiresAt)}`}
             {invitation.status === "accepted" &&
@@ -138,7 +138,7 @@ function PendingInvitationTable({
                 </code>
               </td>
               <td className="py-3 px-4 text-text-muted">
-                {formatDate(invitation.createdAt)}
+                {formatDate(invitation.issuedAt)}
               </td>
               <td className="py-3 px-4 text-text-muted">
                 {formatDate(invitation.expiresAt)}
@@ -202,7 +202,7 @@ function InvitationTable({
                   </Badge>
                 </td>
                 <td className="py-3 px-4 text-text-muted">
-                  {formatDate(invitation.createdAt)}
+                  {formatDate(invitation.issuedAt)}
                 </td>
                 <td className="py-3 px-4 text-text-muted">
                   {invitation.acceptedAt

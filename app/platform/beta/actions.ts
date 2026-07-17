@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requirePlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import {
-  createBetaInvitation,
+  issueBetaInvitation,
   revokeBetaInvitation,
 } from "@/app/src/lib/betaInvitation";
 
@@ -69,7 +69,7 @@ export async function createInvitationAction(
   }
 
   try {
-    const result = await createBetaInvitation(email, notes);
+    const result = await issueBetaInvitation(email, { notes });
     revalidatePath("/platform/beta");
 
     return {
