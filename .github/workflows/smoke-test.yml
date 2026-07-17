@@ -1,0 +1,73 @@
+name: Post-Deploy Smoke Test
+
+on:
+  deployment_status:
+    states: [success]
+
+jobs:
+  smoke-test:
+    if: github.event.deployment_status.state == 'success' && github.event.deployment_status.environment == 'Production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+      - name: Wait for deployment to stabilize
+        run: sleep 30
+
+      - name: Check health endpoint
+        run: |
+          echo "Testing health endpoint..."
+          response=$(curl -sf "${{ github.event.deployment_status.target_url }}/api/health" || echo "FAILED")
+          echo "Response: $response"
+          
+          if echo "$response" | grep -q '"status":"healthy"'; then
+            echo "✅ Health check passed"
+          else
+            echo "❌ Health check failed"
+            exit 1
+          fi
+
+      - name: Check login page loads
+        run: |
+          echo "Testing login page..."
+          status=$(curl -sf -o /dev/null -w "%{http_code}" "${{ github.event.deployment_status.target_url }}/login" || echo "000")
+          echo "Status code: $status"
+          
+          if [ "$status" = "200" ]; then
+            echo "✅ Login page loads"
+          else
+            echo "❌ Login page failed (status: $status)"
+            exit 1
+          fi
+
+      - name: Check homepage loads
+        run: |
+          echo "Testing homepage..."
+          status=$(curl -sf -o /dev/null -w "%{http_code}" "${{ github.event.deployment_status.target_url }}/" || echo "000")
+          echo "Status code: $status"
+          
+          if [ "$status" = "200" ]; then
+            echo "✅ Homepage loads"
+          else
+            echo "❌ Homepage failed (status: $status)"
+            exit 1
+          fi
+
+      - name: Report success
+        if: success()
+        run: |
+          echo "=========================================="
+          echo "🚀 All smoke tests passed!"
+          echo "Deployment URL: ${{ github.event.deployment_status.target_url }}"
+          echo "=========================================="
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "=========================================="
+          echo "❌ Smoke tests failed!"
+          echo "Deployment URL: ${{ github.event.deployment_status.target_url }}"
+          echo ""
+          echo "Consider rolling back this deployment."
+          echo "See docs/operations/rollback.md for instructions."
+          echo "=========================================="

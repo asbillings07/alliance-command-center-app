@@ -19,6 +19,35 @@ import {
   recordMemberMetric,
 } from "./helpers";
 
+// =============================================================================
+// PRODUCTION GUARD
+// =============================================================================
+// Refuse to run seed script against production databases
+const dbUrl = process.env.DATABASE_URL || "";
+const isProduction = process.env.NODE_ENV === "production";
+const isProductionDb =
+  dbUrl.includes("neon.tech") ||
+  dbUrl.includes("supabase.co") ||
+  dbUrl.includes("rds.amazonaws.com") ||
+  dbUrl.includes(".aws.") ||
+  dbUrl.includes("pooler.supabase");
+
+if (isProduction || isProductionDb) {
+  console.error("========================================");
+  console.error("ERROR: Seed script cannot run against production database!");
+  console.error("========================================");
+  console.error(`NODE_ENV: ${process.env.NODE_ENV}`);
+  console.error(`DATABASE_URL contains production indicator`);
+  console.error("");
+  console.error("If this is intentional for a staging environment,");
+  console.error("set ALLOW_SEED_IN_PRODUCTION=true");
+  console.error("========================================");
+
+  if (process.env.ALLOW_SEED_IN_PRODUCTION !== "true") {
+    process.exit(1);
+  }
+}
+
 // Test password used for all seeded users
 const TEST_PASSWORD = "Password123";
 
