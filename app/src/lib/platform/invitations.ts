@@ -49,6 +49,7 @@ export type InvitationStats = {
     pending: number;
     accepted: number;
     expired: number;
+    cancelled: number;
   };
 };
 
@@ -193,6 +194,7 @@ export async function getInvitationStats(): Promise<InvitationStats> {
     collabPending,
     collabAccepted,
     collabExpired,
+    collabCancelled,
   ] = await Promise.all([
     prisma.betaInvitation.count(),
     prisma.betaInvitation.count({
@@ -215,6 +217,7 @@ export async function getInvitationStats(): Promise<InvitationStats> {
     prisma.invitation.count({
       where: { acceptedAt: null, cancelledAt: null, expiresAt: { lt: now } },
     }),
+    prisma.invitation.count({ where: { cancelledAt: { not: null } } }),
   ]);
 
   return {
@@ -230,6 +233,7 @@ export async function getInvitationStats(): Promise<InvitationStats> {
       pending: collabPending,
       accepted: collabAccepted,
       expired: collabExpired,
+      cancelled: collabCancelled,
     },
   };
 }

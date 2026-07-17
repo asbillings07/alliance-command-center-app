@@ -72,6 +72,7 @@ export async function createBetaInvitation(
 
     // Expired only - allow re-issue by updating the existing record
     // Expiration is automatic, not a deliberate action, so no audit concern
+    // Bump createdAt so it appears as newly sent in the UI
     const token = randomUUID();
     const code = generateBetaCode();
 
@@ -82,6 +83,7 @@ export async function createBetaInvitation(
         code,
         notes: notes?.trim() || null,
         expiresAt: addDays(now, 30),
+        createdAt: now,
       },
     });
 

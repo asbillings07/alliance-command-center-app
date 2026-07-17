@@ -111,6 +111,28 @@ export async function requirePlatformAdmin() {
 }
 ```
 
+## Migration Guide (Existing Deployments)
+
+When upgrading from environment-variable-based authorization to database-based authorization:
+
+1. **Deploy the migration** - This adds `isPlatformAdmin` (defaults to `false`)
+
+2. **Run the backfill script** IMMEDIATELY after migration:
+   ```bash
+   npx tsx scripts/backfill-platform-admins.ts
+   ```
+   
+   This script reads `PLATFORM_ADMIN_EMAILS` and sets `isPlatformAdmin: true` for matching users.
+
+3. **Verify access** - Confirm existing admins can access `/platform`
+
+**Warning**: If you skip the backfill:
+- All users will have `isPlatformAdmin: false`
+- `/initialize` will become accessible again
+- Existing admins will lose Platform Console access
+
+The backfill script is idempotent and safe to run multiple times.
+
 ## Related ADRs
 
 - ADR-010: Platform Operations Architecture
