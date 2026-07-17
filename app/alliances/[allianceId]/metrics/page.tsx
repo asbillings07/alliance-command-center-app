@@ -39,8 +39,8 @@ export default async function MetricsPage({ params }: Params) {
                 <MetricCard allianceId={allianceId} mode="create" />
                 {metrics.length === 0 ? (
                     <EmptyState
-                        title="No metrics yet"
-                        description="Create your first metric to start tracking alliance performance."
+                        title="No metrics configured"
+                        description="Metrics define what you track for your members. Common examples include VS Points, Donation contributions, Arms race participation, and Event attendance. Start by creating the metrics that matter most to your alliance."
                     />
                 ) : (
                     metrics.map((metric) => (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { LeadershipNoteType } from "@/app/generated/prisma/enums";
 import { createLeadershipNote, editLeadershipNote } from "./action";
 import { Card } from "@/app/src/components";
@@ -25,6 +26,7 @@ export function NoteForm({
   noteType = LeadershipNoteType.OBSERVATION,
   onCancel,
 }: NoteFormProps) {
+  const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +49,8 @@ export function NoteForm({
       if (result.error) {
         setError(result.error);
       } else {
+        // Refresh to show the new/updated note
+        router.refresh();
         onCancel();
       }
     });
