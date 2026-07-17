@@ -140,8 +140,8 @@ test.describe("Platform Operations Console", () => {
 
       await expect(page.getByText(/Live Feed/i).first()).toBeVisible();
 
-      // Should show activity or "No recent activity"
-      const hasActivity = await page.locator('[href*="/alliances/"]').count() > 0;
+      // Should show activity items (linking to platform support) or "No recent activity"
+      const hasActivity = await page.locator('[href*="/platform/support/alliance/"]').count() > 0;
       const hasEmptyState = await page.getByText(/no recent activity/i).isVisible();
 
       expect(hasActivity || hasEmptyState).toBe(true);
