@@ -394,26 +394,33 @@ test.describe("Platform Operations Console", () => {
       page.on("dialog", (dialog) => dialog.accept());
       await revokeButton.click();
 
-      // Wait for revalidation
-      await page.waitForTimeout(1000);
-
-      // Email should now appear in Revoked section or be removed from Pending
-      const inRevoked = await page
-        .locator("section")
-        .filter({ hasText: /Revoked/i })
-        .getByText(uniqueEmail)
-        .isVisible()
-        .catch(() => false);
-
-      const stillPending = await page
+      // Wait for the invitation to move out of pending (condition-based, not time-based)
+      // Either the row disappears from Pending or appears in Revoked
+      const pendingRow = page
         .locator("section")
         .filter({ hasText: /^Pending/i })
-        .getByText(uniqueEmail)
-        .isVisible()
-        .catch(() => false);
+        .locator("tr")
+        .filter({ hasText: uniqueEmail });
 
-      // Either moved to revoked or no longer in pending
-      expect(inRevoked || !stillPending).toBe(true);
+      const revokedSection = page
+        .locator("section")
+        .filter({ hasText: /Revoked/i });
+
+      // Wait until either: row is gone from pending OR appears in revoked
+      await expect
+        .poll(
+          async () => {
+            const inPending = await pendingRow.count();
+            const revokedVisible = await revokedSection.isVisible().catch(() => false);
+            const inRevoked = revokedVisible
+              ? await revokedSection.getByText(uniqueEmail).isVisible().catch(() => false)
+              : false;
+
+            return inPending === 0 || inRevoked;
+          },
+          { timeout: 10000 }
+        )
+        .toBe(true);
     });
   });
 

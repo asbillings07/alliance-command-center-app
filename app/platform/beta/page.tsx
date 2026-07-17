@@ -261,7 +261,7 @@ export default async function PlatformBeta() {
         <h2 className="text-lg font-semibold text-text-secondary mb-4">
           Beta Invitations
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="bg-surface-secondary rounded-lg p-4 border border-border">
             <div className="text-2xl font-bold text-text-primary">
               {stats.betaInvites.total}
@@ -280,11 +280,17 @@ export default async function PlatformBeta() {
             </div>
             <div className="text-sm text-primary/80">Pending</div>
           </div>
-          <div className="bg-danger/10 rounded-lg p-4 border border-danger/20">
-            <div className="text-2xl font-bold text-danger">
+          <div className="bg-warning/10 rounded-lg p-4 border border-warning/20">
+            <div className="text-2xl font-bold text-warning">
               {stats.betaInvites.expired}
             </div>
-            <div className="text-sm text-danger/80">Expired</div>
+            <div className="text-sm text-warning/80">Expired</div>
+          </div>
+          <div className="bg-danger/10 rounded-lg p-4 border border-danger/20">
+            <div className="text-2xl font-bold text-danger">
+              {stats.betaInvites.revoked}
+            </div>
+            <div className="text-sm text-danger/80">Revoked</div>
           </div>
         </div>
       </section>
