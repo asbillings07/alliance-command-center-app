@@ -74,7 +74,19 @@ export async function createBetaInvitation(
     },
   });
 
-  const origin = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  const origin = process.env.NEXTAUTH_URL;
+
+  if (!origin) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("NEXTAUTH_URL must be configured in production");
+    }
+    // Development/test fallback
+    return {
+      invitation,
+      inviteUrl: `http://localhost:3000/redeem/${token}`,
+      inviteCode: code,
+    };
+  }
 
   return {
     invitation,
