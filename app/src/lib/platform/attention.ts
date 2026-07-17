@@ -171,7 +171,7 @@ export async function getActionRequired(): Promise<ActionRequiredItem[]> {
       severity: "warning",
       title: "Pending collaborator invitation",
       description: `${invite.email} (${invite.alliance.name}) ${daysPending}d`,
-      href: `/alliances/${invite.alliance.id}/settings/invitations`,
+      href: `/platform/support/alliance/${invite.alliance.id}`,
       allianceId: invite.alliance.id,
       allianceName: invite.alliance.name,
       metadata: { email: invite.email, daysPending },

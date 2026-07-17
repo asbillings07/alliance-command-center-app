@@ -319,20 +319,12 @@ export async function getAllianceTimeline(
 /**
  * Get jump links for an alliance.
  *
- * Note: These link to alliance pages which require membership.
- * Platform admins who are not members will be redirected away.
- * Consider this a convenience for platform admins who are also
- * members, or as a future enhancement for platform-admin bypass.
+ * Per ADR-010: Platform links should route to platform support pages.
+ * Operators shouldn't need alliance membership to investigate.
  */
 export function getJumpLinks(allianceId: string): JumpLink[] {
   return [
-    { label: "View in Platform", href: `/platform/support/alliance/${allianceId}` },
-    { label: "Open Dashboard", href: `/alliances/${allianceId}` },
-    { label: "Open Setup", href: `/alliances/${allianceId}/setup` },
-    { label: "Open Members", href: `/alliances/${allianceId}/members` },
-    { label: "Open Import", href: `/alliances/${allianceId}/members/import` },
-    { label: "Open Metrics", href: `/alliances/${allianceId}/metrics` },
-    { label: "Open Periods", href: `/alliances/${allianceId}/periods` },
+    { label: "View Details", href: `/platform/support/alliance/${allianceId}` },
   ];
 }
 

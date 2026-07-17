@@ -149,11 +149,15 @@ export async function getStalledAlliances() {
       id: true,
       name: true,
       createdAt: true,
+      // Include active members for accurate count (not _count which includes archived)
+      allianceMembers: {
+        where: { archivedAt: null },
+        select: { id: true },
+      },
       _count: {
         select: {
           metrics: true,
           metricPeriods: true,
-          allianceMembers: true,
         },
       },
     },

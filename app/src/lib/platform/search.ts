@@ -75,6 +75,7 @@ export async function searchUsers(query: string): Promise<SearchResult[]> {
           role: true,
           alliance: { select: { id: true, name: true } },
         },
+        orderBy: { createdAt: "desc" },
         take: 1,
       },
     },

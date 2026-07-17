@@ -185,11 +185,13 @@ test.describe("Platform Operations Console", () => {
     test("displays needs help section if items exist", async ({ page }) => {
       await page.goto("/platform/support");
 
-      // Check if Needs Help section exists (may or may not depending on data)
-      const needsHelpVisible = await page.getByText(/Needs Help/i).isVisible();
+      // Support page should have either a "Needs Help" section with items
+      // or show "All Alliances" as the primary content
+      const hasNeedsHelp = await page.getByText(/Needs Help/i).isVisible();
+      const hasAllAlliances = await page.getByText(/All Alliances/i).isVisible();
 
-      // The section may not be visible if no one needs help
-      expect(typeof needsHelpVisible).toBe("boolean");
+      // Page must have at least one of these sections
+      expect(hasNeedsHelp || hasAllAlliances).toBe(true);
     });
   });
 

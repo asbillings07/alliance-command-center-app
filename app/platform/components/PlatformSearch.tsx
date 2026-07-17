@@ -94,6 +94,7 @@ export function PlatformSearch() {
           }}
           onFocus={() => setIsOpen(true)}
           placeholder="Search alliances, users..."
+          aria-label="Search alliances, users, and invitations"
           className="
             w-full px-3 py-2 pl-9
             bg-surface-secondary border border-border rounded-lg
