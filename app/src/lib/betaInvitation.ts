@@ -49,7 +49,33 @@ export async function createBetaInvitation(
   });
 
   if (existing) {
-    throw new Error("A beta invitation already exists for this email");
+    // Already accepted - cannot re-issue
+    if (existing.acceptedAt) {
+      throw new Error("A beta invitation for this email has already been accepted");
+    }
+
+    // Still pending (not revoked, not expired) - cannot re-issue
+    const now = new Date();
+    if (!existing.revokedAt && existing.expiresAt > now) {
+      throw new Error("A pending beta invitation already exists for this email");
+    }
+
+    // Revoked or expired - allow re-issue by updating the existing record
+    const token = randomUUID();
+    const code = generateBetaCode();
+
+    const invitation = await prisma.betaInvitation.update({
+      where: { email: normalizedEmail },
+      data: {
+        token,
+        code,
+        notes: notes?.trim() || null,
+        expiresAt: addDays(now, 30),
+        revokedAt: null, // Clear revocation
+      },
+    });
+
+    return buildInvitationResult(invitation);
   }
 
   const existingUser = await prisma.user.findUnique({
@@ -79,6 +105,16 @@ export async function createBetaInvitation(
     },
   });
 
+  return buildInvitationResult(invitation);
+}
+
+/**
+ * Build the invitation result with URL.
+ * Centralizes the NEXTAUTH_URL logic to avoid duplication.
+ */
+function buildInvitationResult(
+  invitation: BetaInvitation
+): CreateBetaInvitationResult {
   const origin = process.env.NEXTAUTH_URL;
 
   if (!origin) {
@@ -88,15 +124,15 @@ export async function createBetaInvitation(
     // Development/test fallback
     return {
       invitation,
-      inviteUrl: `http://localhost:3000/redeem/${token}`,
-      inviteCode: code,
+      inviteUrl: `http://localhost:3000/redeem/${invitation.token}`,
+      inviteCode: invitation.code,
     };
   }
 
   return {
     invitation,
-    inviteUrl: `${origin}/redeem/${token}`,
-    inviteCode: code,
+    inviteUrl: `${origin}/redeem/${invitation.token}`,
+    inviteCode: invitation.code,
   };
 }
 

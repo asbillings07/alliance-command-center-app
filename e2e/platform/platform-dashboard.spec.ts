@@ -343,20 +343,26 @@ test.describe("Platform Operations Console", () => {
     test("pending invitations show action buttons", async ({ page }) => {
       await page.goto("/platform/beta");
 
-      // Check if there are pending invitations
-      const hasPending = await page.getByText(/Pending/i).first().isVisible();
+      // Create an invitation to ensure we have a pending one
+      const uniqueEmail = `test-actions-${Date.now()}@example.com`;
+      await page.getByLabel(/email/i).fill(uniqueEmail);
+      await page.getByRole("button", { name: /Create Invitation/i }).click();
+      await expect(
+        page.getByRole("heading", { name: /Invitation Created/i })
+      ).toBeVisible({ timeout: 10000 });
 
-      if (hasPending) {
-        // On desktop, should see action buttons in table
-        await page.setViewportSize({ width: 1280, height: 800 });
+      // Reset to see the pending list
+      await page.getByRole("button", { name: /Invite Another/i }).click();
 
-        // Actions column should have copy and revoke buttons
-        const actionsCell = page.locator("td").filter({ hasText: /URL|Code|Revoke/ });
-        const hasActions = await actionsCell.count() > 0;
+      // On desktop, should see action buttons in table
+      await page.setViewportSize({ width: 1280, height: 800 });
 
-        // If no pending invitations, this is expected to be empty
-        expect(typeof hasActions).toBe("boolean");
-      }
+      // Find the row with our email
+      const row = page.locator("tr").filter({ hasText: uniqueEmail });
+      await expect(row).toBeVisible();
+
+      // Action buttons should be present
+      await expect(row.getByRole("button", { name: /Revoke/i })).toBeVisible();
     });
 
     test("revoke removes invitation from pending", async ({ page }) => {
@@ -379,34 +385,35 @@ test.describe("Platform Operations Console", () => {
 
       // Look for revoke button in the row with our email
       const row = page.locator("tr").filter({ hasText: uniqueEmail });
+      await expect(row).toBeVisible();
+
       const revokeButton = row.getByRole("button", { name: /Revoke/i });
+      await expect(revokeButton).toBeVisible();
 
-      if (await revokeButton.isVisible()) {
-        // Accept confirm dialog
-        page.on("dialog", (dialog) => dialog.accept());
-        await revokeButton.click();
+      // Accept confirm dialog
+      page.on("dialog", (dialog) => dialog.accept());
+      await revokeButton.click();
 
-        // Wait for revalidation
-        await page.waitForTimeout(1000);
+      // Wait for revalidation
+      await page.waitForTimeout(1000);
 
-        // Email should now appear in Revoked section or be removed from Pending
-        const inRevoked = await page
-          .locator("section")
-          .filter({ hasText: /Revoked/i })
-          .getByText(uniqueEmail)
-          .isVisible()
-          .catch(() => false);
+      // Email should now appear in Revoked section or be removed from Pending
+      const inRevoked = await page
+        .locator("section")
+        .filter({ hasText: /Revoked/i })
+        .getByText(uniqueEmail)
+        .isVisible()
+        .catch(() => false);
 
-        const stillPending = await page
-          .locator("section")
-          .filter({ hasText: /^Pending/i })
-          .getByText(uniqueEmail)
-          .isVisible()
-          .catch(() => false);
+      const stillPending = await page
+        .locator("section")
+        .filter({ hasText: /^Pending/i })
+        .getByText(uniqueEmail)
+        .isVisible()
+        .catch(() => false);
 
-        // Either moved to revoked or no longer in pending
-        expect(inRevoked || !stillPending).toBe(true);
-      }
+      // Either moved to revoked or no longer in pending
+      expect(inRevoked || !stillPending).toBe(true);
     });
   });
 

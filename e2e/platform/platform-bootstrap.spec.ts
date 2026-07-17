@@ -49,13 +49,28 @@ test.describe("Platform Bootstrap", () => {
     });
   });
 
-  test.describe("Initialize Page UI (when visible)", () => {
-    // These tests document expected behavior but may be skipped
-    // in environments where platform is already initialized
+  test.describe("Initialize Page UI", () => {
+    // Note: These tests require an uninitialized database (no platform admins).
+    // In CI, the database is seeded with a platform admin to run other tests,
+    // so these are conditionally skipped. The redirect tests above verify that
+    // the /initialize page correctly blocks access after initialization.
+    //
+    // To test bootstrap UI manually:
+    // 1. Reset database: npx prisma migrate reset --skip-seed
+    // 2. Run: npm run test:e2e -- --grep "Initialize Page UI"
 
-    test.skip("displays welcome message", async ({ page }) => {
+    test.beforeEach(async ({ page }) => {
+      // Check if platform is already initialized by trying to visit /initialize
       await page.goto("/initialize");
+      const isInitialized = page.url().includes("/login");
 
+      test.skip(
+        isInitialized,
+        "Platform already initialized - bootstrap UI not accessible"
+      );
+    });
+
+    test("displays welcome message", async ({ page }) => {
       await expect(
         page.getByRole("heading", { name: /Welcome to Alliance Command Center/i })
       ).toBeVisible();
@@ -64,9 +79,7 @@ test.describe("Platform Bootstrap", () => {
       ).toBeVisible();
     });
 
-    test.skip("displays initialization form", async ({ page }) => {
-      await page.goto("/initialize");
-
+    test("displays initialization form", async ({ page }) => {
       await expect(page.getByLabel(/email/i)).toBeVisible();
       await expect(page.getByLabel(/display name/i)).toBeVisible();
       await expect(page.getByLabel(/^password$/i)).toBeVisible();
@@ -76,9 +89,7 @@ test.describe("Platform Bootstrap", () => {
       ).toBeVisible();
     });
 
-    test.skip("shows PLATFORM_ADMIN_EMAILS hint", async ({ page }) => {
-      await page.goto("/initialize");
-
+    test("shows PLATFORM_ADMIN_EMAILS hint", async ({ page }) => {
       await expect(
         page.getByText(/PLATFORM_ADMIN_EMAILS configuration/i)
       ).toBeVisible();
