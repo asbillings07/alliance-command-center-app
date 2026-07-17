@@ -30,6 +30,11 @@ const isProduction = process.env.NODE_ENV === "production";
 // e.g., a malicious URL like "postgresql://user@evil.com?fake=neon.tech" would
 // pass a naive .includes() check
 function isProductionHost(url: string): boolean {
+  // Empty or missing URL is a configuration error, not a production database
+  if (!url || url.trim() === "") {
+    return false;
+  }
+
   try {
     // PostgreSQL URLs use postgresql:// or postgres:// scheme
     const parsed = new URL(url.replace(/^postgres(ql)?:\/\//, "http://"));

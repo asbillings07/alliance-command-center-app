@@ -114,14 +114,23 @@ export async function register(
           },
         });
 
-        // Auto-accept the beta invitation to skip the manual accept step
-        await tx.betaInvitation.update({
-          where: { id: betaInvitation.id },
+        // Auto-accept the beta invitation with a race-safe update.
+        // Only update if acceptedAt is still null (prevents double-acceptance).
+        const result = await tx.betaInvitation.updateMany({
+          where: {
+            id: betaInvitation.id,
+            acceptedAt: null, // Only update if not already accepted
+          },
           data: {
             acceptedAt: new Date(),
             acceptedByUserId: user.id,
           },
         });
+
+        // If no rows were updated, the invitation was already accepted (race condition)
+        if (result.count === 0) {
+          throw new Error("Invitation was already accepted");
+        }
       });
 
       await signIn("credentials", {
