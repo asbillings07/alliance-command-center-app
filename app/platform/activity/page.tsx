@@ -62,26 +62,43 @@ function formatDate(date: Date): string {
   });
 }
 
+/**
+ * Normalize a date to midnight local time for grouping.
+ * Returns a numeric key (YYYYMMDD) for consistent grouping
+ * and the normalized Date object for display.
+ */
+function normalizeToDay(date: Date): { key: number; normalized: Date } {
+  const normalized = new Date(date);
+  normalized.setHours(0, 0, 0, 0);
+  const key =
+    normalized.getFullYear() * 10000 +
+    (normalized.getMonth() + 1) * 100 +
+    normalized.getDate();
+  return { key, normalized };
+}
+
 function groupActivityByDate(
   activity: Awaited<ReturnType<typeof getRecentActivity>>
 ) {
-  const groups: Record<
-    string,
-    Awaited<ReturnType<typeof getRecentActivity>>
-  > = {};
+  const groups = new Map<
+    number,
+    { date: Date; items: Awaited<ReturnType<typeof getRecentActivity>> }
+  >();
 
   for (const item of activity) {
-    const dateKey = item.timestamp.toDateString();
-    if (!groups[dateKey]) {
-      groups[dateKey] = [];
+    const { key, normalized } = normalizeToDay(item.timestamp);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.items.push(item);
+    } else {
+      groups.set(key, { date: normalized, items: [item] });
     }
-    groups[dateKey].push(item);
   }
 
-  return Object.entries(groups).map(([dateStr, items]) => ({
-    date: new Date(dateStr),
-    items,
-  }));
+  // Sort by key descending (most recent first)
+  return Array.from(groups.values()).sort(
+    (a, b) => b.date.getTime() - a.date.getTime()
+  );
 }
 
 export default async function PlatformActivity() {
