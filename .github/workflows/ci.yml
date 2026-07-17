@@ -9,6 +9,7 @@ on:
 env:
   DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/acc_test"
   PLATFORM_ADMIN_EMAILS_E2E: "platform-admin@test.local"
+  SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
   AUTH_SECRET: "test-secret-for-ci-only-not-for-production"
   AUTH_TRUST_HOST: "true"
 
