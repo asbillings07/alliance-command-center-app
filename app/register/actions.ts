@@ -4,7 +4,11 @@ import bcrypt from "bcrypt";
 import { signIn } from "@/app/src/lib/auth";
 import { prisma } from "@/app/src/lib/prisma";
 import { redirect } from "next/navigation";
-import { validateBetaToken, validateBetaCode } from "@/app/src/lib/betaInvitation";
+import {
+  validateBetaToken,
+  validateBetaCode,
+  acceptBetaInvitation,
+} from "@/app/src/lib/betaInvitation";
 
 export type RegisterState = {
   error: string | null;
@@ -99,13 +103,16 @@ export async function register(
     try {
       const passwordHash = await bcrypt.hash(password, 12);
 
-      await prisma.user.create({
+      const user = await prisma.user.create({
         data: {
           email,
           displayName,
           passwordHash,
         },
       });
+
+      // Auto-accept the beta invitation to skip the manual accept step
+      await acceptBetaInvitation(betaInvitation.id, user.id);
 
       await signIn("credentials", {
         email,
@@ -117,7 +124,8 @@ export async function register(
       return { error: "Failed to create account" };
     }
 
-    redirect(callbackUrl);
+    // Redirect to create-alliance since the beta is now auto-accepted
+    redirect("/create-alliance");
   }
 
   // Check for alliance invitation from /invite/[token]
