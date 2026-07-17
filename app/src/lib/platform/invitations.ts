@@ -13,6 +13,7 @@ export type BetaInvitationItem = {
   email: string;
   code: string;
   token: string;
+  inviteUrl: string;
   notes: string | null;
   status: BetaInvitationStatus;
   createdAt: Date;
@@ -52,10 +53,26 @@ export type InvitationStats = {
 };
 
 /**
+ * Get the base URL for invite links.
+ * Uses NEXTAUTH_URL for consistency with invitation creation.
+ */
+function getInviteOrigin(): string {
+  const origin = process.env.NEXTAUTH_URL;
+  if (!origin) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("NEXTAUTH_URL must be configured in production");
+    }
+    return "http://localhost:3000";
+  }
+  return origin;
+}
+
+/**
  * Get all beta invitations.
  */
 export async function getBetaInvitations(): Promise<BetaInvitationItem[]> {
   const now = new Date();
+  const origin = getInviteOrigin();
 
   const invitations = await prisma.betaInvitation.findMany({
     orderBy: { createdAt: "desc" },
@@ -108,6 +125,7 @@ export async function getBetaInvitations(): Promise<BetaInvitationItem[]> {
       email: inv.email,
       code: inv.code,
       token: inv.token,
+      inviteUrl: `${origin}/redeem/${inv.token}`,
       notes: inv.notes,
       status,
       createdAt: inv.createdAt,

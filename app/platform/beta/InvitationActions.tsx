@@ -31,21 +31,18 @@ function useCopy() {
 type InvitationActionsProps = {
   invitationId: string;
   code: string;
-  token: string;
+  inviteUrl: string;
 };
 
 export function InvitationActions({
   invitationId,
   code,
-  token,
+  inviteUrl,
 }: InvitationActionsProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const { state: codeState, copy: copyCode } = useCopy();
   const { state: urlState, copy: copyUrl } = useCopy();
-
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const inviteUrl = `${origin}/redeem/${token}`;
 
   const handleRevoke = () => {
     if (!confirm("Are you sure you want to revoke this invitation?")) {
@@ -105,15 +102,12 @@ export function InvitationActions({
 export function InvitationCardActions({
   invitationId,
   code,
-  token,
+  inviteUrl,
 }: InvitationActionsProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const { state: codeState, copy: copyCode } = useCopy();
   const { state: urlState, copy: copyUrl } = useCopy();
-
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const inviteUrl = `${origin}/redeem/${token}`;
 
   const handleRevoke = () => {
     if (!confirm("Are you sure you want to revoke this invitation?")) {

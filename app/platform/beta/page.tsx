@@ -84,7 +84,7 @@ function InvitationCard({ invitation }: { invitation: BetaInvitationItem }) {
         <InvitationCardActions
           invitationId={invitation.id}
           code={invitation.code}
-          token={invitation.token}
+          inviteUrl={invitation.inviteUrl}
         />
       )}
     </div>
@@ -147,7 +147,7 @@ function PendingInvitationTable({
                 <InvitationActions
                   invitationId={invitation.id}
                   code={invitation.code}
-                  token={invitation.token}
+                  inviteUrl={invitation.inviteUrl}
                 />
               </td>
             </tr>
