@@ -136,7 +136,18 @@ export default async function RedeemTokenPage({
     );
   }
 
-  const { invitation } = result;
+  if (result.status === "revoked") {
+    return (
+      <ErrorCard
+        title="Invitation Revoked"
+        message="This beta invitation has been revoked. Please contact us to request a new invitation."
+        showRetry={false}
+      />
+    );
+  }
+
+  // At this point, status is "valid" and invitation is guaranteed to exist
+  const invitation = result.invitation;
 
   const session = await auth();
   const isLoggedIn = !!session?.user;

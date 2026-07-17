@@ -6,11 +6,15 @@ import { prisma } from "../prisma";
  * Provides queries for beta and collaborator invitations.
  */
 
-export type BetaInvitationStatus = "pending" | "accepted" | "expired";
+export type BetaInvitationStatus = "pending" | "accepted" | "expired" | "revoked";
 
 export type BetaInvitationItem = {
   id: string;
   email: string;
+  code: string;
+  token: string;
+  inviteUrl: string;
+  notes: string | null;
   status: BetaInvitationStatus;
   createdAt: Date;
   expiresAt: Date;
@@ -38,20 +42,38 @@ export type InvitationStats = {
     pending: number;
     accepted: number;
     expired: number;
+    revoked: number;
   };
   collaboratorInvites: {
     total: number;
     pending: number;
     accepted: number;
     expired: number;
+    cancelled: number;
   };
 };
+
+/**
+ * Get the base URL for invite links.
+ * Uses NEXTAUTH_URL for consistency with invitation creation.
+ */
+function getInviteOrigin(): string {
+  const origin = process.env.NEXTAUTH_URL;
+  if (!origin) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("NEXTAUTH_URL must be configured in production");
+    }
+    return "http://localhost:3000";
+  }
+  return origin;
+}
 
 /**
  * Get all beta invitations.
  */
 export async function getBetaInvitations(): Promise<BetaInvitationItem[]> {
   const now = new Date();
+  const origin = getInviteOrigin();
 
   const invitations = await prisma.betaInvitation.findMany({
     orderBy: { createdAt: "desc" },
@@ -89,6 +111,8 @@ export async function getBetaInvitations(): Promise<BetaInvitationItem[]> {
     let status: BetaInvitationStatus;
     if (inv.acceptedAt) {
       status = "accepted";
+    } else if (inv.revokedAt) {
+      status = "revoked";
     } else if (inv.expiresAt < now) {
       status = "expired";
     } else {
@@ -100,6 +124,10 @@ export async function getBetaInvitations(): Promise<BetaInvitationItem[]> {
     return {
       id: inv.id,
       email: inv.email,
+      code: inv.code,
+      token: inv.token,
+      inviteUrl: `${origin}/redeem/${inv.token}`,
+      notes: inv.notes,
       status,
       createdAt: inv.createdAt,
       expiresAt: inv.expiresAt,
@@ -161,27 +189,35 @@ export async function getInvitationStats(): Promise<InvitationStats> {
     betaPending,
     betaAccepted,
     betaExpired,
+    betaRevoked,
     collabTotal,
     collabPending,
     collabAccepted,
     collabExpired,
+    collabCancelled,
   ] = await Promise.all([
     prisma.betaInvitation.count(),
     prisma.betaInvitation.count({
-      where: { acceptedAt: null, expiresAt: { gte: now } },
+      where: {
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gte: now },
+      },
     }),
     prisma.betaInvitation.count({ where: { acceptedAt: { not: null } } }),
     prisma.betaInvitation.count({
-      where: { acceptedAt: null, expiresAt: { lt: now } },
+      where: { acceptedAt: null, revokedAt: null, expiresAt: { lt: now } },
     }),
+    prisma.betaInvitation.count({ where: { revokedAt: { not: null } } }),
     prisma.invitation.count(),
     prisma.invitation.count({
-      where: { acceptedAt: null, expiresAt: { gte: now } },
+      where: { acceptedAt: null, cancelledAt: null, expiresAt: { gte: now } },
     }),
     prisma.invitation.count({ where: { acceptedAt: { not: null } } }),
     prisma.invitation.count({
-      where: { acceptedAt: null, expiresAt: { lt: now } },
+      where: { acceptedAt: null, cancelledAt: null, expiresAt: { lt: now } },
     }),
+    prisma.invitation.count({ where: { cancelledAt: { not: null } } }),
   ]);
 
   return {
@@ -190,12 +226,14 @@ export async function getInvitationStats(): Promise<InvitationStats> {
       pending: betaPending,
       accepted: betaAccepted,
       expired: betaExpired,
+      revoked: betaRevoked,
     },
     collaboratorInvites: {
       total: collabTotal,
       pending: collabPending,
       accepted: collabAccepted,
       expired: collabExpired,
+      cancelled: collabCancelled,
     },
   };
 }

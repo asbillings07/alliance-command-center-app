@@ -15,6 +15,7 @@ const requiredVars = [
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const optionalVars = [
   "PLATFORM_ADMIN_EMAILS",
+  "PLATFORM_BOOTSTRAP_SECRET",
   "SENTRY_DSN",
   "FEATURE_PLATFORM_CONSOLE",
   "FEATURE_RECOGNITION",
