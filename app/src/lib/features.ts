@@ -13,6 +13,8 @@
  *   FEATURE_PLATFORM_CONSOLE=true
  */
 
+import type { ReactNode } from "react";
+
 export const features = {
   /**
    * Platform Operations Console
@@ -67,8 +69,8 @@ export function FeatureFlag({
   fallback = null,
 }: {
   feature: FeatureName;
-  children: React.ReactNode;
-  fallback?: React.ReactNode;
-}): React.ReactNode {
+  children: ReactNode;
+  fallback?: ReactNode;
+}): ReactNode {
   return isFeatureEnabled(feature) ? children : fallback;
 }
