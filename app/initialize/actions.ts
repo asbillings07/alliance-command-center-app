@@ -62,27 +62,45 @@ export async function initializePlatform(
     };
   }
 
-  // Check if user already exists (shouldn't happen, but protect against it)
-  const existingUser = await prisma.user.findUnique({
-    where: { email },
-  });
-
-  if (existingUser) {
-    return { error: "An account with this email already exists" };
-  }
-
   try {
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Create the first platform admin
-    await prisma.user.create({
-      data: {
-        email,
-        displayName,
-        passwordHash,
-        isPlatformAdmin: true,
+    // Atomic initialization: check + create in a serializable transaction
+    // This prevents race conditions where two requests both see "uninitialized"
+    await prisma.$transaction(
+      async (tx) => {
+        // Double-check no platform admin exists (atomic with create)
+        const existingAdminCount = await tx.user.count({
+          where: { isPlatformAdmin: true },
+        });
+
+        if (existingAdminCount > 0) {
+          throw new Error("ALREADY_INITIALIZED");
+        }
+
+        // Check if user already exists
+        const existingUser = await tx.user.findUnique({
+          where: { email },
+        });
+
+        if (existingUser) {
+          throw new Error("USER_EXISTS");
+        }
+
+        // Create the first platform admin
+        await tx.user.create({
+          data: {
+            email,
+            displayName,
+            passwordHash,
+            isPlatformAdmin: true,
+          },
+        });
       },
-    });
+      {
+        isolationLevel: "Serializable",
+      }
+    );
 
     // Sign them in
     await signIn("credentials", {
@@ -91,6 +109,14 @@ export async function initializePlatform(
       redirect: false,
     });
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "ALREADY_INITIALIZED") {
+        return { error: "Platform has already been initialized" };
+      }
+      if (error.message === "USER_EXISTS") {
+        return { error: "An account with this email already exists" };
+      }
+    }
     console.error("Error initializing platform:", error);
     return { error: "Failed to initialize platform" };
   }

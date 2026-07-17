@@ -224,14 +224,23 @@ export async function acceptBetaInvitation(
     throw new Error("This beta invitation has already been accepted");
   }
 
+  if (invitation.revokedAt) {
+    throw new Error("This beta invitation has been revoked");
+  }
+
   if (invitation.expiresAt < new Date()) {
     throw new Error("This beta invitation has expired");
   }
 
   const now = new Date();
 
+  // Atomic update: only accept if still valid (not accepted, not revoked)
   const updated = await prisma.betaInvitation.updateMany({
-    where: { id: invitationId, acceptedAt: null },
+    where: {
+      id: invitationId,
+      acceptedAt: null,
+      revokedAt: null,
+    },
     data: {
       acceptedAt: now,
       acceptedByUserId: userId,
@@ -239,11 +248,15 @@ export async function acceptBetaInvitation(
   });
 
   if (updated.count !== 1) {
+    // Re-fetch to determine why update failed
     const current = await prisma.betaInvitation.findUnique({
       where: { id: invitationId },
     });
     if (current && current.acceptedByUserId === userId) {
       return current;
+    }
+    if (current?.revokedAt) {
+      throw new Error("This beta invitation has been revoked");
     }
     throw new Error("This beta invitation has already been accepted");
   }
