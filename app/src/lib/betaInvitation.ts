@@ -25,97 +25,144 @@ function addDays(date: Date, days: number): Date {
   return result;
 }
 
-export type CreateBetaInvitationResult = {
+export type IssueBetaInvitationResult = {
   invitation: BetaInvitation;
   inviteUrl: string;
   inviteCode: string;
 };
 
 /**
- * Create a beta invitation for a new user.
- * Used by admin to invite beta testers.
+ * Determine whether an invitation is currently pending.
+ * Pending = not accepted, not revoked, and not expired.
  *
- * @param email - The email address to invite
- * @param notes - Optional context about the invitation (e.g., "Met at conference")
+ * This is the single source of truth for the "pending" business rule.
  */
-export async function createBetaInvitation(
-  email: string,
-  notes?: string
-): Promise<CreateBetaInvitationResult> {
+export function isPendingInvitation(invitation: BetaInvitation): boolean {
+  // Expiry boundary matches the rest of the module: an invitation is expired
+  // only when expiresAt < now (validateBetaToken/validateBetaCode), so it is
+  // still valid — and therefore pending — when expiresAt >= now.
+  return (
+    !invitation.acceptedAt &&
+    !invitation.revokedAt &&
+    invitation.expiresAt >= new Date()
+  );
+}
+
+/**
+ * Build the "pending invitation" query filter for an email.
+ *
+ * Single source of truth for the pending rule at the query layer, mirroring
+ * isPendingInvitation() for in-memory records.
+ */
+function pendingInvitationWhere(normalizedEmail: string, now: Date) {
+  return {
+    email: normalizedEmail,
+    acceptedAt: null,
+    revokedAt: null,
+    // gte mirrors the module's expiry semantics (expired only when expiresAt < now)
+    // and matches getInvitationStats, which counts pending with expiresAt >= now.
+    expiresAt: { gte: now },
+  };
+}
+
+/**
+ * Get the pending invitation for an email, if one exists.
+ *
+ * Answers the business question: "Is there a valid, usable invitation
+ * for this email right now?" Queries directly for pending state rather
+ * than fetching the latest record and evaluating it afterward.
+ */
+export async function getPendingInvitation(
+  email: string
+): Promise<BetaInvitation | null> {
   const normalizedEmail = email.toLowerCase().trim();
 
-  const existing = await prisma.betaInvitation.findUnique({
-    where: { email: normalizedEmail },
+  return prisma.betaInvitation.findFirst({
+    where: pendingInvitationWhere(normalizedEmail, new Date()),
+    orderBy: { issuedAt: "desc" },
   });
+}
 
-  if (existing) {
-    // Already accepted - cannot re-issue
-    if (existing.acceptedAt) {
-      throw new Error("A beta invitation for this email has already been accepted");
-    }
+export type IssueBetaInvitationOptions = {
+  notes?: string;
+  campaign?: string;
+};
 
-    // Revoked - cannot re-issue (preserve audit history)
-    // Revocation is a deliberate action; re-inviting requires manual intervention
-    if (existing.revokedAt) {
-      throw new Error(
-        "A beta invitation for this email was revoked. " +
-          "Contact support to issue a new invitation."
-      );
-    }
+/**
+ * Issue a beta invitation for an email address.
+ *
+ * BetaInvitation is a history table: every issuance creates a new record,
+ * preserving revoked and expired invitations for audit history.
+ *
+ * Business rules (owned entirely by this service):
+ * - Only one pending invitation per email at a time
+ * - Cannot invite a user who already has alliance access
+ *
+ * @param email - The email address to invite
+ * @param options - Optional notes and campaign/wave label
+ */
+export async function issueBetaInvitation(
+  email: string,
+  options?: IssueBetaInvitationOptions
+): Promise<IssueBetaInvitationResult> {
+  const normalizedEmail = email.toLowerCase().trim();
 
-    const now = new Date();
-
-    // Still pending (not expired) - cannot re-issue
-    if (existing.expiresAt > now) {
-      throw new Error("A pending beta invitation already exists for this email");
-    }
-
-    // Expired only - allow re-issue by updating the existing record
-    // Expiration is automatic, not a deliberate action, so no audit concern
-    // Bump createdAt so it appears as newly sent in the UI
-    const token = randomUUID();
-    const code = generateBetaCode();
-
-    const invitation = await prisma.betaInvitation.update({
-      where: { email: normalizedEmail },
-      data: {
-        token,
-        code,
-        notes: notes?.trim() || null,
-        expiresAt: addDays(now, 30),
-        createdAt: now,
-      },
-    });
-
-    return buildInvitationResult(invitation);
-  }
-
-  const existingUser = await prisma.user.findUnique({
-    where: { email: normalizedEmail },
-  });
-
-  if (existingUser) {
-    const membership = await prisma.allianceMembership.findFirst({
-      where: { userId: existingUser.id },
-    });
-
-    if (membership) {
-      throw new Error("This user already has access to an alliance");
-    }
-  }
-
+  const now = new Date();
   const token = randomUUID();
   const code = generateBetaCode();
 
-  const invitation = await prisma.betaInvitation.create({
-    data: {
-      email: normalizedEmail,
-      token,
-      code,
-      notes: notes?.trim() || null,
-      expiresAt: addDays(new Date(), 30),
+  // The "one pending invitation per email" invariant cannot be expressed as a
+  // database constraint: a partial unique index can't reference expiresAt
+  // (pending-ness is time-dependent), and a full unique index would break
+  // re-issuing after an invitation expires or is revoked. A plain read-then-
+  // create also races: two concurrent callers can both see no pending
+  // invitation and both insert. A serializable transaction closes that gap by
+  // forcing conflicting check+create pairs to serialize (one will fail to commit
+  // and retry, then observe the other's pending invitation).
+  const invitation = await prisma.$transaction(
+    async (tx) => {
+      // Only one pending invitation per email
+      const pending = await tx.betaInvitation.findFirst({
+        where: pendingInvitationWhere(normalizedEmail, now),
+        orderBy: { issuedAt: "desc" },
+      });
+      if (pending) {
+        throw new Error(
+          "A pending beta invitation already exists for this email"
+        );
+      }
+
+      // Cannot invite a user who already has alliance access
+      const existingUser = await tx.user.findUnique({
+        where: { email: normalizedEmail },
+      });
+
+      if (existingUser) {
+        const membership = await tx.allianceMembership.findFirst({
+          where: { userId: existingUser.id },
+        });
+
+        if (membership) {
+          throw new Error("This user already has access to an alliance");
+        }
+      }
+
+      // Always create a new record - never mutate history
+      return tx.betaInvitation.create({
+        data: {
+          email: normalizedEmail,
+          token,
+          code,
+          notes: options?.notes?.trim() || null,
+          campaign: options?.campaign?.trim() || null,
+          expiresAt: addDays(now, 30),
+          createdAt: now,
+          issuedAt: now,
+        },
+      });
     },
-  });
+    { isolationLevel: "Serializable" }
+  );
 
   return buildInvitationResult(invitation);
 }
@@ -126,7 +173,7 @@ export async function createBetaInvitation(
  */
 function buildInvitationResult(
   invitation: BetaInvitation
-): CreateBetaInvitationResult {
+): IssueBetaInvitationResult {
   const origin = process.env.NEXTAUTH_URL;
 
   if (!origin) {

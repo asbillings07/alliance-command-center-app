@@ -19,7 +19,18 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "chromium",
+      // Application tests: assume the platform is already initialized (seeded DB).
+      // This is the default project run by `npm run test:e2e`.
+      name: "application",
+      testIgnore: "**/bootstrap/**",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      // Bootstrap tests: assume the platform DOES NOT exist yet (unseeded DB).
+      // A fundamentally different lifecycle, so it lives in its own project.
+      // Run via `npm run test:e2e:bootstrap` against a freshly reset database.
+      name: "bootstrap",
+      testMatch: "**/bootstrap/**",
       use: { ...devices["Desktop Chrome"] },
     },
   ],

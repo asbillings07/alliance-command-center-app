@@ -5,7 +5,7 @@ name: Update Visual Baselines
 #
 # Regular CI never rewrites baselines. When the UI intentionally changes, run
 # this workflow from the Actions tab, download the "visual-baselines-linux"
-# artifact, and commit the *-chromium-linux.png files it contains into
+# artifact, and commit the *-application-linux.png files it contains into
 # e2e/design-system/visual-regression.spec.ts-snapshots/.
 on:
   workflow_dispatch:
@@ -77,6 +77,6 @@ jobs:
         if: always()
         with:
           name: visual-baselines-linux
-          path: '**/*-chromium-linux.png'
+          path: '**/*-application-linux.png'
           retention-days: 30
           if-no-files-found: error

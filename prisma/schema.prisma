@@ -226,12 +226,14 @@ model Invitation {
 
 model BetaInvitation {
   id        String   @id @default(cuid())
-  email     String   @unique
+  email     String
   token     String   @unique
   code      String   @unique
   notes     String?
+  campaign  String?
   expiresAt DateTime
   createdAt DateTime @default(now())
+  issuedAt  DateTime @default(now())
 
   acceptedAt       DateTime?
   acceptedByUserId String?
@@ -241,4 +243,6 @@ model BetaInvitation {
 
   allianceId String?
   alliance   Alliance? @relation(fields: [allianceId], references: [id])
+
+  @@index([email])
 }

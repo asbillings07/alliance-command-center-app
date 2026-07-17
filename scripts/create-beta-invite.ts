@@ -9,7 +9,7 @@
  */
 
 import "dotenv/config";
-import { createBetaInvitation } from "../app/src/lib/betaInvitation";
+import { issueBetaInvitation } from "../app/src/lib/betaInvitation";
 import { prisma } from "../app/src/lib/prisma";
 
 function printInvitation(invitation: {
@@ -37,8 +37,9 @@ function printInvitation(invitation: {
 }
 
 async function lookupInvitation(email: string) {
-  const invitation = await prisma.betaInvitation.findUnique({
+  const invitation = await prisma.betaInvitation.findFirst({
     where: { email: email.toLowerCase().trim() },
+    orderBy: { issuedAt: "desc" },
   });
 
   if (!invitation) {
@@ -73,7 +74,7 @@ async function listInvitations() {
 
 async function createInvitation(email: string) {
   try {
-    const result = await createBetaInvitation(email);
+    const result = await issueBetaInvitation(email);
 
     console.log("\n✓ Beta invitation created!\n");
     printInvitation(result.invitation);

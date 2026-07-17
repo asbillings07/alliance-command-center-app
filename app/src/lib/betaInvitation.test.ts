@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
-  createBetaInvitation,
+  issueBetaInvitation,
+  getPendingInvitation,
+  isPendingInvitation,
   validateBetaToken,
   validateBetaCode,
   acceptBetaInvitation,
   revokeBetaInvitation,
   getPendingAllianceCreation,
 } from "./betaInvitation";
+import type { BetaInvitation } from "@/app/generated/prisma/client";
 
 vi.mock("./prisma", () => ({
   prisma: {
@@ -23,6 +26,7 @@ vi.mock("./prisma", () => ({
     allianceMembership: {
       findFirst: vi.fn(),
     },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -42,26 +46,107 @@ const mockPrisma = prisma as unknown as {
   allianceMembership: {
     findFirst: ReturnType<typeof vi.fn>;
   };
+  $transaction: ReturnType<typeof vi.fn>;
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Run transaction callbacks against the same mocked client (tx === prisma).
+  mockPrisma.$transaction.mockImplementation(
+    async (fn: (tx: typeof prisma) => unknown) => fn(prisma)
+  );
 });
 
-describe("createBetaInvitation", () => {
-  it("creates an invitation with token and code", async () => {
-    mockPrisma.betaInvitation.findUnique.mockResolvedValue(null);
+function makeInvitation(
+  overrides: Partial<BetaInvitation> = {}
+): BetaInvitation {
+  const now = new Date();
+  return {
+    id: "inv-1",
+    email: "test@example.com",
+    token: "token",
+    code: "ABC-123",
+    notes: null,
+    campaign: null,
+    expiresAt: new Date(now.getTime() + 86400000),
+    createdAt: now,
+    issuedAt: now,
+    acceptedAt: null,
+    acceptedByUserId: null,
+    revokedAt: null,
+    allianceId: null,
+    ...overrides,
+  };
+}
+
+describe("isPendingInvitation", () => {
+  it("returns true for a not-accepted, not-revoked, unexpired invitation", () => {
+    expect(isPendingInvitation(makeInvitation())).toBe(true);
+  });
+
+  it("returns false when accepted", () => {
+    expect(
+      isPendingInvitation(makeInvitation({ acceptedAt: new Date() }))
+    ).toBe(false);
+  });
+
+  it("returns false when revoked", () => {
+    expect(
+      isPendingInvitation(makeInvitation({ revokedAt: new Date() }))
+    ).toBe(false);
+  });
+
+  it("returns false when expired", () => {
+    expect(
+      isPendingInvitation(
+        makeInvitation({ expiresAt: new Date(Date.now() - 86400000) })
+      )
+    ).toBe(false);
+  });
+});
+
+describe("getPendingInvitation", () => {
+  it("queries directly for a pending invitation and normalizes email", async () => {
+    const invitation = makeInvitation();
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(invitation);
+
+    const result = await getPendingInvitation("TEST@EXAMPLE.COM");
+
+    expect(result).toEqual(invitation);
+    expect(mockPrisma.betaInvitation.findFirst).toHaveBeenCalledWith({
+      where: {
+        email: "test@example.com",
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gte: expect.any(Date) },
+      },
+      orderBy: { issuedAt: "desc" },
+    });
+  });
+
+  it("returns null when no pending invitation exists", async () => {
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
+
+    const result = await getPendingInvitation("test@example.com");
+
+    expect(result).toBeNull();
+  });
+});
+
+describe("issueBetaInvitation", () => {
+  it("creates a new invitation with token and code", async () => {
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
     mockPrisma.user.findUnique.mockResolvedValue(null);
     mockPrisma.betaInvitation.create.mockImplementation(async ({ data }) => ({
       id: "inv-1",
       ...data,
-      createdAt: new Date(),
       acceptedAt: null,
       acceptedByUserId: null,
+      revokedAt: null,
       allianceId: null,
     }));
 
-    const result = await createBetaInvitation("test@example.com");
+    const result = await issueBetaInvitation("test@example.com");
 
     expect(result.invitation.email).toBe("test@example.com");
     expect(result.invitation.token).toBeDefined();
@@ -71,98 +156,101 @@ describe("createBetaInvitation", () => {
   });
 
   it("normalizes email to lowercase", async () => {
-    mockPrisma.betaInvitation.findUnique.mockResolvedValue(null);
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
     mockPrisma.user.findUnique.mockResolvedValue(null);
     mockPrisma.betaInvitation.create.mockImplementation(async ({ data }) => ({
       id: "inv-1",
       ...data,
-      createdAt: new Date(),
       acceptedAt: null,
       acceptedByUserId: null,
+      revokedAt: null,
       allianceId: null,
     }));
 
-    const result = await createBetaInvitation("TEST@EXAMPLE.COM");
+    const result = await issueBetaInvitation("TEST@EXAMPLE.COM");
 
     expect(result.invitation.email).toBe("test@example.com");
   });
 
-  it("throws if pending invitation already exists for email", async () => {
-    mockPrisma.betaInvitation.findUnique.mockResolvedValue({
-      id: "existing",
-      email: "test@example.com",
-      acceptedAt: null,
-      revokedAt: null,
-      expiresAt: new Date(Date.now() + 86400000), // Not expired
-    });
-
-    await expect(createBetaInvitation("test@example.com")).rejects.toThrow(
-      "A pending beta invitation already exists for this email"
-    );
-  });
-
-  it("throws if invitation was already accepted", async () => {
-    mockPrisma.betaInvitation.findUnique.mockResolvedValue({
-      id: "existing",
-      email: "test@example.com",
-      acceptedAt: new Date(),
-      revokedAt: null,
-      expiresAt: new Date(Date.now() + 86400000),
-    });
-
-    await expect(createBetaInvitation("test@example.com")).rejects.toThrow(
-      "A beta invitation for this email has already been accepted"
-    );
-  });
-
-  it("throws for revoked email (preserves audit history)", async () => {
-    mockPrisma.betaInvitation.findUnique.mockResolvedValue({
-      id: "existing",
-      email: "test@example.com",
-      acceptedAt: null,
-      revokedAt: new Date(),
-      expiresAt: new Date(Date.now() + 86400000),
-    });
-
-    await expect(createBetaInvitation("test@example.com")).rejects.toThrow(
-      "A beta invitation for this email was revoked"
-    );
-  });
-
-  it("re-issues invitation for expired email", async () => {
-    mockPrisma.betaInvitation.findUnique.mockResolvedValue({
-      id: "existing",
-      email: "test@example.com",
-      acceptedAt: null,
-      revokedAt: null,
-      expiresAt: new Date(Date.now() - 86400000), // Expired
-    });
-    mockPrisma.betaInvitation.update.mockImplementation(async ({ data }) => ({
-      id: "existing",
-      email: "test@example.com",
+  it("persists notes and campaign when provided", async () => {
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.betaInvitation.create.mockImplementation(async ({ data }) => ({
+      id: "inv-1",
       ...data,
       acceptedAt: null,
       acceptedByUserId: null,
+      revokedAt: null,
       allianceId: null,
     }));
 
-    const result = await createBetaInvitation("test@example.com");
+    const result = await issueBetaInvitation("test@example.com", {
+      notes: " Met at conference ",
+      campaign: " Wave 1 ",
+    });
 
-    expect(result.invitation.email).toBe("test@example.com");
-    expect(mockPrisma.betaInvitation.update).toHaveBeenCalled();
+    expect(result.invitation.notes).toBe("Met at conference");
+    expect(result.invitation.campaign).toBe("Wave 1");
+  });
+
+  it("always creates a new record (never mutates history)", async () => {
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.betaInvitation.create.mockImplementation(async ({ data }) => ({
+      id: "inv-2",
+      ...data,
+      acceptedAt: null,
+      acceptedByUserId: null,
+      revokedAt: null,
+      allianceId: null,
+    }));
+
+    await issueBetaInvitation("test@example.com");
+
+    expect(mockPrisma.betaInvitation.create).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.betaInvitation.update).not.toHaveBeenCalled();
+  });
+
+  it("throws if a pending invitation already exists for email", async () => {
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(makeInvitation());
+
+    await expect(issueBetaInvitation("test@example.com")).rejects.toThrow(
+      "A pending beta invitation already exists for this email"
+    );
     expect(mockPrisma.betaInvitation.create).not.toHaveBeenCalled();
   });
 
   it("throws if user already has an alliance", async () => {
-    mockPrisma.betaInvitation.findUnique.mockResolvedValue(null);
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
     mockPrisma.user.findUnique.mockResolvedValue({ id: "user-1" });
     mockPrisma.allianceMembership.findFirst.mockResolvedValue({
       id: "membership-1",
     });
 
-    await expect(createBetaInvitation("test@example.com")).rejects.toThrow(
+    await expect(issueBetaInvitation("test@example.com")).rejects.toThrow(
       "This user already has access to an alliance"
     );
+    expect(mockPrisma.betaInvitation.create).not.toHaveBeenCalled();
+  });
+
+  it("enforces the pending check and create in a serializable transaction", async () => {
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.betaInvitation.create.mockImplementation(async ({ data }) => ({
+      id: "inv-1",
+      ...data,
+      acceptedAt: null,
+      acceptedByUserId: null,
+      revokedAt: null,
+      allianceId: null,
+    }));
+
+    await issueBetaInvitation("test@example.com");
+
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
   });
 });
 
