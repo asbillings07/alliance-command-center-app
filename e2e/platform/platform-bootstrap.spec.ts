@@ -38,13 +38,21 @@ test.describe("Platform Bootstrap", () => {
         .getByLabel(/password/i)
         .fill(process.env.TEST_PLATFORM_ADMIN_PASSWORD!);
       await page.getByRole("button", { name: /sign in/i }).click();
-      await page.waitForURL(/\/(app|alliances|platform)/);
+      // After login, /app routes the user to their landing page. A platform
+      // admin without an alliance lands on /redeem (or /create-alliance if an
+      // alliance creation is pending), so allow those destinations too.
+      await page.waitForURL(
+        /\/(app|alliances|platform|redeem|create-alliance)/
+      );
 
       // Try to access /initialize
       await page.goto("/initialize");
 
-      // Should still redirect to login (which then redirects to app)
-      await page.waitForURL(/\/(login|app|alliances|platform)/);
+      // Should never render /initialize once the platform is initialized. An
+      // authenticated user is bounced through /login to their landing page.
+      await page.waitForURL(
+        /\/(login|app|alliances|platform|redeem|create-alliance)/
+      );
       expect(page.url()).not.toContain("/initialize");
     });
   });

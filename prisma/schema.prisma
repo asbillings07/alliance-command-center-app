@@ -31,6 +31,11 @@ enum LeadershipNoteVisibility {
   ADMIN
 }
 
+enum AuthProvider {
+  PASSWORD
+  GOOGLE
+}
+
 model Alliance {
   id        String   @id @default(cuid())
   name      String
@@ -93,7 +98,8 @@ model User {
   preferredLanguage String @default("en")
   email       String @unique
   displayName String
-  passwordHash String
+  passwordHash String?
+  authProvider AuthProvider @default(PASSWORD)
   isPlatformAdmin Boolean @default(false)
 
   memberships AllianceMembership[]

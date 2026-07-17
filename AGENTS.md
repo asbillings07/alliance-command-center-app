@@ -235,6 +235,20 @@ See `docs/adr/010-platform-operations-architecture.md` for full details.
 
 ---
 
+## ADR-013
+
+OAuth providers are authentication only.
+
+Google proves a user owns a verified email. Authorization and account eligibility remain governed by the invitation model and verified email identity.
+
+* No Prisma adapter; email stays the canonical identity.
+* `User.authProvider` records how a user authenticates (`PASSWORD` or `GOOGLE`); one provider per user during beta.
+* Every JWT `sub` is always the internal `User.id`, regardless of provider.
+
+See `docs/adr/013-google-oauth.md` for full details.
+
+---
+
 ## Database Philosophy
 
 Model the business domain.

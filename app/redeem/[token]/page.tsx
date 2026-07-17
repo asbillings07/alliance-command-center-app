@@ -5,6 +5,8 @@ import {
   validateBetaCode,
   type BetaValidationResult,
 } from "@/app/src/lib/betaInvitation";
+import { isGoogleAuthEnabled } from "@/app/src/lib/auth/identity/google";
+import { GoogleSignInButton } from "@/app/src/components/client";
 import { AcceptBetaInvitationForm } from "./AcceptBetaInvitationForm";
 
 type PageProps = {
@@ -193,6 +195,21 @@ export default async function RedeemTokenPage({
           <AcceptBetaInvitationForm invitationId={invitation.id} />
         ) : (
           <div className="space-y-4">
+            {isGoogleAuthEnabled() && (
+              <>
+                <GoogleSignInButton
+                  callbackUrl={redeemCallbackUrl}
+                  className="flex w-full items-center justify-center px-4 py-2 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60A5FA] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111827]"
+                />
+                <div className="flex items-center gap-3">
+                  <span className="h-px flex-1 bg-[#374151]" />
+                  <span className="text-xs uppercase tracking-wide text-[#9CA3AF]">
+                    or
+                  </span>
+                  <span className="h-px flex-1 bg-[#374151]" />
+                </div>
+              </>
+            )}
             <Link
               href={`/register?callbackUrl=${encodeURIComponent(redeemCallbackUrl)}`}
               className="block w-full px-4 py-2 bg-[#3B82F6] text-white text-center rounded-md hover:bg-[#2563EB]"

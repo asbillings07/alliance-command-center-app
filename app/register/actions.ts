@@ -8,25 +8,11 @@ import {
   validateBetaToken,
   validateBetaCode,
 } from "@/app/src/lib/betaInvitation";
+import { sanitizeCallbackUrl } from "@/app/src/lib/auth/callbackUrl";
 
 export type RegisterState = {
   error: string | null;
 };
-
-function sanitizeCallbackUrl(url: string): string {
-  if (!url || !url.startsWith("/") || url.startsWith("//")) {
-    return "/app";
-  }
-  try {
-    const parsed = new URL(url, "http://localhost");
-    if (parsed.origin !== "http://localhost") {
-      return "/app";
-    }
-  } catch {
-    return "/app";
-  }
-  return url;
-}
 
 export async function register(
   _prevState: RegisterState,

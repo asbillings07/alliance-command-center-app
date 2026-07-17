@@ -42,7 +42,9 @@ export const test = base.extend<TestFixtures>({
       await page.goto("/login");
       await page.fill('input[name="email"]', user.email);
       await page.fill('input[name="password"]', user.password);
-      await page.click('button[type="submit"]');
+      // Target the credentials button specifically: when Google OAuth is
+      // enabled the page also renders a "Continue with Google" submit button.
+      await page.click('button[type="submit"]:has-text("Sign In")');
       await page.waitForURL(/\/(app|alliances)/);
     };
     await use(login);

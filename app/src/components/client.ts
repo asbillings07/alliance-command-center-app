@@ -16,6 +16,7 @@
 
 // Actions
 export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from "./Button";
+export { GoogleSignInButton } from "./GoogleSignInButton";
 
 // Forms
 export {
