@@ -252,3 +252,20 @@ model BetaInvitation {
 
   @@index([email])
 }
+
+// A prospective user expressing interest in the beta. Intentionally separate
+// from the invitation model (ADR-014 keeps notification vs. domain concerns
+// distinct): an access request is not an invitation, it merely captures
+// interest. An administrator later reviews requests and issues invitations
+// through the existing invitation flow. Kept deliberately minimal for beta;
+// status/approval workflow can be layered on later without a redesign.
+model AccessRequest {
+  id           String   @id @default(cuid())
+  name         String
+  email        String
+  allianceName String?
+  message      String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+}
