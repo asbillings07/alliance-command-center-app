@@ -1,7 +1,7 @@
 "use client";
 
 import { logoutAction } from "@/app/logout/actions";
-import { Button, type ButtonVariant } from "@/app/src/components/client";
+import { Button, type ButtonVariant } from "./Button";
 
 type SignOutButtonProps = {
   /**

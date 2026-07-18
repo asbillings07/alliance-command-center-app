@@ -24,7 +24,11 @@ export default async function AlliancesLayout({
   const session = await auth();
 
   return (
-    <div className="min-h-screen bg-background">
+    // No min-h-screen here: the pages under /alliances already own the full
+    // viewport height (PageLayout sets min-h-screen; confirm-member sets its
+    // own). A second full-height wrapper would stack with the child's and, with
+    // the sticky header, push the page past 100vh (extra scroll/whitespace).
+    <div className="bg-background">
       <header className="sticky top-0 z-30 border-b border-border bg-surface">
         <div className="flex items-center justify-between px-4 py-3 lg:px-6">
           <Link
