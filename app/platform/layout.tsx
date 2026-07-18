@@ -1,4 +1,5 @@
 import { requirePlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
+import { SignOutButton } from "@/app/src/components/client";
 import { PlatformNav } from "./components/PlatformNav";
 import { PlatformSearch } from "./components/PlatformSearch";
 import { PlatformFooter } from "./components/PlatformFooter";
@@ -39,6 +40,9 @@ export default async function PlatformLayout({
         {/* Desktop Sidebar Navigation */}
         <aside className="hidden lg:flex lg:w-56 lg:flex-col lg:border-r lg:border-border lg:bg-surface">
           <PlatformNav />
+          <div className="border-t border-border p-3">
+            <SignOutButton variant="ghost" fullWidth />
+          </div>
         </aside>
 
         {/* Main Content */}
