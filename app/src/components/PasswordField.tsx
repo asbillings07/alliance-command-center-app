@@ -26,7 +26,7 @@ export type PasswordFieldProps = {
  * it does not collide with `getByLabel(/password/i)` selectors.
  */
 export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(
-  function PasswordField({ label, id, error, disabled, ...props }, ref) {
+  function PasswordField({ label, id, error, disabled, className, ...props }, ref) {
     const [visible, setVisible] = useState(false);
     const generatedId = useId();
     const inputId = id ?? generatedId;
@@ -41,7 +41,9 @@ export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(
             type={visible ? "text" : "password"}
             error={error}
             disabled={disabled}
-            className="pr-11"
+            // pr-11 stays enforced so the toggle never overlaps the value;
+            // any caller className is merged on top rather than replacing it.
+            className={["pr-11", className].filter(Boolean).join(" ")}
             {...props}
           />
           <button
