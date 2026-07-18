@@ -26,6 +26,7 @@ export type EmailResult = {
 export type EmailMetadata = {
   invitationId?: string;
   userId?: string;
+  accessRequestId?: string;
 };
 
 /** Rendered email body (HTML + plain text fallback). */
@@ -59,6 +60,9 @@ export interface EmailTransport {
  */
 export interface EmailService {
   sendBetaInvitation(input: BetaInvitationEmailInput): Promise<EmailResult>;
+  sendAccessRequestConfirmation(
+    input: AccessRequestConfirmationEmailInput
+  ): Promise<EmailResult>;
 }
 
 /** View model for the beta invitation email. */
@@ -73,4 +77,17 @@ export type BetaInvitationView = {
 export type BetaInvitationEmailInput = {
   to: string;
   invitation: BetaInvitationView;
+};
+
+/** View model for the access-request confirmation email. */
+export type AccessRequestConfirmationView = {
+  /** Recipient's name, used for a friendly greeting when available. */
+  name?: string;
+};
+
+export type AccessRequestConfirmationEmailInput = {
+  to: string;
+  request: AccessRequestConfirmationView;
+  /** Persisted request id, for delivery correlation in logs. */
+  accessRequestId?: string;
 };

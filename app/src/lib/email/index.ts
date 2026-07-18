@@ -22,4 +22,6 @@ export type {
   EmailMetadata,
   BetaInvitationView,
   BetaInvitationEmailInput,
+  AccessRequestConfirmationView,
+  AccessRequestConfirmationEmailInput,
 } from "./types";
