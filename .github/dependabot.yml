@@ -1,0 +1,54 @@
+version: 2
+updates:
+  # Application dependencies (npm). Security fixes are always opened
+  # individually and immediately, regardless of the grouping below.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/New_York
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    # Group low-risk minor/patch bumps into a single PR per area to keep
+    # review noise down; majors stay separate so breaking changes get a
+    # dedicated, deliberate review.
+    groups:
+      production-minor-patch:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      development-minor-patch:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Framework majors are deliberate, coordinated upgrades - not routine
+      # Dependabot bumps. Security patches within the current range still flow.
+      - dependency-name: next
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react-dom
+        update-types: ["version-update:semver-major"]
+
+  # Keep GitHub Actions used in CI/CD current.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/New_York
+    labels:
+      - dependencies
+      - ci
+    groups:
+      github-actions:
+        update-types:
+          - minor
+          - patch
