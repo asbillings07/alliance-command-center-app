@@ -83,6 +83,9 @@ See `.env.example` for all available configuration options.
 | Variable | Description |
 |----------|-------------|
 | `PLATFORM_ADMIN_EMAILS` | Comma-separated list of platform admin emails |
+| `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Enable "Continue with Google" (both required) |
+| `RESEND_API_KEY` | Resend API key for transactional email (with `EMAIL_FROM`) |
+| `EMAIL_FROM` | Sender address for transactional email; emails are logged instead of sent when unset |
 | `SENTRY_DSN` | Sentry DSN for error tracking |
 | `FEATURE_*` | Feature flags |
 

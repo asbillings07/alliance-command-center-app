@@ -448,19 +448,14 @@ test.describe("Platform Operations Console", () => {
       const searchInput = page.getByPlaceholder(/search alliances/i);
       await searchInput.fill("DA");
 
-      // Wait for debounce and API response
-      await page.waitForTimeout(600);
-
-      // Should show either results dropdown or "No results" message
-      // Results appear as list items with buttons inside
-      const resultsDropdown = page.locator('ul.max-h-64');
+      // Search was triggered once either the results dropdown or the empty
+      // state renders. Use a web-first assertion (auto-retries through the
+      // debounce + API response) instead of a fixed wait plus instant check,
+      // which races under load.
+      const resultsDropdown = page.locator("ul.max-h-64");
       const noResultsMessage = page.getByText(/No results for/i);
 
-      const hasResults = await resultsDropdown.isVisible().catch(() => false);
-      const hasNoResults = await noResultsMessage.isVisible().catch(() => false);
-
-      // Search was triggered - either found results or showed empty state
-      expect(hasResults || hasNoResults).toBe(true);
+      await expect(resultsDropdown.or(noResultsMessage).first()).toBeVisible();
     });
   });
 

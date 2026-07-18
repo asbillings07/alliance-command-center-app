@@ -6,6 +6,43 @@ import {
   createInvitationAction,
   type CreateInvitationResult,
 } from "./actions";
+import type { EmailStatus } from "@/app/src/lib/email";
+
+function EmailStatusNotice({
+  status,
+  email,
+}: {
+  status: EmailStatus;
+  email: string;
+}) {
+  if (status === "sent") {
+    return (
+      <div className="mb-4 p-3 bg-success/10 border border-success/20 rounded-lg">
+        <p className="text-sm text-success">Invitation email sent to {email}.</p>
+      </div>
+    );
+  }
+
+  if (status === "skipped") {
+    return (
+      <div className="mb-4 p-3 bg-surface-secondary border border-border rounded-lg">
+        <p className="text-sm text-text-muted">
+          Email delivery is not configured, so no email was sent. Share the link
+          or code manually.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4 p-3 bg-warning/10 border border-warning/20 rounded-lg">
+      <p className="text-sm text-warning">
+        The invitation is valid, but we couldn&apos;t send the email. Share the
+        link or code manually, or use Resend email from the pending list.
+      </p>
+    </div>
+  );
+}
 
 type CopyState = "idle" | "copied";
 
@@ -51,11 +88,13 @@ function SuccessCard({
   email,
   inviteCode,
   inviteUrl,
+  emailStatus,
   onReset,
 }: {
   email: string;
   inviteCode: string;
   inviteUrl: string;
+  emailStatus: EmailStatus;
   onReset: () => void;
 }) {
   return (
@@ -63,6 +102,8 @@ function SuccessCard({
       <h3 className="text-lg font-semibold text-success mb-4">
         Invitation Created
       </h3>
+
+      <EmailStatusNotice status={emailStatus} email={email} />
 
       <div className="space-y-4">
         <div>
@@ -130,6 +171,7 @@ export function InviteBetaTester() {
         email={result.email}
         inviteCode={result.inviteCode}
         inviteUrl={result.inviteUrl}
+        emailStatus={result.emailStatus}
         onReset={handleReset}
       />
     );
