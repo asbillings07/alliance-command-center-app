@@ -1,9 +1,6 @@
 import { auth } from "@/app/src/lib/auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/app/src/lib/prisma";
-import { getPendingAllianceCreation } from "@/app/src/lib/betaInvitation";
-import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
-import { AllianceRole } from "@/app/generated/prisma/enums";
+import { getPostLoginRedirect } from "@/app/src/lib/auth/getPostLoginRedirect";
 
 export default async function AppPage() {
     const session = await auth();
@@ -12,41 +9,7 @@ export default async function AppPage() {
         redirect("/login");
     }
 
-    const memberships = await prisma.allianceMembership.findMany({
-        where: {
-            userId: session.user.id,
-        },
-        select: {
-            allianceId: true,
-            role: true,
-        },
-        take: 2,
-    });
-
-    if (memberships.length === 0) {
-        const pendingCreation = await getPendingAllianceCreation(session.user.id);
-        if (pendingCreation) {
-            redirect("/create-alliance");
-        }
-        redirect("/redeem");
-    }
-
-    if (memberships.length === 1) {
-        const { allianceId, role } = memberships[0];
-
-        // Only redirect owners to setup if incomplete
-        // Collaborators go directly to dashboard - they can't complete owner tasks
-        if (role === AllianceRole.OWNER) {
-            const status = await getAllianceSetupStatus(allianceId);
-            if (!status.isComplete) {
-                redirect(`/alliances/${allianceId}/setup`);
-            }
-        }
-
-        redirect(`/alliances/${allianceId}`);
-    }
-
-    if (memberships.length > 1) {
-        redirect("/alliances/select_alliance");
-    }
+    // /app is a pure router: it resolves the landing page for the current user
+    // state and redirects. All routing rules live in getPostLoginRedirect.
+    redirect(await getPostLoginRedirect(session.user.id));
 }
