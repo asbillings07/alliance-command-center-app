@@ -31,11 +31,6 @@ enum LeadershipNoteVisibility {
   ADMIN
 }
 
-enum AuthProvider {
-  PASSWORD
-  GOOGLE
-}
-
 model Alliance {
   id        String   @id @default(cuid())
   name      String
@@ -98,8 +93,11 @@ model User {
   preferredLanguage String @default("en")
   email       String @unique
   displayName String
+  // Authentication capabilities are modeled as the presence of provider-specific
+  // credentials, not a mutually exclusive provider enum. A user may have both,
+  // enabling password + Google on the same canonical identity (email). See ADR-013.
   passwordHash String?
-  authProvider AuthProvider @default(PASSWORD)
+  googleSubject String? @unique
   isPlatformAdmin Boolean @default(false)
 
   memberships AllianceMembership[]

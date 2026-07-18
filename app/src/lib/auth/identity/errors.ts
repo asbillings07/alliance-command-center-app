@@ -35,3 +35,23 @@ export class OAuthDisabledError extends AuthenticationError {
     super(message);
   }
 }
+
+/** Google returned no subject (`sub`) claim; identity cannot be anchored. */
+export class MissingGoogleSubjectError extends AuthenticationError {
+  constructor(message = "Google profile is missing a subject") {
+    super(message);
+  }
+}
+
+/**
+ * The incoming Google subject does not match the one already anchored to this
+ * identity (or that subject is already anchored to a different user). We refuse
+ * to silently re-link: email alone must not be enough to take over an account.
+ */
+export class GoogleAccountMismatchError extends AuthenticationError {
+  constructor(
+    message = "This email is linked to a different Google account"
+  ) {
+    super(message);
+  }
+}
