@@ -32,7 +32,7 @@ describe("provisionOAuthUser", () => {
     const result = await provisionOAuthUser({
       email: "User@Example.com",
       displayName: "User",
-      provider: "GOOGLE",
+      googleSubject: "google-sub-1",
     });
 
     expect(result).toBe(existing);
@@ -42,7 +42,7 @@ describe("provisionOAuthUser", () => {
     });
   });
 
-  it("creates a new user with GOOGLE provider and no password", async () => {
+  it("creates a new user anchored to the Google subject and no password", async () => {
     mockPrisma.user.findUnique.mockResolvedValue(null);
     mockPrisma.user.create.mockImplementation(async ({ data }) => ({
       id: "user-2",
@@ -52,7 +52,7 @@ describe("provisionOAuthUser", () => {
     const result = await provisionOAuthUser({
       email: "new@example.com",
       displayName: "New User",
-      provider: "GOOGLE",
+      googleSubject: "google-sub-2",
     });
 
     expect(mockPrisma.user.create).toHaveBeenCalledWith({
@@ -60,10 +60,10 @@ describe("provisionOAuthUser", () => {
         email: "new@example.com",
         displayName: "New User",
         passwordHash: null,
-        authProvider: "GOOGLE",
+        googleSubject: "google-sub-2",
       },
     });
-    expect(result.authProvider).toBe("GOOGLE");
+    expect(result.googleSubject).toBe("google-sub-2");
     expect(result.passwordHash).toBeNull();
   });
 
@@ -82,7 +82,7 @@ describe("provisionOAuthUser", () => {
     const result = await provisionOAuthUser({
       email: "race@example.com",
       displayName: "Race",
-      provider: "GOOGLE",
+      googleSubject: "google-sub-3",
     });
 
     expect(result).toBe(raced);

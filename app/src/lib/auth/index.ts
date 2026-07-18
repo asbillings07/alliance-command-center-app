@@ -5,6 +5,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import {
+  assertGoogleSubject,
   assertVerifiedGoogleEmail,
   isGoogleAuthEnabled,
   type GoogleProfile,
@@ -15,6 +16,7 @@ import {
   InvitationRequiredError,
 } from "@/app/src/lib/auth/identity/errors";
 import { provisionOAuthUser } from "@/app/src/lib/auth/provisionOAuthUser";
+import { ensureGoogleIdentity } from "@/app/src/lib/auth/ensureGoogleIdentity";
 
 // Google is registered only when credentials are configured, so environments
 // without OAuth (local, CI) are unaffected.
@@ -40,8 +42,9 @@ const providers: NextAuthConfig["providers"] = [
           return null;
         }
 
-        // OAuth-only accounts cannot sign in with a password.
-        if (user.authProvider !== "PASSWORD" || !user.passwordHash) {
+        // Password login is a capability: allowed only if this identity has a
+        // password credential. Google-only accounts have no passwordHash.
+        if (!user.passwordHash) {
           return null;
         }
 
@@ -105,9 +108,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
 
         const email = assertVerifiedGoogleEmail(googleProfile);
+        const googleSubject = assertGoogleSubject(googleProfile);
 
         const existing = await prisma.user.findUnique({ where: { email } });
         if (existing) {
+          // Existing identity: link Google on first sign-in, verify the subject
+          // thereafter. A mismatch throws and is surfaced as AccessDenied.
+          await ensureGoogleIdentity(existing, googleSubject);
           return true;
         }
 
@@ -118,7 +125,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         await provisionOAuthUser({
           email,
           displayName: googleProfile.name?.trim() || email,
-          provider: "GOOGLE",
+          googleSubject,
         });
 
         return true;

@@ -242,7 +242,8 @@ OAuth providers are authentication only.
 Google proves a user owns a verified email. Authorization and account eligibility remain governed by the invitation model and verified email identity.
 
 * No Prisma adapter; email stays the canonical identity.
-* `User.authProvider` records how a user authenticates (`PASSWORD` or `GOOGLE`); one provider per user during beta.
+* Authentication is modeled as capabilities, not a provider enum: `User.passwordHash` present enables password login, `User.googleSubject` present enables Google login. A user may have both (e.g. the operator's break-glass account).
+* Google's subject (`sub`) is the security anchor: linked on first Google sign-in, asserted thereafter; a mismatch is denied.
 * Every JWT `sub` is always the internal `User.id`, regardless of provider.
 
 See `docs/adr/013-google-oauth.md` for full details.

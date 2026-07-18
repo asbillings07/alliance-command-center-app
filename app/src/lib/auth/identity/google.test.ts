@@ -1,6 +1,10 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { assertVerifiedGoogleEmail, isGoogleAuthEnabled } from "./google";
-import { UnverifiedEmailError } from "./errors";
+import {
+  assertGoogleSubject,
+  assertVerifiedGoogleEmail,
+  isGoogleAuthEnabled,
+} from "./google";
+import { MissingGoogleSubjectError, UnverifiedEmailError } from "./errors";
 
 describe("assertVerifiedGoogleEmail", () => {
   it("returns the normalized email for a verified profile", () => {
@@ -28,6 +32,28 @@ describe("assertVerifiedGoogleEmail", () => {
     expect(() =>
       assertVerifiedGoogleEmail({ email_verified: true })
     ).toThrow(UnverifiedEmailError);
+  });
+});
+
+describe("assertGoogleSubject", () => {
+  it("returns the subject when present", () => {
+    expect(assertGoogleSubject({ sub: "1234567890" })).toBe("1234567890");
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(assertGoogleSubject({ sub: "  abc  " })).toBe("abc");
+  });
+
+  it("throws MissingGoogleSubjectError when sub is missing", () => {
+    expect(() => assertGoogleSubject({ email: "user@example.com" })).toThrow(
+      MissingGoogleSubjectError
+    );
+  });
+
+  it("throws MissingGoogleSubjectError when sub is blank", () => {
+    expect(() => assertGoogleSubject({ sub: "   " })).toThrow(
+      MissingGoogleSubjectError
+    );
   });
 });
 

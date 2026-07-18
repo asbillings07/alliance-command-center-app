@@ -1,4 +1,4 @@
-import { UnverifiedEmailError } from "./errors";
+import { MissingGoogleSubjectError, UnverifiedEmailError } from "./errors";
 
 /**
  * Google identity (authentication layer).
@@ -10,6 +10,8 @@ import { UnverifiedEmailError } from "./errors";
 
 /** The subset of the Google OpenID profile we rely on. */
 export type GoogleProfile = {
+  /** Google's stable, immutable subject identifier for this account. */
+  sub?: string | null;
   email?: string | null;
   email_verified?: boolean | null;
   name?: string | null;
@@ -43,4 +45,20 @@ export function assertVerifiedGoogleEmail(profile: GoogleProfile): string {
   }
 
   return email;
+}
+
+/**
+ * Assert the Google profile carries a subject (`sub`) and return it.
+ *
+ * The subject is Google's stable, immutable identifier for the account and is
+ * our security anchor: email identifies, `sub` is identity. Google always
+ * returns it, so its absence is unexpected and treated as a failure.
+ */
+export function assertGoogleSubject(profile: GoogleProfile): string {
+  const subject = profile.sub?.trim();
+  if (!subject) {
+    throw new MissingGoogleSubjectError();
+  }
+
+  return subject;
 }
