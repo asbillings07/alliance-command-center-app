@@ -53,6 +53,8 @@ Failures throw typed errors (`AuthenticationError` subclasses); the callback cat
 
 A verified email proves ownership *at sign-in time*, but emails can be reassigned. Once a `googleSubject` is anchored to a user, we assert the incoming `sub` matches on every subsequent Google sign-in and refuse to silently re-link a different one (`GoogleAccountMismatchError`). Existing Google-only users predate subject storage; rather than a backfill script, they are anchored on their next Google sign-in (the "no anchor yet" branch).
 
+Linking is concurrency-safe. `ensureGoogleIdentity` uses a guarded write (`updateMany where { id, googleSubject: null }`) so a subject anchored by a racing sign-in between read and write is never clobbered; on a no-op it re-reads and only allows an identical subject, denying otherwise. The `@unique` constraint on `googleSubject` additionally rejects anchoring a subject already owned by a different user. Because `provisionOAuthUser` is find-or-create, the new-user branch also re-runs `ensureGoogleIdentity` on the returned user, so an email-unique race can't bypass the invariant.
+
 ### JWT invariant
 
 After authentication, every JWT `sub` claim contains the internal `User.id`, regardless of provider. For Google, the incoming `user.id` is the Google subject, so the `jwt` callback resolves our cuid by verified email. Everything downstream continues to assume `session.user.id` is our own identifier.

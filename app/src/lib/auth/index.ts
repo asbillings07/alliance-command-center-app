@@ -122,11 +122,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           throw new InvitationRequiredError();
         }
 
-        await provisionOAuthUser({
+        const provisioned = await provisionOAuthUser({
           email,
           displayName: googleProfile.name?.trim() || email,
           googleSubject,
         });
+
+        // provisionOAuthUser is find-or-create: if it lost an email-unique race
+        // it returns the pre-existing user, whose subject may be null or differ.
+        // Re-assert the invariant so the mismatch denial/linking is never
+        // bypassed for a raced account. (A freshly created row already carries
+        // our subject, so this is a cheap no-op.)
+        await ensureGoogleIdentity(provisioned, googleSubject);
 
         return true;
       } catch (error) {

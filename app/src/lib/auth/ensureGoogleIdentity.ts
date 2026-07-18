@@ -29,11 +29,28 @@ export async function ensureGoogleIdentity(
     throw new GoogleAccountMismatchError();
   }
 
+  // No anchor observed on the row we read. Link with a *guarded* write so a
+  // concurrent sign-in that anchored a subject between our read and this write
+  // (TOCTOU) cannot be silently overwritten: only update while still unanchored.
   try {
-    await prisma.user.update({
-      where: { id: user.id },
+    const { count } = await prisma.user.updateMany({
+      where: { id: user.id, googleSubject: null },
       data: { googleSubject },
     });
+
+    if (count === 0) {
+      // The row was anchored (or removed) concurrently. Re-read and compare:
+      // an identical subject means a racing sign-in linked the same Google
+      // account (idempotent, allow); anything else must be denied rather than
+      // re-linked.
+      const current = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { googleSubject: true },
+      });
+      if (current?.googleSubject !== googleSubject) {
+        throw new GoogleAccountMismatchError();
+      }
+    }
   } catch (error) {
     // A unique-constraint violation means this subject is already anchored to a
     // different user (email reuse / takeover attempt) -> refuse rather than link.
