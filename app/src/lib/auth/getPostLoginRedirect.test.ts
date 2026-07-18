@@ -21,12 +21,17 @@ vi.mock("@/app/src/lib/allianceSetup", () => ({
   getAllianceSetupStatus: vi.fn(),
 }));
 
+vi.mock("@/app/src/lib/auth/requirePlatformAdmin", () => ({
+  isPlatformAdmin: vi.fn(),
+}));
+
 import { prisma } from "@/app/src/lib/prisma";
 import {
   getPendingAllianceCreation,
   getPendingInvitation,
 } from "@/app/src/lib/betaInvitation";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
+import { isPlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 
 const mockPrisma = prisma as unknown as {
   allianceMembership: { findMany: ReturnType<typeof vi.fn> };
@@ -41,6 +46,7 @@ const mockGetPendingInvitation = getPendingInvitation as ReturnType<
 const mockGetAllianceSetupStatus = getAllianceSetupStatus as ReturnType<
   typeof vi.fn
 >;
+const mockIsPlatformAdmin = isPlatformAdmin as ReturnType<typeof vi.fn>;
 
 const member = { id: "user-1", email: "user@example.com", isPlatformAdmin: false };
 const admin = { id: "admin-1", email: "admin@example.com", isPlatformAdmin: true };
@@ -52,6 +58,8 @@ beforeEach(() => {
   mockGetPendingAllianceCreation.mockResolvedValue(null);
   mockPrisma.allianceMembership.findMany.mockResolvedValue([]);
   mockPrisma.invitation.findFirst.mockResolvedValue(null);
+  // Default: the DB agrees with the admin hint (no mid-session revocation).
+  mockIsPlatformAdmin.mockResolvedValue(true);
 });
 
 describe("getPostLoginRedirect", () => {
@@ -100,6 +108,30 @@ describe("getPostLoginRedirect", () => {
     await expect(getPostLoginRedirect(admin)).resolves.toBe("/platform/overview");
     // Admin (no pending work) short-circuits before any alliance lookup.
     expect(mockPrisma.allianceMembership.findMany).not.toHaveBeenCalled();
+  });
+
+  it("confirms admin against the DB before returning the console (hint alone is not enough)", async () => {
+    await expect(getPostLoginRedirect(admin)).resolves.toBe("/platform/overview");
+    expect(mockIsPlatformAdmin).toHaveBeenCalledWith(admin.id);
+  });
+
+  it("falls through to real state when the admin hint is stale (revoked mid-session)", async () => {
+    // Hint says admin, but the DB no longer agrees. Returning the console here
+    // would ping-pong /app <-> /platform/overview forever, so we route by the
+    // user's actual state instead.
+    mockIsPlatformAdmin.mockResolvedValue(false);
+    mockPrisma.allianceMembership.findMany.mockResolvedValue([
+      { allianceId: "alliance-1", role: "VIEWER" },
+    ]);
+
+    await expect(getPostLoginRedirect(admin)).resolves.toBe(
+      "/alliances/alliance-1"
+    );
+  });
+
+  it("does not query admin status for a non-admin (lookup only for hinted admins)", async () => {
+    await expect(getPostLoginRedirect(member)).resolves.toBe("/redeem");
+    expect(mockIsPlatformAdmin).not.toHaveBeenCalled();
   });
 
   it("defaults an admin who also has an alliance to the console (role before context)", async () => {

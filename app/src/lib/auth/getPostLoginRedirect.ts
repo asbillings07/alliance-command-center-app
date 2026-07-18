@@ -4,6 +4,7 @@ import {
   getPendingInvitation,
 } from "@/app/src/lib/betaInvitation";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
+import { isPlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import { AllianceRole } from "@/app/generated/prisma/enums";
 
 /**
@@ -59,7 +60,15 @@ export async function getPostLoginRedirect(
   //    by state) but before alliance context, so the operator defaults to the
   //    console rather than an alliance they happen to belong to. Role is an
   //    input here, not the routing mechanism.
-  if (user.isPlatformAdmin) {
+  //
+  //    The session hint is a routing optimization, but /platform/* enforces
+  //    admin from the DB (requirePlatformAdmin). If admin was revoked mid-
+  //    session the hint goes stale, and trusting it here would ping-pong the
+  //    user between /app -> /platform/overview -> /app forever. So when the
+  //    hint says "admin", confirm against the DB before committing to the
+  //    protected destination; a demoted user falls through to their real
+  //    state below. The lookup only happens for hinted admins.
+  if (user.isPlatformAdmin && (await isPlatformAdmin(user.id))) {
     return "/platform/overview";
   }
 
