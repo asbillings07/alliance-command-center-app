@@ -16,8 +16,16 @@ describe("renderBetaInvitationEmail", () => {
 
     expect(html).toContain("https://app.example.com/redeem/tok_abc");
     expect(html).toContain("ABC-123");
-    expect(html).toContain("2026");
     expect(html).toContain("<!DOCTYPE html>");
+  });
+
+  it("formats the expiration date in UTC to avoid off-by-one dates", () => {
+    // 2026-08-01T00:00:00Z is July 31 in time zones behind UTC; pinning to UTC
+    // must render August 1 regardless of the server's time zone.
+    const { html, text } = renderBetaInvitationEmail(invitation);
+
+    expect(html).toContain("August 1, 2026 (UTC)");
+    expect(text).toContain("August 1, 2026 (UTC)");
   });
 
   it("includes the invite url and code in the plain text fallback", () => {

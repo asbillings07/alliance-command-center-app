@@ -13,11 +13,14 @@ function escapeHtml(value: string): string {
 }
 
 function formatExpiration(date: Date): string {
-  return date.toLocaleDateString("en-US", {
+  // Pin to UTC so the same timestamp renders the same calendar date regardless
+  // of the server's locale/time zone (avoids off-by-one dates), and label it.
+  return `${date.toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
-  });
+    timeZone: "UTC",
+  })} (UTC)`;
 }
 
 /**

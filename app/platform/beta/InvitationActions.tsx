@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   resendInvitationEmailAction,
   revokeInvitationAction,
@@ -66,6 +66,15 @@ export function InvitationActions({
   const { state: codeState, copy: copyCode } = useCopy();
   const { state: urlState, copy: copyUrl } = useCopy();
 
+  // Auto-reset the transient resend status. Keyed on resendState so the timer
+  // is cleared if the component unmounts (e.g. after a revalidate) before it
+  // fires, avoiding state updates on an unmounted component.
+  useEffect(() => {
+    if (resendState === "idle") return;
+    const timer = setTimeout(() => setResendState("idle"), 2500);
+    return () => clearTimeout(timer);
+  }, [resendState]);
+
   const handleRevoke = () => {
     if (!confirm("Are you sure you want to revoke this invitation?")) {
       return;
@@ -90,7 +99,6 @@ export function InvitationActions({
         setResendState("failed");
         setError(result.error);
       }
-      setTimeout(() => setResendState("idle"), 2500);
     });
   };
 
@@ -157,6 +165,15 @@ export function InvitationCardActions({
   const { state: codeState, copy: copyCode } = useCopy();
   const { state: urlState, copy: copyUrl } = useCopy();
 
+  // Auto-reset the transient resend status. Keyed on resendState so the timer
+  // is cleared if the component unmounts (e.g. after a revalidate) before it
+  // fires, avoiding state updates on an unmounted component.
+  useEffect(() => {
+    if (resendState === "idle") return;
+    const timer = setTimeout(() => setResendState("idle"), 2500);
+    return () => clearTimeout(timer);
+  }, [resendState]);
+
   const handleRevoke = () => {
     if (!confirm("Are you sure you want to revoke this invitation?")) {
       return;
@@ -181,7 +198,6 @@ export function InvitationCardActions({
         setResendState("failed");
         setError(result.error);
       }
-      setTimeout(() => setResendState("idle"), 2500);
     });
   };
 
