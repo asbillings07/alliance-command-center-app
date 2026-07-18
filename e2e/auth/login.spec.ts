@@ -106,10 +106,16 @@ test.describe("Login", () => {
     await page.keyboard.press("Tab");
     await expect(page.getByLabel(/password/i)).toBeFocused();
 
-    // The password field's show/hide toggle sits between the input and submit.
+    // The password field's show/hide toggle sits immediately after the input.
     await page.keyboard.press("Tab");
     await expect(
       page.getByRole("button", { name: /show password/i })
+    ).toBeFocused();
+
+    // Then the "Forgot your password?" link, then the submit button.
+    await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("link", { name: /forgot your password/i })
     ).toBeFocused();
 
     await page.keyboard.press("Tab");

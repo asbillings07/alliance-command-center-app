@@ -31,3 +31,10 @@ export function getAppOrigin(): string {
 export function getRedeemUrl(token: string): string {
   return `${getAppOrigin()}/redeem/${token}`;
 }
+
+/**
+ * Build the absolute password reset URL for a raw (unhashed) reset token.
+ */
+export function getResetPasswordUrl(token: string): string {
+  return `${getAppOrigin()}/reset-password/${token}`;
+}
