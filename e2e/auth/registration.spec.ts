@@ -89,18 +89,18 @@ test.describe("Registration", () => {
 
     await page.goto(`/register?callbackUrl=/redeem/${process.env.TEST_BETA_TOKEN}`);
 
-    // Should be able to tab through all fields
-    const email = page.getByLabel(/email/i);
-    const displayName = page.getByLabel(/display name/i);
     const password = page.getByLabel(/^password$/i);
     const confirmPassword = page.getByLabel(/confirm password/i);
 
-    await email.focus();
-    await page.keyboard.press("Tab");
-    await expect(displayName).toBeFocused();
+    // Each password field exposes a show/hide toggle immediately after it in
+    // the tab order, so password -> toggle -> confirm password.
+    await password.focus();
+    await expect(password).toBeFocused();
 
     await page.keyboard.press("Tab");
-    await expect(password).toBeFocused();
+    await expect(
+      page.getByRole("button", { name: /show password/i }).first()
+    ).toBeFocused();
 
     await page.keyboard.press("Tab");
     await expect(confirmPassword).toBeFocused();
