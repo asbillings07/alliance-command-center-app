@@ -10,6 +10,14 @@ export default async function AppPage() {
     }
 
     // /app is a pure router: it resolves the landing page for the current user
-    // state and redirects. All routing rules live in getPostLoginRedirect.
-    redirect(await getPostLoginRedirect(session.user.id));
+    // state and redirects. All routing rules live in getPostLoginRedirect. We
+    // pass the session user (incl. the isPlatformAdmin hint) so routing needs no
+    // extra DB round-trip on every visit.
+    redirect(
+        await getPostLoginRedirect({
+            id: session.user.id,
+            email: session.user.email,
+            isPlatformAdmin: session.user.isPlatformAdmin,
+        }),
+    );
 }

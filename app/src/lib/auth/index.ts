@@ -60,6 +60,7 @@ const providers: NextAuthConfig["providers"] = [
           id: user.id,
           email: user.email,
           name: user.displayName,
+          isPlatformAdmin: user.isPlatformAdmin,
         };
       } catch (error) {
         console.error("Error authorizing user", error); // will be send to logger
@@ -167,9 +168,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           );
         }
         token.sub = dbUser.id;
+        token.isPlatformAdmin = dbUser.isPlatformAdmin;
       } else if (user) {
         token.sub = user.id as string;
+        token.isPlatformAdmin = user.isPlatformAdmin ?? false;
       }
+      // These branches only run at initial sign-in (account/user present); later
+      // requests reuse the token, so the isPlatformAdmin hint persists without a
+      // per-request DB lookup.
       return token;
     },
     async session({ session, token }) {
@@ -177,6 +183,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // and then reconstructs the session from the token.
       if (session.user && token.sub) {
         session.user.id = token.sub as string;
+        session.user.isPlatformAdmin = token.isPlatformAdmin ?? false;
       }
       return session;
     },

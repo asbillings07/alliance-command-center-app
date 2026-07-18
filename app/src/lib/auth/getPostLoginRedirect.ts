@@ -5,6 +5,18 @@ import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 import { AllianceRole } from "@/app/generated/prisma/enums";
 
 /**
+ * The already-authenticated user, as known from the session. `isPlatformAdmin`
+ * is a session hint (see next-auth.d.ts): fine for routing, never for access
+ * control. Passing this in keeps /app from issuing an extra DB round-trip on
+ * every visit just to re-read fields the session already carries.
+ */
+export type PostLoginUser = {
+  id: string;
+  email?: string | null;
+  isPlatformAdmin?: boolean;
+};
+
+/**
  * Resolve where a freshly authenticated user belongs.
  *
  * The question this answers is "what is the highest-priority action this user
@@ -21,20 +33,17 @@ import { AllianceRole } from "@/app/generated/prisma/enums";
  *   4. Alliance membership                          -> alliance home / setup / selector
  *   5. Nothing else actionable                      -> /redeem
  */
-export async function getPostLoginRedirect(userId: string): Promise<string> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { email: true, isPlatformAdmin: true },
-  });
-
+export async function getPostLoginRedirect(
+  user: PostLoginUser
+): Promise<string> {
   // 1. Pending invitation: invited but not yet redeemed. Actionable work that
   //    takes precedence over any role or existing context.
-  if (user?.email && (await isInvitationEligible(user.email))) {
+  if (user.email && (await isInvitationEligible(user.email))) {
     return "/redeem";
   }
 
   // 2. Onboarding: accepted a beta invite but hasn't created their alliance yet.
-  const pendingCreation = await getPendingAllianceCreation(userId);
+  const pendingCreation = await getPendingAllianceCreation(user.id);
   if (pendingCreation) {
     return "/create-alliance";
   }
@@ -44,13 +53,13 @@ export async function getPostLoginRedirect(userId: string): Promise<string> {
   //    by state) but before alliance context, so the operator defaults to the
   //    console rather than an alliance they happen to belong to. Role is an
   //    input here, not the routing mechanism.
-  if (user?.isPlatformAdmin) {
+  if (user.isPlatformAdmin) {
     return "/platform/overview";
   }
 
   // 4. Alliance membership.
   const memberships = await prisma.allianceMembership.findMany({
-    where: { userId },
+    where: { userId: user.id },
     select: { allianceId: true, role: true },
     take: 2,
   });
