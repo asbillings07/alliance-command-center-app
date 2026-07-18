@@ -16,12 +16,17 @@ vi.mock("@/app/src/lib/betaInvitation", () => ({
   getPendingAllianceCreation: vi.fn(),
 }));
 
+vi.mock("@/app/src/lib/auth/identity/eligibility", () => ({
+  isInvitationEligible: vi.fn(),
+}));
+
 vi.mock("@/app/src/lib/allianceSetup", () => ({
   getAllianceSetupStatus: vi.fn(),
 }));
 
 import { prisma } from "@/app/src/lib/prisma";
 import { getPendingAllianceCreation } from "@/app/src/lib/betaInvitation";
+import { isInvitationEligible } from "@/app/src/lib/auth/identity/eligibility";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 
 const mockPrisma = prisma as unknown as {
@@ -31,29 +36,40 @@ const mockPrisma = prisma as unknown as {
 const mockGetPendingAllianceCreation = getPendingAllianceCreation as ReturnType<
   typeof vi.fn
 >;
+const mockIsInvitationEligible = isInvitationEligible as ReturnType<
+  typeof vi.fn
+>;
 const mockGetAllianceSetupStatus = getAllianceSetupStatus as ReturnType<
   typeof vi.fn
 >;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockPrisma.user.findUnique.mockResolvedValue({ isPlatformAdmin: false });
+  // Default: an ordinary member with no pending work.
+  mockPrisma.user.findUnique.mockResolvedValue({
+    email: "user@example.com",
+    isPlatformAdmin: false,
+  });
+  mockIsInvitationEligible.mockResolvedValue(false);
+  mockGetPendingAllianceCreation.mockResolvedValue(null);
   mockPrisma.allianceMembership.findMany.mockResolvedValue([]);
 });
 
 describe("getPostLoginRedirect", () => {
-  it("routes a platform admin to the operations center", async () => {
-    mockPrisma.user.findUnique.mockResolvedValue({ isPlatformAdmin: true });
+  it("prioritizes a pending invitation over every role and context", async () => {
+    // Even a platform admin with a pending invitation must redeem it first.
+    mockPrisma.user.findUnique.mockResolvedValue({
+      email: "admin@example.com",
+      isPlatformAdmin: true,
+    });
+    mockIsInvitationEligible.mockResolvedValue(true);
 
-    await expect(getPostLoginRedirect("admin-1")).resolves.toBe(
-      "/platform/overview"
-    );
-    // Admin decision short-circuits before any alliance lookup.
+    await expect(getPostLoginRedirect("admin-1")).resolves.toBe("/redeem");
+    // State wins before any role/alliance lookup.
     expect(mockPrisma.allianceMembership.findMany).not.toHaveBeenCalled();
   });
 
-  it("routes a user with a pending alliance creation to /create-alliance", async () => {
-    mockPrisma.allianceMembership.findMany.mockResolvedValue([]);
+  it("routes a user mid-onboarding (accepted beta, no alliance) to /create-alliance", async () => {
     mockGetPendingAllianceCreation.mockResolvedValue({ id: "beta-1" });
 
     await expect(getPostLoginRedirect("user-1")).resolves.toBe(
@@ -61,11 +77,43 @@ describe("getPostLoginRedirect", () => {
     );
   });
 
-  it("routes a user with no alliance and no pending creation to /redeem", async () => {
-    mockPrisma.allianceMembership.findMany.mockResolvedValue([]);
-    mockGetPendingAllianceCreation.mockResolvedValue(null);
+  it("onboarding takes precedence over the platform console", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({
+      email: "admin@example.com",
+      isPlatformAdmin: true,
+    });
+    mockGetPendingAllianceCreation.mockResolvedValue({ id: "beta-1" });
 
-    await expect(getPostLoginRedirect("user-1")).resolves.toBe("/redeem");
+    await expect(getPostLoginRedirect("admin-1")).resolves.toBe(
+      "/create-alliance"
+    );
+  });
+
+  it("routes a platform admin with no pending work to the operations center", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({
+      email: "admin@example.com",
+      isPlatformAdmin: true,
+    });
+
+    await expect(getPostLoginRedirect("admin-1")).resolves.toBe(
+      "/platform/overview"
+    );
+    // Admin (no pending work) short-circuits before any alliance lookup.
+    expect(mockPrisma.allianceMembership.findMany).not.toHaveBeenCalled();
+  });
+
+  it("defaults an admin who also has an alliance to the console (role before context)", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({
+      email: "admin@example.com",
+      isPlatformAdmin: true,
+    });
+    mockPrisma.allianceMembership.findMany.mockResolvedValue([
+      { allianceId: "alliance-1", role: "OWNER" },
+    ]);
+
+    await expect(getPostLoginRedirect("admin-1")).resolves.toBe(
+      "/platform/overview"
+    );
   });
 
   it("routes an owner with incomplete setup to the setup page", async () => {
@@ -110,5 +158,10 @@ describe("getPostLoginRedirect", () => {
     await expect(getPostLoginRedirect("user-1")).resolves.toBe(
       "/alliances/select_alliance"
     );
+  });
+
+  it("falls back to /redeem when nothing is actionable and there is no alliance", async () => {
+    // Not admin, no pending invite/creation, no membership.
+    await expect(getPostLoginRedirect("user-1")).resolves.toBe("/redeem");
   });
 });
