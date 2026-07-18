@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SignOutButton } from "@/app/src/components/client";
 
 type NavItem = {
   label: string;
@@ -90,7 +91,7 @@ export function PlatformNavMobile({
       />
 
       {/* Drawer */}
-      <div className="fixed inset-y-0 left-0 z-50 w-64 bg-surface border-r border-border lg:hidden">
+      <div className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-surface border-r border-border lg:hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <span className="font-semibold text-text-primary">Navigation</span>
           <button
@@ -103,7 +104,7 @@ export function PlatformNavMobile({
           </button>
         </div>
 
-        <nav className="py-4">
+        <nav className="flex-1 py-4">
           <ul className="space-y-1 px-3">
             {NAV_ITEMS.map((item) => {
               const isActive =
@@ -133,6 +134,10 @@ export function PlatformNavMobile({
             })}
           </ul>
         </nav>
+
+        <div className="border-t border-border p-3">
+          <SignOutButton variant="ghost" fullWidth />
+        </div>
       </div>
     </>
   );
