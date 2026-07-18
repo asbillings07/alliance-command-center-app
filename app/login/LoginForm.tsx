@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { login, type LoginState } from "./actions";
 import { AuthLayout, AuthError } from "@/app/src/components";
-import { Button, Input, Label, GoogleSignInButton } from "@/app/src/components/client";
+import { Button, Input, Label, PasswordField, GoogleSignInButton } from "@/app/src/components/client";
 
 const initialState: LoginState = { error: null };
 
@@ -80,18 +80,15 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
           />
         </div>
 
-        <div>
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            required
-            disabled={isPending}
-            autoComplete="current-password"
-            placeholder="••••••••"
-          />
-        </div>
+        <PasswordField
+          id="password"
+          name="password"
+          label="Password"
+          required
+          disabled={isPending}
+          autoComplete="current-password"
+          placeholder="••••••••"
+        />
 
         <Button
           type="submit"
