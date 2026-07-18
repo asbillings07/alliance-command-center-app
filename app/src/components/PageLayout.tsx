@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ReactNode } from "react";
-import { SignOutButton } from "@/app/src/components/client";
+import { SessionSignOut } from "./SessionSignOut";
 
 /**
  * Breadcrumb item definition
@@ -73,10 +73,10 @@ export function PageLayout({
   return (
     <div className="min-h-screen bg-background">
       <div className={`mx-auto ${maxWidthClasses[maxWidth]} p-8`}>
-        {/* Account utility row: always give authenticated users a way out */}
-        <div className="mb-4 flex justify-end">
-          <SignOutButton variant="ghost" />
-        </div>
+        {/* Account utility row: give authenticated users a way out. Rendered
+            only when a session exists, since PageLayout is also used on
+            unauthenticated pages (e.g. the design-system preview). */}
+        <SessionSignOut />
 
         {/* Breadcrumb */}
         {breadcrumb && breadcrumb.length > 0 && (
