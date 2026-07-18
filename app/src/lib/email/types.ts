@@ -59,6 +59,7 @@ export interface EmailTransport {
  */
 export interface EmailService {
   sendBetaInvitation(input: BetaInvitationEmailInput): Promise<EmailResult>;
+  sendPasswordReset(input: PasswordResetEmailInput): Promise<EmailResult>;
 }
 
 /** View model for the beta invitation email. */
@@ -73,4 +74,17 @@ export type BetaInvitationView = {
 export type BetaInvitationEmailInput = {
   to: string;
   invitation: BetaInvitationView;
+};
+
+/** View model for the password reset email. */
+export type PasswordResetView = {
+  resetUrl: string;
+  expiresAt: Date;
+};
+
+export type PasswordResetEmailInput = {
+  to: string;
+  reset: PasswordResetView;
+  /** Optional user id for log correlation (never rendered in the email). */
+  userId?: string;
 };

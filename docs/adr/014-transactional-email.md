@@ -95,6 +95,22 @@ Action -> Outbox Table -> Background Worker -> Email
 
 This would add durability and retries without changing callers (they still call `emailService`). We intentionally do **not** build this before beta.
 
+### Password reset notifications (follow-on)
+
+Password reset (the request + set-new-password flow) is implemented on top of
+this infrastructure via `emailService.sendPasswordReset`. Two related security
+behaviors are intentionally deferred:
+
+- **Post-reset confirmation email.** After a successful password change, send a
+  "your password was changed — if this wasn't you, contact support" notice. This
+  is a valuable account-takeover signal and a natural next `emailService`
+  method. Tracked as a follow-on issue; not required for beta.
+- **Session revocation on password change.** A password change should revoke all
+  other active sessions. Today this is a no-op because sessions are stateless
+  JWTs with no server-side session store; the invariant is documented as a
+  `TODO(security)` in `app/src/lib/passwordReset.ts` so it isn't forgotten when a
+  session store is introduced.
+
 ## Configuration
 
 | Variable | Purpose |
