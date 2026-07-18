@@ -165,6 +165,7 @@ These are intentionally deferred:
 
 ## Related Documents
 
+- `docs/operations/release-checklist.md` - Per-release verification checklist
 - `docs/operations/rollback.md` - Detailed rollback procedures
 - `docs/operations/backups.md` - Backup and restore procedures
 - `docs/testing-strategy.md` - Testing requirements
