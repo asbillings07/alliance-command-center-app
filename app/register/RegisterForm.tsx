@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { register, type RegisterState } from "./actions";
 import { AuthError } from "@/app/src/components";
-import { Button, Input, Label } from "@/app/src/components/client";
+import { Button, Input, Label, PasswordField } from "@/app/src/components/client";
 
 const initialState: RegisterState = { error: null };
 
@@ -71,31 +71,25 @@ export function RegisterForm({ callbackUrl, displayName, email }: RegisterFormPr
           </div>
         )}
 
-        <div>
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            required
-            disabled={isPending}
-            autoComplete="new-password"
-            placeholder="Password"
-          />
-        </div>
+        <PasswordField
+          id="password"
+          name="password"
+          label="Password"
+          required
+          disabled={isPending}
+          autoComplete="new-password"
+          placeholder="Password"
+        />
 
-        <div>
-          <Label htmlFor="confirmPassword">Confirm Password</Label>
-          <Input
-            id="confirmPassword"
-            name="confirmPassword"
-            type="password"
-            required
-            disabled={isPending}
-            autoComplete="new-password"
-            placeholder="Confirm Password"
-          />
-        </div>
+        <PasswordField
+          id="confirmPassword"
+          name="confirmPassword"
+          label="Confirm Password"
+          required
+          disabled={isPending}
+          autoComplete="new-password"
+          placeholder="Confirm Password"
+        />
 
         <Button type="submit" variant="primary" fullWidth loading={isPending}>
           {isPending ? "Creating account..." : "Create Account"}

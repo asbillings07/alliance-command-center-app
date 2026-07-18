@@ -76,6 +76,8 @@ export function FormError({ children }: FormErrorProps) {
 export type InputProps = {
   /** Error state */
   error?: boolean;
+  /** Extra classes appended to the design-system base classes (not a replacement) */
+  className?: string;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "className">;
 
 /**
@@ -95,11 +97,17 @@ export type InputProps = {
  * <FormError>{errors.email}</FormError>
  */
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  function Input({ error, ...props }, ref) {
+  function Input({ error, className, ...props }, ref) {
     return (
       <input
         ref={ref}
-        className={`${inputBaseClasses} ${error ? inputErrorClasses : ""}`}
+        className={[
+          inputBaseClasses,
+          error ? inputErrorClasses : "",
+          className ?? "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         {...props}
       />
     );
