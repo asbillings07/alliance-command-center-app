@@ -47,8 +47,8 @@ test.describe("Platform Bootstrap - Success Path", () => {
     // 2. Complete the first-run form with an authorized email
     await page.getByLabel(/email/i).fill(BOOTSTRAP_EMAIL);
     await page.getByLabel(/display name/i).fill("Bootstrap Admin");
-    await page.getByLabel(/^password$/i).fill("BootstrapPass123");
-    await page.getByLabel(/confirm password/i).fill("BootstrapPass123");
+    await page.getByLabel(/^password$/i).fill("BootstrapPass123!");
+    await page.getByLabel(/confirm password/i).fill("BootstrapPass123!");
 
     // Provide the bootstrap secret when the environment requires one, so the
     // spec passes in both secret-configured and secret-less setups.

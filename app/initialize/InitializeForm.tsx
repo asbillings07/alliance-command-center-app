@@ -1,9 +1,16 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { initializePlatform, type InitializeState } from "./actions";
 import { AuthError } from "@/app/src/components";
-import { Button, Input, Label, PasswordField } from "@/app/src/components/client";
+import {
+  Button,
+  Input,
+  Label,
+  PasswordField,
+  PasswordRequirements,
+  FormError,
+} from "@/app/src/components/client";
 
 const initialState: InitializeState = { error: null };
 
@@ -12,6 +19,12 @@ export function InitializeForm() {
     initializePlatform,
     initialState
   );
+
+  // Observer state only: fields stay uncontrolled (submitted via FormData).
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const passwordsMismatch =
+    confirmPassword.length > 0 && confirmPassword !== password;
 
   return (
     <>
@@ -44,25 +57,34 @@ export function InitializeForm() {
           />
         </div>
 
-        <PasswordField
-          id="password"
-          name="password"
-          label="Password"
-          required
-          disabled={isPending}
-          autoComplete="new-password"
-          placeholder="Password"
-        />
+        <div>
+          <PasswordField
+            id="password"
+            name="password"
+            label="Password"
+            required
+            disabled={isPending}
+            autoComplete="new-password"
+            placeholder="Password"
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <PasswordRequirements password={password} />
+        </div>
 
-        <PasswordField
-          id="confirmPassword"
-          name="confirmPassword"
-          label="Confirm Password"
-          required
-          disabled={isPending}
-          autoComplete="new-password"
-          placeholder="Confirm Password"
-        />
+        <div>
+          <PasswordField
+            id="confirmPassword"
+            name="confirmPassword"
+            label="Confirm Password"
+            required
+            disabled={isPending}
+            autoComplete="new-password"
+            placeholder="Confirm Password"
+            error={passwordsMismatch}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+          />
+          {passwordsMismatch && <FormError>Passwords do not match</FormError>}
+        </div>
 
         <div>
           <Label htmlFor="bootstrapSecret">Bootstrap Secret</Label>

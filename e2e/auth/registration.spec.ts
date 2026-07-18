@@ -49,9 +49,17 @@ test.describe("Registration", () => {
     await page.getByLabel(/display name/i).fill("Test User");
     await page.getByLabel(/^password$/i).fill("Password123!");
     await page.getByLabel(/confirm password/i).fill("DifferentPassword!");
-    await page.getByRole("button", { name: /create account/i }).click();
 
-    await expect(page.getByText(/passwords do not match/i)).toBeVisible();
+    // Inline validation surfaces the mismatch before submit; the server also
+    // rejects it, so scope to the first match.
+    await expect(
+      page.getByText(/passwords do not match/i).first()
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: /create account/i }).click();
+    await expect(
+      page.getByText(/passwords do not match/i).first()
+    ).toBeVisible();
   });
 
   test("shows weak password error", async ({ page }) => {
@@ -67,10 +75,9 @@ test.describe("Registration", () => {
     await page.getByLabel(/confirm password/i).fill("weak");
     await page.getByRole("button", { name: /create account/i }).click();
 
-    // Should show password requirements error
-    await expect(
-      page.getByText(/password must|at least|characters/i)
-    ).toBeVisible();
+    // The server rejects with the shared policy message. Target that exact
+    // phrase so it isn't confused with the always-visible requirements list.
+    await expect(page.getByText(/password must include/i)).toBeVisible();
   });
 
   test("shows link to login for existing users", async ({ page }) => {
