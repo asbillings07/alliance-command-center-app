@@ -9,6 +9,7 @@ import {
   validateBetaCode,
 } from "@/app/src/lib/betaInvitation";
 import { sanitizeCallbackUrl } from "@/app/src/lib/auth/callbackUrl";
+import { validatePassword } from "@/app/src/lib/auth/passwordPolicy";
 
 export type RegisterState = {
   error: string | null;
@@ -32,8 +33,9 @@ export async function register(
     return { error: "Passwords do not match" };
   }
 
-  if (password.length < 8) {
-    return { error: "Password must be at least 8 characters" };
+  const passwordCheck = validatePassword(password);
+  if (!passwordCheck.valid) {
+    return { error: passwordCheck.message };
   }
 
   const existingUser = await prisma.user.findUnique({

@@ -76,8 +76,10 @@ if (isProduction || isProductionDb) {
   }
 }
 
-// Test password used for all seeded users
-const TEST_PASSWORD = "Password123";
+// Test password used for all seeded users. Must satisfy the shared password
+// policy (see app/src/lib/auth/passwordPolicy.ts) so it stays representative of
+// what the app now enforces on any password-creation path.
+const TEST_PASSWORD = "Password123!";
 
 // Check if we should write .env.test file (for CI)
 const WRITE_ENV_FILE = process.argv.includes("--write-env");
