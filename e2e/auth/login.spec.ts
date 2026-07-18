@@ -106,7 +106,29 @@ test.describe("Login", () => {
     await page.keyboard.press("Tab");
     await expect(page.getByLabel(/password/i)).toBeFocused();
 
+    // The password field's show/hide toggle sits between the input and submit.
+    await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("button", { name: /show password/i })
+    ).toBeFocused();
+
     await page.keyboard.press("Tab");
     await expect(page.getByRole("button", { name: /sign in/i })).toBeFocused();
+  });
+
+  test("password visibility toggle reveals and hides the password", async ({
+    page,
+  }) => {
+    await page.goto("/login");
+
+    const passwordInput = page.getByLabel(/password/i);
+    await passwordInput.fill("super-secret");
+    await expect(passwordInput).toHaveAttribute("type", "password");
+
+    await page.getByRole("button", { name: /show password/i }).click();
+    await expect(passwordInput).toHaveAttribute("type", "text");
+
+    await page.getByRole("button", { name: /hide password/i }).click();
+    await expect(passwordInput).toHaveAttribute("type", "password");
   });
 });

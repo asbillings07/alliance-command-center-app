@@ -35,3 +35,4 @@ export {
   type FormErrorProps,
   type FormFieldProps,
 } from "./Input";
+export { PasswordField, type PasswordFieldProps } from "./PasswordField";
