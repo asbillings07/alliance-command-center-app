@@ -1,15 +1,14 @@
 import { prisma } from "@/app/src/lib/prisma";
 import { Prisma } from "@/app/generated/prisma/client";
 import type { User } from "@/app/generated/prisma/client";
-import type { AuthProvider } from "@/app/generated/prisma/enums";
 
 /**
- * Provision a user from an OAuth sign-in.
+ * Provision a user from a Google sign-in.
  *
- * This is the single place OAuth identities become platform users. It does not
- * merely insert a row - it provisions an identity into our domain model, setting
- * the explicit `authProvider` and leaving `passwordHash` null (OAuth users have
- * no password).
+ * This is the single place a new Google identity becomes a platform user. It
+ * does not merely insert a row - it provisions an identity into our domain
+ * model, anchoring the Google subject and leaving `passwordHash` null (a
+ * Google-provisioned user has no password until they set one).
  *
  * Race-safe (find-or-create): concurrent sign-ins from double-clicks or multiple
  * tabs cannot create duplicates. We look up by email first, and if a create loses
@@ -18,13 +17,13 @@ import type { AuthProvider } from "@/app/generated/prisma/enums";
 export type ProvisionOAuthUserInput = {
   email: string;
   displayName: string;
-  provider: AuthProvider;
+  googleSubject: string;
 };
 
 export async function provisionOAuthUser({
   email,
   displayName,
-  provider,
+  googleSubject,
 }: ProvisionOAuthUserInput): Promise<User> {
   const normalizedEmail = email.toLowerCase().trim();
 
@@ -41,7 +40,7 @@ export async function provisionOAuthUser({
         email: normalizedEmail,
         displayName: displayName.trim() || normalizedEmail,
         passwordHash: null,
-        authProvider: provider,
+        googleSubject,
       },
     });
   } catch (error) {

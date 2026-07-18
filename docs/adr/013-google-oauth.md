@@ -32,17 +32,28 @@ Add Google as an additional authentication provider using a **custom `signIn` ca
 ### Sign-in flow (Google)
 
 1. `assertVerifiedGoogleEmail(profile)` - requires `email_verified === true`; returns the normalized email. Throws `UnverifiedEmailError` otherwise.
-2. If a `User` already exists for that email, allow (existing account reused - linking by verified email; no `Account` table needed).
-3. Otherwise, `isInvitationEligible(email)` must be true (a pending beta OR alliance invitation). If not, throw `InvitationRequiredError`.
-4. `provisionOAuthUser({ email, displayName, provider: "GOOGLE" })` creates the user (`authProvider: GOOGLE`, `passwordHash: null`).
+2. `assertGoogleSubject(profile)` - returns Google's stable subject (`sub`). Throws `MissingGoogleSubjectError` if absent.
+3. If a `User` already exists for that email, `ensureGoogleIdentity(user, sub)` links the subject on the first Google sign-in (backfill), verifies it on later sign-ins, and throws `GoogleAccountMismatchError` if a different subject is already anchored. Allowed once the identity is confirmed.
+4. Otherwise, `isInvitationEligible(email)` must be true (a pending beta OR alliance invitation). If not, throw `InvitationRequiredError`.
+5. `provisionOAuthUser({ email, displayName, googleSubject: sub })` creates the user, anchoring the subject and leaving `passwordHash: null`.
 
 Failures throw typed errors (`AuthenticationError` subclasses); the callback catches them and returns `false`, which Auth.js surfaces as `AccessDenied` on `/login`.
 
 ### Identity model
 
-- `User.passwordHash` is now optional (OAuth users have no password).
-- `User.authProvider` (`enum AuthProvider { PASSWORD, GOOGLE }`, default `PASSWORD`) records **how** a user authenticates, using domain terminology rather than the framework's provider name (`CREDENTIALS`).
-- Password login is rejected for non-`PASSWORD` accounts.
+**Authentication capabilities are modeled as the presence of provider-specific credentials, not as a mutually exclusive provider enum.** Business logic determines whether a login method is available by checking the corresponding capability (`passwordHash`, `googleSubject`, ...) rather than a separate provider field.
+
+- `User.passwordHash` (optional) present -> **password login is enabled**.
+- `User.googleSubject` (optional, `@unique`) present -> **Google login is enabled**. It stores Google's stable subject as the security anchor.
+- A user may have **both**, enabling password + Google on the same canonical identity (email). This is a deliberate exception, primarily so the operator's break-glass account keeps a password while also using "Continue with Google." It is not an accident to be "simplified" back to one provider.
+- Password login is gated purely on the capability: `if (!user.passwordHash) return null`.
+- The retired `authProvider` enum could not express "both" and modeled *how a user authenticated* rather than *what an identity can do*; capabilities are the more durable and extensible abstraction (a future provider becomes another nullable column, not another enum state).
+
+#### Security anchor: email identifies, `sub` is identity
+
+A verified email proves ownership *at sign-in time*, but emails can be reassigned. Once a `googleSubject` is anchored to a user, we assert the incoming `sub` matches on every subsequent Google sign-in and refuse to silently re-link a different one (`GoogleAccountMismatchError`). Existing Google-only users predate subject storage; rather than a backfill script, they are anchored on their next Google sign-in (the "no anchor yet" branch).
+
+Linking is concurrency-safe. `ensureGoogleIdentity` uses a guarded write (`updateMany where { id, googleSubject: null }`) so a subject anchored by a racing sign-in between read and write is never clobbered; on a no-op it re-reads and only allows an identical subject, denying otherwise. The `@unique` constraint on `googleSubject` additionally rejects anchoring a subject already owned by a different user. Because `provisionOAuthUser` is find-or-create, the new-user branch also re-runs `ensureGoogleIdentity` on the returned user, so an email-unique race can't bypass the invariant.
 
 ### JWT invariant
 
@@ -50,7 +61,7 @@ After authentication, every JWT `sub` claim contains the internal `User.id`, reg
 
 ### Intentional simplification
 
-During beta, a user authenticates using exactly one provider (`User.authProvider`). Multiple authentication providers per user (linked accounts) are intentionally deferred; supporting them would require additional schema.
+Account linking is **automatic** on a verified-email match: there is no "link account while signed in" UI or confirmation step. For verified Google emails during beta this is a reasonable trade-off and keeps the flow simple. An explicit linking/unlinking UX is deferred until there's a product need.
 
 ## Why no Prisma adapter
 
@@ -68,10 +79,9 @@ We already own the `User` lifecycle, invitations, JWT sessions, and a clean doma
 
 ### Trade-offs
 
-- Only one authentication provider per user.
-- No linked accounts.
-- OAuth metadata is not persisted.
-- Future multi-provider support will require additional schema.
+- Linking is automatic (no explicit link/unlink UX yet).
+- Only the Google subject is persisted; no broader OAuth metadata (tokens, etc.).
+- Each additional provider adds another nullable capability column (acceptable, and simpler than an `Account` table).
 
 ## Configuration
 
@@ -79,9 +89,11 @@ Google is enabled only when `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` are both s
 
 ## Manual Acceptance Checklist
 
-- Existing password user signs in with Google (same email) -> existing account reused.
-- Invited email with no account signs in with Google -> account created, invitation flow continues.
+- Existing password user signs in with Google (same email) -> Google subject linked; both password and Google logins then work.
+- Same user signs in with Google again -> subject verified, no duplicate/relink.
+- A different Google account (different `sub`) presenting the same verified email -> access denied (`GoogleAccountMismatchError`).
+- Invited email with no account signs in with Google -> account created and anchored to the subject, invitation flow continues.
 - Uninvited email signs in with Google -> access denied.
 - Google account with `email_verified = false` -> access denied.
-- OAuth-only user attempts password login -> rejected.
+- Google-only user (no `passwordHash`) attempts password login -> rejected.
 - Password user continues signing in with password -> unaffected.
