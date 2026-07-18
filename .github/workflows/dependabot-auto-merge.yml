@@ -1,0 +1,38 @@
+name: Dependabot Auto-merge
+
+# Runs in the base-branch context so GITHUB_TOKEN can enable auto-merge.
+# We never check out or execute PR code here - we only read Dependabot
+# metadata and flip the auto-merge flag - so pull_request_target is safe.
+on: pull_request_target
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    name: Auto-merge low-risk Dependabot PRs
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+
+      # Auto-merge is intentionally conservative:
+      #   - patch bumps for any dependency, and
+      #   - minor bumps only for dev dependencies and GitHub Actions.
+      # Production minors and all majors still require a human review + merge.
+      # Auto-merge only completes once branch protection's required checks pass;
+      # if they fail, the PR simply stays open.
+      - name: Enable auto-merge
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          (steps.meta.outputs.update-type == 'version-update:semver-minor' &&
+           (steps.meta.outputs.dependency-type == 'direct:development' ||
+            steps.meta.outputs.package-ecosystem == 'github_actions'))
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
