@@ -1,6 +1,8 @@
 import { prisma } from "@/app/src/lib/prisma";
-import { getPendingAllianceCreation } from "@/app/src/lib/betaInvitation";
-import { isInvitationEligible } from "@/app/src/lib/auth/identity/eligibility";
+import {
+  getPendingAllianceCreation,
+  getPendingInvitation,
+} from "@/app/src/lib/betaInvitation";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 import { AllianceRole } from "@/app/generated/prisma/enums";
 
@@ -27,18 +29,22 @@ export type PostLoginUser = {
  * so we must not let "is admin" short-circuit real pending work.)
  *
  * Priority, most urgent first:
- *   1. A pending invitation to redeem              -> /redeem
+ *   1. A pending beta invitation                    -> /redeem
  *   2. Onboarding: accepted a beta, no alliance yet -> /create-alliance
  *   3. Platform operator with no pending work       -> /platform/overview
  *   4. Alliance membership                          -> alliance home / setup / selector
- *   5. Nothing else actionable                      -> /redeem
+ *   5. A pending alliance collaborator invitation   -> /invite/{token}
+ *   6. Nothing else actionable                      -> /redeem
  */
 export async function getPostLoginRedirect(
   user: PostLoginUser
 ): Promise<string> {
-  // 1. Pending invitation: invited but not yet redeemed. Actionable work that
-  //    takes precedence over any role or existing context.
-  if (user.email && (await isInvitationEligible(user.email))) {
+  // 1. Pending BETA invitation: invited to the beta but not yet redeemed at
+  //    /redeem (the beta-code page). Scope this strictly to beta invitations -
+  //    alliance collaborator invites are a different flow entirely (step 5),
+  //    so isInvitationEligible (which also matches alliance invites) is too
+  //    broad here and would mis-route those users to the beta page.
+  if (user.email && (await getPendingInvitation(user.email))) {
     return "/redeem";
   }
 
@@ -83,6 +89,25 @@ export async function getPostLoginRedirect(
     return "/alliances/select_alliance";
   }
 
-  // 5. Nothing actionable and no alliance: fall back to redeem.
+  // 5. Pending alliance collaborator invitation -> the invite acceptance flow,
+  //    not the beta /redeem page. Only reached when the user has no membership
+  //    (the returns above), so we never hijack an existing member's landing.
+  if (user.email) {
+    const allianceInvite = await prisma.invitation.findFirst({
+      where: {
+        email: user.email.toLowerCase().trim(),
+        acceptedAt: null,
+        cancelledAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { token: true },
+    });
+    if (allianceInvite) {
+      return `/invite/${allianceInvite.token}`;
+    }
+  }
+
+  // 6. Nothing actionable and no alliance: fall back to redeem.
   return "/redeem";
 }

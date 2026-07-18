@@ -6,15 +6,15 @@ vi.mock("@/app/src/lib/prisma", () => ({
     allianceMembership: {
       findMany: vi.fn(),
     },
+    invitation: {
+      findFirst: vi.fn(),
+    },
   },
 }));
 
 vi.mock("@/app/src/lib/betaInvitation", () => ({
   getPendingAllianceCreation: vi.fn(),
-}));
-
-vi.mock("@/app/src/lib/auth/identity/eligibility", () => ({
-  isInvitationEligible: vi.fn(),
+  getPendingInvitation: vi.fn(),
 }));
 
 vi.mock("@/app/src/lib/allianceSetup", () => ({
@@ -22,17 +22,20 @@ vi.mock("@/app/src/lib/allianceSetup", () => ({
 }));
 
 import { prisma } from "@/app/src/lib/prisma";
-import { getPendingAllianceCreation } from "@/app/src/lib/betaInvitation";
-import { isInvitationEligible } from "@/app/src/lib/auth/identity/eligibility";
+import {
+  getPendingAllianceCreation,
+  getPendingInvitation,
+} from "@/app/src/lib/betaInvitation";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 
 const mockPrisma = prisma as unknown as {
   allianceMembership: { findMany: ReturnType<typeof vi.fn> };
+  invitation: { findFirst: ReturnType<typeof vi.fn> };
 };
 const mockGetPendingAllianceCreation = getPendingAllianceCreation as ReturnType<
   typeof vi.fn
 >;
-const mockIsInvitationEligible = isInvitationEligible as ReturnType<
+const mockGetPendingInvitation = getPendingInvitation as ReturnType<
   typeof vi.fn
 >;
 const mockGetAllianceSetupStatus = getAllianceSetupStatus as ReturnType<
@@ -45,19 +48,40 @@ const admin = { id: "admin-1", email: "admin@example.com", isPlatformAdmin: true
 beforeEach(() => {
   vi.clearAllMocks();
   // Default: no pending work, no alliance.
-  mockIsInvitationEligible.mockResolvedValue(false);
+  mockGetPendingInvitation.mockResolvedValue(null);
   mockGetPendingAllianceCreation.mockResolvedValue(null);
   mockPrisma.allianceMembership.findMany.mockResolvedValue([]);
+  mockPrisma.invitation.findFirst.mockResolvedValue(null);
 });
 
 describe("getPostLoginRedirect", () => {
-  it("prioritizes a pending invitation over every role and context", async () => {
-    // Even a platform admin with a pending invitation must redeem it first.
-    mockIsInvitationEligible.mockResolvedValue(true);
+  it("prioritizes a pending beta invitation over every role and context", async () => {
+    // Even a platform admin with a pending beta invitation must redeem it first.
+    mockGetPendingInvitation.mockResolvedValue({ id: "beta-1" });
 
     await expect(getPostLoginRedirect(admin)).resolves.toBe("/redeem");
     // State wins before any role/alliance lookup.
     expect(mockPrisma.allianceMembership.findMany).not.toHaveBeenCalled();
+  });
+
+  it("routes a pending alliance collaborator invite to the invite flow, not /redeem", async () => {
+    // No beta invite, no pending creation, not admin, no membership.
+    mockPrisma.invitation.findFirst.mockResolvedValue({ token: "tok_abc" });
+
+    await expect(getPostLoginRedirect(member)).resolves.toBe("/invite/tok_abc");
+  });
+
+  it("does not hijack an existing member who also has a pending alliance invite", async () => {
+    mockPrisma.allianceMembership.findMany.mockResolvedValue([
+      { allianceId: "alliance-1", role: "VIEWER" },
+    ]);
+    mockPrisma.invitation.findFirst.mockResolvedValue({ token: "tok_abc" });
+
+    await expect(getPostLoginRedirect(member)).resolves.toBe(
+      "/alliances/alliance-1"
+    );
+    // Membership wins; the alliance-invite lookup is never reached.
+    expect(mockPrisma.invitation.findFirst).not.toHaveBeenCalled();
   });
 
   it("routes a user mid-onboarding (accepted beta, no alliance) to /create-alliance", async () => {
