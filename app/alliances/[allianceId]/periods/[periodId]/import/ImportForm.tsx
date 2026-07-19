@@ -351,10 +351,17 @@ export function ImportForm({ periodId, allianceId, members, metrics, libraryMetr
                     {(importResult.created.length > 0 || importResult.attached.length > 0) && (
                         <p className="mt-3 text-sm text-green-800">
                             {importResult.created.length > 0 && (
-                                <>Created {importResult.created.length} {importResult.created.length === 1 ? "metric" : "metrics"} ({importResult.created.map((m) => m.name).join(", ")}). </>
+                                <>
+                                    Created {importResult.created.length}{" "}
+                                    {importResult.created.length === 1 ? "metric" : "metrics"} (
+                                    {importResult.created.map((m) => m.name).join(", ")}).{" "}
+                                </>
                             )}
                             {importResult.attached.length > 0 && (
-                                <>Added {importResult.attached.length} to this period ({importResult.attached.map((m) => m.name).join(", ")}).</>
+                                <>
+                                    Added {importResult.attached.length} to this period (
+                                    {importResult.attached.map((m) => m.name).join(", ")}).
+                                </>
                             )}
                         </p>
                     )}
