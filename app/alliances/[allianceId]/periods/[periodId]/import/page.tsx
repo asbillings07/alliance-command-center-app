@@ -40,6 +40,26 @@ export default async function ImportPage({ params }: Params) {
     name: pm.metric.name,
   }));
 
+  // The full alliance metric library (active), so the import step can offer to
+  // attach an existing metric that simply is not on this period yet.
+  const libraryMetrics = await prisma.metric.findMany({
+    where: { allianceId, active: true },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+
+  const canConfigureMetrics = auth.permissions.canConfigureMetrics;
+  const canConfigurePeriods = auth.permissions.canConfigurePeriods;
+
+  // A metric can be brought into an empty period during import when the user
+  // can create metrics, or attach a library metric that isn't on the period.
+  const attachableLibraryMetrics = libraryMetrics.filter(
+    (m) => !metrics.some((pm) => pm.id === m.id),
+  );
+  const canProvisionMetrics =
+    canConfigureMetrics ||
+    (canConfigurePeriods && attachableLibraryMetrics.length > 0);
+
   const alliance = await prisma.alliance.findUnique({
     where: { id: allianceId },
     select: {
@@ -67,7 +87,9 @@ export default async function ImportPage({ params }: Params) {
       ];
 
   const hasNoMembers = !alliance || alliance.allianceMembers.length === 0;
-  const hasNoMetrics = metrics.length === 0;
+  // Only a dead-end when the period has no metrics AND the user can neither
+  // create nor attach one during import.
+  const hasNoMetrics = metrics.length === 0 && !canProvisionMetrics;
 
   if (hasNoMetrics || hasNoMembers) {
     return (
@@ -125,6 +147,9 @@ export default async function ImportPage({ params }: Params) {
             allianceId={allianceId}
             members={alliance.allianceMembers}
             metrics={metrics}
+            libraryMetrics={attachableLibraryMetrics}
+            canCreateMetrics={canConfigureMetrics}
+            canAttachMetrics={canConfigurePeriods}
           />
         </Card.Body>
       </Card>
