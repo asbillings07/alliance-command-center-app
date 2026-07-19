@@ -7,10 +7,19 @@
  * authorization and persistence on top of the plan this produces.
  */
 
+import { normalizeName } from "@/app/src/lib/memberMatcher";
+import type { ImportMetricTarget } from "@/app/src/lib/metricResolution";
+
 export type MetricImportEntry = {
   /** allianceMemberId */
   memberId: string;
   value: number;
+};
+
+/** A spreadsheet column's chosen import target plus its parsed rows. */
+export type ColumnTargetMapping = {
+  target: ImportMetricTarget;
+  entries: MetricImportEntry[];
 };
 
 /** One spreadsheet column mapped to one period metric. */
@@ -97,4 +106,72 @@ export function buildMetricImportPlan(
     memberIds: [...memberIds],
     totalCount,
   };
+}
+
+/**
+ * Validate the raw column mappings a client submits, before any metric identity
+ * is resolved. Rejects mapping the same existing metric or the same new-metric
+ * name to two columns, enforces integer values, and dedupes rows per member
+ * within each column (mirroring the single-column UI). Returns normalized
+ * mappings with deduped entries; the target is passed through untouched for the
+ * resolution step to reconcile against the database.
+ */
+export function validateColumnTargets(
+  mappings: ColumnTargetMapping[],
+): ColumnTargetMapping[] {
+  if (!Array.isArray(mappings) || mappings.length === 0) {
+    throw new Error("At least one column mapping is required");
+  }
+
+  const seenExistingMetricIds = new Set<string>();
+  const seenCreateNames = new Set<string>();
+  const result: ColumnTargetMapping[] = [];
+
+  for (const mapping of mappings) {
+    const { target, entries } = mapping;
+
+    if (target.kind === "existing") {
+      if (typeof target.metricId !== "string" || !target.metricId) {
+        throw new Error("Invalid metric ID");
+      }
+      if (seenExistingMetricIds.has(target.metricId)) {
+        throw new Error("Each metric may only be mapped once");
+      }
+      seenExistingMetricIds.add(target.metricId);
+    } else {
+      const name = (target.name ?? "").trim();
+      if (!name) {
+        throw new Error("A new metric requires a name");
+      }
+      const normalized = normalizeName(name);
+      if (seenCreateNames.has(normalized)) {
+        throw new Error("Each new metric may only be mapped once");
+      }
+      seenCreateNames.add(normalized);
+    }
+
+    if (!Array.isArray(entries) || entries.length === 0) {
+      throw new Error("Each mapping requires at least one entry");
+    }
+
+    const seenMemberIds = new Set<string>();
+    const dedupedEntries: MetricImportEntry[] = [];
+    for (const entry of entries) {
+      if (typeof entry.memberId !== "string" || !entry.memberId) {
+        throw new Error("Invalid member ID");
+      }
+      if (typeof entry.value !== "number" || !Number.isInteger(entry.value)) {
+        throw new Error("All values must be integers");
+      }
+      if (seenMemberIds.has(entry.memberId)) {
+        continue;
+      }
+      seenMemberIds.add(entry.memberId);
+      dedupedEntries.push({ memberId: entry.memberId, value: entry.value });
+    }
+
+    result.push({ target, entries: dedupedEntries });
+  }
+
+  return result;
 }
