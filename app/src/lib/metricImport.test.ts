@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildMetricImportPlan, type MetricMapping } from "./metricImport";
+import {
+  buildMetricImportPlan,
+  validateColumnTargets,
+  type MetricMapping,
+  type ColumnTargetMapping,
+} from "./metricImport";
 
 describe("buildMetricImportPlan", () => {
   it("builds a plan across multiple metrics and totals the rows", () => {
@@ -88,5 +93,60 @@ describe("buildMetricImportPlan", () => {
         { metricId: "kill-points", entries: [{ memberId: "", value: 1 }] },
       ]),
     ).toThrow(/invalid member id/i);
+  });
+});
+
+describe("validateColumnTargets", () => {
+  it("dedupes rows per member within a column and passes the target through", () => {
+    const mappings: ColumnTargetMapping[] = [
+      {
+        target: { kind: "existing", metricId: "m-kp" },
+        entries: [
+          { memberId: "m1", value: 100 },
+          { memberId: "m1", value: 999 },
+          { memberId: "m2", value: 200 },
+        ],
+      },
+    ];
+    const [result] = validateColumnTargets(mappings);
+    expect(result.target).toEqual({ kind: "existing", metricId: "m-kp" });
+    expect(result.entries).toEqual([
+      { memberId: "m1", value: 100 },
+      { memberId: "m2", value: 200 },
+    ]);
+  });
+
+  it("rejects the same existing metric mapped to two columns", () => {
+    const mappings: ColumnTargetMapping[] = [
+      { target: { kind: "existing", metricId: "m-kp" }, entries: [{ memberId: "m1", value: 1 }] },
+      { target: { kind: "existing", metricId: "m-kp" }, entries: [{ memberId: "m2", value: 2 }] },
+    ];
+    expect(() => validateColumnTargets(mappings)).toThrow(/only be mapped once/i);
+  });
+
+  it("rejects two create targets with the same name ignoring case/space", () => {
+    const mappings: ColumnTargetMapping[] = [
+      { target: { kind: "create", name: "VS Score" }, entries: [{ memberId: "m1", value: 1 }] },
+      { target: { kind: "create", name: "  vs   score " }, entries: [{ memberId: "m2", value: 2 }] },
+    ];
+    expect(() => validateColumnTargets(mappings)).toThrow(/new metric may only be mapped once/i);
+  });
+
+  it("rejects a create target with a blank name", () => {
+    const mappings: ColumnTargetMapping[] = [
+      { target: { kind: "create", name: "   " }, entries: [{ memberId: "m1", value: 1 }] },
+    ];
+    expect(() => validateColumnTargets(mappings)).toThrow(/requires a name/i);
+  });
+
+  it("rejects non-integer values", () => {
+    const mappings: ColumnTargetMapping[] = [
+      { target: { kind: "existing", metricId: "m-kp" }, entries: [{ memberId: "m1", value: 1.5 }] },
+    ];
+    expect(() => validateColumnTargets(mappings)).toThrow(/must be integers/i);
+  });
+
+  it("rejects an empty mapping list", () => {
+    expect(() => validateColumnTargets([])).toThrow(/at least one column mapping/i);
   });
 });

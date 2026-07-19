@@ -17,48 +17,54 @@ type ImportFormProps = {
     periodId: string;
     allianceId: string;
     members: MemberOption[];
+    // Metrics already attached to this period.
     metrics: MetricOption[];
+    // Alliance library metrics not yet on this period (attachable).
+    libraryMetrics: MetricOption[];
+    canCreateMetrics: boolean;
+    canAttachMetrics: boolean;
 };
 
 type ImportStep = "upload" | "select" | "preview" | "complete";
 
-// A numeric spreadsheet column and the period metric it will be imported as.
-// metricId === null means "do not import this column". Kept as a typed array
-// (rather than a bare record) so it is easy to inspect and, later, persist as a
-// reusable saved mapping.
+// How a column resolves. "existing" = already on the period; "attach" = a
+// library metric to add to the period; "create" = a brand-new metric; "skip" =
+// don't import. On the wire, existing/attach both send { kind: "existing" } and
+// the server decides whether an attach is needed; create sends { kind: "create" }.
+type ColumnTarget =
+    | { kind: "skip" }
+    | { kind: "existing"; metricId: string }
+    | { kind: "attach"; metricId: string }
+    | { kind: "create"; name: string };
+
 type ColumnMetricMapping = {
     columnIndex: number;
     columnName: string;
-    metricId: string | null;
+    target: ColumnTarget;
 };
 
-// Display-oriented view model for one mapped column, kept separate from the
-// persistence shape (the server's MetricMapping) so presentation concerns never
-// leak into what we write.
+type MetricDisposition = "existing" | "attach" | "create";
+
+// Display view-model for one mapped column, keyed by column so a not-yet-created
+// metric (no id) still has a stable key. Kept separate from the wire payload.
 type MetricImportPreview = {
-    metricId: string;
-    metricName: string;
+    columnIndex: number;
     columnName: string;
+    displayName: string;
+    disposition: MetricDisposition;
+    target: ColumnTarget;
     summary: MatchSummary;
 };
 
-// Duplicate selections are tracked per metric, then per member: which result
-// row supplies the value when a member appears multiple times in one column.
-type DuplicateSelections = Record<string, Record<string, number>>;
+// Per column, then per member: which result row supplies the value.
+type DuplicateSelections = Record<number, Record<string, number>>;
 
-// Recognized player column names (case-insensitive)
-// Only add aliases that come from real spreadsheet exports
+type WireMapping = Parameters<typeof importMemberMetrics>[0]["mappings"][number];
+type ImportResult = Awaited<ReturnType<typeof importMemberMetrics>>;
+
 const PLAYER_COLUMN_NAMES = new Set([
-    'player',
-    'player name',
-    'playername',
-    'member',
-    'member name',
-    'membername',
-    'alliance member',
-    'alliancemember',
-    'name',
-    'ign',
+    'player', 'player name', 'playername', 'member', 'member name',
+    'membername', 'alliance member', 'alliancemember', 'name', 'ign',
 ]);
 
 function isPlayerColumn(columnName: string): boolean {
@@ -67,8 +73,39 @@ function isPlayerColumn(columnName: string): boolean {
     return PLAYER_COLUMN_NAMES.has(normalized) || PLAYER_COLUMN_NAMES.has(noSpaces);
 }
 
-// Rows selected to import for a single metric preview, honoring the user's
-// per-member duplicate resolution.
+const DISPOSITION_BADGE: Record<MetricDisposition, { label: string; className: string }> = {
+    existing: { label: "On period", className: "bg-gray-200 text-gray-700" },
+    attach: { label: "Add to period", className: "bg-blue-200 text-blue-800" },
+    create: { label: "New metric", className: "bg-purple-200 text-purple-800" },
+};
+
+function targetToToken(target: ColumnTarget): string {
+    switch (target.kind) {
+        case "skip": return "";
+        case "existing": return `existing:${target.metricId}`;
+        case "attach": return `attach:${target.metricId}`;
+        case "create": return "create";
+    }
+}
+
+function tokenToTarget(token: string, columnName: string): ColumnTarget {
+    if (token === "") return { kind: "skip" };
+    if (token === "create") return { kind: "create", name: columnName };
+    const [kind, metricId] = token.split(":");
+    if (kind === "existing" && metricId) return { kind: "existing", metricId };
+    if (kind === "attach" && metricId) return { kind: "attach", metricId };
+    return { kind: "skip" };
+}
+
+function toWireTarget(target: ColumnTarget): WireMapping["target"] {
+    if (target.kind === "create") return { kind: "create", name: target.name };
+    if (target.kind === "existing" || target.kind === "attach") {
+        return { kind: "existing", metricId: target.metricId };
+    }
+    throw new Error("Cannot send a skipped column");
+}
+
+// Rows selected to import for one preview, honoring duplicate resolution.
 function getPreviewEntries(
     preview: MetricImportPreview,
     selections: Record<string, number> | undefined,
@@ -82,7 +119,7 @@ function getPreviewEntries(
         .map((r) => ({ memberId: r.memberId, value: r.value }));
 }
 
-export function ImportForm({ periodId, allianceId, members, metrics }: ImportFormProps) {
+export function ImportForm({ periodId, allianceId, members, metrics, libraryMetrics, canCreateMetrics, canAttachMetrics }: ImportFormProps) {
     const [step, setStep] = useState<ImportStep>("upload");
     const [csvContent, setCsvContent] = useState<string>("");
     const [rowCount, setRowCount] = useState(0);
@@ -93,66 +130,73 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     const [duplicateSelections, setDuplicateSelections] = useState<DuplicateSelections>({});
     const [parseErrors, setParseErrors] = useState<string[]>([]);
     const [error, setError] = useState<string | null>(null);
-    const [importResult, setImportResult] = useState<{ totalCount: number; perMetric: { metricId: string; count: number }[] } | null>(null);
+    const [importResult, setImportResult] = useState<ImportResult | null>(null);
     const [isPending, startTransition] = useTransition();
 
     const metricNameById = useMemo(() => {
         const map = new Map<string, string>();
-        metrics.forEach((m) => map.set(m.id, m.name));
+        [...metrics, ...libraryMetrics].forEach((m) => map.set(m.id, m.name));
         return map;
-    }, [metrics]);
+    }, [metrics, libraryMetrics]);
 
-    const mappedColumns = columnMappings.filter((m) => m.metricId !== null);
+    // No metrics anywhere to choose from and no ability to create one.
+    const noSelectableMetrics =
+        metrics.length === 0 && libraryMetrics.length === 0 && !canCreateMetrics;
+
+    const mappedColumns = columnMappings.filter((m) => m.target.kind !== "skip");
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
         setError(null);
         setParseErrors([]);
-
         const reader = new FileReader();
         reader.onload = (event) => {
-            const content = event.target?.result as string;
-            analyzeFile(content);
+            const result = event.target?.result;
+            // readAsText yields a string, but guard against an aborted read or a
+            // non-string result rather than feeding an invalid value to analyzeCSV.
+            if (typeof result !== "string") {
+                setError("Failed to read file");
+                return;
+            }
+            analyzeFile(result);
         };
-        reader.onerror = () => {
-            setError("Failed to read file");
-        };
+        reader.onerror = () => setError("Failed to read file");
         reader.readAsText(file);
     };
 
     const analyzeFile = (content: string) => {
         const result = analyzeCSV(content);
-
         if (result.error) {
             setError(result.error);
             return;
         }
-
         if (result.columns.length < 2) {
             setError("CSV must have at least 2 columns");
             return;
         }
 
-        // Auto-detect player column (required - must match known names)
         const textCols = result.columns.filter(c => !c.isNumeric);
         const playerCol = textCols.find(c => isPlayerColumn(c.name)) || null;
-
         const numCols = result.columns.filter(c => c.isNumeric);
 
-        // Auto-map each numeric column to a metric by exact header match, never
-        // assigning the same metric to two columns. Unmatched columns default to
-        // "do not import" so the user opts in deliberately.
+        // Auto-classify conservatively: reuse a metric already on the period,
+        // else attach a library metric with the same name; never auto-create.
         const usedMetricIds = new Set<string>();
         const mappings: ColumnMetricMapping[] = numCols.map((col) => {
-            const match = matchMetricName(col.name, metrics);
-            let metricId: string | null = null;
-            if (match.status === "matched" && match.metricId && !usedMetricIds.has(match.metricId)) {
-                metricId = match.metricId;
-                usedMetricIds.add(match.metricId);
+            const onPeriod = matchMetricName(col.name, metrics);
+            if (onPeriod.status === "matched" && onPeriod.metricId && !usedMetricIds.has(onPeriod.metricId)) {
+                usedMetricIds.add(onPeriod.metricId);
+                return { columnIndex: col.index, columnName: col.name, target: { kind: "existing", metricId: onPeriod.metricId } };
             }
-            return { columnIndex: col.index, columnName: col.name, metricId };
+            if (canAttachMetrics) {
+                const inLibrary = matchMetricName(col.name, libraryMetrics);
+                if (inLibrary.status === "matched" && inLibrary.metricId && !usedMetricIds.has(inLibrary.metricId)) {
+                    usedMetricIds.add(inLibrary.metricId);
+                    return { columnIndex: col.index, columnName: col.name, target: { kind: "attach", metricId: inLibrary.metricId } };
+                }
+            }
+            return { columnIndex: col.index, columnName: col.name, target: { kind: "skip" } };
         });
 
         setCsvContent(content);
@@ -163,54 +207,57 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setStep("select");
     };
 
-    const setColumnMetric = (columnIndex: number, metricId: string | null) => {
+    const setColumnTarget = (columnIndex: number, token: string, columnName: string) => {
         setColumnMappings((prev) =>
-            prev.map((m) => (m.columnIndex === columnIndex ? { ...m, metricId } : m)),
+            prev.map((m) => (m.columnIndex === columnIndex ? { ...m, target: tokenToTarget(token, columnName) } : m)),
         );
     };
 
-    const handleSelectComplete = () => {
-        if (!autoDetectedPlayerColumn || mappedColumns.length === 0) {
-            return;
+    const displayNameFor = (target: ColumnTarget, columnName: string): string => {
+        if (target.kind === "existing" || target.kind === "attach") {
+            return metricNameById.get(target.metricId) ?? columnName;
         }
+        if (target.kind === "create") return target.name;
+        return columnName;
+    };
+
+    const handleSelectComplete = () => {
+        if (!autoDetectedPlayerColumn || mappedColumns.length === 0) return;
 
         const nextPreviews: MetricImportPreview[] = [];
         const nextSelections: DuplicateSelections = {};
         const aggregatedErrors: string[] = [];
 
         for (const mapping of mappedColumns) {
-            const metricId = mapping.metricId as string;
             const { entries, errors } = parseCSV(csvContent, {
                 nameColumn: autoDetectedPlayerColumn.index,
                 valueColumn: mapping.columnIndex,
                 hasHeader: true,
             });
-
             errors.forEach((err) => aggregatedErrors.push(`${mapping.columnName}: ${err}`));
 
             const summary = matchEntriesToMembers(entries, members);
-
             const selections: Record<string, number> = {};
             summary.results.forEach((result, index) => {
                 if ((result.status === "matched" || result.status === "duplicate") && result.memberId) {
-                    if (!(result.memberId in selections)) {
-                        selections[result.memberId] = index;
-                    }
+                    if (!(result.memberId in selections)) selections[result.memberId] = index;
                 }
             });
 
             nextPreviews.push({
-                metricId,
-                metricName: metricNameById.get(metricId) ?? mapping.columnName,
+                columnIndex: mapping.columnIndex,
                 columnName: mapping.columnName,
+                displayName: displayNameFor(mapping.target, mapping.columnName),
+                disposition: mapping.target.kind === "skip" ? "existing" : mapping.target.kind,
+                target: mapping.target,
                 summary,
             });
-            nextSelections[metricId] = selections;
+            nextSelections[mapping.columnIndex] = selections;
         }
 
         const totalParsed = nextPreviews.reduce((sum, p) => sum + p.summary.total, 0);
         const totalMatched = nextPreviews.reduce(
-            (sum, p) => sum + getPreviewEntries(p, nextSelections[p.metricId]).length,
+            (sum, p) => sum + getPreviewEntries(p, nextSelections[p.columnIndex]).length,
             0,
         );
         if (totalMatched === 0) {
@@ -231,27 +278,23 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         setStep("preview");
     };
 
-    const handleDuplicateSelection = (metricId: string, memberId: string, resultIndex: number) => {
+    const handleDuplicateSelection = (columnIndex: number, memberId: string, resultIndex: number) => {
         setDuplicateSelections((prev) => ({
             ...prev,
-            [metricId]: { ...(prev[metricId] ?? {}), [memberId]: resultIndex },
+            [columnIndex]: { ...(prev[columnIndex] ?? {}), [memberId]: resultIndex },
         }));
     };
 
     const totalToImport = useMemo(
-        () =>
-            previews.reduce(
-                (sum, p) => sum + getPreviewEntries(p, duplicateSelections[p.metricId]).length,
-                0,
-            ),
+        () => previews.reduce((sum, p) => sum + getPreviewEntries(p, duplicateSelections[p.columnIndex]).length, 0),
         [previews, duplicateSelections],
     );
 
     const handleImport = () => {
-        const mappings = previews
+        const mappings: WireMapping[] = previews
             .map((preview) => ({
-                metricId: preview.metricId,
-                entries: getPreviewEntries(preview, duplicateSelections[preview.metricId]),
+                target: toWireTarget(preview.target),
+                entries: getPreviewEntries(preview, duplicateSelections[preview.columnIndex]),
             }))
             .filter((m) => m.entries.length > 0);
 
@@ -263,7 +306,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         startTransition(async () => {
             try {
                 const result = await importMemberMetrics({ periodId, allianceId, mappings });
-                setImportResult({ totalCount: result.totalCount, perMetric: result.perMetric });
+                setImportResult(result);
                 setStep("complete");
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Import failed");
@@ -305,7 +348,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     <ul className="mt-4 divide-y divide-green-200">
                         {importResult.perMetric.map((m) => (
                             <li key={m.metricId} className="flex items-center justify-between py-2 text-green-900">
-                                <span>{metricNameById.get(m.metricId) ?? "Metric"}</span>
+                                <span>{m.name}</span>
                                 <span className="font-mono font-medium">{m.count}</span>
                             </li>
                         ))}
@@ -314,6 +357,23 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                             <span className="font-mono">{importResult.totalCount}</span>
                         </li>
                     </ul>
+                    {(importResult.created.length > 0 || importResult.attached.length > 0) && (
+                        <p className="mt-3 text-sm text-green-800">
+                            {importResult.created.length > 0 && (
+                                <>
+                                    Created {importResult.created.length}{" "}
+                                    {importResult.created.length === 1 ? "metric" : "metrics"} (
+                                    {importResult.created.map((m) => m.name).join(", ")}).{" "}
+                                </>
+                            )}
+                            {importResult.attached.length > 0 && (
+                                <>
+                                    Added {importResult.attached.length} to this period (
+                                    {importResult.attached.map((m) => m.name).join(", ")}).
+                                </>
+                            )}
+                        </p>
+                    )}
                 </div>
                 <button
                     onClick={handleReset}
@@ -325,19 +385,15 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         );
     }
 
-    // Select step - validate player column, map numeric columns to metrics
+    // Select step
     if (step === "select") {
-        const noMetrics = metrics.length === 0;
-        const canProceed = Boolean(autoDetectedPlayerColumn) && numericColumns.length > 0 && !noMetrics && mappedColumns.length > 0;
+        const canProceed = Boolean(autoDetectedPlayerColumn) && numericColumns.length > 0 && !noSelectableMetrics && mappedColumns.length > 0;
 
         return (
             <div className="w-full max-w-2xl flex flex-col gap-5">
                 <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-gray-900">Map Columns to Metrics</h3>
-                    <button
-                        onClick={handleBack}
-                        className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
-                    >
+                    <button onClick={handleBack} className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
                         ← Start Over
                     </button>
                 </div>
@@ -353,9 +409,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                                 Player column found: <strong>{autoDetectedPlayerColumn.name}</strong>
                             </p>
                         </div>
-                        <p className="text-green-800 text-sm mt-1 ml-7">
-                            {rowCount} rows detected
-                        </p>
+                        <p className="text-green-800 text-sm mt-1 ml-7">{rowCount} rows detected</p>
                     </div>
                 ) : (
                     <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
@@ -363,13 +417,9 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                             <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                             </svg>
-                            <p className="text-red-900 font-semibold">
-                                No player column found
-                            </p>
+                            <p className="text-red-900 font-semibold">No player column found</p>
                         </div>
-                        <p className="text-sm text-red-800 mt-2 ml-7">
-                            Please rename a column in your spreadsheet to one of these:
-                        </p>
+                        <p className="text-sm text-red-800 mt-2 ml-7">Please rename a column in your spreadsheet to one of these:</p>
                         <ul className="text-sm text-red-800 mt-1 ml-7 list-disc list-inside">
                             <li><strong>Player</strong> or <strong>Player Name</strong></li>
                             <li><strong>Member</strong> or <strong>Member Name</strong></li>
@@ -378,49 +428,36 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                     </div>
                 )}
 
-                {/* Numeric columns check */}
                 {numericColumns.length === 0 && (
                     <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
-                        <p className="text-red-900 font-semibold">
-                            No numeric columns found
-                        </p>
-                        <p className="text-sm text-red-800 mt-1">
-                            Your spreadsheet needs at least one column with whole numbers.
-                        </p>
+                        <p className="text-red-900 font-semibold">No numeric columns found</p>
+                        <p className="text-sm text-red-800 mt-1">Your spreadsheet needs at least one column with whole numbers.</p>
                     </div>
                 )}
 
-                {/* No metrics configured check */}
-                {noMetrics && (
+                {noSelectableMetrics && (
                     <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
-                        <p className="text-red-900 font-semibold">
-                            No metrics configured for this period
-                        </p>
-                        <p className="text-sm text-red-800 mt-1">
-                            Please add metrics to this evaluation period before importing data.
-                        </p>
+                        <p className="text-red-900 font-semibold">No metrics available</p>
+                        <p className="text-sm text-red-800 mt-1">Ask an alliance admin to add metrics, then import again.</p>
                     </div>
                 )}
 
                 {/* Mapping table */}
-                {autoDetectedPlayerColumn && numericColumns.length > 0 && !noMetrics && (
+                {autoDetectedPlayerColumn && numericColumns.length > 0 && !noSelectableMetrics && (
                     <>
                         <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
-                            <p className="text-sm font-semibold text-gray-900 mb-1">
-                                Choose which metric each column should be imported as
-                            </p>
+                            <p className="text-sm font-semibold text-gray-900 mb-1">Choose which metric each column should import as</p>
                             <p className="text-sm text-gray-600 mb-3">
-                                We&apos;ve matched columns to metrics by name where we could. Set any column
-                                to &quot;Do not import&quot; to skip it.
+                                Columns are matched to metrics by name where possible.
+                                {canCreateMetrics ? " Unrecognized columns default to \u201cDo not import\u201d - choose Create to add a new metric." : " Set any column you don\u2019t need to \u201cDo not import.\u201d"}
                             </p>
                             <div className="flex flex-col gap-3">
                                 {columnMappings.map((mapping) => {
-                                    // Prevent the same metric being mapped to two columns
-                                    // by disabling metrics already chosen elsewhere.
                                     const usedElsewhere = new Set(
                                         columnMappings
-                                            .filter((m) => m.columnIndex !== mapping.columnIndex && m.metricId)
-                                            .map((m) => m.metricId as string),
+                                            .filter((m) => m.columnIndex !== mapping.columnIndex)
+                                            .map((m) => (m.target.kind === "existing" || m.target.kind === "attach") ? m.target.metricId : null)
+                                            .filter((id): id is string => id !== null),
                                     );
                                     return (
                                         <div key={mapping.columnIndex} className="flex items-center gap-3">
@@ -430,20 +467,32 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                                             <span className="text-gray-400">→</span>
                                             <select
                                                 aria-label={`Metric for ${mapping.columnName}`}
-                                                value={mapping.metricId ?? ""}
-                                                onChange={(e) => setColumnMetric(mapping.columnIndex, e.target.value || null)}
+                                                value={targetToToken(mapping.target)}
+                                                onChange={(e) => setColumnTarget(mapping.columnIndex, e.target.value, mapping.columnName)}
                                                 className="flex-1 rounded-md border-2 border-gray-300 p-2 text-base text-gray-900 bg-white focus:border-blue-500"
                                             >
                                                 <option value="">Do not import</option>
-                                                {metrics.map((metric) => (
-                                                    <option
-                                                        key={metric.id}
-                                                        value={metric.id}
-                                                        disabled={usedElsewhere.has(metric.id)}
-                                                    >
-                                                        {metric.name}{usedElsewhere.has(metric.id) ? " (already mapped)" : ""}
-                                                    </option>
-                                                ))}
+                                                {metrics.length > 0 && (
+                                                    <optgroup label="On this period">
+                                                        {metrics.map((metric) => (
+                                                            <option key={metric.id} value={`existing:${metric.id}`} disabled={usedElsewhere.has(metric.id)}>
+                                                                {metric.name}{usedElsewhere.has(metric.id) ? " (already mapped)" : ""}
+                                                            </option>
+                                                        ))}
+                                                    </optgroup>
+                                                )}
+                                                {canAttachMetrics && libraryMetrics.length > 0 && (
+                                                    <optgroup label="Add to this period">
+                                                        {libraryMetrics.map((metric) => (
+                                                            <option key={metric.id} value={`attach:${metric.id}`} disabled={usedElsewhere.has(metric.id)}>
+                                                                {metric.name}{usedElsewhere.has(metric.id) ? " (already mapped)" : ""}
+                                                            </option>
+                                                        ))}
+                                                    </optgroup>
+                                                )}
+                                                {canCreateMetrics && (
+                                                    <option value="create">Create &ldquo;{mapping.columnName}&rdquo;</option>
+                                                )}
                                             </select>
                                         </div>
                                     );
@@ -451,7 +500,6 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                             </div>
                         </div>
 
-                        {/* Summary */}
                         {mappedColumns.length > 0 && (
                             <div className="p-4 rounded-md bg-blue-50 border border-blue-300">
                                 <p className="text-blue-900 font-medium mb-1">
@@ -459,11 +507,17 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                                 </p>
                                 <ul className="text-blue-900 text-sm list-disc list-inside">
                                     <li>Player names from: <strong>{autoDetectedPlayerColumn.name}</strong></li>
-                                    {mappedColumns.map((m) => (
-                                        <li key={m.columnIndex}>
-                                            <strong>{m.columnName}</strong> → <strong>{metricNameById.get(m.metricId as string)}</strong>
-                                        </li>
-                                    ))}
+                                    {mappedColumns.map((m) => {
+                                        const disp = m.target.kind === "skip" ? "existing" : m.target.kind;
+                                        return (
+                                            <li key={m.columnIndex}>
+                                                <strong>{m.columnName}</strong> → <strong>{displayNameFor(m.target, m.columnName)}</strong>
+                                                {disp !== "existing" && (
+                                                    <span className="ml-1 text-xs text-blue-700">({DISPOSITION_BADGE[disp].label})</span>
+                                                )}
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             </div>
                         )}
@@ -471,16 +525,11 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
                 )}
 
                 {error && (
-                    <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">
-                        {error}
-                    </div>
+                    <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">{error}</div>
                 )}
 
                 <div className="flex gap-3 justify-end">
-                    <button
-                        onClick={handleBack}
-                        className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer"
-                    >
+                    <button onClick={handleBack} className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer">
                         Cancel
                     </button>
                     <button
@@ -500,50 +549,36 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
         return (
             <div className="w-full max-w-2xl flex flex-col gap-5">
                 <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900">
-                        Review &amp; Confirm Import
-                    </h3>
-                    <button
-                        onClick={handleBack}
-                        className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
-                    >
+                    <h3 className="text-lg font-semibold text-gray-900">Review &amp; Confirm Import</h3>
+                    <button onClick={handleBack} className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
                         ← Back
                     </button>
                 </div>
 
-                {/* Parse Errors (aggregated across all columns) */}
                 {parseErrors.length > 0 && (
                     <div className="p-4 rounded-md bg-orange-100 border border-orange-300">
                         <h4 className="font-semibold text-orange-900 mb-2">Parse Warnings ({parseErrors.length})</h4>
                         <ul className="text-sm text-orange-800 list-disc list-inside max-h-24 overflow-y-auto">
-                            {parseErrors.map((err, i) => (
-                                <li key={i}>{err}</li>
-                            ))}
+                            {parseErrors.map((err, i) => (<li key={i}>{err}</li>))}
                         </ul>
                     </div>
                 )}
 
                 {previews.map((preview) => (
                     <MetricPreviewSection
-                        key={preview.metricId}
+                        key={preview.columnIndex}
                         preview={preview}
-                        selections={duplicateSelections[preview.metricId]}
+                        selections={duplicateSelections[preview.columnIndex]}
                         onDuplicateSelection={handleDuplicateSelection}
                     />
                 ))}
 
                 {error && (
-                    <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">
-                        {error}
-                    </div>
+                    <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">{error}</div>
                 )}
 
-                {/* Actions */}
                 <div className="flex gap-3 justify-end">
-                    <button
-                        onClick={handleBack}
-                        className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer"
-                    >
+                    <button onClick={handleBack} className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer">
                         Back
                     </button>
                     <button
@@ -564,17 +599,8 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
     return (
         <div className="w-full max-w-2xl flex flex-col gap-5">
             <div className="border-2 border-dashed border-blue-300 rounded-lg p-8 text-center bg-blue-50 hover:bg-blue-100 transition-colors">
-                <input
-                    type="file"
-                    accept=".csv"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    id="csv-upload"
-                />
-                <label
-                    htmlFor="csv-upload"
-                    className="cursor-pointer flex flex-col items-center gap-3"
-                >
+                <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" />
+                <label htmlFor="csv-upload" className="cursor-pointer flex flex-col items-center gap-3">
                     <svg className="w-12 h-12 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
@@ -584,9 +610,7 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
             </div>
 
             {error && (
-                <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">
-                    {error}
-                </div>
+                <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">{error}</div>
             )}
 
             <div className="p-4 rounded-md bg-gray-50 border border-gray-200">
@@ -619,9 +643,7 @@ Phoenix,2300,2900,600
     );
 }
 
-// One reviewable section per mapped metric. Mirrors the single-metric review
-// table so each metric's matched / unmatched / duplicate rows stay easy to
-// reason about instead of being merged into one dense grid.
+// One reviewable section per mapped metric.
 function MetricPreviewSection({
     preview,
     selections,
@@ -629,16 +651,14 @@ function MetricPreviewSection({
 }: {
     preview: MetricImportPreview;
     selections: Record<string, number> | undefined;
-    onDuplicateSelection: (metricId: string, memberId: string, resultIndex: number) => void;
+    onDuplicateSelection: (columnIndex: number, memberId: string, resultIndex: number) => void;
 }) {
     const { summary } = preview;
 
     const membersWithDuplicates = useMemo(() => {
         const counts = new Map<string, number>();
         for (const result of summary.results) {
-            if (result.memberId) {
-                counts.set(result.memberId, (counts.get(result.memberId) || 0) + 1);
-            }
+            if (result.memberId) counts.set(result.memberId, (counts.get(result.memberId) || 0) + 1);
         }
         const duplicates = new Set<string>();
         for (const [memberId, count] of counts) {
@@ -649,17 +669,18 @@ function MetricPreviewSection({
 
     const willImportCount = getPreviewEntries(preview, selections).length;
     const hasDuplicates = summary.duplicates > 0;
+    const badge = DISPOSITION_BADGE[preview.disposition];
 
     return (
         <div className="border border-gray-200 rounded-lg p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
-                <h4 className="font-semibold text-gray-900">{preview.metricName}</h4>
-                <span className="text-sm text-gray-600">
-                    from <strong>{preview.columnName}</strong>
-                </span>
+                <div className="flex items-center gap-2">
+                    <h4 className="font-semibold text-gray-900">{preview.displayName}</h4>
+                    <span className={`px-2 py-0.5 rounded text-xs ${badge.className}`}>{badge.label}</span>
+                </div>
+                <span className="text-sm text-gray-600">from <strong>{preview.columnName}</strong></span>
             </div>
 
-            {/* Summary Stats */}
             <div className="grid grid-cols-3 gap-3 text-center">
                 <div className="p-3 rounded-md bg-gray-100 border border-gray-300">
                     <div className="text-xl font-bold text-gray-900">{summary.total}</div>
@@ -684,7 +705,6 @@ function MetricPreviewSection({
                 </div>
             )}
 
-            {/* Results Table */}
             <div className="border rounded-md overflow-hidden">
                 <table className="w-full text-sm">
                     <thead className="bg-gray-100">
@@ -697,14 +717,9 @@ function MetricPreviewSection({
                     </thead>
                     <tbody>
                         {summary.results.map((result, i) => {
-                            const memberHasDuplicates = result.memberId
-                                ? membersWithDuplicates.has(result.memberId)
-                                : false;
-                            const isSelected = result.memberId
-                                ? selections?.[result.memberId] === i
-                                : false;
+                            const memberHasDuplicates = result.memberId ? membersWithDuplicates.has(result.memberId) : false;
+                            const isSelected = result.memberId ? selections?.[result.memberId] === i : false;
                             const willImport = result.status !== "unmatched" && isSelected;
-
                             return (
                                 <tr
                                     key={i}
@@ -726,24 +741,16 @@ function MetricPreviewSection({
                                     <td className="px-3 py-2 border-t text-right font-mono font-medium">{result.value}</td>
                                     <td className="px-3 py-2 border-t text-center">
                                         {result.status === "unmatched" ? (
-                                            <span className="px-2 py-0.5 rounded text-xs bg-red-200 text-red-800">
-                                                No Match
-                                            </span>
+                                            <span className="px-2 py-0.5 rounded text-xs bg-red-200 text-red-800">No Match</span>
                                         ) : memberHasDuplicates ? (
                                             <button
-                                                onClick={() => result.memberId && onDuplicateSelection(preview.metricId, result.memberId, i)}
-                                                className={`px-2 py-1 rounded text-xs cursor-pointer ${
-                                                    isSelected
-                                                        ? "bg-green-600 text-white"
-                                                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                                                }`}
+                                                onClick={() => result.memberId && onDuplicateSelection(preview.columnIndex, result.memberId, i)}
+                                                className={`px-2 py-1 rounded text-xs cursor-pointer ${isSelected ? "bg-green-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
                                             >
                                                 {isSelected ? "Selected" : "Use This"}
                                             </button>
                                         ) : willImport ? (
-                                            <span className="px-2 py-0.5 rounded text-xs bg-green-200 text-green-800">
-                                                Will Import
-                                            </span>
+                                            <span className="px-2 py-0.5 rounded text-xs bg-green-200 text-green-800">Will Import</span>
                                         ) : null}
                                     </td>
                                 </tr>
