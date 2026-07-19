@@ -27,6 +27,7 @@ export type EmailMetadata = {
   invitationId?: string;
   userId?: string;
   accessRequestId?: string;
+  feedbackId?: string;
 };
 
 /** Rendered email body (HTML + plain text fallback). */
@@ -63,6 +64,9 @@ export interface EmailService {
   sendAccessRequestConfirmation(
     input: AccessRequestConfirmationEmailInput
   ): Promise<EmailResult>;
+  sendFeedbackNotification(
+    input: FeedbackNotificationEmailInput
+  ): Promise<EmailResult>;
 }
 
 /** View model for the beta invitation email. */
@@ -90,4 +94,31 @@ export type AccessRequestConfirmationEmailInput = {
   request: AccessRequestConfirmationView;
   /** Persisted request id, for delivery correlation in logs. */
   accessRequestId?: string;
+};
+
+/**
+ * View model for the operator feedback notification. Facts come from the
+ * persisted record; alliance/period are context resolved by the notifier from
+ * the submission URL (may be absent). Optional rows are omitted when empty.
+ */
+export type FeedbackNotificationView = {
+  /** Short, user-facing correlation id (e.g. first 8 chars of the row id). */
+  referenceId: string;
+  /** Human-friendly category label, e.g. "Something was confusing". */
+  categoryLabel: string;
+  message: string;
+  submitterEmail: string;
+  url: string;
+  submittedAt: Date;
+  allianceName?: string;
+  periodLabel?: string;
+  appVersion?: string;
+  viewport?: string;
+};
+
+export type FeedbackNotificationEmailInput = {
+  to: string;
+  feedback: FeedbackNotificationView;
+  /** Persisted feedback id, for delivery correlation in logs and subject. */
+  feedbackId?: string;
 };

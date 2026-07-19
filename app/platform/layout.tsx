@@ -1,5 +1,5 @@
 import { requirePlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
-import { SignOutButton } from "@/app/src/components/client";
+import { FeedbackWidget, SignOutButton } from "@/app/src/components/client";
 import { PlatformNav } from "./components/PlatformNav";
 import { PlatformSearch } from "./components/PlatformSearch";
 import { PlatformFooter } from "./components/PlatformFooter";
@@ -53,6 +53,8 @@ export default async function PlatformLayout({
 
       {/* Footer */}
       <PlatformFooter />
+
+      <FeedbackWidget />
     </div>
   );
 }

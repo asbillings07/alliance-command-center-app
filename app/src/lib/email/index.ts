@@ -24,4 +24,6 @@ export type {
   BetaInvitationEmailInput,
   AccessRequestConfirmationView,
   AccessRequestConfirmationEmailInput,
+  FeedbackNotificationView,
+  FeedbackNotificationEmailInput,
 } from "./types";
