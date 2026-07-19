@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Button, type ButtonVariant, type ButtonSize } from "./Button";
 import type { TourDefinition } from "@/app/src/lib/tours/types";
-import "driver.js/dist/driver.css";
 
 export type TourButtonProps = {
   /** The tour to run when clicked. */
