@@ -14,6 +14,21 @@ export type SubmitFeedbackState = {
 };
 
 const MAX_MESSAGE_LENGTH = 2000;
+const MAX_URL_LENGTH = 512;
+
+/**
+ * The URL is a client-supplied hint used only for operator context. Accept it
+ * only as an internal, root-relative path ("/...") and clamp its length;
+ * anything else (absolute URLs, junk, empty) is normalized away rather than
+ * persisted, so it can't mislead operator follow-up.
+ */
+function normalizeInternalPath(value: string | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) {
+    return "";
+  }
+  return trimmed.slice(0, MAX_URL_LENGTH);
+}
 
 /**
  * Submit in-app feedback.
@@ -31,7 +46,7 @@ export async function submitFeedback(
 
   const category = formData.get("category")?.toString() ?? "";
   const message = formData.get("message")?.toString().trim() ?? "";
-  const url = formData.get("url")?.toString().trim() ?? "";
+  const url = normalizeInternalPath(formData.get("url")?.toString());
   const viewport = formData.get("viewport")?.toString();
   const appVersion = formData.get("appVersion")?.toString();
 

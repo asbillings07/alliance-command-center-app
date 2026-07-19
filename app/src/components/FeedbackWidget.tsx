@@ -27,7 +27,7 @@ export function FeedbackWidget() {
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Send feedback"
-          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-medium text-white shadow-lg transition-colors hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-primary-hover px-4 py-3 text-sm font-medium text-white shadow-lg transition-colors hover:bg-primary-active focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
         >
           <FeedbackGlyph />
           Feedback

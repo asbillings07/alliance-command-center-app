@@ -55,7 +55,12 @@ export async function notifyOperator(params: {
       feedbackId: feedback.id,
     });
   } catch (error) {
-    console.error("[feedback] operator notification failed", error);
+    console.error("[feedback] operator notification failed", {
+      error,
+      feedbackId: feedback.id,
+      url: feedback.url,
+      recipient,
+    });
   }
 }
 
