@@ -54,7 +54,19 @@ export async function importMemberMetrics(
     (id) => !configuredMetricIds.has(id),
   );
   if (unconfigured.length > 0) {
-    throw new Error("One or more metrics are not configured for this period");
+    // Name the offending metrics so the user can fix the mapping without
+    // guessing which column is at fault.
+    const names = await prisma.metric.findMany({
+      where: { id: { in: unconfigured } },
+      select: { name: true },
+    });
+    const label =
+      names.length > 0
+        ? names.map((m) => m.name).join(", ")
+        : unconfigured.join(", ");
+    throw new Error(
+      `These metrics are not configured for this period: ${label}`,
+    );
   }
 
   // Every referenced member must belong to this alliance.

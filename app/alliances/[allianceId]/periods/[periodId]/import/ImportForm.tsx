@@ -208,12 +208,19 @@ export function ImportForm({ periodId, allianceId, members, metrics }: ImportFor
             nextSelections[metricId] = selections;
         }
 
+        const totalParsed = nextPreviews.reduce((sum, p) => sum + p.summary.total, 0);
         const totalMatched = nextPreviews.reduce(
             (sum, p) => sum + getPreviewEntries(p, nextSelections[p.metricId]).length,
             0,
         );
         if (totalMatched === 0) {
-            setError("No rows matched any of your alliance members. Check the player names and try again.");
+            // Distinguish "nothing parsed" (blank/decimal values) from "parsed but
+            // matched no member" so the message points at the real problem.
+            setError(
+                totalParsed === 0
+                    ? "No valid values found to import. Values must be whole numbers - check for blanks or decimals in the mapped columns."
+                    : "No rows matched any of your alliance members. Check the player names and try again.",
+            );
             return;
         }
 
