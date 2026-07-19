@@ -2,7 +2,15 @@ import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  env: {
+    // Identifies the deployed build in feedback submissions. CI/CD should set
+    // NEXT_PUBLIC_APP_VERSION (e.g. a semver or `1.0.0-beta.3+sha`); locally we
+    // fall back to the package version npm exposes during scripts, then "".
+    NEXT_PUBLIC_APP_VERSION:
+      process.env.NEXT_PUBLIC_APP_VERSION ??
+      process.env.npm_package_version ??
+      "",
+  },
 };
 
 export default withSentryConfig(nextConfig, {

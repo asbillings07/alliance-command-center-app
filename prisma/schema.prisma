@@ -31,6 +31,12 @@ enum LeadershipNoteVisibility {
   ADMIN
 }
 
+enum FeedbackCategory {
+  BUG
+  IDEA
+  CONFUSING
+}
+
 model Alliance {
   id        String   @id @default(cuid())
   name      String
@@ -106,6 +112,7 @@ model User {
   invitationsSent Invitation[] @relation("InvitationsSent")
   invitationsAccepted Invitation[] @relation("InvitationsAccepted")
   betaInvitationsAccepted BetaInvitation[] @relation("BetaInvitationsAccepted")
+  feedback Feedback[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -264,6 +271,26 @@ model AccessRequest {
   allianceName String?
   message      String?
   createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// In-app feedback captured from an authenticated user while friction is fresh.
+// The row stores facts (message + client/context metadata); alliance/period
+// context is derived from the URL only when building the operator notification
+// (ADR-014 keeps notification concerns out of persistence). Deliberately
+// minimal for beta: no status/triage workflow, no attachments.
+model Feedback {
+  id         String           @id @default(cuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id])
+  category   FeedbackCategory
+  message    String
+  url        String
+  userAgent  String?
+  viewport   String?
+  appVersion String?
+  createdAt  DateTime         @default(now())
 
   @@index([createdAt])
 }

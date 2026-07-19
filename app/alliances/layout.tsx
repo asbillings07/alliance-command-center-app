@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { auth } from "@/app/src/lib/auth";
-import { SignOutButton } from "@/app/src/components/client";
+import { FeedbackWidget, SignOutButton } from "@/app/src/components/client";
 
 /**
  * Authenticated shell for the alliance section.
@@ -42,6 +42,8 @@ export default async function AlliancesLayout({
       </header>
 
       {children}
+
+      {session?.user && <FeedbackWidget />}
     </div>
   );
 }

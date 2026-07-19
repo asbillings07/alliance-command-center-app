@@ -3,10 +3,12 @@ import type {
   BetaInvitationEmailInput,
   EmailResult,
   EmailService,
+  FeedbackNotificationEmailInput,
 } from "./types";
 import { deliverEmail } from "./deliverEmail";
 import { renderBetaInvitationEmail } from "./templates/betaInvitationEmail";
 import { renderAccessRequestConfirmationEmail } from "./templates/accessRequestConfirmationEmail";
+import { renderFeedbackNotificationEmail } from "./templates/feedbackNotificationEmail";
 
 const BETA_INVITATION_SUBJECT =
   "You're invited to the Alliance Command Center beta";
@@ -43,6 +45,21 @@ export const emailService: EmailService = {
       subject: ACCESS_REQUEST_CONFIRMATION_SUBJECT,
       content: renderAccessRequestConfirmationEmail(request),
       metadata: accessRequestId ? { accessRequestId } : undefined,
+    });
+  },
+
+  async sendFeedbackNotification({
+    to,
+    feedback,
+    feedbackId,
+  }: FeedbackNotificationEmailInput): Promise<EmailResult> {
+    return deliverEmail({
+      to,
+      // The reference id makes each submission easy to find and lets a user's
+      // follow-up ("I sent feedback yesterday") map to a row and this email.
+      subject: `[AllianceHQ Feedback #${feedback.referenceId}]`,
+      content: renderFeedbackNotificationEmail(feedback),
+      metadata: feedbackId ? { feedbackId } : undefined,
     });
   },
 };
