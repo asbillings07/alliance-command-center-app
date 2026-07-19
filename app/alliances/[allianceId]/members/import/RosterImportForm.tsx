@@ -3,6 +3,8 @@
 import React, { useState, useTransition } from "react";
 import { analyzeCSV, normalizeName, parseCSVLine } from "@/app/src/lib/memberMatcher";
 import type { ColumnInfo } from "@/app/src/lib/memberMatcher";
+import { TourButton } from "@/app/src/components/client";
+import { importMembersTour } from "@/app/src/lib/tours";
 import { importMembers } from "./action";
 import type { RosterEntry, ImportResult } from "./action";
 
@@ -237,11 +239,17 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
         return (
             <div className="flex flex-col gap-6">
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
-                    <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                        Upload Your Roster
-                    </h2>
+                    <div className="flex items-start justify-between gap-4 mb-4">
+                        <h2 className="text-lg font-semibold text-gray-900">
+                            Upload Your Roster
+                        </h2>
+                        <TourButton tour={importMembersTour} />
+                    </div>
 
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                    <div
+                        data-tour="roster-upload"
+                        className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center"
+                    >
                         <input
                             type="file"
                             accept=".csv"
@@ -279,7 +287,10 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                     )}
                 </div>
 
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+                <div
+                    data-tour="roster-columns"
+                    className="bg-gray-50 border border-gray-200 rounded-lg p-6"
+                >
                     <h3 className="text-sm font-semibold text-gray-900 mb-3">
                         Supported Columns
                     </h3>
