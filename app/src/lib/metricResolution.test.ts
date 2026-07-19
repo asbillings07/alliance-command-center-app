@@ -186,6 +186,21 @@ describe("resolveMetricTargets", () => {
         expect(resolved.metricId).toBe("m-don");
     });
 
+    it("reactivates an archived metric matched by name during create (no hidden import)", async () => {
+        // create-intent matches an archived metric (not in the active library).
+        // The upsert must flip the metric back to active, not import into it hidden.
+        const { tx, metricUpsert } = makeTx({ metricByName: { Donations: { id: "m-arch" } } });
+        const classified: ClassifiedTarget[] = [
+            { disposition: "create", metricId: null, createName: "Donations" },
+        ];
+
+        await resolveMetricTargets(tx, { allianceId: "a1", periodId: "p1", classified });
+
+        expect(metricUpsert).toHaveBeenCalledWith(
+            expect.objectContaining({ update: { active: true } }),
+        );
+    });
+
     it("reactivates an inactive period link instead of leaving the metric hidden", async () => {
         const { tx, linkUpsert } = makeTx({ linkActiveByMetricId: { "m-vs": false } });
         const classified: ClassifiedTarget[] = [

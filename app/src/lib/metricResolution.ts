@@ -155,10 +155,13 @@ export async function resolveMetricTargets(
                 select: { id: true },
             });
             // Race-safe ensure-by-name: concurrent importers converge on one row.
+            // The [allianceId, name] unique index ignores `active`, so this can
+            // match an *archived* metric of the same name. Reactivate it on
+            // conflict; otherwise we would attach/import into a hidden metric.
             const metric = await tx.metric.upsert({
                 where: { allianceId_name: { allianceId, name } },
                 create: { allianceId, name, type: Metric_Type.NUMERIC },
-                update: {},
+                update: { active: true },
                 select: { id: true },
             });
             metricId = metric.id;
