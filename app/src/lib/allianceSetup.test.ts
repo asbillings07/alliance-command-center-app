@@ -250,6 +250,103 @@ describe("getAllianceSetupStatus", () => {
     expect(status.totalCount).toBe(5);
   });
 
+  it("recommends the first incomplete task in order for a new alliance", async () => {
+    mockPrisma.metric.count.mockResolvedValue(0);
+    mockPrisma.metricPeriod.count.mockResolvedValue(0);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(0);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    const status = await getAllianceSetupStatus("alliance-1");
+
+    expect(status.recommendedTask?.id).toBe("metrics");
+  });
+
+  it("advances the recommendation as earlier tasks complete", async () => {
+    // metrics + period done -> next recommended is team
+    mockPrisma.metric.count.mockResolvedValue(2);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(0);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    const status = await getAllianceSetupStatus("alliance-1");
+
+    expect(status.recommendedTask?.id).toBe("team");
+  });
+
+  it("returns null recommendation when all applicable tasks are complete", async () => {
+    mockPrisma.metric.count.mockResolvedValue(3);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(4);
+    mockPrisma.invitation.count.mockResolvedValue(2);
+    mockPrisma.allianceMember.count.mockResolvedValue(50);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(150);
+
+    const status = await getAllianceSetupStatus("alliance-1");
+
+    expect(status.recommendedTask).toBeNull();
+  });
+
+  it("recommends only tasks the user can act on (permission-filtered)", async () => {
+    // Required tasks incomplete, but a leader can only act on the data task.
+    mockPrisma.metric.count.mockResolvedValue(0);
+    mockPrisma.metricPeriod.count.mockResolvedValue(0);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(0);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    const leaderPermissions = {
+      canViewAlliance: true,
+      canViewMembers: true,
+      canViewNotes: true,
+      canManageNotes: true,
+      canImportMetrics: true,
+      canManageMembers: false,
+      canImportMembers: false,
+      canConfigureMetrics: false,
+      canConfigurePeriods: false,
+      canInviteCollaborators: false,
+      canManageLeadership: false,
+      canManageAlliance: false,
+    };
+
+    const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
+
+    expect(status.recommendedTask?.id).toBe("data");
+  });
+
+  it("returns null recommendation when the user has no applicable tasks", async () => {
+    mockPrisma.metric.count.mockResolvedValue(0);
+    mockPrisma.metricPeriod.count.mockResolvedValue(0);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(0);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    const viewerPermissions = {
+      canViewAlliance: true,
+      canViewMembers: true,
+      canViewNotes: true,
+      canManageNotes: false,
+      canImportMetrics: false,
+      canManageMembers: false,
+      canImportMembers: false,
+      canConfigureMetrics: false,
+      canConfigurePeriods: false,
+      canInviteCollaborators: false,
+      canManageLeadership: false,
+      canManageAlliance: false,
+    };
+
+    const status = await getAllianceSetupStatus("alliance-1", viewerPermissions);
+
+    expect(status.recommendedTask).toBeNull();
+  });
+
   it("isComplete reflects alliance-wide status even when tasks are filtered", async () => {
     // All required tasks complete: metrics, period, team
     mockPrisma.metric.count.mockResolvedValue(1);

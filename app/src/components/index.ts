@@ -18,6 +18,7 @@ export { AuthLayout, AuthError, type AuthLayoutProps } from "./AuthLayout";
 // Containers
 export { Card, type CardProps, type CardHeaderProps, type CardBodyProps, type CardFooterProps } from "./Card";
 export { EmptyState, EmptyStateCard, type EmptyStateProps } from "./EmptyState";
+export { SetupProgressCard, type SetupProgressCardProps } from "./SetupProgressCard";
 
 // Status
 export { Badge, type BadgeProps, type BadgeVariant, type BadgeSize } from "./Badge";
