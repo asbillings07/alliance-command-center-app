@@ -8,6 +8,11 @@ Most quality gates are automated (see [ADR-011](../adr/011-continuous-delivery.m
 and [.github/workflows/ci.yml](../../.github/workflows/ci.yml)); this checklist
 covers the human judgement around a release.
 
+Canonical production URL: `https://alliancehqapp.com` (the single origin used by
+Auth.js callbacks, Google OAuth, and all email links; `www` 301-redirects to the
+apex). Keep `NEXTAUTH_URL` set to exactly this value in the Vercel Production
+environment.
+
 ## Before merge
 
 - [ ] All CI checks passing (Build, Type Check, ESLint, Unit, Integration, E2E, Accessibility, Visual Regression)
