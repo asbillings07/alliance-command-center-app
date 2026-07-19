@@ -2,60 +2,40 @@
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
+import { buildMetricImportPlan, type MetricMapping } from "@/app/src/lib/metricImport";
 import { revalidatePath } from "next/cache";
-
-type ImportEntry = {
-  memberId: string; // allianceMemberId
-  value: number;
-};
 
 type ImportMetricsInput = {
   periodId: string;
-  metricId: string;
   allianceId: string;
-  entries: ImportEntry[];
+  mappings: MetricMapping[];
+};
+
+type ImportMetricsResult = {
+  success: boolean;
+  totalCount: number;
+  perMetric: { metricId: string; count: number }[];
 };
 
 export async function importMemberMetrics(
   input: ImportMetricsInput,
-): Promise<{ success: boolean; count: number }> {
-  const { periodId, metricId, allianceId, entries } = input;
+): Promise<ImportMetricsResult> {
+  const { periodId, allianceId, mappings } = input;
 
-  if (!periodId || !metricId || !allianceId) {
-    throw new Error("Period, metric, and alliance are required");
+  if (!periodId || !allianceId) {
+    throw new Error("Period and alliance are required");
   }
 
-  if (!Array.isArray(entries) || entries.length === 0) {
-    throw new Error("At least one entry is required");
-  }
-
-  // Validate all entries have valid values
-  for (const entry of entries) {
-    if (typeof entry.value !== "number" || !Number.isInteger(entry.value)) {
-      throw new Error("All values must be integers");
-    }
-    if (typeof entry.memberId !== "string" || !entry.memberId) {
-      throw new Error("Invalid member ID");
-    }
-  }
-
-  // Server-side deduplication: keep first occurrence per memberId
-  // This matches UI behavior and prevents crafted requests from creating duplicates
-  const seenMemberIds = new Set<string>();
-  const dedupedEntries = entries.filter((entry) => {
-    if (seenMemberIds.has(entry.memberId)) {
-      return false;
-    }
-    seenMemberIds.add(entry.memberId);
-    return true;
-  });
+  // Validate + normalize (integer values, per-metric dedupe, no duplicate
+  // metric columns) before any DB work. Throws on the first violation.
+  const plan = buildMetricImportPlan(mappings);
 
   await requireAllianceAccess({
     allianceId,
     requiredPermission: Permissions.IMPORT_METRICS,
   });
 
-  // Query scoped by both id and allianceId for safety
+  // Query scoped by both id and allianceId for safety.
   const period = await prisma.metricPeriod.findFirst({
     where: { id: periodId, allianceId },
   });
@@ -64,46 +44,68 @@ export async function importMemberMetrics(
     throw new Error("Period not found");
   }
 
-  // Validate metric is configured for this period
-  const periodMetric = await prisma.metricPeriodMetric.findUnique({
-    where: {
-      periodId_metricId: { periodId: period.id, metricId },
-    },
+  // Every mapped metric must be configured for this period.
+  const periodMetrics = await prisma.metricPeriodMetric.findMany({
+    where: { periodId: period.id, metricId: { in: plan.metricIds } },
+    select: { metricId: true },
   });
-
-  if (!periodMetric) {
-    throw new Error("Metric is not configured for this period");
+  const configuredMetricIds = new Set(periodMetrics.map((m) => m.metricId));
+  const unconfigured = plan.metricIds.filter(
+    (id) => !configuredMetricIds.has(id),
+  );
+  if (unconfigured.length > 0) {
+    // Name the offending metrics so the user can fix the mapping without
+    // guessing which column is at fault.
+    const names = await prisma.metric.findMany({
+      where: { id: { in: unconfigured } },
+      select: { name: true },
+    });
+    const label =
+      names.length > 0
+        ? names.map((m) => m.name).join(", ")
+        : unconfigured.join(", ");
+    throw new Error(
+      `These metrics are not configured for this period: ${label}`,
+    );
   }
 
-  // Validate all allianceMemberIds belong to this alliance
-  const allianceMemberIds = dedupedEntries.map((e) => e.memberId);
-  const validAllianceMembers = await prisma.allianceMember.findMany({
-    where: {
-      id: { in: allianceMemberIds },
-      allianceId: allianceId,
-    },
+  // Every referenced member must belong to this alliance.
+  const validMembers = await prisma.allianceMember.findMany({
+    where: { id: { in: plan.memberIds }, allianceId },
     select: { id: true },
   });
-
-  const validAllianceMemberIds = new Set(validAllianceMembers.map((m) => m.id));
-  const invalidAllianceMemberIds = allianceMemberIds.filter((id) => !validAllianceMemberIds.has(id));
-
-  if (invalidAllianceMemberIds.length > 0) {
+  const validMemberIds = new Set(validMembers.map((m) => m.id));
+  const invalidMemberIds = plan.memberIds.filter(
+    (id) => !validMemberIds.has(id),
+  );
+  if (invalidMemberIds.length > 0) {
     throw new Error("One or more members do not belong to this alliance");
   }
 
-  // Create entries (append to history)
-  await prisma.memberMetricEntry.createMany({
-    data: dedupedEntries.map((entry) => ({
-      allianceMemberId: entry.memberId,
-      periodId,
-      metricId,
-      value: entry.value,
-    })),
-  });
+  // All-or-nothing: the user is importing one report, not N independent
+  // datasets, so a failure on any metric must not leave a partial import.
+  await prisma.$transaction(
+    plan.mappings.map((mapping) =>
+      prisma.memberMetricEntry.createMany({
+        data: mapping.entries.map((entry) => ({
+          allianceMemberId: entry.memberId,
+          periodId,
+          metricId: mapping.metricId,
+          value: entry.value,
+        })),
+      }),
+    ),
+  );
 
   revalidatePath(`/alliances/${allianceId}/periods/${periodId}/import`);
   revalidatePath(`/alliances/${allianceId}/periods/${periodId}/record`);
 
-  return { success: true, count: dedupedEntries.length };
+  return {
+    success: true,
+    totalCount: plan.totalCount,
+    perMetric: plan.mappings.map((m) => ({
+      metricId: m.metricId,
+      count: m.entries.length,
+    })),
+  };
 }
