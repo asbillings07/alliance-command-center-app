@@ -1,10 +1,47 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
     classifyTargets,
     deriveRequiredPermissions,
+    resolveMetricTargets,
+    type ClassifiedTarget,
     type ImportMetricTarget,
 } from "./metricResolution";
 import { Permissions } from "@/app/src/lib/auth/permissions";
+import type { Prisma } from "@/app/generated/prisma/client";
+
+/**
+ * Minimal fake transaction client for resolveMetricTargets. Records the upsert
+ * calls so tests can assert we never fall back to create (which would risk a
+ * P2002 abort) and that links are reactivated rather than skipped.
+ */
+function makeTx(options: {
+    metricByName?: Record<string, { id: string }>;
+    linkActiveByMetricId?: Record<string, boolean>;
+}) {
+    const metricUpsert = vi.fn(async ({ create }: { create: { name: string } }) => ({
+        id: options.metricByName?.[create.name]?.id ?? `new-${create.name}`,
+    }));
+    const linkUpsert = vi.fn(async () => ({}));
+
+    const tx = {
+        metric: {
+            findUnique: vi.fn(async ({ where }: { where: { allianceId_name: { name: string } } }) => {
+                const found = options.metricByName?.[where.allianceId_name.name];
+                return found ? { id: found.id } : null;
+            }),
+            upsert: metricUpsert,
+        },
+        metricPeriodMetric: {
+            findUnique: vi.fn(async ({ where }: { where: { periodId_metricId: { metricId: string } } }) => {
+                const active = options.linkActiveByMetricId?.[where.periodId_metricId.metricId];
+                return active === undefined ? null : { active };
+            }),
+            upsert: linkUpsert,
+        },
+    };
+
+    return { tx: tx as unknown as Prisma.TransactionClient, metricUpsert, linkUpsert };
+}
 
 const library = [
     { id: "m-kp", name: "Kill Points" },
@@ -90,5 +127,92 @@ describe("deriveRequiredPermissions", () => {
             Permissions.CONFIGURE_PERIODS,
             Permissions.CONFIGURE_METRICS,
         ]);
+    });
+});
+
+describe("resolveMetricTargets", () => {
+    it("creates a brand-new metric via upsert (race-safe) and attaches it", async () => {
+        const { tx, metricUpsert, linkUpsert } = makeTx({});
+        const classified: ClassifiedTarget[] = [
+            { disposition: "create", metricId: null, createName: "Donations" },
+        ];
+
+        const [resolved] = await resolveMetricTargets(tx, {
+            allianceId: "a1",
+            periodId: "p1",
+            classified,
+        });
+
+        expect(metricUpsert).toHaveBeenCalledOnce();
+        expect(resolved).toEqual({ metricId: "new-Donations", created: true, attached: true });
+        // The new attachment defaults to active and scoring-neutral.
+        expect(linkUpsert).toHaveBeenCalledWith(
+            expect.objectContaining({
+                create: { periodId: "p1", metricId: "new-Donations", weight: 0, required: false, active: true },
+                update: { active: true },
+            }),
+        );
+    });
+
+    it("reports created=false when a create-intent metric already exists (converges via upsert)", async () => {
+        const { tx } = makeTx({ metricByName: { Donations: { id: "m-don" } } });
+        const classified: ClassifiedTarget[] = [
+            { disposition: "create", metricId: null, createName: "Donations" },
+        ];
+
+        const [resolved] = await resolveMetricTargets(tx, {
+            allianceId: "a1",
+            periodId: "p1",
+            classified,
+        });
+
+        expect(resolved.created).toBe(false);
+        expect(resolved.metricId).toBe("m-don");
+    });
+
+    it("reactivates an inactive period link instead of leaving the metric hidden", async () => {
+        const { tx, linkUpsert } = makeTx({ linkActiveByMetricId: { "m-vs": false } });
+        const classified: ClassifiedTarget[] = [
+            { disposition: "attach", metricId: "m-vs", createName: null },
+        ];
+
+        const [resolved] = await resolveMetricTargets(tx, {
+            allianceId: "a1",
+            periodId: "p1",
+            classified,
+        });
+
+        // Resurrected from inactive -> reported as (re)attached, link flipped active.
+        expect(resolved).toEqual({ metricId: "m-vs", created: false, attached: true });
+        expect(linkUpsert).toHaveBeenCalledWith(
+            expect.objectContaining({ update: { active: true } }),
+        );
+    });
+
+    it("treats an already-active link as a no-op attach", async () => {
+        const { tx } = makeTx({ linkActiveByMetricId: { "m-vs": true } });
+        const classified: ClassifiedTarget[] = [
+            { disposition: "attach", metricId: "m-vs", createName: null },
+        ];
+
+        const [resolved] = await resolveMetricTargets(tx, {
+            allianceId: "a1",
+            periodId: "p1",
+            classified,
+        });
+
+        expect(resolved.attached).toBe(false);
+    });
+
+    it("attaches a metric at most once when it appears in several targets", async () => {
+        const { tx, linkUpsert } = makeTx({});
+        const classified: ClassifiedTarget[] = [
+            { disposition: "attach", metricId: "m-vs", createName: null },
+            { disposition: "attach", metricId: "m-vs", createName: null },
+        ];
+
+        await resolveMetricTargets(tx, { allianceId: "a1", periodId: "p1", classified });
+
+        expect(linkUpsert).toHaveBeenCalledOnce();
     });
 });

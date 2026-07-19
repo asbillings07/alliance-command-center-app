@@ -108,10 +108,18 @@ export function deriveRequiredPermissions(
 
 /**
  * Execute the reconciliation inside a transaction: create missing metrics
- * (ensure-by-name to survive races/stale UI), attach anything not yet on the
- * period with scoring-neutral defaults (weight 0, not required), and report
- * what happened per target. Assumes classification and authorization have
- * already been validated by the caller.
+ * (ensure-by-name to survive races/stale UI), attach anything not yet actively
+ * on the period with scoring-neutral defaults (weight 0, not required), and
+ * report what happened per target. Assumes classification and authorization
+ * have already been validated by the caller.
+ *
+ * Both writes use upsert rather than find-then-create. Inside an interactive
+ * transaction a unique-constraint violation (P2002) poisons the whole
+ * transaction on Postgres, so a create-then-recover pattern is not viable
+ * here; INSERT ... ON CONFLICT resolves concurrent creators to the same row
+ * without raising. The period link's ON CONFLICT branch also reactivates a
+ * previously deactivated attachment, so a metric can never be imported into
+ * while left hidden (active: false).
  */
 export async function resolveMetricTargets(
     tx: Prisma.TransactionClient,
@@ -132,21 +140,21 @@ export async function resolveMetricTargets(
 
         if (item.disposition === "create") {
             const name = (item.createName ?? "").trim();
-            // Ensure-by-name: another actor may have created it already.
-            const existing = await tx.metric.findUnique({
+            // Was it already there before we touched it? Used only for the
+            // "created" report; the upsert below is what makes the write safe.
+            const before = await tx.metric.findUnique({
                 where: { allianceId_name: { allianceId, name } },
                 select: { id: true },
             });
-            if (existing) {
-                metricId = existing.id;
-            } else {
-                const metric = await tx.metric.create({
-                    data: { allianceId, name, type: Metric_Type.NUMERIC },
-                    select: { id: true },
-                });
-                metricId = metric.id;
-                created = true;
-            }
+            // Race-safe ensure-by-name: concurrent importers converge on one row.
+            const metric = await tx.metric.upsert({
+                where: { allianceId_name: { allianceId, name } },
+                create: { allianceId, name, type: Metric_Type.NUMERIC },
+                update: {},
+                select: { id: true },
+            });
+            metricId = metric.id;
+            created = !before;
         }
 
         if (!metricId) {
@@ -155,17 +163,20 @@ export async function resolveMetricTargets(
 
         let attached = false;
         if (item.disposition !== "existing" && !attachedThisRun.has(metricId)) {
-            // Idempotent attach: skip if it is somehow already on the period.
-            const link = await tx.metricPeriodMetric.findUnique({
+            const existingLink = await tx.metricPeriodMetric.findUnique({
                 where: { periodId_metricId: { periodId, metricId } },
-                select: { periodId: true },
+                select: { active: true },
             });
-            if (!link) {
-                await tx.metricPeriodMetric.create({
-                    data: { periodId, metricId, weight: 0, required: false },
-                });
-                attached = true;
-            }
+            // Race-safe attach that also reactivates an inactive link. On
+            // conflict we only flip active back on; weight/required are left
+            // untouched so we never clobber a configured attachment.
+            await tx.metricPeriodMetric.upsert({
+                where: { periodId_metricId: { periodId, metricId } },
+                create: { periodId, metricId, weight: 0, required: false, active: true },
+                update: { active: true },
+            });
+            // Newly linked or resurrected from inactive -> report as attached.
+            attached = !existingLink || !existingLink.active;
             attachedThisRun.add(metricId);
         }
 

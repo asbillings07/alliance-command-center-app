@@ -67,7 +67,10 @@ export async function importMemberMetrics(
       select: { id: true, name: true },
     }),
     prisma.metricPeriodMetric.findMany({
-      where: { periodId: period.id },
+      // Only active links count as "already on the period". An inactive link
+      // must reclassify to "attach" so resolution reactivates it instead of
+      // silently importing entries into a hidden metric.
+      where: { periodId: period.id, active: true },
       select: { metricId: true },
     }),
   ]);
