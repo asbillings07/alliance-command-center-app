@@ -47,6 +47,13 @@ export type AllianceSetupStatus = {
   /** Separate counts for required vs optional tasks */
   requiredComplete: number;
   requiredTotal: number;
+  /**
+   * The single task we recommend the user tackle next: the first applicable
+   * (permission-filtered) incomplete task, required tasks first by definition
+   * order. Null when the user has no remaining applicable tasks. Consumers
+   * should use this rather than re-deriving "what's next" from `tasks`.
+   */
+  recommendedTask: SetupTask | null;
 };
 
 type SetupCounts = {
@@ -221,6 +228,9 @@ export async function getAllianceSetupStatus(
   const completedCount = tasks.filter((t) => t.completed).length;
   const totalCount = tasks.length;
 
+  // First applicable incomplete task in definition order (required first).
+  const recommendedTask = tasks.find((t) => !t.completed) ?? null;
+
   return {
     tasks,
     // Setup is complete when ALL required tasks (alliance-wide) are done
@@ -230,5 +240,6 @@ export async function getAllianceSetupStatus(
     // These reflect alliance-wide required task status, not user-filtered
     requiredComplete: allRequiredComplete,
     requiredTotal: allRequiredTotal,
+    recommendedTask,
   };
 }

@@ -1,9 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
-import { PageLayout, Card, Badge } from "@/app/src/components";
+import { PageLayout, Card, Badge, SetupProgressCard } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 
 type Params = {
@@ -52,27 +51,14 @@ export default async function AlliancePage({ params }: Params) {
       description={`Server: ${alliance.server}`}
     >
       <div className="flex flex-col gap-6">
-        {/* Setup Banner - only show if user has required tasks they can complete */}
-        {!setupStatus.isComplete && setupStatus.tasks.some((t) => t.required && !t.completed) && (
-          <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-medium text-primary">Setup in Progress</h3>
-                <p className="text-sm text-text-muted mt-1">
-                  Complete {setupStatus.requiredTotal - setupStatus.requiredComplete} remaining{" "}
-                  {setupStatus.requiredTotal - setupStatus.requiredComplete === 1 ? "task" : "tasks"}{" "}
-                  to finish setting up your alliance.
-                </p>
-              </div>
-              <Link
-                href={`/alliances/${allianceId}/setup`}
-                className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-hover"
-              >
-                Continue Setup
-              </Link>
-            </div>
-          </div>
-        )}
+        {/* Persistent setup progress: stays until all applicable tasks (required
+            and optional next steps) are complete. Visibility handled internally. */}
+        <SetupProgressCard
+          allianceId={allianceId}
+          completedCount={setupStatus.completedCount}
+          totalCount={setupStatus.totalCount}
+          recommendedTask={setupStatus.recommendedTask}
+        />
 
         <Card>
           <Card.Body>
