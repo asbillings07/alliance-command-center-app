@@ -29,7 +29,7 @@ vercel promote <deployment-url>
 
 ### Post-Rollback
 
-1. Verify health endpoint: `curl https://your-domain.vercel.app/api/health`
+1. Verify health endpoint: `curl https://alliancehqapp.com/api/health` (the canonical origin, matching `NEXTAUTH_URL`)
 2. Verify login page loads
 3. Test critical user flows manually
 4. Investigate the failed deployment before retrying
