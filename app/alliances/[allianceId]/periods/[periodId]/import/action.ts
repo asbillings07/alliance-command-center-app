@@ -11,6 +11,7 @@ import {
 import {
   classifyTargets,
   deriveRequiredPermissions,
+  findDuplicateResolvedMetricId,
   resolveMetricTargets,
 } from "@/app/src/lib/metricResolution";
 import { revalidatePath } from "next/cache";
@@ -105,13 +106,8 @@ export async function importMemberMetrics(
   // with another column that already targets that metric. Detect it here with a
   // clear message instead of failing late inside the transaction via
   // buildMetricImportPlan (after avoidable resolution work).
-  const seenResolvedIds = new Set<string>();
-  for (const target of classified) {
-    if (!target.metricId) continue;
-    if (seenResolvedIds.has(target.metricId)) {
-      throw new Error("Each metric may only be mapped once");
-    }
-    seenResolvedIds.add(target.metricId);
+  if (findDuplicateResolvedMetricId(classified)) {
+    throw new Error("Each metric may only be mapped once");
   }
 
   // Enforce least-privilege: attaching needs CONFIGURE_PERIODS, creating a new

@@ -115,6 +115,28 @@ export function deriveRequiredPermissions(
 }
 
 /**
+ * Detect two targets that resolve to the same metric. Raw client inputs are
+ * deduped before classification, but a "create" whose name matches an existing
+ * library metric is downgraded to that metric's id and can then collide with
+ * another column that already targets it. buildMetricImportPlan enforces the
+ * same invariant inside the transaction; surfacing it here lets the caller fail
+ * fast with a clear message before doing resolution work. Returns the first
+ * metric id seen twice, or null when every resolved target is distinct.
+ */
+export function findDuplicateResolvedMetricId(
+    classified: ClassifiedTarget[],
+): string | null {
+    const seen = new Set<string>();
+    for (const target of classified) {
+        // create targets have no id yet; they can't collide until resolution.
+        if (!target.metricId) continue;
+        if (seen.has(target.metricId)) return target.metricId;
+        seen.add(target.metricId);
+    }
+    return null;
+}
+
+/**
  * Execute the reconciliation inside a transaction: create missing metrics
  * (ensure-by-name to survive races/stale UI), attach anything not yet actively
  * on the period with scoring-neutral defaults (weight 0, not required), and

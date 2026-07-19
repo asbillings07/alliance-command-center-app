@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
     classifyTargets,
     deriveRequiredPermissions,
+    findDuplicateResolvedMetricId,
     resolveMetricTargets,
     type ClassifiedTarget,
     type ImportMetricTarget,
@@ -115,6 +116,49 @@ describe("classifyTargets", () => {
             libraryMetrics: collidingLibrary,
         });
         expect(result).toEqual({ disposition: "attach", metricId: "m-first", createName: null });
+    });
+});
+
+describe("findDuplicateResolvedMetricId", () => {
+    it("returns null when every resolved target is distinct", () => {
+        const classified: ClassifiedTarget[] = [
+            { disposition: "existing", metricId: "m-kp", createName: null },
+            { disposition: "attach", metricId: "m-vs", createName: null },
+        ];
+        expect(findDuplicateResolvedMetricId(classified)).toBeNull();
+    });
+
+    it("ignores create targets that have no id yet", () => {
+        const classified: ClassifiedTarget[] = [
+            { disposition: "create", metricId: null, createName: "Donations" },
+            { disposition: "create", metricId: null, createName: "Assists" },
+        ];
+        expect(findDuplicateResolvedMetricId(classified)).toBeNull();
+    });
+
+    it("detects a create that downgrades onto a metric another column targets", () => {
+        // Mirrors the real flow: one column selects an existing library metric,
+        // another column's "create" name matches it and classifyTargets collapses
+        // both onto the same id. classifyTargets is used here so the collision is
+        // exactly the one the action guards against.
+        const classified = classifyTargets({
+            targets: [
+                { kind: "existing", metricId: "m-vs" },
+                { kind: "create", name: "  vs   score " },
+            ],
+            periodMetricIds: [],
+            libraryMetrics: library,
+        });
+        expect(findDuplicateResolvedMetricId(classified)).toBe("m-vs");
+    });
+
+    it("returns the first id seen twice", () => {
+        const classified: ClassifiedTarget[] = [
+            { disposition: "existing", metricId: "m-kp", createName: null },
+            { disposition: "attach", metricId: "m-vs", createName: null },
+            { disposition: "existing", metricId: "m-kp", createName: null },
+        ];
+        expect(findDuplicateResolvedMetricId(classified)).toBe("m-kp");
     });
 });
 
