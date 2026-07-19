@@ -61,7 +61,15 @@ export function classifyTargets(params: {
     const attachedIds = new Set(periodMetricIds);
     const libraryByName = new Map<string, LibraryMetric>();
     for (const metric of libraryMetrics) {
-        libraryByName.set(normalizeName(metric.name), metric);
+        const key = normalizeName(metric.name);
+        // Keep the first metric seen for a normalized key. The schema allows two
+        // metrics that differ only by case/whitespace; overwriting here would make
+        // resolution nondeterministic and could disagree with matchMetricName,
+        // which also returns the first match. Callers pass libraryMetrics ordered
+        // by name so "first" is stable.
+        if (!libraryByName.has(key)) {
+            libraryByName.set(key, metric);
+        }
     }
 
     return targets.map((target) => {

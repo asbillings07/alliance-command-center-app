@@ -65,6 +65,9 @@ export async function importMemberMetrics(
     prisma.metric.findMany({
       where: { allianceId, active: true },
       select: { id: true, name: true },
+      // Deterministic order so classifyTargets' first-seen tie-breaking for
+      // names that differ only by case/whitespace is stable and matches the UI.
+      orderBy: { name: "asc" },
     }),
     prisma.metricPeriodMetric.findMany({
       // Only active links count as "already on the period". An inactive link

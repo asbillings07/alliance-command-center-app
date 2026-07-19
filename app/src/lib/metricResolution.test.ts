@@ -100,6 +100,22 @@ describe("classifyTargets", () => {
         });
         expect(result).toEqual({ disposition: "existing", metricId: "m-kp", createName: null });
     });
+
+    it("keeps the first library metric for names that differ only by case/whitespace", () => {
+        // Two library metrics collide on their normalized name. Resolution must
+        // deterministically pick the first (input is ordered), never the later one.
+        const collidingLibrary = [
+            { id: "m-first", name: "Kill Points" },
+            { id: "m-second", name: "  kill   points " },
+        ];
+        const targets: ImportMetricTarget[] = [{ kind: "create", name: "KILL POINTS" }];
+        const [result] = classifyTargets({
+            targets,
+            periodMetricIds: [],
+            libraryMetrics: collidingLibrary,
+        });
+        expect(result).toEqual({ disposition: "attach", metricId: "m-first", createName: null });
+    });
 });
 
 describe("deriveRequiredPermissions", () => {
