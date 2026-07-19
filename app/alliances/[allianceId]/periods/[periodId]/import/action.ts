@@ -79,9 +79,17 @@ export async function importMemberMetrics(
   ]);
 
   const libraryMetricIds = new Set(libraryMetrics.map((m) => m.id));
-  // Any "existing" target must reference a metric in this alliance's library.
+  const attachedMetricIds = new Set(periodMetrics.map((pm) => pm.metricId));
+  // Any "existing" target must reference a metric owned by this alliance: either
+  // one in the active library, or one already attached to this (alliance-scoped)
+  // period. The latter covers metrics that were archived without being detached
+  // - they still legitimately belong here and are offered by the import UI.
   for (const { target } of validated) {
-    if (target.kind === "existing" && !libraryMetricIds.has(target.metricId)) {
+    if (
+      target.kind === "existing" &&
+      !libraryMetricIds.has(target.metricId) &&
+      !attachedMetricIds.has(target.metricId)
+    ) {
       throw new Error("One or more metrics do not belong to this alliance");
     }
   }
@@ -151,14 +159,16 @@ export async function importMemberMetrics(
   revalidatePath(`/alliances/${allianceId}/periods/${periodId}/import`);
   revalidatePath(`/alliances/${allianceId}/periods/${periodId}/record`);
 
-  // Resolve metric names for the UI: library names, plus the names of any
-  // metrics just created (aligned with their targets by index).
-  const nameById = new Map(libraryMetrics.map((m) => [m.id, m.name]));
-  classified.forEach((c, i) => {
-    if (c.createName) {
-      nameById.set(resolved[i].metricId, c.createName.trim());
-    }
+  // Resolve metric names for the UI from the persisted rows, not the active
+  // library snapshot: this covers metrics that were just created or that are
+  // archived-but-attached (absent from the active library), which would
+  // otherwise fall back to a "Metric" placeholder.
+  const summaryMetricIds = [...new Set(resolved.map((r) => r.metricId))];
+  const summaryMetrics = await prisma.metric.findMany({
+    where: { id: { in: summaryMetricIds } },
+    select: { id: true, name: true },
   });
+  const nameById = new Map(summaryMetrics.map((m) => [m.id, m.name]));
   const nameFor = (metricId: string) => nameById.get(metricId) ?? "Metric";
 
   const dedupeSummaries = (metricIds: string[]): MetricSummary[] =>
