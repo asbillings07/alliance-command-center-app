@@ -151,7 +151,16 @@ export function ImportForm({ periodId, allianceId, members, metrics, libraryMetr
         setError(null);
         setParseErrors([]);
         const reader = new FileReader();
-        reader.onload = (event) => analyzeFile(event.target?.result as string);
+        reader.onload = (event) => {
+            const result = event.target?.result;
+            // readAsText yields a string, but guard against an aborted read or a
+            // non-string result rather than feeding an invalid value to analyzeCSV.
+            if (typeof result !== "string") {
+                setError("Failed to read file");
+                return;
+            }
+            analyzeFile(result);
+        };
         reader.onerror = () => setError("Failed to read file");
         reader.readAsText(file);
     };

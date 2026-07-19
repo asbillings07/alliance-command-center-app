@@ -100,6 +100,20 @@ export async function importMemberMetrics(
     libraryMetrics,
   });
 
+  // validateColumnTargets dedupes raw inputs, but classification can collapse a
+  // "create" onto an existing library metric (name match), which may now collide
+  // with another column that already targets that metric. Detect it here with a
+  // clear message instead of failing late inside the transaction via
+  // buildMetricImportPlan (after avoidable resolution work).
+  const seenResolvedIds = new Set<string>();
+  for (const target of classified) {
+    if (!target.metricId) continue;
+    if (seenResolvedIds.has(target.metricId)) {
+      throw new Error("Each metric may only be mapped once");
+    }
+    seenResolvedIds.add(target.metricId);
+  }
+
   // Enforce least-privilege: attaching needs CONFIGURE_PERIODS, creating a new
   // metric needs CONFIGURE_METRICS. This preserves the boundary where a LEADER
   // can import and attach but cannot invent new metrics.
