@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { auth } from "@/app/src/lib/auth";
 import { FeedbackWidget, SignOutButton } from "@/app/src/components/client";
+// Driver.js ships global CSS. Importing it here (a layout, the Next-sanctioned
+// place for global styles) scopes it to the authenticated /alliances routes
+// where contextual tours run, and keeps it off auth/marketing/platform pages.
+// It must NOT be imported from TourButton: that component is re-exported by the
+// shared client barrel, so a CSS side-effect there leaks onto every route that
+// imports the barrel.
+import "driver.js/dist/driver.css";
 
 /**
  * Authenticated shell for the alliance section.

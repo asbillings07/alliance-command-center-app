@@ -19,6 +19,7 @@ export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from ".
 export { GoogleSignInButton } from "./GoogleSignInButton";
 export { SignOutButton } from "./SignOutButton";
 export { FeedbackWidget } from "./FeedbackWidget";
+export { TourButton, type TourButtonProps } from "./TourButton";
 
 // Forms
 export {
