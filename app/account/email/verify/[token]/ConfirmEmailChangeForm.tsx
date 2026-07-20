@@ -34,8 +34,8 @@ export function ConfirmEmailChangeForm({
           <span className="font-semibold">{state.newEmail ?? newEmail}</span>.
         </p>
         <p className="text-text-muted text-sm mb-6">
-          For your security, all sessions were signed out. Please sign in again
-          with your new email.
+          For your security, you were signed out everywhere. Please sign in
+          again with your new email.
         </p>
         <Button href="/login" variant="primary">
           Go to sign in
@@ -58,7 +58,8 @@ export function ConfirmEmailChangeForm({
         <span className="font-semibold text-text-primary break-all">
           {newEmail}
         </span>
-        . This signs out all existing sessions.
+        . You&apos;ll be signed out everywhere and need to sign in again for
+        security.
       </p>
 
       <input type="hidden" name="token" value={token} />

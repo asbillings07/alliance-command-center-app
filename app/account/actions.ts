@@ -185,9 +185,17 @@ export async function beginEmailChange(
 
   if (deliveryFailed) {
     // Nothing was verifiable — discard the request we just created rather than
-    // leaving an orphaned pending row behind. Best-effort: even if cleanup fails
-    // the row simply expires or is superseded.
-    await discardEmailChangeRequest(result.requestId);
+    // leaving an orphaned pending row behind. Best-effort: cleanup failure must
+    // not turn a delivery problem into a 500, and the row would simply expire or
+    // be superseded anyway.
+    try {
+      await discardEmailChangeRequest(result.requestId);
+    } catch (cleanupError) {
+      console.error("[account] failed to discard email-change request", {
+        userId: id,
+        cleanupError,
+      });
+    }
     console.error("[account] email-change verification not delivered", {
       userId: id,
       status: delivery.status,
