@@ -120,12 +120,26 @@ function Requirement({
 function PasswordChecklist({
   password,
   confirm,
+  currentPassword,
+  requireDifferent,
 }: {
   password: string;
   confirm: string;
+  currentPassword: string;
+  requireDifferent: boolean;
 }) {
   const lengthStatus: RequirementStatus =
     password.length >= PASSWORD_MIN_LENGTH ? "met" : "pending";
+
+  // Advisory only: we can compare against the current password once the user
+  // has typed both. It stays neutral otherwise (e.g. browser autofill leaves
+  // currentPassword empty), and the server is the authority on reuse.
+  const differentStatus: RequirementStatus =
+    currentPassword.length === 0 || password.length === 0
+      ? "pending"
+      : password === currentPassword
+        ? "error"
+        : "met";
 
   const confirmStarted = confirm.length > 0;
   const matchStatus: RequirementStatus = !confirmStarted
@@ -141,6 +155,13 @@ function PasswordChecklist({
       <Requirement status={lengthStatus}>
         At least {PASSWORD_MIN_LENGTH} characters
       </Requirement>
+      {requireDifferent && (
+        <Requirement status={differentStatus}>
+          {differentStatus === "error"
+            ? "Can't reuse your current password"
+            : "Different from your current password"}
+        </Requirement>
+      )}
       <Requirement status={matchStatus}>
         {matchStatus === "met"
           ? "Passwords match"
@@ -164,21 +185,34 @@ export function AccountSecurityForm({
     initialState
   );
 
-  // Mirror the new-password fields so the requirements checklist can react as
-  // the user types. The inputs stay uncontrolled (submitted via FormData by
-  // name); this state drives display only.
+  // Mirror the password fields so the requirements checklist can react as the
+  // user types. The inputs stay uncontrolled (submitted via FormData by name);
+  // this state drives display only.
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  // Gate submit on the new-password rules we can verify here, so a user can't
-  // submit an obviously-invalid new password. The current-password field is
-  // deliberately NOT part of this: it's uncontrolled and browser autofill can
-  // fill it without firing onChange, which would otherwise leave the button
-  // stuck disabled. Its presence is enforced by native `required` + the server.
+  // Only treat the new password as a reuse of the current one when we can
+  // actually see both. currentPassword may be empty if the browser autofilled
+  // it without firing onChange — in that case we simply don't flag reuse (and
+  // never block submit solely on the current-password field). The server is the
+  // authority and rejects an unchanged password regardless.
+  const reusesCurrent =
+    hasPassword &&
+    currentPassword.length > 0 &&
+    newPassword.length > 0 &&
+    newPassword === currentPassword;
+
+  // Gate submit on the new-password rules we can verify here so a user can't
+  // submit an obviously-invalid new password. The current-password field's
+  // presence is left to native `required` + the server (autofill can fill it
+  // without firing onChange), but if we can positively see the new password
+  // merely repeats the current one, block that too.
   const canSubmit =
     newPassword.length >= PASSWORD_MIN_LENGTH &&
     passwordByteLength(newPassword) <= PASSWORD_MAX_BYTES &&
-    newPassword === confirmPassword;
+    newPassword === confirmPassword &&
+    !reusesCurrent;
 
   return (
     <div className="space-y-6">
@@ -235,6 +269,7 @@ export function AccountSecurityForm({
             required
             disabled={isPending}
             autoComplete="current-password"
+            onChange={(e) => setCurrentPassword(e.target.value)}
           />
         )}
 
@@ -258,7 +293,12 @@ export function AccountSecurityForm({
           onChange={(e) => setConfirmPassword(e.target.value)}
         />
 
-        <PasswordChecklist password={newPassword} confirm={confirmPassword} />
+        <PasswordChecklist
+          password={newPassword}
+          confirm={confirmPassword}
+          currentPassword={currentPassword}
+          requireDifferent={hasPassword}
+        />
 
         <div className="pt-2">
           <Button
