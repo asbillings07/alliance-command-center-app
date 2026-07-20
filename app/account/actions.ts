@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
+import { refreshCurrentSession } from "@/app/src/lib/auth/session";
 import {
   getSignInMethods,
-  setPassword,
+  updateCredential,
   updateDisplayName,
   validateDisplayName,
   validatePassword,
@@ -46,13 +47,17 @@ export async function updateProfile(
  *   current password: it is additive and the user is already authenticated.
  * - Accounts that already have a password must prove the current one first.
  *
- * bcrypt hashing and persistence stay in the account service.
+ * Changing the credential invalidates all previously issued sessions (older
+ * devices are signed out on their next request). The current device is then
+ * re-issued a fresh session via refreshCurrentSession so the user who just made
+ * the change is never logged out. bcrypt hashing and persistence stay in the
+ * account service; the re-auth mechanism stays in the auth layer.
  */
 export async function updatePassword(
   _prev: UpdateProfileState,
   formData: FormData
 ): Promise<UpdateProfileState> {
-  const { id } = await requireAuth();
+  const { id, email } = await requireAuth();
 
   const methods = await getSignInMethods(id);
   if (!methods) {
@@ -78,7 +83,37 @@ export async function updatePassword(
     return { status: "error", message: "Passwords do not match" };
   }
 
-  await setPassword(id, validated.value);
+  // Reject reusing the current password: rotating the credential to an identical
+  // value changes nothing yet would still bump sessionVersion and sign out every
+  // other device — surprising, and needless bcrypt work. (Only meaningful when a
+  // password already exists; verifyPassword is false for Google-only accounts.)
+  if (methods.hasPassword && (await verifyPassword(id, validated.value))) {
+    return {
+      status: "error",
+      message: "Your new password must be different from your current password.",
+    };
+  }
+
+  await updateCredential(id, validated.value);
+
+  // The credential change has committed and every prior session (including this
+  // device) is now invalid. Re-issue the current device so the user who made
+  // the change stays signed in. If that refresh fails, the change still stands
+  // and this device will simply be signed out on its next request — so report
+  // success and ask the user to sign in again rather than surfacing a raw error
+  // for an operation that actually succeeded.
+  try {
+    await refreshCurrentSession(email, validated.value);
+  } catch (error) {
+    console.error("Failed to refresh session after password change", error);
+    revalidatePath("/account");
+    return {
+      status: "success",
+      message: methods.hasPassword
+        ? "Password updated. Please sign in again."
+        : "Password set. Please sign in again.",
+    };
+  }
 
   revalidatePath("/account");
   return {

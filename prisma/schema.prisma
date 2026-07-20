@@ -108,6 +108,11 @@ model User {
   passwordHash String?
   googleSubject String? @unique
   isPlatformAdmin Boolean @default(false)
+  // Authoritative session-invalidation version. Stamped onto the JWT at sign-in
+  // and revalidated against this column on every authenticated request. Bumping
+  // it (see revokeSessions) rejects all previously issued tokens. Unlike the
+  // isPlatformAdmin hint, this is an invariant, not a snapshot. See issue #132.
+  sessionVersion Int @default(0)
 
   memberships AllianceMembership[]
   authoredNotes LeadershipNote[]

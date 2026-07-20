@@ -17,6 +17,10 @@ import {
 } from "@/app/src/lib/auth/identity/errors";
 import { provisionOAuthUser } from "@/app/src/lib/auth/provisionOAuthUser";
 import { ensureGoogleIdentity } from "@/app/src/lib/auth/ensureGoogleIdentity";
+import {
+  getSessionVersion,
+  validateSessionVersion,
+} from "@/app/src/lib/auth/session";
 
 // Google is registered only when credentials are configured, so environments
 // without OAuth (local, CI) are unaffected.
@@ -61,6 +65,7 @@ const providers: NextAuthConfig["providers"] = [
           email: user.email,
           name: user.displayName,
           isPlatformAdmin: user.isPlatformAdmin,
+          sessionVersion: user.sessionVersion,
         };
       } catch (error) {
         console.error("Error authorizing user", error); // will be send to logger
@@ -169,13 +174,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
         token.sub = dbUser.id;
         token.isPlatformAdmin = dbUser.isPlatformAdmin;
-      } else if (user) {
+        token.sessionVersion = dbUser.sessionVersion;
+        return token;
+      }
+
+      if (user) {
         token.sub = user.id as string;
         token.isPlatformAdmin = user.isPlatformAdmin ?? false;
+        token.sessionVersion = user.sessionVersion;
+        return token;
       }
-      // These branches only run at initial sign-in (account/user present); later
-      // requests reuse the token, so the isPlatformAdmin hint persists without a
-      // per-request DB lookup.
+
+      // Every later request (no account/user) reuses the token and reaches here.
+      //
+      // sessionVersion is an authoritative authentication invariant. Unlike UI
+      // hints stored in the JWT (e.g. isPlatformAdmin, a sign-in snapshot), it
+      // is revalidated against the database on every authenticated request:
+      // returning null invalidates the session (Auth.js clears the cookie), so a
+      // bumped version immediately signs out all older tokens — and a deleted
+      // user (no version) can never validate.
+      if (token.sub) {
+        const currentVersion = await getSessionVersion(token.sub);
+        if (
+          currentVersion === null ||
+          !validateSessionVersion(token.sessionVersion, currentVersion)
+        ) {
+          return null;
+        }
+      }
+
       return token;
     },
     async session({ session, token }) {
