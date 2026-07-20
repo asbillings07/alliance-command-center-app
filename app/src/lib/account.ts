@@ -1,5 +1,12 @@
-import bcrypt from "bcrypt";
 import { prisma } from "./prisma";
+
+// bcrypt is a native addon and is only needed for password operations. It is
+// imported lazily (inside the functions that hash/compare) so that importing
+// this service for a read — e.g. getAccount on the hot alliance-selection route
+// — doesn't pay the cost of loading it.
+async function getBcrypt() {
+  return (await import("bcrypt")).default;
+}
 
 // Password policy lives in a pure, client-safe module so the UI can advertise
 // the same rules. Re-exported here so existing server callers keep importing
@@ -134,6 +141,7 @@ export async function verifyPassword(
     return false;
   }
 
+  const bcrypt = await getBcrypt();
   return bcrypt.compare(plain, user.passwordHash);
 }
 
@@ -158,6 +166,7 @@ export async function updateCredential(
   userId: string,
   plain: string
 ): Promise<void> {
+  const bcrypt = await getBcrypt();
   const passwordHash = await bcrypt.hash(plain, BCRYPT_COST);
   await prisma.user.update({
     where: { id: userId },
