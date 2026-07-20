@@ -3,10 +3,7 @@
 import { useActionState } from "react";
 import { updatePassword, type UpdateProfileState } from "./actions";
 import { Button, PasswordField } from "@/app/src/components/client";
-import {
-  PASSWORD_MIN_LENGTH,
-  PASSWORD_MAX_BYTES,
-} from "@/app/src/lib/password";
+import { PASSWORD_MIN_LENGTH } from "@/app/src/lib/password";
 
 const initialState: UpdateProfileState = { status: "idle", message: null };
 
@@ -34,19 +31,18 @@ function MethodRow({ label, active, activeText, inactiveText }: {
 }
 
 /**
- * Advertise the password policy up front so users aren't left guessing. The
- * rules are driven by the shared PASSWORD_* constants (the same source the
- * validator uses), so this stays in sync if the policy changes.
+ * Advertise only the requirements a user needs to know up front. Today that's
+ * the minimum length, driven by the shared PASSWORD_MIN_LENGTH constant (the
+ * same source the validator uses). The bcrypt 72-byte cap is intentionally not
+ * shown here: virtually no one hits it, so surfacing it would be noise — the
+ * validator reports it as an error only in the rare case it's exceeded. If the
+ * policy grows (numbers, symbols, etc.), add those rules here.
  */
 function PasswordRequirements() {
   return (
-    <div className="rounded-md bg-surface-secondary/50 px-3 py-2 text-xs text-text-muted">
-      <p className="font-medium text-text-secondary">Password requirements</p>
-      <ul className="mt-1 list-disc space-y-0.5 pl-4">
-        <li>At least {PASSWORD_MIN_LENGTH} characters</li>
-        <li>No more than {PASSWORD_MAX_BYTES} characters</li>
-      </ul>
-    </div>
+    <p className="text-xs text-text-muted">
+      Use at least {PASSWORD_MIN_LENGTH} characters.
+    </p>
   );
 }
 
