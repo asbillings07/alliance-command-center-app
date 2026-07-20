@@ -83,6 +83,17 @@ export async function updatePassword(
     return { status: "error", message: "Passwords do not match" };
   }
 
+  // Reject reusing the current password: rotating the credential to an identical
+  // value changes nothing yet would still bump sessionVersion and sign out every
+  // other device — surprising, and needless bcrypt work. (Only meaningful when a
+  // password already exists; verifyPassword is false for Google-only accounts.)
+  if (methods.hasPassword && (await verifyPassword(id, validated.value))) {
+    return {
+      status: "error",
+      message: "Your new password must be different from your current password.",
+    };
+  }
+
   await updateCredential(id, validated.value);
 
   // The credential change has committed and every prior session (including this

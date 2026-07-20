@@ -3,6 +3,10 @@
 import { useActionState } from "react";
 import { updatePassword, type UpdateProfileState } from "./actions";
 import { Button, PasswordField } from "@/app/src/components/client";
+import {
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MAX_BYTES,
+} from "@/app/src/lib/password";
 
 const initialState: UpdateProfileState = { status: "idle", message: null };
 
@@ -25,6 +29,23 @@ function MethodRow({ label, active, activeText, inactiveText }: {
       >
         {active ? activeText : inactiveText}
       </span>
+    </div>
+  );
+}
+
+/**
+ * Advertise the password policy up front so users aren't left guessing. The
+ * rules are driven by the shared PASSWORD_* constants (the same source the
+ * validator uses), so this stays in sync if the policy changes.
+ */
+function PasswordRequirements() {
+  return (
+    <div className="rounded-md bg-surface-secondary/50 px-3 py-2 text-xs text-text-muted">
+      <p className="font-medium text-text-secondary">Password requirements</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4">
+        <li>At least {PASSWORD_MIN_LENGTH} characters</li>
+        <li>Up to {PASSWORD_MAX_BYTES} bytes (about {PASSWORD_MAX_BYTES} characters)</li>
+      </ul>
     </div>
   );
 }
@@ -104,6 +125,8 @@ export function AccountSecurityForm({
           disabled={isPending}
           autoComplete="new-password"
         />
+
+        <PasswordRequirements />
 
         <PasswordField
           id="confirmPassword"
