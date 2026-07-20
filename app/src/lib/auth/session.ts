@@ -5,10 +5,12 @@ import { prisma } from "@/app/src/lib/prisma";
  * refresh.
  *
  * These are authentication *policy* primitives, deliberately separate from
- * credential *persistence* (see app/src/lib/account.ts). The same
- * `revokeSessions` primitive backs password change today and future features
- * like "Sign out everywhere" and admin-initiated logout without any auth
- * changes.
+ * credential *persistence* (see app/src/lib/account.ts). Password change applies
+ * this policy today by bumping `sessionVersion` atomically inside
+ * `updateCredential` (one write, no race). `revokeSessions` is the same policy
+ * exposed as a standalone primitive for triggers that are not credential writes
+ * — e.g. "Sign out everywhere" or admin-initiated logout — reusable without any
+ * auth changes.
  */
 
 /**
@@ -16,6 +18,9 @@ import { prisma } from "@/app/src/lib/prisma";
  * authoritative session version. The next request carrying an older token fails
  * validation in the jwt callback and is signed out. The increment is atomic and
  * monotonic.
+ *
+ * For password changes the bump happens inline in `updateCredential` (to keep it
+ * atomic with the hash write); use this primitive for non-credential triggers.
  */
 export async function revokeSessions(userId: string): Promise<void> {
   await prisma.user.update({

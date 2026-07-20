@@ -43,8 +43,9 @@ export function validatePassword(raw: unknown): ValidatePasswordResult {
 
   // Enforce bcrypt's 72-byte input limit using UTF-8 byte length, not string
   // length, so a multibyte password can't slip past validation and then be
-  // silently truncated by bcrypt.
-  if (Buffer.byteLength(raw, "utf8") > PASSWORD_MAX_BYTES) {
+  // silently truncated by bcrypt. TextEncoder (not Buffer) so this stays usable
+  // from Client Components — Buffer isn't available in the browser by default.
+  if (new TextEncoder().encode(raw).length > PASSWORD_MAX_BYTES) {
     return {
       ok: false,
       message: `Password must be ${PASSWORD_MAX_BYTES} bytes or fewer`,
