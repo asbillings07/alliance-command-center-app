@@ -1,5 +1,10 @@
 import { prisma } from "@/app/src/lib/prisma";
 
+// The pure comparator lives in its own dependency-free module so it can be
+// unit-tested without importing Prisma. Re-exported here so callers keep a
+// single session-policy entry point.
+export { validateSessionVersion } from "./sessionVersion";
+
 /**
  * Session lifecycle: revocation, version validation, and current-session
  * refresh.
@@ -42,22 +47,6 @@ export async function getSessionVersion(
   });
 
   return user?.sessionVersion ?? null;
-}
-
-/**
- * Decide whether a token's session version should continue to be honored,
- * given the current database version. Pure and framework-free so it is the
- * single, unit-testable source of truth for the validation rule.
- *
- * Tokens minted before this feature existed carry no version; treat `undefined`
- * as 0 to match the column default, so existing sessions are NOT force-logged
- * out on the deploy that introduces `sessionVersion`.
- */
-export function validateSessionVersion(
-  tokenVersion: number | undefined,
-  dbVersion: number
-): boolean {
-  return (tokenVersion ?? 0) === dbVersion;
 }
 
 /**

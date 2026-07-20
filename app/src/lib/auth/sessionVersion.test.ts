@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateSessionVersion } from "./session";
+import { validateSessionVersion } from "./sessionVersion";
 
 describe("validateSessionVersion", () => {
   it("honors a token whose version matches the database", () => {

@@ -44,7 +44,7 @@ function PasswordRequirements() {
       <p className="font-medium text-text-secondary">Password requirements</p>
       <ul className="mt-1 list-disc space-y-0.5 pl-4">
         <li>At least {PASSWORD_MIN_LENGTH} characters</li>
-        <li>Up to {PASSWORD_MAX_BYTES} bytes (about {PASSWORD_MAX_BYTES} characters)</li>
+        <li>Up to {PASSWORD_MAX_BYTES} bytes long</li>
       </ul>
     </div>
   );
