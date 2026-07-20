@@ -9,6 +9,7 @@ import {
   validateBetaCode,
 } from "@/app/src/lib/betaInvitation";
 import { sanitizeCallbackUrl } from "@/app/src/lib/auth/callbackUrl";
+import { validateDisplayName } from "@/app/src/lib/account";
 
 export type RegisterState = {
   error: string | null;
@@ -21,12 +22,19 @@ export async function register(
   const email = formData.get("email")?.toString().trim().toLowerCase();
   const password = formData.get("password")?.toString();
   const confirmPassword = formData.get("confirmPassword")?.toString();
-  const displayName = formData.get("displayName")?.toString().trim();
   const rawCallbackUrl = formData.get("callbackUrl")?.toString() || "";
 
-  if (!email || !password || !displayName) {
+  if (!email || !password) {
     return { error: "All fields are required" };
   }
+
+  // Display-name rules live in the account service so registration and account
+  // updates can never drift apart.
+  const displayNameResult = validateDisplayName(formData.get("displayName"));
+  if (!displayNameResult.ok) {
+    return { error: displayNameResult.message };
+  }
+  const displayName = displayNameResult.value;
 
   if (password !== confirmPassword) {
     return { error: "Passwords do not match" };

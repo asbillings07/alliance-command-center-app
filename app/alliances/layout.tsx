@@ -44,7 +44,17 @@ export default async function AlliancesLayout({
           >
             Alliance Command Center
           </Link>
-          {session?.user && <SignOutButton variant="ghost" />}
+          {session?.user && (
+            <div className="flex items-center gap-2">
+              <Link
+                href="/account"
+                className="text-sm font-medium text-text-secondary transition-colors hover:text-primary"
+              >
+                Account
+              </Link>
+              <SignOutButton variant="ghost" />
+            </div>
+          )}
         </div>
       </header>
 
