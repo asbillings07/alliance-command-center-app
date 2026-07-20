@@ -8,8 +8,11 @@ import {
   PASSWORD_MAX_BYTES,
 } from "@/app/src/lib/password";
 
+// Single shared encoder: passwordByteLength runs on every keystroke, so reuse
+// one instance rather than allocating a TextEncoder per call.
+const passwordEncoder = new TextEncoder();
 const passwordByteLength = (value: string) =>
-  new TextEncoder().encode(value).length;
+  passwordEncoder.encode(value).length;
 
 const initialState: UpdateProfileState = { status: "idle", message: null };
 
