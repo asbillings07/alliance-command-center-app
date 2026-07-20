@@ -1,6 +1,8 @@
 'use client'
 import { useState, useTransition, useMemo } from "react";
 import { analyzeCSV, parseCSV, matchEntriesToMembers, matchMetricName, type MatchSummary, type ColumnInfo } from "@/app/src/lib/memberMatcher";
+import { TourButton } from "@/app/src/components/client";
+import { smartImportTour } from "@/app/src/lib/tours";
 import { importMemberMetrics } from "./action";
 
 type MemberOption = {
@@ -598,7 +600,10 @@ export function ImportForm({ periodId, allianceId, members, metrics, libraryMetr
     // Upload step
     return (
         <div className="w-full max-w-2xl flex flex-col gap-5">
-            <div className="border-2 border-dashed border-blue-300 rounded-lg p-8 text-center bg-blue-50 hover:bg-blue-100 transition-colors">
+            <div className="flex justify-end">
+                <TourButton tour={smartImportTour} />
+            </div>
+            <div data-tour="metric-upload" className="border-2 border-dashed border-blue-300 rounded-lg p-8 text-center bg-blue-50 hover:bg-blue-100 transition-colors">
                 <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" />
                 <label htmlFor="csv-upload" className="cursor-pointer flex flex-col items-center gap-3">
                     <svg className="w-12 h-12 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -613,7 +618,7 @@ export function ImportForm({ periodId, allianceId, members, metrics, libraryMetr
                 <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">{error}</div>
             )}
 
-            <div className="p-4 rounded-md bg-gray-50 border border-gray-200">
+            <div data-tour="metric-requirements" className="p-4 rounded-md bg-gray-50 border border-gray-200">
                 <p className="font-semibold text-gray-900 mb-3">Requirements:</p>
                 <ul className="space-y-2 text-sm text-gray-700">
                     <li className="flex items-start gap-2">
