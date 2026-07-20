@@ -85,9 +85,24 @@ export async function updatePassword(
 
   await updateCredential(id, validated.value);
 
-  // Older sessions are now invalid; refresh the current device so it stays
-  // signed in with a token carrying the new session version.
-  await refreshCurrentSession(email, validated.value);
+  // The credential change has committed and every prior session (including this
+  // device) is now invalid. Re-issue the current device so the user who made
+  // the change stays signed in. If that refresh fails, the change still stands
+  // and this device will simply be signed out on its next request — so report
+  // success and ask the user to sign in again rather than surfacing a raw error
+  // for an operation that actually succeeded.
+  try {
+    await refreshCurrentSession(email, validated.value);
+  } catch (error) {
+    console.error("Failed to refresh session after password change", error);
+    revalidatePath("/account");
+    return {
+      status: "success",
+      message: methods.hasPassword
+        ? "Password updated. Please sign in again."
+        : "Password set. Please sign in again.",
+    };
+  }
 
   revalidatePath("/account");
   return {
