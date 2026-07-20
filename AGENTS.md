@@ -239,7 +239,7 @@ See `docs/adr/010-platform-operations-architecture.md` for full details.
 
 OAuth providers are authentication only.
 
-Google proves a user owns a verified email. Authorization and account eligibility remain governed by the invitation model and verified email identity.
+Google proves a user owns a verified email. Authorization and account eligibility remain governed by the invitation model; the email is verified at sign-in time but is no longer the identity key (the Google `sub` is — see below).
 
 * No Prisma adapter.
 * Authentication is modeled as capabilities, not a provider enum: `User.passwordHash` present enables password login, `User.googleSubject` present enables Google login. A user may have both (e.g. the operator's break-glass account).

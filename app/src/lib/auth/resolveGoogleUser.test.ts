@@ -5,17 +5,26 @@ import {
   InvitationRequiredError,
 } from "./identity/errors";
 
+// Mock the exact specifiers the implementation imports (the `@/app/src/...`
+// alias) so the mocked module IDs always match, regardless of how Vitest
+// resolves relative vs. aliased paths.
 vi.mock("@/app/src/lib/prisma", () => ({
   prisma: { user: { findUnique: vi.fn() } },
 }));
-vi.mock("./ensureGoogleIdentity", () => ({ ensureGoogleIdentity: vi.fn() }));
-vi.mock("./provisionOAuthUser", () => ({ provisionOAuthUser: vi.fn() }));
-vi.mock("./identity/eligibility", () => ({ isInvitationEligible: vi.fn() }));
+vi.mock("@/app/src/lib/auth/ensureGoogleIdentity", () => ({
+  ensureGoogleIdentity: vi.fn(),
+}));
+vi.mock("@/app/src/lib/auth/provisionOAuthUser", () => ({
+  provisionOAuthUser: vi.fn(),
+}));
+vi.mock("@/app/src/lib/auth/identity/eligibility", () => ({
+  isInvitationEligible: vi.fn(),
+}));
 
 import { prisma } from "@/app/src/lib/prisma";
-import { ensureGoogleIdentity } from "./ensureGoogleIdentity";
-import { provisionOAuthUser } from "./provisionOAuthUser";
-import { isInvitationEligible } from "./identity/eligibility";
+import { ensureGoogleIdentity } from "@/app/src/lib/auth/ensureGoogleIdentity";
+import { provisionOAuthUser } from "@/app/src/lib/auth/provisionOAuthUser";
+import { isInvitationEligible } from "@/app/src/lib/auth/identity/eligibility";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const mockPrisma = prisma as any;
