@@ -80,6 +80,7 @@ export function MetricPeriodCard({
         <div className="w-full">
           <button
             type="button"
+            data-tour="create-period"
             onClick={() => setCardState("form")}
             className="w-full rounded-md border-2 border-dashed border-border p-4 text-text-secondary hover:border-primary hover:text-primary cursor-pointer transition-colors"
           >

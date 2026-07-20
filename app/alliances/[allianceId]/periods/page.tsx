@@ -3,6 +3,8 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { MetricPeriodCard } from "./metricPeriodCard";
 import { PageLayout, EmptyState } from "@/app/src/components";
+import { TourButton } from "@/app/src/components/client";
+import { createPeriodTour } from "@/app/src/lib/tours";
 
 type Params = {
     params: Promise<{
@@ -41,6 +43,7 @@ export default async function PeriodsPage({ params }: Params) {
             ]}
             title="Evaluation Periods"
             description="Create and manage evaluation periods for tracking member performance"
+            action={<TourButton tour={createPeriodTour} />}
             maxWidth="3xl"
         >
             <div className="flex flex-col gap-4">
