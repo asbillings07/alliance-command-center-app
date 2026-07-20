@@ -1,6 +1,11 @@
 "use client";
 
-import { ButtonHTMLAttributes, forwardRef, type MouseEventHandler } from "react";
+import {
+  type AnchorHTMLAttributes,
+  ButtonHTMLAttributes,
+  forwardRef,
+  type MouseEventHandler,
+} from "react";
 import Link from "next/link";
 
 /**
@@ -169,8 +174,18 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     );
 
     if (href && !disabled) {
+      // Button is polymorphic. As a link it must still forward passthrough
+      // attributes (aria-*, data-*, title, id, ...) so accessibility hints and
+      // test hooks aren't silently dropped. The cast bridges button vs anchor
+      // attribute typings; button-only props (type, form) are simply unused on
+      // an anchor.
       return (
-        <Link href={href} className={classes} onClick={onClick}>
+        <Link
+          href={href}
+          className={classes}
+          onClick={onClick}
+          {...(props as AnchorHTMLAttributes<HTMLAnchorElement>)}
+        >
           {content}
         </Link>
       );
