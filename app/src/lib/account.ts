@@ -1,3 +1,4 @@
+import bcrypt from "bcrypt";
 import { prisma } from "./prisma";
 
 /**
@@ -15,6 +16,19 @@ import { prisma } from "./prisma";
 
 /** The maximum length we accept for a display name. */
 export const DISPLAY_NAME_MAX_LENGTH = 50;
+
+/** Minimum password length (characters), shared across all password entry points. */
+export const PASSWORD_MIN_LENGTH = 8;
+/**
+ * Maximum password length in UTF-8 bytes. bcrypt only hashes the first 72 bytes,
+ * so anything longer would be silently truncated; reject it instead of hashing a
+ * prefix. This is a byte limit, not a character limit: a multibyte password can
+ * exceed 72 bytes while having fewer than 72 JavaScript characters.
+ */
+export const PASSWORD_MAX_BYTES = 72;
+
+/** Work factor for bcrypt hashing, consistent across the codebase. */
+const BCRYPT_COST = 12;
 
 export type Account = {
   displayName: string;
@@ -66,5 +80,111 @@ export async function updateDisplayName(
   await prisma.user.update({
     where: { id: userId },
     data: { displayName },
+  });
+}
+
+// ============================================================
+// Security: password credential + sign-in methods
+// ============================================================
+
+export type ValidatePasswordResult =
+  | { ok: true; value: string }
+  | { ok: false; message: string };
+
+/**
+ * Validate a password. Pure and framework-free so it is the single source of
+ * truth for password rules (account, registration, and platform bootstrap).
+ *
+ * Unlike display names, passwords are NOT trimmed: leading/trailing whitespace
+ * can be intentional, and trimming would silently alter the user's secret.
+ */
+export function validatePassword(raw: unknown): ValidatePasswordResult {
+  if (typeof raw !== "string" || raw.length === 0) {
+    return { ok: false, message: "Password is required" };
+  }
+
+  if (raw.length < PASSWORD_MIN_LENGTH) {
+    return {
+      ok: false,
+      message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
+    };
+  }
+
+  // Enforce bcrypt's 72-byte input limit using UTF-8 byte length, not string
+  // length, so a multibyte password can't slip past validation and then be
+  // silently truncated by bcrypt.
+  if (Buffer.byteLength(raw, "utf8") > PASSWORD_MAX_BYTES) {
+    return {
+      ok: false,
+      message: `Password must be ${PASSWORD_MAX_BYTES} bytes or fewer`,
+    };
+  }
+
+  return { ok: true, value: raw };
+}
+
+export type SignInMethods = {
+  /** Whether email + password sign-in is available for this account. */
+  hasPassword: boolean;
+  /** Whether a Google account is linked to this account. */
+  hasGoogle: boolean;
+};
+
+/**
+ * Report which sign-in capabilities the account has, derived from the presence
+ * of the credential columns (ADR-013). Never returns the hash or subject
+ * themselves — only whether each capability exists.
+ */
+export async function getSignInMethods(
+  userId: string
+): Promise<SignInMethods | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { passwordHash: true, googleSubject: true },
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  return {
+    hasPassword: user.passwordHash !== null,
+    hasGoogle: user.googleSubject !== null,
+  };
+}
+
+/**
+ * Verify a plaintext password against the stored hash. Returns false when the
+ * account has no password credential (Google-only) rather than throwing.
+ */
+export async function verifyPassword(
+  userId: string,
+  plain: string
+): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { passwordHash: true },
+  });
+
+  if (!user?.passwordHash) {
+    return false;
+  }
+
+  return bcrypt.compare(plain, user.passwordHash);
+}
+
+/**
+ * Set (or replace) the account's password. The caller authenticates the user,
+ * validates the value via `validatePassword`, and — when a password already
+ * exists — verifies the current one before calling this.
+ */
+export async function setPassword(
+  userId: string,
+  plain: string
+): Promise<void> {
+  const passwordHash = await bcrypt.hash(plain, BCRYPT_COST);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash },
   });
 }

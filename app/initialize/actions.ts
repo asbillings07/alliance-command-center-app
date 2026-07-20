@@ -9,6 +9,7 @@ import {
   canInitializePlatform,
   verifyBootstrapSecret,
 } from "@/app/src/lib/platform";
+import { validatePassword } from "@/app/src/lib/account";
 
 export type InitializeState = {
   error: string | null;
@@ -46,8 +47,10 @@ export async function initializePlatform(
     return { error: "Passwords do not match" };
   }
 
-  if (password.length < 8) {
-    return { error: "Password must be at least 8 characters" };
+  // Shared password rules (account service), consistent with registration.
+  const passwordResult = validatePassword(password);
+  if (!passwordResult.ok) {
+    return { error: passwordResult.message };
   }
 
   // Race condition protection: verify platform is still uninitialized
