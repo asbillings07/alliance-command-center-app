@@ -174,17 +174,29 @@ export async function verifyPassword(
 }
 
 /**
- * Set (or replace) the account's password. The caller authenticates the user,
- * validates the value via `validatePassword`, and — when a password already
- * exists — verifies the current one before calling this.
+ * Set (or replace) the account's password credential.
+ *
+ * This is the credential-change entry point: it persists the new hash and, in
+ * the same atomic write, applies the session-revocation policy by bumping
+ * `sessionVersion` (invalidating all previously issued tokens). The two are
+ * combined in one `update` so a credential change can never leave stale
+ * sessions valid due to a partial failure.
+ *
+ * Credential persistence (this) and the revocation primitive (`revokeSessions`
+ * in auth/session.ts) stay conceptually separate — not every credential write
+ * implies revocation (imports, admin resets), and not every revocation involves
+ * a credential (sign-out-everywhere). Password change happens to apply both.
+ *
+ * The caller authenticates the user, validates the value via `validatePassword`,
+ * and — when a password already exists — verifies the current one before this.
  */
-export async function setPassword(
+export async function updateCredential(
   userId: string,
   plain: string
 ): Promise<void> {
   const passwordHash = await bcrypt.hash(plain, BCRYPT_COST);
   await prisma.user.update({
     where: { id: userId },
-    data: { passwordHash },
+    data: { passwordHash, sessionVersion: { increment: 1 } },
   });
 }

@@ -8,10 +8,17 @@ import type { DefaultSession } from "next-auth";
  * avoid an extra DB lookup. It is NOT authoritative: protected /platform/*
  * routes always re-check the database via requirePlatformAdmin, so a hint that
  * goes stale (admin granted/revoked mid-session) can never grant real access.
+ *
+ * `sessionVersion` is the opposite: an authoritative authentication invariant.
+ * It is stamped on the JWT at sign-in and revalidated against the database on
+ * every authenticated request (see the jwt callback), so bumping the stored
+ * version immediately rejects all older tokens. It is intentionally NOT exposed
+ * on Session — only the auth layer needs it.
  */
 declare module "next-auth" {
   interface User {
     isPlatformAdmin?: boolean;
+    sessionVersion?: number;
   }
 
   interface Session {
@@ -27,5 +34,6 @@ declare module "next-auth" {
 declare module "@auth/core/jwt" {
   interface JWT {
     isPlatformAdmin?: boolean;
+    sessionVersion?: number;
   }
 }

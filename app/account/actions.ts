@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
+import { refreshCurrentSession } from "@/app/src/lib/auth/session";
 import {
   getSignInMethods,
-  setPassword,
+  updateCredential,
   updateDisplayName,
   validateDisplayName,
   validatePassword,
@@ -46,13 +47,17 @@ export async function updateProfile(
  *   current password: it is additive and the user is already authenticated.
  * - Accounts that already have a password must prove the current one first.
  *
- * bcrypt hashing and persistence stay in the account service.
+ * Changing the credential invalidates all previously issued sessions (older
+ * devices are signed out on their next request). The current device is then
+ * re-issued a fresh session via refreshCurrentSession so the user who just made
+ * the change is never logged out. bcrypt hashing and persistence stay in the
+ * account service; the re-auth mechanism stays in the auth layer.
  */
 export async function updatePassword(
   _prev: UpdateProfileState,
   formData: FormData
 ): Promise<UpdateProfileState> {
-  const { id } = await requireAuth();
+  const { id, email } = await requireAuth();
 
   const methods = await getSignInMethods(id);
   if (!methods) {
@@ -78,7 +83,11 @@ export async function updatePassword(
     return { status: "error", message: "Passwords do not match" };
   }
 
-  await setPassword(id, validated.value);
+  await updateCredential(id, validated.value);
+
+  // Older sessions are now invalid; refresh the current device so it stays
+  // signed in with a token carrying the new session version.
+  await refreshCurrentSession(email, validated.value);
 
   revalidatePath("/account");
   return {
