@@ -164,22 +164,21 @@ export function AccountSecurityForm({
     initialState
   );
 
-  // Mirror the password fields so the requirements checklist can react as the
-  // user types. The inputs stay uncontrolled (submitted via FormData by name);
-  // this state drives display only.
-  const [currentPassword, setCurrentPassword] = useState("");
+  // Mirror the new-password fields so the requirements checklist can react as
+  // the user types. The inputs stay uncontrolled (submitted via FormData by
+  // name); this state drives display only.
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  // Everything we can verify on the client before allowing a submit. Server-only
-  // checks (current password correct, new password differs from old) still run
-  // and can surface an error afterward, but this prevents an obviously-doomed
-  // submit.
+  // Gate submit on the new-password rules we can verify here, so a user can't
+  // submit an obviously-invalid new password. The current-password field is
+  // deliberately NOT part of this: it's uncontrolled and browser autofill can
+  // fill it without firing onChange, which would otherwise leave the button
+  // stuck disabled. Its presence is enforced by native `required` + the server.
   const canSubmit =
     newPassword.length >= PASSWORD_MIN_LENGTH &&
     passwordByteLength(newPassword) <= PASSWORD_MAX_BYTES &&
-    newPassword === confirmPassword &&
-    (!hasPassword || currentPassword.length > 0);
+    newPassword === confirmPassword;
 
   return (
     <div className="space-y-6">
@@ -236,7 +235,6 @@ export function AccountSecurityForm({
             required
             disabled={isPending}
             autoComplete="current-password"
-            onChange={(e) => setCurrentPassword(e.target.value)}
           />
         )}
 
