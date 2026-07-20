@@ -1,6 +1,9 @@
-import Link from "next/link";
 import { requirePlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
-import { FeedbackWidget, SignOutButton } from "@/app/src/components/client";
+import {
+  AccountNavLink,
+  FeedbackWidget,
+  SignOutButton,
+} from "@/app/src/components/client";
 import { PlatformNav } from "./components/PlatformNav";
 import { PlatformSearch } from "./components/PlatformSearch";
 import { PlatformFooter } from "./components/PlatformFooter";
@@ -42,13 +45,8 @@ export default async function PlatformLayout({
         <aside className="hidden lg:flex lg:w-56 lg:flex-col lg:border-r lg:border-border lg:bg-surface">
           <PlatformNav />
           <div className="border-t border-border p-3 space-y-1">
-            <Link
-              href="/account"
-              className="block px-3 py-2 rounded-lg text-sm text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary"
-            >
-              Account
-            </Link>
-            <SignOutButton variant="ghost" fullWidth />
+            <AccountNavLink fullWidth />
+            <SignOutButton variant="ghost" fullWidth align="start" />
           </div>
         </aside>
 

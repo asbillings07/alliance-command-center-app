@@ -1,6 +1,11 @@
 "use client";
 
-import { ButtonHTMLAttributes, forwardRef } from "react";
+import {
+  type AnchorHTMLAttributes,
+  ButtonHTMLAttributes,
+  forwardRef,
+  type MouseEventHandler,
+} from "react";
 import Link from "next/link";
 
 /**
@@ -42,12 +47,24 @@ export type ButtonProps = {
   href?: string;
   /** Full width button */
   fullWidth?: boolean;
+  /**
+   * Horizontal alignment of the button's content. Defaults to `center`; use
+   * `start` for full-width buttons that act as left-aligned nav rows so their
+   * label lines up with adjacent links (e.g. sidebar/drawer footers).
+   */
+  align?: "center" | "start";
   /** Loading state */
   loading?: boolean;
-} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className">;
+  /**
+   * Typed element-agnostically because Button renders as a `<button>` or, when
+   * `href` is set, a `next/link` anchor. Handlers should not assume a button
+   * element (e.g. `currentTarget.form`).
+   */
+  onClick?: MouseEventHandler<HTMLElement>;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className" | "onClick">;
 
 const baseClasses =
-  "inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:cursor-not-allowed";
+  "inline-flex items-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:cursor-not-allowed";
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
@@ -104,9 +121,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       size = "md",
       href,
       fullWidth = false,
+      align = "center",
       loading = false,
       disabled,
       children,
+      onClick,
       ...props
     },
     ref
@@ -118,6 +137,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       variant === "success-link";
     const classes = [
       baseClasses,
+      align === "start" ? "justify-start" : "justify-center",
       variantClasses[variant],
       !isLinkVariant && sizeClasses[size],
       fullWidth && "w-full",
@@ -154,8 +174,18 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     );
 
     if (href && !disabled) {
+      // Button is polymorphic. As a link it must still forward passthrough
+      // attributes (aria-*, data-*, title, id, ...) so accessibility hints and
+      // test hooks aren't silently dropped. The cast bridges button vs anchor
+      // attribute typings; button-only props (type, form) are simply unused on
+      // an anchor.
       return (
-        <Link href={href} className={classes}>
+        <Link
+          href={href}
+          className={classes}
+          onClick={onClick}
+          {...(props as AnchorHTMLAttributes<HTMLAnchorElement>)}
+        >
           {content}
         </Link>
       );
@@ -166,6 +196,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         className={classes}
         disabled={disabled || loading}
+        onClick={onClick}
         {...props}
       >
         {content}
