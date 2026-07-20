@@ -51,7 +51,13 @@ export type BeginEmailChangeReason =
   | "email_taken";
 
 export type BeginEmailChangeResult =
-  | { ok: true; rawToken: string; newEmail: string; expiresAt: Date }
+  | {
+      ok: true;
+      requestId: string;
+      rawToken: string;
+      newEmail: string;
+      expiresAt: Date;
+    }
   | { ok: false; reason: BeginEmailChangeReason };
 
 export type CompleteEmailChangeReason =
@@ -128,14 +134,28 @@ export async function beginEmailChange(input: {
   const tokenHash = hashToken(rawToken);
   const expiresAt = new Date(Date.now() + EMAIL_CHANGE_TOKEN_TTL_MS);
 
-  await prisma.$transaction([
+  const [, created] = await prisma.$transaction([
     prisma.emailChangeRequest.deleteMany({ where: { userId, consumedAt: null } }),
     prisma.emailChangeRequest.create({
       data: { userId, newEmail, tokenHash, expiresAt },
     }),
   ]);
 
-  return { ok: true, rawToken, newEmail, expiresAt };
+  return { ok: true, requestId: created.id, rawToken, newEmail, expiresAt };
+}
+
+/**
+ * Discard a still-pending request by id. Called by the action layer when the
+ * verification email fails to send, so a transient provider outage doesn't
+ * leave an orphaned pending request behind. Only unconsumed rows are removed,
+ * so this can never undo an already-confirmed change.
+ */
+export async function discardEmailChangeRequest(
+  requestId: string
+): Promise<void> {
+  await prisma.emailChangeRequest.deleteMany({
+    where: { id: requestId, consumedAt: null },
+  });
 }
 
 /**

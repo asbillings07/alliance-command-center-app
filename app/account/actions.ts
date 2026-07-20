@@ -13,6 +13,7 @@ import {
 } from "@/app/src/lib/account";
 import {
   beginEmailChange as beginEmailChangeService,
+  discardEmailChangeRequest,
   type BeginEmailChangeReason,
 } from "@/app/src/lib/emailChange";
 import { emailService } from "@/app/src/lib/email";
@@ -175,6 +176,10 @@ export async function beginEmailChange(
   });
 
   if (delivery.status === "failed") {
+    // Delivery failed, so nothing was verifiable — discard the request we just
+    // created rather than leaving an orphaned pending row behind. Best-effort:
+    // even if cleanup fails the row simply expires or is superseded.
+    await discardEmailChangeRequest(result.requestId);
     console.error("[account] email-change verification failed to send", {
       userId: id,
     });

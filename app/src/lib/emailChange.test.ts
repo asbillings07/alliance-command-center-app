@@ -3,6 +3,7 @@ import { Prisma } from "@/app/generated/prisma/client";
 import {
   beginEmailChange,
   completeEmailChange,
+  discardEmailChangeRequest,
   validateNewEmail,
   EMAIL_CHANGE_TOKEN_TTL_MS,
 } from "./emailChange";
@@ -168,6 +169,10 @@ describe("beginEmailChange", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
+    // The created request's id is returned so the action layer can discard it
+    // if delivery fails.
+    expect(result.requestId).toBe("req-1");
+
     // Prior unconsumed requests are deleted (not marked) so consumedAt means
     // "actually confirmed" and a missing row means "superseded".
     expect(mockPrisma.emailChangeRequest.deleteMany).toHaveBeenCalledWith({
@@ -184,6 +189,16 @@ describe("beginEmailChange", () => {
     expect(createArg.data.expiresAt.getTime()).toBeGreaterThanOrEqual(
       before + EMAIL_CHANGE_TOKEN_TTL_MS
     );
+  });
+});
+
+describe("discardEmailChangeRequest", () => {
+  it("deletes only the unconsumed request with the given id", async () => {
+    await discardEmailChangeRequest("req-1");
+
+    expect(mockPrisma.emailChangeRequest.deleteMany).toHaveBeenCalledWith({
+      where: { id: "req-1", consumedAt: null },
+    });
   });
 });
 
