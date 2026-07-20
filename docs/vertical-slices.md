@@ -116,6 +116,12 @@ session refresh (a display-name change leaves the JWT `name` snapshot stale unti
 next login). Both were captured as follow-up issues rather than smuggled into the
 slice. Naming a non-goal is a feature, not an omission.
 
+**No control without behavior.** Do not add speculative UI or persistence for
+capabilities that do not yet exist. A setting must change supported application
+behavior in the same slice, or build on behavior already present. A control that
+merely persists an unused value (or a dormant column exposed "for later") is
+worse than nothing: it teaches users not to trust settings.
+
 ## When *not* to add a domain service
 
 The service layer is the default for domain logic, but it is not a mandatory
