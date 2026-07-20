@@ -142,12 +142,14 @@ function PasswordChecklist({
         At least {PASSWORD_MIN_LENGTH} characters
       </Requirement>
       <Requirement status={matchStatus}>
-        {matchStatus === "error" ? "Passwords don't match" : "Passwords match"}
+        {matchStatus === "met"
+          ? "Passwords match"
+          : matchStatus === "error"
+            ? "Passwords don't match"
+            : "Passwords must match"}
       </Requirement>
       {tooLong && (
-        <Requirement status="error">
-          Too long — use {PASSWORD_MAX_BYTES} characters or fewer
-        </Requirement>
+        <Requirement status="error">Password is too long</Requirement>
       )}
     </ul>
   );

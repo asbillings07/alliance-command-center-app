@@ -45,10 +45,15 @@ export function validatePassword(raw: unknown): ValidatePasswordResult {
   // length, so a multibyte password can't slip past validation and then be
   // silently truncated by bcrypt. TextEncoder (not Buffer) so this stays usable
   // from Client Components — Buffer isn't available in the browser by default.
+  //
+  // The user-facing message deliberately omits a number: the limit is in bytes
+  // (jargon) yet a byte count doesn't map cleanly to characters for multibyte
+  // input, so quoting either unit would mislead. Virtually no one hits this, so
+  // a simple "too long" is clearer than an inaccurate character/byte count.
   if (new TextEncoder().encode(raw).length > PASSWORD_MAX_BYTES) {
     return {
       ok: false,
-      message: `Password must be ${PASSWORD_MAX_BYTES} characters or fewer`,
+      message: "Password is too long. Please choose a shorter one.",
     };
   }
 
