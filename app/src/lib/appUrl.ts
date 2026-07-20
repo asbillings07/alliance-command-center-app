@@ -31,3 +31,12 @@ export function getAppOrigin(): string {
 export function getRedeemUrl(token: string): string {
   return `${getAppOrigin()}/redeem/${token}`;
 }
+
+/**
+ * Build the absolute email-change verification URL for a raw token. The link
+ * lands on a confirmation page (the change is completed via POST, never on
+ * GET) so scanners and prefetchers cannot burn a single-use token.
+ */
+export function getEmailChangeVerifyUrl(rawToken: string): string {
+  return `${getAppOrigin()}/account/email/verify/${rawToken}`;
+}

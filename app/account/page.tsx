@@ -3,6 +3,7 @@ import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { getAccount, getSignInMethods } from "@/app/src/lib/account";
 import { PageLayout, Card } from "@/app/src/components";
 import { AccountProfileForm } from "./AccountProfileForm";
+import { AccountEmailForm } from "./AccountEmailForm";
 import { AccountSecurityForm } from "./AccountSecurityForm";
 
 export const metadata = {
@@ -33,9 +34,16 @@ export default async function AccountPage() {
       <div className="space-y-6">
         <Card>
           <Card.Body>
-            <AccountProfileForm
-              displayName={account.displayName}
+            <AccountProfileForm displayName={account.displayName} />
+          </Card.Body>
+        </Card>
+
+        <Card>
+          <Card.Header>Email</Card.Header>
+          <Card.Body>
+            <AccountEmailForm
               email={account.email}
+              canChange={!methods.hasGoogle}
             />
           </Card.Body>
         </Card>

@@ -121,9 +121,32 @@ model User {
   invitationsAccepted Invitation[] @relation("InvitationsAccepted")
   betaInvitationsAccepted BetaInvitation[] @relation("BetaInvitationsAccepted")
   feedback Feedback[]
+  emailChangeRequests EmailChangeRequest[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// A pending, verified email change (ADR-015). Email is the canonical identity
+// (ADR-013), so changing it is a security-sensitive workflow, not a profile
+// edit: the begin step re-authenticates (auth + current password) and this row
+// captures a single-use token proving ownership of the destination inbox.
+//
+// The raw token is never stored: only its SHA-256 hash lives here, so a database
+// leak cannot be replayed into an account takeover. `consumedAt` means the change
+// was actually confirmed; a superseded request is deleted rather than marked, so
+// a missing row unambiguously means "no longer valid".
+model EmailChangeRequest {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  newEmail   String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Metric {

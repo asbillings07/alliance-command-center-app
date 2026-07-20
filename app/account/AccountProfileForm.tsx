@@ -8,13 +8,9 @@ const initialState: UpdateProfileState = { status: "idle", message: null };
 
 type AccountProfileFormProps = {
   displayName: string;
-  email: string;
 };
 
-export function AccountProfileForm({
-  displayName,
-  email,
-}: AccountProfileFormProps) {
+export function AccountProfileForm({ displayName }: AccountProfileFormProps) {
   const [state, formAction, isPending] = useActionState(
     updateProfile,
     initialState
@@ -48,17 +44,6 @@ export function AccountProfileForm({
         />
         <p className="mt-2 text-sm text-text-muted">
           The name other leaders see.
-        </p>
-      </div>
-
-      <div>
-        <Label>Sign-in Email</Label>
-        <div className="px-4 py-2 bg-surface-secondary border border-border rounded-lg text-text-muted">
-          {email}
-        </div>
-        <p className="mt-2 text-sm text-text-muted">
-          This email is your account&apos;s sign-in identity and cannot
-          currently be changed.
         </p>
       </div>
 

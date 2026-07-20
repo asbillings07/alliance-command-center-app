@@ -11,6 +11,13 @@ import {
   validatePassword,
   verifyPassword,
 } from "@/app/src/lib/account";
+import {
+  beginEmailChange as beginEmailChangeService,
+  discardEmailChangeRequest,
+  type BeginEmailChangeReason,
+} from "@/app/src/lib/emailChange";
+import { emailService } from "@/app/src/lib/email";
+import { getEmailChangeVerifyUrl } from "@/app/src/lib/appUrl";
 
 export type UpdateProfileState = {
   status: "idle" | "success" | "error";
@@ -119,5 +126,89 @@ export async function updatePassword(
   return {
     status: "success",
     message: methods.hasPassword ? "Password updated" : "Password set",
+  };
+}
+
+const BEGIN_EMAIL_CHANGE_MESSAGES: Record<BeginEmailChangeReason, string> = {
+  google_linked:
+    "This email cannot currently be changed because your account uses Google sign-in.",
+  invalid_email: "Please enter a valid email address.",
+  wrong_password: "Current password is incorrect.",
+  same_email: "That is already your email address.",
+  email_taken: "That email is already in use by another account.",
+};
+
+/**
+ * Begin a verified email change (ADR-015).
+ *
+ * Orchestration only: authenticate, delegate the re-auth + token minting to the
+ * emailChange service, then deliver the verification email to the NEW address.
+ * Delivery is non-blocking (EmailResult, never throws) so a provider hiccup
+ * can't invalidate a persisted request — the user can request another link.
+ *
+ * The success copy names the destination but never confirms whether it belonged
+ * to an existing account (uniqueness is enforced server-side, and the link only
+ * works for someone who actually controls that inbox).
+ */
+export async function beginEmailChange(
+  _prev: UpdateProfileState,
+  formData: FormData
+): Promise<UpdateProfileState> {
+  const { id } = await requireAuth();
+
+  const result = await beginEmailChangeService({
+    userId: id,
+    newEmail: formData.get("newEmail"),
+    currentPassword: formData.get("currentPassword"),
+  });
+
+  if (!result.ok) {
+    return { status: "error", message: BEGIN_EMAIL_CHANGE_MESSAGES[result.reason] };
+  }
+
+  const delivery = await emailService.sendEmailChangeVerification({
+    to: result.newEmail,
+    verification: {
+      verifyUrl: getEmailChangeVerifyUrl(result.rawToken),
+      expiresAt: result.expiresAt,
+    },
+    userId: id,
+  });
+
+  // "skipped" means email isn't configured. Locally/CI that's expected (the
+  // link is logged), but in production it means the user would never receive a
+  // link — treat it as a delivery failure there rather than lying "check your
+  // inbox".
+  const deliveryFailed =
+    delivery.status === "failed" ||
+    (delivery.status === "skipped" && process.env.NODE_ENV === "production");
+
+  if (deliveryFailed) {
+    // Nothing was verifiable — discard the request we just created rather than
+    // leaving an orphaned pending row behind. Best-effort: cleanup failure must
+    // not turn a delivery problem into a 500, and the row would simply expire or
+    // be superseded anyway.
+    try {
+      await discardEmailChangeRequest(result.requestId);
+    } catch (cleanupError) {
+      console.error("[account] failed to discard email-change request", {
+        userId: id,
+        cleanupError,
+      });
+    }
+    console.error("[account] email-change verification not delivered", {
+      userId: id,
+      status: delivery.status,
+    });
+    return {
+      status: "error",
+      message:
+        "We couldn't send the verification email just now. Please try again in a moment.",
+    };
+  }
+
+  return {
+    status: "success",
+    message: `Check your inbox — we've sent a verification link to ${result.newEmail}. Your sign-in email won't change until you confirm it.`,
   };
 }

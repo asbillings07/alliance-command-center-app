@@ -67,7 +67,26 @@ export interface EmailService {
   sendFeedbackNotification(
     input: FeedbackNotificationEmailInput
   ): Promise<EmailResult>;
+  sendEmailChangeVerification(
+    input: EmailChangeVerificationEmailInput
+  ): Promise<EmailResult>;
 }
+
+/** View model for the verified email-change verification email. */
+export type EmailChangeVerificationView = {
+  /** Absolute URL to the confirmation page carrying the single-use token. */
+  verifyUrl: string;
+  /** When the link stops working, for a clear deadline in the body. */
+  expiresAt: Date;
+};
+
+export type EmailChangeVerificationEmailInput = {
+  /** The NEW address being verified (the message is sent here). */
+  to: string;
+  verification: EmailChangeVerificationView;
+  /** User id, for delivery correlation in logs. */
+  userId?: string;
+};
 
 /** View model for the beta invitation email. */
 export type BetaInvitationView = {
