@@ -50,7 +50,13 @@ export type ButtonProps = {
   align?: "center" | "start";
   /** Loading state */
   loading?: boolean;
-} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className">;
+  /**
+   * Typed element-agnostically because Button renders as a `<button>` or, when
+   * `href` is set, a `next/link` anchor. Handlers should not assume a button
+   * element (e.g. `currentTarget.form`).
+   */
+  onClick?: MouseEventHandler<HTMLElement>;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className" | "onClick">;
 
 const baseClasses =
   "inline-flex items-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:cursor-not-allowed";
@@ -164,16 +170,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
     if (href && !disabled) {
       return (
-        <Link
-          href={href}
-          className={classes}
-          // Forwarded so Button works as a real nav link (e.g. closing a mobile
-          // drawer on navigation). Cast because the handler is typed for the
-          // button element; at runtime the anchor receives an equivalent event.
-          onClick={
-            onClick as unknown as MouseEventHandler<HTMLAnchorElement>
-          }
-        >
+        <Link href={href} className={classes} onClick={onClick}>
           {content}
         </Link>
       );
