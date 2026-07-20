@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted (amended 2026-07 by #144: Google sign-in resolves the internal user by `googleSubject`, not email; email becomes mutable profile data).
 
 ## Guiding Principle
 
@@ -31,13 +31,15 @@ Add Google as an additional authentication provider using a **custom `signIn` ca
 
 ### Sign-in flow (Google)
 
+Resolution is owned by `resolveGoogleUser` so the `signIn` callback only orchestrates. The subject (`sub`) is the resolution key; a verified email is used only to link an existing account on first sign-in and to provision a new one (#144).
+
 1. `assertVerifiedGoogleEmail(profile)` - requires `email_verified === true`; returns the normalized email. Throws `UnverifiedEmailError` otherwise.
 2. `assertGoogleSubject(profile)` - returns Google's stable subject (`sub`). Throws `MissingGoogleSubjectError` if absent.
-3. If a `User` already exists for that email, `ensureGoogleIdentity(user, sub)` links the subject on the first Google sign-in (backfill), verifies it on later sign-ins, and throws `GoogleAccountMismatchError` if a different subject is already anchored. Allowed once the identity is confirmed.
-4. Otherwise, `isInvitationEligible(email)` must be true (a pending beta OR alliance invitation). If not, throw `InvitationRequiredError`.
-5. `provisionOAuthUser({ email, displayName, googleSubject: sub })` creates the user, anchoring the subject and leaving `passwordHash: null`.
+3. **By subject:** if a `User` is anchored to that `sub`, that is the returning user. Sign them in as-is; their stored email/display name may have diverged from Google and are left untouched.
+4. **By email (first-time link / lazy backfill):** otherwise, if a `User` exists for the verified email, `ensureGoogleIdentity(user, sub)` links the subject (or verifies it) and throws `GoogleAccountMismatchError` if a different subject is already anchored.
+5. **Provision:** otherwise `isInvitationEligible(email)` must be true (a pending beta OR alliance invitation), else `InvitationRequiredError`; then `provisionOAuthUser({ email, displayName, googleSubject: sub })` creates the user, anchoring the subject and leaving `passwordHash: null`.
 
-Failures throw typed errors (`AuthenticationError` subclasses); the callback catches them and returns `false`, which Auth.js surfaces as `AccessDenied` on `/login`.
+`resolveGoogleUser` guarantees a postcondition of `user.googleSubject === sub` on success, which the JWT callback relies on. Failures throw typed errors (`AuthenticationError` subclasses); the callback catches them and returns `false`, which Auth.js surfaces as `AccessDenied` on `/login`.
 
 ### Identity model
 
@@ -49,15 +51,17 @@ Failures throw typed errors (`AuthenticationError` subclasses); the callback cat
 - Password login is gated purely on the capability: `if (!user.passwordHash) return null`.
 - The retired `authProvider` enum could not express "both" and modeled *how a user authenticated* rather than *what an identity can do*; capabilities are the more durable and extensible abstraction (a future provider becomes another nullable column, not another enum state).
 
-#### Security anchor: email identifies, `sub` is identity
+#### Security anchor: `sub` is identity, email is profile data
 
-A verified email proves ownership *at sign-in time*, but emails can be reassigned. Once a `googleSubject` is anchored to a user, we assert the incoming `sub` matches on every subsequent Google sign-in and refuse to silently re-link a different one (`GoogleAccountMismatchError`). Existing Google-only users predate subject storage; rather than a backfill script, they are anchored on their next Google sign-in (the "no anchor yet" branch).
+> **Identity providers authenticate users; AllianceHQ owns user profile data.** After an account is linked, the OAuth provider's subject is the immutable identity key, while user profile fields such as email are managed by AllianceHQ.
+
+A verified email proves ownership *at sign-in time*, but emails can be reassigned — and, since the verified email-change work, an AllianceHQ user can deliberately change their email while keeping the same Google account. Google sign-in therefore resolves the internal user by `googleSubject` first; the verified email is consulted only to link an existing account on the first Google sign-in (and as the lazy backfill path for accounts that predate subject storage) and to provision a new one. Once anchored, we assert the incoming `sub` matches on every subsequent sign-in and refuse to silently re-link a different one (`GoogleAccountMismatchError`), and we never resync the provider's email/name back onto the stored profile. Existing Google-only users predate subject storage; rather than a backfill script, they are anchored on their next Google sign-in (the by-email branch).
 
 Linking is concurrency-safe. `ensureGoogleIdentity` uses a guarded write (`updateMany where { id, googleSubject: null }`) so a subject anchored by a racing sign-in between read and write is never clobbered; on a no-op it re-reads and only allows an identical subject, denying otherwise. The `@unique` constraint on `googleSubject` additionally rejects anchoring a subject already owned by a different user. Because `provisionOAuthUser` is find-or-create, the new-user branch also re-runs `ensureGoogleIdentity` on the returned user, so an email-unique race can't bypass the invariant.
 
 ### JWT invariant
 
-After authentication, every JWT `sub` claim contains the internal `User.id`, regardless of provider. For Google, the incoming `user.id` is the Google subject, so the `jwt` callback resolves our cuid by verified email. Everything downstream continues to assume `session.user.id` is our own identifier.
+After authentication, every JWT `sub` claim contains the internal `User.id`, regardless of provider. For Google, the incoming `user.id` is the Google subject; because `signIn` runs first and guarantees the account is anchored to that subject (`resolveGoogleUser`'s postcondition), the `jwt` callback resolves our cuid by `googleSubject`. Everything downstream continues to assume `session.user.id` is our own identifier.
 
 ### Intentional simplification
 
@@ -91,6 +95,8 @@ Google is enabled only when `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` are both s
 
 - Existing password user signs in with Google (same email) -> Google subject linked; both password and Google logins then work.
 - Same user signs in with Google again -> subject verified, no duplicate/relink.
+- Google user whose stored AllianceHQ email differs from Google's email signs in with Google -> resolved by `googleSubject`; the stored email/display name are left unchanged (not resynced from Google).
+- Legacy Google user with a null `googleSubject` signs in -> anchored via the by-email branch; subsequent sign-ins resolve by subject.
 - A different Google account (different `sub`) presenting the same verified email -> access denied (`GoogleAccountMismatchError`).
 - Invited email with no account signs in with Google -> account created and anchored to the subject, invitation flow continues.
 - Uninvited email signs in with Google -> access denied.

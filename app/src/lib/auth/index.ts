@@ -10,13 +10,8 @@ import {
   isGoogleAuthEnabled,
   type GoogleProfile,
 } from "@/app/src/lib/auth/identity/google";
-import { isInvitationEligible } from "@/app/src/lib/auth/identity/eligibility";
-import {
-  AuthenticationError,
-  InvitationRequiredError,
-} from "@/app/src/lib/auth/identity/errors";
-import { provisionOAuthUser } from "@/app/src/lib/auth/provisionOAuthUser";
-import { ensureGoogleIdentity } from "@/app/src/lib/auth/ensureGoogleIdentity";
+import { AuthenticationError } from "@/app/src/lib/auth/identity/errors";
+import { resolveGoogleUser } from "@/app/src/lib/auth/resolveGoogleUser";
 import {
   getSessionVersion,
   validateSessionVersion,
@@ -116,30 +111,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const email = assertVerifiedGoogleEmail(googleProfile);
         const googleSubject = assertGoogleSubject(googleProfile);
 
-        const existing = await prisma.user.findUnique({ where: { email } });
-        if (existing) {
-          // Existing identity: link Google on first sign-in, verify the subject
-          // thereafter. A mismatch throws and is surfaced as AccessDenied.
-          await ensureGoogleIdentity(existing, googleSubject);
-          return true;
-        }
-
-        if (!(await isInvitationEligible(email))) {
-          throw new InvitationRequiredError();
-        }
-
-        const provisioned = await provisionOAuthUser({
+        // Resolve by subject first (email is now mutable profile data, #144).
+        // resolveGoogleUser links/provisions as needed and guarantees the
+        // returned user is anchored to this subject; a mismatch or missing
+        // invitation throws and is surfaced as AccessDenied.
+        await resolveGoogleUser({
           email,
-          displayName: googleProfile.name?.trim() || email,
           googleSubject,
+          displayName: googleProfile.name?.trim() || email,
         });
-
-        // provisionOAuthUser is find-or-create: if it lost an email-unique race
-        // it returns the pre-existing user, whose subject may be null or differ.
-        // Re-assert the invariant so the mismatch denial/linking is never
-        // bypassed for a raced account. (A freshly created row already carries
-        // our subject, so this is a cheap no-op.)
-        await ensureGoogleIdentity(provisioned, googleSubject);
 
         return true;
       } catch (error) {
@@ -154,19 +134,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     // Invariant: after authentication, token.sub is always our internal User.id,
     // regardless of provider. For Google, the incoming user.id is the Google
-    // subject, so we resolve our cuid by verified email. If we cannot resolve
-    // it (missing/unverified email, or no matching user), we throw rather than
-    // leave token.sub as the Google subject — a broken invariant would cause
-    // downstream authorization/data-loading failures. This branch only runs at
-    // initial sign-in (when `account` is present); later requests reuse token.
+    // subject. signIn runs first and guarantees every successful Google login is
+    // anchored by googleSubject (resolveGoogleUser's postcondition), so subject
+    // lookup here is authoritative — email is now mutable profile data (#144) and
+    // must not be used to resolve identity. If we cannot resolve the user, we
+    // throw rather than leave token.sub as the Google subject — a broken
+    // invariant would cause downstream authorization/data-loading failures. This
+    // branch only runs at initial sign-in (when `account` is present); later
+    // requests reuse the token.
     async jwt({ token, user, account, profile }) {
       if (account?.provider === "google") {
         const googleProfile = profile as GoogleProfile | undefined;
         if (!googleProfile) {
           throw new Error("Google jwt callback received no profile");
         }
-        const email = assertVerifiedGoogleEmail(googleProfile);
-        const dbUser = await prisma.user.findUnique({ where: { email } });
+        const googleSubject = assertGoogleSubject(googleProfile);
+        const dbUser = await prisma.user.findUnique({
+          where: { googleSubject },
+        });
         if (!dbUser) {
           throw new Error(
             "Could not resolve internal user for Google sign-in during token issuance",
