@@ -160,18 +160,10 @@ function PasswordChecklist({
       </Requirement>
       {requireDifferent && (
         <Requirement status={differentStatus}>
-          {differentStatus === "error"
-            ? "Can't reuse your current password"
-            : "Different from your current password"}
+          Different from your current password
         </Requirement>
       )}
-      <Requirement status={matchStatus}>
-        {matchStatus === "met"
-          ? "Passwords match"
-          : matchStatus === "error"
-            ? "Passwords don't match"
-            : "Passwords must match"}
-      </Requirement>
+      <Requirement status={matchStatus}>Passwords match</Requirement>
       {tooLong && (
         <Requirement status="error">Password is too long</Requirement>
       )}
