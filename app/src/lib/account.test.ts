@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { validateDisplayName, DISPLAY_NAME_MAX_LENGTH } from "./account";
+import {
+  validateDisplayName,
+  DISPLAY_NAME_MAX_LENGTH,
+  validatePassword,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MAX_LENGTH,
+} from "./account";
 
 describe("validateDisplayName", () => {
   it("accepts a valid name and returns it unchanged", () => {
@@ -45,5 +51,57 @@ describe("validateDisplayName", () => {
   it("measures length after trimming", () => {
     const name = `  ${"a".repeat(DISPLAY_NAME_MAX_LENGTH)}  `;
     expect(validateDisplayName(name).ok).toBe(true);
+  });
+});
+
+describe("validatePassword", () => {
+  it("accepts a valid password unchanged", () => {
+    const result = validatePassword("correct horse battery");
+    expect(result).toEqual({ ok: true, value: "correct horse battery" });
+  });
+
+  it("does NOT trim (surrounding whitespace can be intentional)", () => {
+    const withSpaces = "  spaced password  ";
+    expect(validatePassword(withSpaces)).toEqual({
+      ok: true,
+      value: withSpaces,
+    });
+  });
+
+  it("rejects an empty string", () => {
+    expect(validatePassword("")).toEqual({
+      ok: false,
+      message: "Password is required",
+    });
+  });
+
+  it("rejects non-string input", () => {
+    expect(validatePassword(null).ok).toBe(false);
+    expect(validatePassword(undefined).ok).toBe(false);
+    expect(validatePassword(12345678).ok).toBe(false);
+  });
+
+  it("rejects a password shorter than the minimum", () => {
+    const result = validatePassword("a".repeat(PASSWORD_MIN_LENGTH - 1));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toContain(String(PASSWORD_MIN_LENGTH));
+    }
+  });
+
+  it("accepts a password exactly at the minimum", () => {
+    expect(validatePassword("a".repeat(PASSWORD_MIN_LENGTH)).ok).toBe(true);
+  });
+
+  it("accepts a password exactly at the maximum", () => {
+    expect(validatePassword("a".repeat(PASSWORD_MAX_LENGTH)).ok).toBe(true);
+  });
+
+  it("rejects a password longer than the maximum (bcrypt 72-byte limit)", () => {
+    const result = validatePassword("a".repeat(PASSWORD_MAX_LENGTH + 1));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toContain(String(PASSWORD_MAX_LENGTH));
+    }
   });
 });

@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { getAccount } from "@/app/src/lib/account";
+import { getAccount, getSignInMethods } from "@/app/src/lib/account";
 import { PageLayout, Card } from "@/app/src/components";
 import { AccountProfileForm } from "./AccountProfileForm";
+import { AccountSecurityForm } from "./AccountSecurityForm";
 
 export const metadata = {
   title: "Account - Alliance Command Center",
@@ -14,8 +15,11 @@ export default async function AccountPage() {
 
   // Reading through the service means the page always reflects the latest
   // persisted value (unlike the JWT session snapshot).
-  const account = await getAccount(id);
-  if (!account) {
+  const [account, methods] = await Promise.all([
+    getAccount(id),
+    getSignInMethods(id),
+  ]);
+  if (!account || !methods) {
     redirect("/login");
   }
 
@@ -23,17 +27,29 @@ export default async function AccountPage() {
     <PageLayout
       breadcrumb={[{ label: "Dashboard", href: "/app" }, { label: "Account" }]}
       title="Account"
-      description="Manage your profile."
+      description="Manage your profile and sign-in security."
       maxWidth="lg"
     >
-      <Card>
-        <Card.Body>
-          <AccountProfileForm
-            displayName={account.displayName}
-            email={account.email}
-          />
-        </Card.Body>
-      </Card>
+      <div className="space-y-6">
+        <Card>
+          <Card.Body>
+            <AccountProfileForm
+              displayName={account.displayName}
+              email={account.email}
+            />
+          </Card.Body>
+        </Card>
+
+        <Card>
+          <Card.Header>Sign-in &amp; Security</Card.Header>
+          <Card.Body>
+            <AccountSecurityForm
+              hasPassword={methods.hasPassword}
+              hasGoogle={methods.hasGoogle}
+            />
+          </Card.Body>
+        </Card>
+      </div>
     </PageLayout>
   );
 }
