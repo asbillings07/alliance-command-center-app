@@ -114,10 +114,13 @@ describe("validatePassword", () => {
       PASSWORD_MAX_BYTES
     );
 
+    // Rejected because it exceeds the 72-BYTE bcrypt limit even though it is
+    // well under 72 characters. The user-facing copy says "characters" for
+    // clarity; the enforcement is on bytes.
     const result = validatePassword(multibyte);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.message).toContain("bytes");
+      expect(result.message).toContain(String(PASSWORD_MAX_BYTES));
     }
   });
 

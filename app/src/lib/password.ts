@@ -48,7 +48,7 @@ export function validatePassword(raw: unknown): ValidatePasswordResult {
   if (new TextEncoder().encode(raw).length > PASSWORD_MAX_BYTES) {
     return {
       ok: false,
-      message: `Password must be ${PASSWORD_MAX_BYTES} bytes or fewer`,
+      message: `Password must be ${PASSWORD_MAX_BYTES} characters or fewer`,
     };
   }
 
