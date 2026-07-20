@@ -77,10 +77,9 @@ export function MetricPeriodCard({
   if (mode === "create") {
     if (cardState === "closed") {
       return (
-        <div className="w-full">
+        <div className="w-full" data-tour="create-period">
           <button
             type="button"
-            data-tour="create-period"
             onClick={() => setCardState("form")}
             className="w-full rounded-md border-2 border-dashed border-border p-4 text-text-secondary hover:border-primary hover:text-primary cursor-pointer transition-colors"
           >
@@ -91,7 +90,7 @@ export function MetricPeriodCard({
     }
 
     return (
-      <div className="w-full">
+      <div className="w-full" data-tour="create-period">
         <MetricPeriodForm
           allianceId={allianceId}
           mode="create"
