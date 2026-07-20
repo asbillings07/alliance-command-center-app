@@ -17,13 +17,15 @@ import { prisma } from "./prisma";
 /** The maximum length we accept for a display name. */
 export const DISPLAY_NAME_MAX_LENGTH = 50;
 
-/** Minimum password length, shared by registration, bootstrap, and account. */
+/** Minimum password length (characters), shared across all password entry points. */
 export const PASSWORD_MIN_LENGTH = 8;
 /**
- * Maximum password length. bcrypt only hashes the first 72 bytes, so anything
- * longer would be silently truncated; reject it instead of hashing a prefix.
+ * Maximum password length in UTF-8 bytes. bcrypt only hashes the first 72 bytes,
+ * so anything longer would be silently truncated; reject it instead of hashing a
+ * prefix. This is a byte limit, not a character limit: a multibyte password can
+ * exceed 72 bytes while having fewer than 72 JavaScript characters.
  */
-export const PASSWORD_MAX_LENGTH = 72;
+export const PASSWORD_MAX_BYTES = 72;
 
 /** Work factor for bcrypt hashing, consistent across the codebase. */
 const BCRYPT_COST = 12;
@@ -108,10 +110,13 @@ export function validatePassword(raw: unknown): ValidatePasswordResult {
     };
   }
 
-  if (raw.length > PASSWORD_MAX_LENGTH) {
+  // Enforce bcrypt's 72-byte input limit using UTF-8 byte length, not string
+  // length, so a multibyte password can't slip past validation and then be
+  // silently truncated by bcrypt.
+  if (Buffer.byteLength(raw, "utf8") > PASSWORD_MAX_BYTES) {
     return {
       ok: false,
-      message: `Password must be ${PASSWORD_MAX_LENGTH} characters or fewer`,
+      message: `Password must be ${PASSWORD_MAX_BYTES} bytes or fewer`,
     };
   }
 
