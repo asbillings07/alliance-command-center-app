@@ -135,7 +135,14 @@ export function PlatformNavMobile({
           </ul>
         </nav>
 
-        <div className="border-t border-border p-3">
+        <div className="border-t border-border p-3 space-y-1">
+          <Link
+            href="/account"
+            onClick={onClose}
+            className="block px-3 py-2 rounded-lg text-sm text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary"
+          >
+            Account
+          </Link>
           <SignOutButton variant="ghost" fullWidth />
         </div>
       </div>
