@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { auth } from "@/app/src/lib/auth";
-import { FeedbackWidget, SignOutButton } from "@/app/src/components/client";
+import {
+  AccountNavLink,
+  FeedbackWidget,
+  SignOutButton,
+} from "@/app/src/components/client";
 // Driver.js ships global CSS. Importing it here (a layout, the Next-sanctioned
 // place for global styles) scopes it to the authenticated /alliances routes
 // where contextual tours run, and keeps it off auth/marketing/platform pages.
@@ -45,13 +49,8 @@ export default async function AlliancesLayout({
             Alliance Command Center
           </Link>
           {session?.user && (
-            <div className="flex items-center gap-2">
-              <Link
-                href="/account"
-                className="text-sm font-medium text-text-secondary transition-colors hover:text-primary"
-              >
-                Account
-              </Link>
+            <div className="flex items-center gap-1">
+              <AccountNavLink />
               <SignOutButton variant="ghost" />
             </div>
           )}

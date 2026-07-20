@@ -11,6 +11,11 @@ type SignOutButtonProps = {
   variant?: ButtonVariant;
   /** Stretch the button to fill its container (e.g. sidebar nav). */
   fullWidth?: boolean;
+  /**
+   * Content alignment. Use `start` in stacked nav footers so "Sign Out" lines
+   * up with the adjacent Account link rather than centering.
+   */
+  align?: "center" | "start";
 };
 
 /**
@@ -24,10 +29,17 @@ type SignOutButtonProps = {
 export function SignOutButton({
   variant = "ghost",
   fullWidth = false,
+  align = "center",
 }: SignOutButtonProps) {
   return (
     <form action={logoutAction}>
-      <Button type="submit" variant={variant} size="sm" fullWidth={fullWidth}>
+      <Button
+        type="submit"
+        variant={variant}
+        size="sm"
+        fullWidth={fullWidth}
+        align={align}
+      >
         <SignOutGlyph />
         Sign Out
       </Button>

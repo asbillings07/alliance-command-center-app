@@ -1,6 +1,6 @@
 "use client";
 
-import { ButtonHTMLAttributes, forwardRef } from "react";
+import { ButtonHTMLAttributes, forwardRef, type MouseEventHandler } from "react";
 import Link from "next/link";
 
 /**
@@ -42,12 +42,18 @@ export type ButtonProps = {
   href?: string;
   /** Full width button */
   fullWidth?: boolean;
+  /**
+   * Horizontal alignment of the button's content. Defaults to `center`; use
+   * `start` for full-width buttons that act as left-aligned nav rows so their
+   * label lines up with adjacent links (e.g. sidebar/drawer footers).
+   */
+  align?: "center" | "start";
   /** Loading state */
   loading?: boolean;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className">;
 
 const baseClasses =
-  "inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:cursor-not-allowed";
+  "inline-flex items-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:cursor-not-allowed";
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
@@ -104,9 +110,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       size = "md",
       href,
       fullWidth = false,
+      align = "center",
       loading = false,
       disabled,
       children,
+      onClick,
       ...props
     },
     ref
@@ -118,6 +126,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       variant === "success-link";
     const classes = [
       baseClasses,
+      align === "start" ? "justify-start" : "justify-center",
       variantClasses[variant],
       !isLinkVariant && sizeClasses[size],
       fullWidth && "w-full",
@@ -155,7 +164,16 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
     if (href && !disabled) {
       return (
-        <Link href={href} className={classes}>
+        <Link
+          href={href}
+          className={classes}
+          // Forwarded so Button works as a real nav link (e.g. closing a mobile
+          // drawer on navigation). Cast because the handler is typed for the
+          // button element; at runtime the anchor receives an equivalent event.
+          onClick={
+            onClick as unknown as MouseEventHandler<HTMLAnchorElement>
+          }
+        >
           {content}
         </Link>
       );
@@ -166,6 +184,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         className={classes}
         disabled={disabled || loading}
+        onClick={onClick}
         {...props}
       >
         {content}

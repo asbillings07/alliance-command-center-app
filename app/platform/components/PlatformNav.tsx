@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { SignOutButton } from "@/app/src/components/client";
+import { AccountNavLink, SignOutButton } from "@/app/src/components/client";
 
 type NavItem = {
   label: string;
@@ -136,14 +136,8 @@ export function PlatformNavMobile({
         </nav>
 
         <div className="border-t border-border p-3 space-y-1">
-          <Link
-            href="/account"
-            onClick={onClose}
-            className="block px-3 py-2 rounded-lg text-sm text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary"
-          >
-            Account
-          </Link>
-          <SignOutButton variant="ghost" fullWidth />
+          <AccountNavLink fullWidth onClick={onClose} />
+          <SignOutButton variant="ghost" fullWidth align="start" />
         </div>
       </div>
     </>
