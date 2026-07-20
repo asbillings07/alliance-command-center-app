@@ -1,6 +1,9 @@
 "use server";
 
-import { completeEmailChange } from "@/app/src/lib/emailChange";
+import {
+  completeEmailChange,
+  type CompleteEmailChangeReason,
+} from "@/app/src/lib/emailChange";
 
 export type ConfirmEmailChangeState = {
   status: "idle" | "success" | "error";
@@ -8,7 +11,9 @@ export type ConfirmEmailChangeState = {
   newEmail?: string;
 };
 
-const CONFIRM_ERROR_MESSAGES: Record<string, string> = {
+// Typed exhaustively so adding a CompleteEmailChangeReason is a compile error
+// until copy exists for it (mirrors the beginEmailChange action's map).
+const CONFIRM_ERROR_MESSAGES: Record<CompleteEmailChangeReason, string> = {
   invalid_or_expired:
     "This verification link is no longer valid. Please request the change again from your account page.",
   google_linked:
@@ -39,12 +44,7 @@ export async function confirmEmailChange(
   const result = await completeEmailChange(token);
 
   if (!result.ok) {
-    return {
-      status: "error",
-      message:
-        CONFIRM_ERROR_MESSAGES[result.reason] ??
-        CONFIRM_ERROR_MESSAGES.invalid_or_expired,
-    };
+    return { status: "error", message: CONFIRM_ERROR_MESSAGES[result.reason] };
   }
 
   return {

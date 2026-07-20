@@ -4,15 +4,19 @@ import {
   beginEmailChange,
   completeEmailChange,
   discardEmailChangeRequest,
+  peekEmailChangeRequest,
   validateNewEmail,
   EMAIL_CHANGE_TOKEN_TTL_MS,
 } from "./emailChange";
 
+/** A well-formed raw token: 32 bytes rendered as 64 lowercase hex chars. */
+const VALID_TOKEN = "a".repeat(64);
+
 // A shared client object is reused as the interactive-transaction `tx` so that
-// assertions on prisma.user.update (etc.) see the same mock the callback used.
+// assertions on prisma.user.updateMany (etc.) see the same mock the callback used.
 vi.mock("@/app/src/lib/prisma", () => {
   const client = {
-    user: { findUnique: vi.fn(), update: vi.fn() },
+    user: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     emailChangeRequest: {
       findUnique: vi.fn(),
       deleteMany: vi.fn(),
@@ -64,6 +68,7 @@ beforeEach(() => {
   }));
   mockPrisma.emailChangeRequest.updateMany.mockResolvedValue({ count: 1 });
   mockPrisma.user.update.mockResolvedValue({});
+  mockPrisma.user.updateMany.mockResolvedValue({ count: 1 });
   mockPrisma.invitation.updateMany.mockResolvedValue({ count: 0 });
   mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 0 });
 });
@@ -190,6 +195,28 @@ describe("beginEmailChange", () => {
       before + EMAIL_CHANGE_TOKEN_TTL_MS
     );
   });
+
+  it("retries once when a concurrent begin causes a write conflict", async () => {
+    configureUsers({ email: "me@example.com", googleSubject: null });
+    mockVerifyPassword.mockResolvedValue(true);
+
+    // First serializable transaction loses the race (P2034); the retry succeeds.
+    mockPrisma.$transaction.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("write conflict", {
+        code: "P2034",
+        clientVersion: "test",
+      })
+    );
+
+    const result = await beginEmailChange({
+      userId: USER_ID,
+      newEmail: "new@example.com",
+      currentPassword: "pw",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockPrisma.$transaction).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("discardEmailChangeRequest", () => {
@@ -217,10 +244,16 @@ describe("completeEmailChange", () => {
     };
   }
 
+  it("rejects a malformed token without hashing or hitting the database", async () => {
+    const result = await completeEmailChange("not-a-real-token");
+    expect(result).toEqual({ ok: false, reason: "invalid_or_expired" });
+    expect(mockPrisma.emailChangeRequest.findUnique).not.toHaveBeenCalled();
+  });
+
   it("rejects a missing token", async () => {
     mockPrisma.emailChangeRequest.findUnique.mockResolvedValue(null);
 
-    const result = await completeEmailChange("deadbeef");
+    const result = await completeEmailChange(VALID_TOKEN);
     expect(result).toEqual({ ok: false, reason: "invalid_or_expired" });
   });
 
@@ -229,7 +262,7 @@ describe("completeEmailChange", () => {
       validRequest({ expiresAt: new Date(Date.now() - 1000) })
     );
 
-    const result = await completeEmailChange("token");
+    const result = await completeEmailChange(VALID_TOKEN);
     expect(result).toEqual({ ok: false, reason: "invalid_or_expired" });
   });
 
@@ -238,17 +271,28 @@ describe("completeEmailChange", () => {
       validRequest({ consumedAt: new Date() })
     );
 
-    const result = await completeEmailChange("token");
+    const result = await completeEmailChange(VALID_TOKEN);
     expect(result).toEqual({ ok: false, reason: "invalid_or_expired" });
   });
 
-  it("rejects when the account became Google-linked after begin", async () => {
+  it("rejects when the account became Google-linked after begin (pre-check)", async () => {
     mockPrisma.emailChangeRequest.findUnique.mockResolvedValue(validRequest());
     configureUsers({ email: OLD_EMAIL, googleSubject: "g-sub" });
 
-    const result = await completeEmailChange("token");
+    const result = await completeEmailChange(VALID_TOKEN);
     expect(result).toEqual({ ok: false, reason: "google_linked" });
-    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a Google link that races in after the pre-check (guarded write)", async () => {
+    mockPrisma.emailChangeRequest.findUnique.mockResolvedValue(validRequest());
+    configureUsers({ email: OLD_EMAIL, googleSubject: null });
+    // The pre-check passed, but the guarded identity write (googleSubject: null)
+    // now matches zero rows because the account was linked in between.
+    mockPrisma.user.updateMany.mockResolvedValue({ count: 0 });
+
+    const result = await completeEmailChange(VALID_TOKEN);
+    expect(result).toEqual({ ok: false, reason: "google_linked" });
   });
 
   it("rejects when the new email was claimed by another user after begin", async () => {
@@ -258,25 +302,26 @@ describe("completeEmailChange", () => {
       { [NEW_EMAIL]: { id: "someone-else" } }
     );
 
-    const result = await completeEmailChange("token");
+    const result = await completeEmailChange(VALID_TOKEN);
     expect(result).toEqual({ ok: false, reason: "email_taken" });
-    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
   });
 
   it("completes: swaps identity, bumps sessionVersion once, reconciles pending invites", async () => {
     mockPrisma.emailChangeRequest.findUnique.mockResolvedValue(validRequest());
     configureUsers({ email: OLD_EMAIL, googleSubject: null });
 
-    const result = await completeEmailChange("token");
+    const result = await completeEmailChange(VALID_TOKEN);
     expect(result).toEqual({ ok: true, oldEmail: OLD_EMAIL, newEmail: NEW_EMAIL });
 
     // Guarded consume ran exactly once.
     expect(mockPrisma.emailChangeRequest.updateMany).toHaveBeenCalledTimes(1);
 
-    // Identity update + session revocation, exactly once.
-    expect(mockPrisma.user.update).toHaveBeenCalledTimes(1);
-    expect(mockPrisma.user.update).toHaveBeenCalledWith({
-      where: { id: USER_ID },
+    // Guarded identity update + session revocation, exactly once. The write is
+    // guarded on googleSubject: null to close the TOCTOU window.
+    expect(mockPrisma.user.updateMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
+      where: { id: USER_ID, googleSubject: null },
       data: { email: NEW_EMAIL, sessionVersion: { increment: 1 } },
     });
 
@@ -304,26 +349,26 @@ describe("completeEmailChange", () => {
     // The loser's guarded consume matches zero rows.
     mockPrisma.emailChangeRequest.updateMany.mockResolvedValueOnce({ count: 0 });
 
-    const loser = await completeEmailChange("token");
+    const loser = await completeEmailChange(VALID_TOKEN);
     expect(loser).toEqual({ ok: false, reason: "invalid_or_expired" });
-    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
 
     // A subsequent attempt whose consume succeeds completes normally.
-    const winner = await completeEmailChange("token");
+    const winner = await completeEmailChange(VALID_TOKEN);
     expect(winner.ok).toBe(true);
   });
 
   it("maps a concurrent unique-constraint violation to email_taken", async () => {
     mockPrisma.emailChangeRequest.findUnique.mockResolvedValue(validRequest());
     configureUsers({ email: OLD_EMAIL, googleSubject: null });
-    mockPrisma.user.update.mockRejectedValue(
+    mockPrisma.user.updateMany.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
         code: "P2002",
         clientVersion: "test",
       })
     );
 
-    const result = await completeEmailChange("token");
+    const result = await completeEmailChange(VALID_TOKEN);
     expect(result).toEqual({ ok: false, reason: "email_taken" });
   });
 
@@ -334,6 +379,35 @@ describe("completeEmailChange", () => {
 
     // A non-recoverable failure inside the transaction rethrows; the real
     // $transaction rolls the whole state transition back (nothing changes).
-    await expect(completeEmailChange("token")).rejects.toThrow("db down");
+    await expect(completeEmailChange(VALID_TOKEN)).rejects.toThrow("db down");
+  });
+});
+
+describe("peekEmailChangeRequest", () => {
+  it("returns null for a malformed token without hitting the database", async () => {
+    const result = await peekEmailChangeRequest("short");
+    expect(result).toBeNull();
+    expect(mockPrisma.emailChangeRequest.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns the new email for a valid pending request", async () => {
+    mockPrisma.emailChangeRequest.findUnique.mockResolvedValue({
+      newEmail: "new@example.com",
+      expiresAt: new Date(Date.now() + 60_000),
+      consumedAt: null,
+    });
+
+    const result = await peekEmailChangeRequest(VALID_TOKEN);
+    expect(result).toEqual({ newEmail: "new@example.com" });
+  });
+
+  it("returns null for a consumed or expired request", async () => {
+    mockPrisma.emailChangeRequest.findUnique.mockResolvedValue({
+      newEmail: "new@example.com",
+      expiresAt: new Date(Date.now() - 1000),
+      consumedAt: null,
+    });
+
+    expect(await peekEmailChangeRequest(VALID_TOKEN)).toBeNull();
   });
 });

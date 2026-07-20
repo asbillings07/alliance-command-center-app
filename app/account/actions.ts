@@ -175,13 +175,22 @@ export async function beginEmailChange(
     userId: id,
   });
 
-  if (delivery.status === "failed") {
-    // Delivery failed, so nothing was verifiable — discard the request we just
-    // created rather than leaving an orphaned pending row behind. Best-effort:
-    // even if cleanup fails the row simply expires or is superseded.
+  // "skipped" means email isn't configured. Locally/CI that's expected (the
+  // link is logged), but in production it means the user would never receive a
+  // link — treat it as a delivery failure there rather than lying "check your
+  // inbox".
+  const deliveryFailed =
+    delivery.status === "failed" ||
+    (delivery.status === "skipped" && process.env.NODE_ENV === "production");
+
+  if (deliveryFailed) {
+    // Nothing was verifiable — discard the request we just created rather than
+    // leaving an orphaned pending row behind. Best-effort: even if cleanup fails
+    // the row simply expires or is superseded.
     await discardEmailChangeRequest(result.requestId);
-    console.error("[account] email-change verification failed to send", {
+    console.error("[account] email-change verification not delivered", {
       userId: id,
+      status: delivery.status,
     });
     return {
       status: "error",

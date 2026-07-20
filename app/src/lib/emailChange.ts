@@ -43,6 +43,19 @@ export class EmailChangeRequestInvalidError extends Error {
   }
 }
 
+/**
+ * Thrown inside the completion transaction when the guarded identity write
+ * matches zero rows because the account became Google-linked after the
+ * pre-transaction check (a TOCTOU window). Mapped at the boundary to the
+ * existing "google_linked" reason.
+ */
+export class EmailChangeAccountLinkedError extends Error {
+  constructor() {
+    super("Account became Google-linked");
+    this.name = "EmailChangeAccountLinkedError";
+  }
+}
+
 export type BeginEmailChangeReason =
   | "google_linked"
   | "invalid_email"
@@ -69,6 +82,17 @@ export type CompleteEmailChangeResult =
   | { ok: true; oldEmail: string; newEmail: string }
   | { ok: false; reason: CompleteEmailChangeReason };
 
+/**
+ * A well-formed raw token is 32 random bytes rendered as 64 lowercase hex
+ * chars. Rejecting anything else before hashing means this unauthenticated
+ * endpoint never hashes arbitrarily large input or runs a DB lookup for an
+ * obviously-invalid token.
+ */
+const TOKEN_PATTERN = /^[0-9a-f]{64}$/;
+function isValidTokenShape(rawToken: string): boolean {
+  return TOKEN_PATTERN.test(rawToken);
+}
+
 /** The raw token is only ever handed to the user (in the link); we store its hash. */
 function hashToken(rawToken: string): string {
   return createHash("sha256").update(rawToken).digest("hex");
@@ -92,6 +116,11 @@ export function validateNewEmail(raw: unknown): ValidateNewEmailResult {
  *
  * Prior unconsumed requests are deleted (not marked) so `consumedAt` strictly
  * means "actually confirmed" and a missing row unambiguously means "superseded".
+ * The delete+create runs in a Serializable transaction so two concurrent begins
+ * for the same user can't both leave a pending row — the same mechanism
+ * betaInvitation uses for its one-pending-per-email invariant (a partial unique
+ * index isn't used anywhere in this codebase and would fight Prisma's schema
+ * drift detection).
  */
 export async function beginEmailChange(input: {
   userId: string;
@@ -134,12 +163,35 @@ export async function beginEmailChange(input: {
   const tokenHash = hashToken(rawToken);
   const expiresAt = new Date(Date.now() + EMAIL_CHANGE_TOKEN_TTL_MS);
 
-  const [, created] = await prisma.$transaction([
-    prisma.emailChangeRequest.deleteMany({ where: { userId, consumedAt: null } }),
-    prisma.emailChangeRequest.create({
-      data: { userId, newEmail, tokenHash, expiresAt },
-    }),
-  ]);
+  const supersedeAndCreate = () =>
+    prisma.$transaction(
+      async (tx) => {
+        await tx.emailChangeRequest.deleteMany({
+          where: { userId, consumedAt: null },
+        });
+        return tx.emailChangeRequest.create({
+          data: { userId, newEmail, tokenHash, expiresAt },
+        });
+      },
+      { isolationLevel: "Serializable" }
+    );
+
+  let created;
+  try {
+    created = await supersedeAndCreate();
+  } catch (err) {
+    // Under Serializable isolation a concurrent begin aborts the loser with a
+    // write-conflict (P2034). Retry once: the retry's delete clears the winner's
+    // row, giving clean last-begin-wins semantics.
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2034"
+    ) {
+      created = await supersedeAndCreate();
+    } else {
+      throw err;
+    }
+  }
 
   return { ok: true, requestId: created.id, rawToken, newEmail, expiresAt };
 }
@@ -167,6 +219,7 @@ export async function discardEmailChangeRequest(
 export async function peekEmailChangeRequest(
   rawToken: string
 ): Promise<{ newEmail: string } | null> {
+  if (!isValidTokenShape(rawToken)) return null;
   const tokenHash = hashToken(rawToken);
   const request = await prisma.emailChangeRequest.findUnique({
     where: { tokenHash },
@@ -193,6 +246,9 @@ export async function peekEmailChangeRequest(
 export async function completeEmailChange(
   rawToken: string
 ): Promise<CompleteEmailChangeResult> {
+  if (!isValidTokenShape(rawToken)) {
+    return { ok: false, reason: "invalid_or_expired" };
+  }
   const tokenHash = hashToken(rawToken);
 
   const request = await prisma.emailChangeRequest.findUnique({
@@ -245,11 +301,15 @@ export async function completeEmailChange(
       });
       if (consumed.count !== 1) throw new EmailChangeRequestInvalidError();
 
-      // Identity update + session revocation, atomic with consumption.
-      await tx.user.update({
-        where: { id: user.id },
+      // Identity update + session revocation, atomic with consumption. This is
+      // a guarded write (googleSubject still null) so a concurrent Google-link
+      // between the pre-transaction read and here can't slip through and change
+      // the email of a now-Google-linked account.
+      const updated = await tx.user.updateMany({
+        where: { id: user.id, googleSubject: null },
         data: { email: newEmail, sessionVersion: { increment: 1 } },
       });
+      if (updated.count !== 1) throw new EmailChangeAccountLinkedError();
 
       // Invitations belong to the person, not the string: move still-pending
       // invites addressed to the old email onto the new one. Predicates mirror
@@ -276,6 +336,9 @@ export async function completeEmailChange(
   } catch (err) {
     if (err instanceof EmailChangeRequestInvalidError) {
       return { ok: false, reason: "invalid_or_expired" };
+    }
+    if (err instanceof EmailChangeAccountLinkedError) {
+      return { ok: false, reason: "google_linked" };
     }
     // A concurrent claim of the new email surfaces as a unique-constraint
     // violation; the whole transaction rolled back, so report it cleanly.
