@@ -239,12 +239,12 @@ See `docs/adr/010-platform-operations-architecture.md` for full details.
 
 OAuth providers are authentication only.
 
-Google proves a user owns a verified email. Authorization and account eligibility remain governed by the invitation model and verified email identity.
+Google proves a user owns a verified email. Authorization and account eligibility remain governed by the invitation model; the email is verified at sign-in time but is no longer the identity key (the Google `sub` is — see below).
 
-* No Prisma adapter; email stays the canonical identity.
+* No Prisma adapter.
 * Authentication is modeled as capabilities, not a provider enum: `User.passwordHash` present enables password login, `User.googleSubject` present enables Google login. A user may have both (e.g. the operator's break-glass account).
-* Google's subject (`sub`) is the security anchor: linked on first Google sign-in, asserted thereafter; a mismatch is denied.
-* Every JWT `sub` is always the internal `User.id`, regardless of provider.
+* Google's subject (`sub`) is both the security anchor and the resolution key: Google sign-in resolves the internal user by `googleSubject` (via `resolveGoogleUser`), falling back to the verified email only to link an existing account on first sign-in or provision a new one (#144). Identity providers authenticate; AllianceHQ owns profile data, so a linked account's stored email/name are never resynced from Google.
+* Every JWT `sub` is always the internal `User.id`, resolved by `googleSubject` for Google logins.
 
 See `docs/adr/013-google-oauth.md` for full details.
 
