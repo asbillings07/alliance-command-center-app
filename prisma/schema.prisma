@@ -96,6 +96,9 @@ model AllianceMember {
 
 model User {
   id          String @id @default(cuid())
+  // Reserved for future localization support. Do not expose as an account
+  // preference until the app has real i18n behavior (no control without
+  // behavior). See the "No speculative preferences" decision on issue #125.
   preferredLanguage String @default("en")
   email       String @unique
   displayName String
