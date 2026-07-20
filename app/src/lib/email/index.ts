@@ -26,4 +26,6 @@ export type {
   AccessRequestConfirmationEmailInput,
   FeedbackNotificationView,
   FeedbackNotificationEmailInput,
+  EmailChangeVerificationView,
+  EmailChangeVerificationEmailInput,
 } from "./types";

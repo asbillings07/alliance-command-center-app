@@ -1,6 +1,7 @@
 import type {
   AccessRequestConfirmationEmailInput,
   BetaInvitationEmailInput,
+  EmailChangeVerificationEmailInput,
   EmailResult,
   EmailService,
   FeedbackNotificationEmailInput,
@@ -9,12 +10,16 @@ import { deliverEmail } from "./deliverEmail";
 import { renderBetaInvitationEmail } from "./templates/betaInvitationEmail";
 import { renderAccessRequestConfirmationEmail } from "./templates/accessRequestConfirmationEmail";
 import { renderFeedbackNotificationEmail } from "./templates/feedbackNotificationEmail";
+import { renderEmailChangeVerificationEmail } from "./templates/emailChangeVerificationEmail";
 
 const BETA_INVITATION_SUBJECT =
   "You're invited to the Alliance Command Center beta";
 
 const ACCESS_REQUEST_CONFIRMATION_SUBJECT =
   "Thanks for your interest in Alliance Command Center";
+
+const EMAIL_CHANGE_VERIFICATION_SUBJECT =
+  "Confirm your new Alliance Command Center email";
 
 /**
  * Application-facing email service. Each method expresses a business email,
@@ -60,6 +65,19 @@ export const emailService: EmailService = {
       subject: `[AllianceHQ Feedback #${feedback.referenceId}]`,
       content: renderFeedbackNotificationEmail(feedback),
       metadata: feedbackId ? { feedbackId } : undefined,
+    });
+  },
+
+  async sendEmailChangeVerification({
+    to,
+    verification,
+    userId,
+  }: EmailChangeVerificationEmailInput): Promise<EmailResult> {
+    return deliverEmail({
+      to,
+      subject: EMAIL_CHANGE_VERIFICATION_SUBJECT,
+      content: renderEmailChangeVerificationEmail(verification),
+      metadata: userId ? { userId } : undefined,
     });
   },
 };

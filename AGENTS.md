@@ -265,6 +265,22 @@ See `docs/adr/014-transactional-email.md` for full details.
 
 ---
 
+## ADR-015
+
+A verified email change is a single-use, two-proof, atomic identity transition that invalidates every existing session.
+
+Email is the canonical identity (ADR-013), so changing it is a security workflow, not a profile edit. It is modeled as a state machine: `beginEmailChange()` → `confirmEmailChange()` → `completeEmailChange()`.
+
+* Two independent proofs: authentication + current password at begin, and ownership of the destination inbox at confirm. No third password prompt.
+* The verification token is hashed at rest (SHA-256); the raw token lives only in the emailed link. Superseded requests are deleted so `consumedAt` strictly means "confirmed".
+* Identity update, session revocation (`sessionVersion` bump), pending-invitation reconciliation, and request consumption are one atomic transaction. A guarded conditional consume makes exactly one of two racing confirmations win.
+* Confirmation completes via POST (never GET), so scanners/prefetchers can't burn the single-use token.
+* v1 refuses Google-linked accounts (email is still the sign-in lookup key); old-email notification is deferred to #98.
+
+See `docs/adr/015-verified-email-change.md` for full details.
+
+---
+
 ## Database Philosophy
 
 Model the business domain.
