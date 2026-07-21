@@ -44,12 +44,14 @@ export function TourAutoStart() {
     }
 
     // Clean the address bar first so a refresh/Back won't retrigger the tour,
-    // preserving any unrelated query params.
+    // preserving any unrelated query params. Keep the existing history state
+    // object: the App Router stores its routing state there, and replacing it
+    // with null breaks back/forward navigation.
     const cleanUrl =
       window.location.pathname +
       stripTourParams(window.location.search) +
       window.location.hash;
-    window.history.replaceState(null, "", cleanUrl);
+    window.history.replaceState(window.history.state, "", cleanUrl);
 
     const tour = TOURS_BY_ID.get(tourId);
     if (!tour) {
@@ -68,13 +70,19 @@ export function TourAutoStart() {
           router.push(safeReturnTo);
         }
       },
-    }).then((teardown) => {
-      destroy = teardown;
-      // Unmounted between import start and resolve: tear the tour down now.
-      if (controller.signal.aborted) {
-        teardown();
-      }
-    });
+    })
+      .then((teardown) => {
+        destroy = teardown;
+        // Unmounted between import start and resolve: tear the tour down now.
+        if (controller.signal.aborted) {
+          teardown();
+        }
+      })
+      .catch(() => {
+        // The lazy driver.js import failed (offline, chunk load error). A tour
+        // is a non-critical enhancement, so swallow it rather than surface an
+        // unhandled rejection.
+      });
 
     return () => {
       controller.abort();

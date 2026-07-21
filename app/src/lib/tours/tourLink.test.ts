@@ -44,6 +44,19 @@ describe("buildTourHref", () => {
     expect(url.searchParams.get("foo")).toBe("1");
     expect(url.searchParams.get(TOUR_QUERY_PARAM)).toBe("create-period");
   });
+
+  it("throws when the destination is not a same-origin path", () => {
+    for (const destination of [
+      "https://evil.com",
+      "//evil.com",
+      "javascript:alert(1)",
+      "alliances/a1/periods",
+    ]) {
+      expect(() =>
+        buildTourHref({ destination, tourId: "t", returnTo: "/x" })
+      ).toThrow(/same-origin path/);
+    }
+  });
 });
 
 describe("stripTourParams", () => {

@@ -9,6 +9,8 @@
  * usable from Server Components (building hrefs) and easy to unit-test.
  */
 
+import { sanitizeInternalPath } from "@/app/src/lib/internalPath";
+
 export const TOUR_QUERY_PARAM = "tour";
 export const RETURN_TO_QUERY_PARAM = "returnTo";
 
@@ -16,6 +18,10 @@ export const RETURN_TO_QUERY_PARAM = "returnTo";
  * Build a Setup -> destination deep-link that auto-starts `tourId` and returns
  * to `returnTo` when finished. Preserves any query already on `destination` and
  * encodes values safely (via URL/URLSearchParams).
+ *
+ * `destination` must be a same-origin path (it is our own task href). Passing an
+ * absolute/protocol-relative/scheme URL is a programming error and throws rather
+ * than silently producing a surprising relative href.
  */
 export function buildTourHref({
   destination,
@@ -26,7 +32,14 @@ export function buildTourHref({
   tourId: string;
   returnTo: string;
 }): string {
-  const url = new URL(destination, "http://localhost");
+  const safeDestination = sanitizeInternalPath(destination);
+  if (!safeDestination) {
+    throw new Error(
+      `buildTourHref: destination must be a same-origin path, received: ${destination}`
+    );
+  }
+
+  const url = new URL(safeDestination, "http://localhost");
   url.searchParams.set(TOUR_QUERY_PARAM, tourId);
   url.searchParams.set(RETURN_TO_QUERY_PARAM, returnTo);
   return `${url.pathname}${url.search}${url.hash}`;

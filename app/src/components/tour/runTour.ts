@@ -33,6 +33,12 @@ export async function runTour(
   tour: TourDefinition,
   opts?: RunTourOptions
 ): Promise<() => void> {
+  // Already cancelled: skip the dynamic import entirely (the common StrictMode
+  // cleanup race) so we don't pay a fetch/parse cost we're about to discard.
+  if (opts?.signal?.aborted) {
+    return () => {};
+  }
+
   const { driver } = await import("driver.js");
 
   // The caller gave up while the import was in flight; never touch the DOM.
@@ -41,6 +47,10 @@ export async function runTour(
   }
 
   let completed = false;
+  // Driver.js may invoke onDestroyed more than once (e.g. Done triggers
+  // destroy(), then an unmount teardown calls destroy() again). Fire the
+  // completion callback at most once so we never navigate twice.
+  let notified = false;
 
   const driverObj = driver({
     showProgress: tour.steps.length > 1,
@@ -57,7 +67,8 @@ export async function runTour(
       driverObj.destroy(); // required: overriding the hook disables the default
     },
     onDestroyed: () => {
-      if (completed) {
+      if (completed && !notified) {
+        notified = true;
         opts?.onFinished?.();
       }
     },

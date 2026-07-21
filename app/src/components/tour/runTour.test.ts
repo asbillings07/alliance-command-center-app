@@ -132,4 +132,16 @@ describe("runTour", () => {
     destroy();
     expect(onFinished).toHaveBeenCalledTimes(1);
   });
+
+  it("fires onFinished at most once even if onDestroyed repeats", async () => {
+    const onFinished = vi.fn();
+    await runTour(twoStep, { onFinished });
+
+    onDoneClick();
+    // Simulate Driver.js re-emitting the destroy event.
+    onDestroyed();
+    onDestroyed();
+
+    expect(onFinished).toHaveBeenCalledTimes(1);
+  });
 });
