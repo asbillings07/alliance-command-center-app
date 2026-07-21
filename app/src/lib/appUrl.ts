@@ -2,27 +2,47 @@
  * Application URL helpers.
  *
  * Centralizes how the app resolves its own origin so invite links, email
- * links, and any other absolute URLs stay consistent. Uses NEXTAUTH_URL as the
- * canonical origin (same value Auth.js uses for callbacks).
+ * links, and any other absolute URLs stay consistent.
+ *
+ * Origin resolution is deliberately ordered so each deployment "stack" gets the
+ * right absolute URLs:
+ *   1. NEXTAUTH_URL   - the canonical origin (same value Auth.js uses). Set only
+ *                       in Production, so production links always use the custom
+ *                       domain rather than an internal *.vercel.app host.
+ *   2. VERCEL_URL     - the per-deployment host Vercel exposes on Preview builds,
+ *                       where NEXTAUTH_URL is intentionally left unset so Auth.js
+ *                       (and these links) follow the actual preview deployment
+ *                       instead of bouncing to production.
+ *   3. localhost      - development/test convenience.
  */
 
 /**
  * Resolve the application origin (scheme + host, no trailing slash).
  *
- * Falls back to http://localhost:3000 in development/test when NEXTAUTH_URL is
- * unset. Throws in production so we never emit localhost links to real users.
+ * Prefers NEXTAUTH_URL, then Vercel's per-deployment VERCEL_URL, then localhost
+ * in development/test. Throws only in production when none of these is available,
+ * so we never emit a wrong or localhost link to real users.
  */
 export function getAppOrigin(): string {
-  const origin = process.env.NEXTAUTH_URL;
+  const configured = process.env.NEXTAUTH_URL;
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
 
-  if (!origin) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("NEXTAUTH_URL must be configured in production");
-    }
+  // Preview deployments leave NEXTAUTH_URL unset. VERCEL_URL is the deployment
+  // host only (no scheme, no trailing slash) and is always served over https.
+  const vercelHost = process.env.VERCEL_URL;
+  if (vercelHost) {
+    return `https://${vercelHost}`;
+  }
+
+  if (process.env.NODE_ENV !== "production") {
     return "http://localhost:3000";
   }
 
-  return origin.replace(/\/$/, "");
+  throw new Error(
+    "Application origin is not configured: set NEXTAUTH_URL (production) or run on Vercel (VERCEL_URL, preview).",
+  );
 }
 
 /**
