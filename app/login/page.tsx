@@ -21,8 +21,11 @@ export default async function LoginPage({
     // A denied explicit Google connect (#131) lands on the error page while the
     // user is still signed in. Route them back to /account so the signed
     // connect-result cookie surfaces as a banner rather than dropping them on
-    // /app with no feedback.
-    if (await readConnectResult()) {
+    // /app with no feedback. Gated on Google being enabled: when it is disabled,
+    // /account skips reading (and clearing) the cookie, so redirecting here would
+    // just bounce the user to /account without ever acknowledging it. Let the
+    // short-lived cookie expire on its own instead.
+    if (isGoogleAuthEnabled() && (await readConnectResult())) {
       redirect("/account");
     }
     const { callbackUrl } = await searchParams;

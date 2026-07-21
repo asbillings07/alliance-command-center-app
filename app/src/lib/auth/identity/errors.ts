@@ -63,7 +63,9 @@ export class GoogleAccountMismatchError extends AuthenticationError {
  * state. The user can reconnect explicitly from Account settings.
  */
 export class GoogleAutoLinkBlockedError extends AuthenticationError {
-  constructor(message = "This account is not connected to Google sign-in") {
+  constructor(
+    message = "This account was disconnected from Google sign-in. Sign in with your password, then reconnect Google from Account settings."
+  ) {
     super(message);
   }
 }
