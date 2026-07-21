@@ -3,13 +3,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-// A stable router object, mirroring Next's real useRouter (whose identity is
-// stable across renders). This matters: TourAutoStart depends on [router], so an
-// unstable identity would re-run the launch effect on every render.
-const push = vi.hoisted(() => vi.fn());
-const router = vi.hoisted(() => ({ push }));
-vi.mock("next/navigation", () => ({ useRouter: () => router }));
-
 // Isolate the component from Driver.js: assert on the runner contract only.
 const runTour = vi.hoisted(() => vi.fn());
 vi.mock("./runTour", () => ({ runTour }));
@@ -21,7 +14,6 @@ import { CREATE_PERIOD_TOUR_ID } from "@/app/src/lib/tours";
   true;
 
 const PERIODS = "/alliances/a1/periods";
-const RETURN_TO = "/alliances/a1/setup";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -50,7 +42,6 @@ async function unmountComponent() {
 }
 
 beforeEach(() => {
-  push.mockReset();
   runTour.mockReset();
 });
 
@@ -75,9 +66,7 @@ describe("TourAutoStart", () => {
   it("starts the tour once, cleaning the URL while preserving other params and history state", async () => {
     const teardown = vi.fn();
     runTour.mockResolvedValue(teardown);
-    setLocation(
-      `?tour=${CREATE_PERIOD_TOUR_ID}&returnTo=${encodeURIComponent(RETURN_TO)}&foo=1`
-    );
+    setLocation(`?tour=${CREATE_PERIOD_TOUR_ID}&foo=1`);
 
     await mount();
 
@@ -86,25 +75,38 @@ describe("TourAutoStart", () => {
     expect(tourArg.id).toBe(CREATE_PERIOD_TOUR_ID);
     expect(opts.signal.aborted).toBe(false);
 
-    // URL cleaned: tour params removed, unrelated params + history state kept.
+    // URL cleaned: tour param removed, unrelated params + history state kept.
     expect(window.location.pathname).toBe(PERIODS);
     expect(window.location.search).toBe("?foo=1");
     expect(window.history.state).toEqual({ __NA: "seed" });
 
     expect(teardown).not.toHaveBeenCalled();
-    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("does not wire a completion handler, so finishing or dismissing stays on the page", async () => {
+    runTour.mockResolvedValue(vi.fn());
+    setLocation(`?tour=${CREATE_PERIOD_TOUR_ID}`);
+
+    await mount();
+
+    // The tour teaches the task; it never navigates the user away. The runner is
+    // invoked without an onFinished callback and the location is unchanged.
+    const opts = runTour.mock.calls[0][1];
+    expect(opts.onFinished).toBeUndefined();
+    expect(window.location.pathname).toBe(PERIODS);
+    expect(window.location.search).toBe("");
   });
 
   it("does not abort or destroy the active tour when the URL is cleaned or the component re-renders", async () => {
     const teardown = vi.fn();
     runTour.mockResolvedValue(teardown);
-    setLocation(`?tour=${CREATE_PERIOD_TOUR_ID}&returnTo=${encodeURIComponent(RETURN_TO)}`);
+    setLocation(`?tour=${CREATE_PERIOD_TOUR_ID}`);
 
     await mount();
     const opts = runTour.mock.calls[0][1];
 
     // A re-render (as a search-param sync would cause) must not re-run the
-    // launch effect: its only dependency is the stable router.
+    // launch effect: it is a mount-only effect.
     await act(async () => {
       root.render(createElement(TourAutoStart));
     });
@@ -115,30 +117,9 @@ describe("TourAutoStart", () => {
     expect(teardown).not.toHaveBeenCalled();
   });
 
-  it("navigates to the sanitized returnTo on completion", async () => {
-    runTour.mockResolvedValue(vi.fn());
-    setLocation(`?tour=${CREATE_PERIOD_TOUR_ID}&returnTo=${encodeURIComponent(RETURN_TO)}`);
-
-    await mount();
-    const opts = runTour.mock.calls[0][1];
-    opts.onFinished();
-
-    expect(push).toHaveBeenCalledWith(RETURN_TO);
-  });
-
-  it("does not navigate when the tour is not completed", async () => {
-    runTour.mockResolvedValue(vi.fn());
-    setLocation(`?tour=${CREATE_PERIOD_TOUR_ID}&returnTo=${encodeURIComponent(RETURN_TO)}`);
-
-    await mount();
-
-    // onFinished is never called for X / backdrop / Escape (see runTour).
-    expect(push).not.toHaveBeenCalled();
-  });
-
   it("cleans the URL but does not run an unknown tour id", async () => {
     runTour.mockResolvedValue(vi.fn());
-    setLocation(`?tour=not-a-real-tour&returnTo=${encodeURIComponent(RETURN_TO)}`);
+    setLocation("?tour=not-a-real-tour");
 
     await mount();
 
@@ -154,7 +135,7 @@ describe("TourAutoStart", () => {
         resolveRun = () => resolve(teardown);
       })
     );
-    setLocation(`?tour=${CREATE_PERIOD_TOUR_ID}&returnTo=${encodeURIComponent(RETURN_TO)}`);
+    setLocation(`?tour=${CREATE_PERIOD_TOUR_ID}`);
 
     await mount();
     const opts = runTour.mock.calls[0][1];
@@ -162,12 +143,11 @@ describe("TourAutoStart", () => {
     await unmountComponent();
     expect(opts.signal.aborted).toBe(true);
 
-    // The lazy import resolves only after unmount: tear the tour down, no nav.
+    // The lazy import resolves only after unmount: tear the tour down.
     await act(async () => {
       resolveRun();
     });
 
     expect(teardown).toHaveBeenCalledTimes(1);
-    expect(push).not.toHaveBeenCalled();
   });
 });

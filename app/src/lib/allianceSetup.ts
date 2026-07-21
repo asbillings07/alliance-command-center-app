@@ -181,10 +181,10 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
  * Setup tasks that have a guided tour on their destination page.
  *
  * Keyed by task id (not every task has one). The value is a tour id resolvable
- * via `TOURS_BY_ID`; `buildTourHref` turns it into a `?tour=...&returnTo=...`
- * deep link that auto-starts the tour and returns the user to Setup. Keeping
- * this map here (beside `SETUP_TASKS`) means adding a tour to a task is a
- * one-line, data-only change.
+ * via `TOURS_BY_ID`; `buildTourHref` turns it into a `?tour=...` deep link that
+ * auto-starts the tour on the destination page (the user stays there when it
+ * finishes). Keeping this map here (beside `SETUP_TASKS`) means adding a tour to
+ * a task is a one-line, data-only change.
  */
 export const SETUP_TASK_TOURS: Partial<Record<SetupTaskId, string>> = {
   period: CREATE_PERIOD_TOUR_ID,

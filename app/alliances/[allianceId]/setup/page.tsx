@@ -59,13 +59,7 @@ function ChevronIcon() {
   );
 }
 
-function SetupTaskCard({
-  task,
-  allianceId,
-}: {
-  task: SetupTask;
-  allianceId: string;
-}) {
+function SetupTaskCard({ task }: { task: SetupTask }) {
   // Offer the guided tour whenever the task has one. A tour is educational even
   // after the task is done (revisiting the feature, onboarding a teammate), so
   // it is not gated on completion.
@@ -105,7 +99,6 @@ function SetupTaskCard({
             href={buildTourHref({
               destination: task.href,
               tourId,
-              returnTo: `/alliances/${allianceId}/setup`,
             })}
             className="inline-flex items-center gap-1 text-sm font-medium text-primary-light hover:text-primary hover:underline"
           >
@@ -192,7 +185,7 @@ export default async function AllianceSetupPage({ params }: Params) {
           </h2>
           <div className="space-y-3">
             {requiredTasks.map((task) => (
-              <SetupTaskCard key={task.id} task={task} allianceId={allianceId} />
+              <SetupTaskCard key={task.id} task={task} />
             ))}
           </div>
         </div>
@@ -206,7 +199,7 @@ export default async function AllianceSetupPage({ params }: Params) {
           </h2>
           <div className="space-y-3">
             {optionalTasks.map((task) => (
-              <SetupTaskCard key={task.id} task={task} allianceId={allianceId} />
+              <SetupTaskCard key={task.id} task={task} />
             ))}
           </div>
         </div>
