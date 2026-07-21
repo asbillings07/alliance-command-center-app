@@ -54,7 +54,15 @@ describe("buildTourHref", () => {
     ]) {
       expect(() =>
         buildTourHref({ destination, tourId: "t", returnTo: "/x" })
-      ).toThrow(/same-origin path/);
+      ).toThrow(/destination must be a same-origin path/);
+    }
+  });
+
+  it("throws when returnTo is not a same-origin path", () => {
+    for (const returnTo of ["https://evil.com", "//evil.com", "javascript:alert(1)"]) {
+      expect(() =>
+        buildTourHref({ destination: "/alliances/a1/periods", tourId: "t", returnTo })
+      ).toThrow(/returnTo must be a same-origin path/);
     }
   });
 });

@@ -19,9 +19,11 @@ export const RETURN_TO_QUERY_PARAM = "returnTo";
  * to `returnTo` when finished. Preserves any query already on `destination` and
  * encodes values safely (via URL/URLSearchParams).
  *
- * `destination` must be a same-origin path (it is our own task href). Passing an
- * absolute/protocol-relative/scheme URL is a programming error and throws rather
- * than silently producing a surprising relative href.
+ * Both `destination` and `returnTo` must be same-origin paths (they are our own
+ * hrefs). Passing an absolute/protocol-relative/scheme URL is a programming
+ * error and throws: for `destination` it would produce a surprising relative
+ * href, and for `returnTo` `TourAutoStart` would later refuse to navigate,
+ * silently failing to return the user to where they started.
  */
 export function buildTourHref({
   destination,
@@ -39,9 +41,16 @@ export function buildTourHref({
     );
   }
 
+  const safeReturnTo = sanitizeInternalPath(returnTo);
+  if (!safeReturnTo) {
+    throw new Error(
+      `buildTourHref: returnTo must be a same-origin path, received: ${returnTo}`
+    );
+  }
+
   const url = new URL(safeDestination, "http://localhost");
   url.searchParams.set(TOUR_QUERY_PARAM, tourId);
-  url.searchParams.set(RETURN_TO_QUERY_PARAM, returnTo);
+  url.searchParams.set(RETURN_TO_QUERY_PARAM, safeReturnTo);
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
