@@ -107,7 +107,7 @@ function SetupTaskCard({
               tourId,
               returnTo: `/alliances/${allianceId}/setup`,
             })}
-            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+            className="inline-flex items-center gap-1 text-sm font-medium text-primary-light hover:text-primary hover:underline"
           >
             Start guided tour
           </Link>
