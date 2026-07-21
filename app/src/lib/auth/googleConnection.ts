@@ -335,8 +335,12 @@ export async function setGoogleEmail(
   userId: string,
   googleEmail: string
 ): Promise<void> {
-  await prisma.user.update({
-    where: { id: userId },
+  // Guarded on Google still being connected: a sign-in that began before a
+  // concurrent disconnect must not re-write googleEmail afterward and leave
+  // stale provider metadata on a now-disconnected account (mirrors the guard in
+  // linkGoogleToUser).
+  await prisma.user.updateMany({
+    where: { id: userId, googleSubject: { not: null } },
     data: { googleEmail },
   });
 }

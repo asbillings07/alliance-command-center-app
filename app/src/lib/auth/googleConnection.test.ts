@@ -240,16 +240,17 @@ describe("linkGoogleToUser", () => {
 });
 
 describe("setGoogleEmail", () => {
-  it("updates only the display metadata, never User.email", async () => {
-    mockPrisma.user.update.mockResolvedValue({});
+  it("updates only the display metadata, guarded on Google still being connected, never User.email", async () => {
+    mockPrisma.user.updateMany.mockResolvedValue({ count: 1 });
 
     await setGoogleEmail("user-1", "personal@gmail.com");
 
-    expect(mockPrisma.user.update).toHaveBeenCalledWith({
-      where: { id: "user-1" },
+    // Guarded on googleSubject so a racing disconnect can't be partially undone.
+    expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
+      where: { id: "user-1", googleSubject: { not: null } },
       data: { googleEmail: "personal@gmail.com" },
     });
-    const data = mockPrisma.user.update.mock.calls[0][0].data;
+    const data = mockPrisma.user.updateMany.mock.calls[0][0].data;
     expect(data.email).toBeUndefined();
   });
 });
