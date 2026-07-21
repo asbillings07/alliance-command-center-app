@@ -26,14 +26,14 @@
 export function getAppOrigin(): string {
   const configured = process.env.NEXTAUTH_URL;
   if (configured) {
-    return configured.replace(/\/$/, "");
+    return normalizeOrigin(configured);
   }
 
   // Preview deployments leave NEXTAUTH_URL unset. VERCEL_URL is the deployment
-  // host only (no scheme, no trailing slash) and is always served over https.
+  // host only (no scheme) and is always served over https.
   const vercelHost = process.env.VERCEL_URL;
   if (vercelHost) {
-    return `https://${vercelHost}`;
+    return normalizeOrigin(`https://${vercelHost}`);
   }
 
   if (process.env.NODE_ENV !== "production") {
@@ -43,6 +43,16 @@ export function getAppOrigin(): string {
   throw new Error(
     "Application origin is not configured: set NEXTAUTH_URL (production) or run on Vercel (VERCEL_URL, preview).",
   );
+}
+
+/**
+ * Reduce a configured URL to its origin (scheme + host [+ port]), dropping any
+ * path, query, hash, or trailing slash. Guarantees the "scheme + host" contract
+ * so callers can safely append their own path. Throws on a non-absolute value,
+ * which is preferable to silently emitting a malformed link.
+ */
+function normalizeOrigin(value: string): string {
+  return new URL(value).origin;
 }
 
 /**

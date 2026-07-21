@@ -16,6 +16,11 @@ describe("getAppOrigin", () => {
     expect(getAppOrigin()).toBe("https://alliancehqapp.com");
   });
 
+  it("reduces a NEXTAUTH_URL with an extra path to its bare origin", () => {
+    vi.stubEnv("NEXTAUTH_URL", "https://alliancehqapp.com/some/path");
+    expect(getAppOrigin()).toBe("https://alliancehqapp.com");
+  });
+
   it("prefers NEXTAUTH_URL over VERCEL_URL (production keeps its canonical domain)", () => {
     vi.stubEnv("NEXTAUTH_URL", "https://alliancehqapp.com");
     vi.stubEnv("VERCEL_URL", "some-deploy-abc123.vercel.app");
