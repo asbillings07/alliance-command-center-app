@@ -52,6 +52,9 @@ export async function runTour(
   // completion callback at most once so we never navigate twice.
   let notified = false;
 
+  const signal = opts?.signal;
+  const handleAbort = () => driverObj.destroy();
+
   const driverObj = driver({
     showProgress: tour.steps.length > 1,
     allowClose: true,
@@ -67,6 +70,10 @@ export async function runTour(
       driverObj.destroy(); // required: overriding the hook disables the default
     },
     onDestroyed: () => {
+      // Detach on every teardown path (Done, X, backdrop, abort, handle) so a
+      // long-lived signal doesn't retain the destroyed Driver instance or fire
+      // destroy() again after the tour has ended.
+      signal?.removeEventListener("abort", handleAbort);
       if (completed && !notified) {
         notified = true;
         opts?.onFinished?.();
@@ -77,12 +84,10 @@ export async function runTour(
   driverObj.drive();
 
   // Honor the signal for the whole run, not just the import window: if it aborts
-  // while the tour is on screen, tear the tour down here rather than relying on
-  // the caller to also invoke the returned handle. Aborting is not completion,
-  // so onFinished never fires (completed stays false).
-  opts?.signal?.addEventListener("abort", () => driverObj.destroy(), {
-    once: true,
-  });
+  // while the tour is on screen, tear the tour down rather than relying on the
+  // caller to also invoke the returned handle. Aborting is not completion, so
+  // onFinished never fires (completed stays false).
+  signal?.addEventListener("abort", handleAbort, { once: true });
 
   return () => driverObj.destroy();
 }

@@ -134,6 +134,18 @@ describe("runTour", () => {
     expect(onFinished).not.toHaveBeenCalled();
   });
 
+  it("detaches the abort listener once the tour ends, so a later abort is a no-op", async () => {
+    const controller = new AbortController();
+    await runTour(twoStep, { signal: controller.signal });
+
+    onDoneClick(); // completes -> onDestroyed detaches the abort listener
+    const afterDone = h.rawDestroyCalls;
+
+    controller.abort();
+
+    expect(h.rawDestroyCalls).toBe(afterDone);
+  });
+
   it("is safe to tear down after completion (no double onFinished)", async () => {
     const onFinished = vi.fn();
     const destroy = await runTour(twoStep, { onFinished });
