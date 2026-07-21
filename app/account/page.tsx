@@ -54,7 +54,7 @@ export default async function AccountPage() {
           <Card.Body>
             <AccountEmailForm
               email={account.email}
-              canChange={!methods.hasGoogle}
+              canChange={methods.hasPassword}
             />
           </Card.Body>
         </Card>

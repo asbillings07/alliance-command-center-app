@@ -16,8 +16,6 @@ export type ConfirmEmailChangeState = {
 const CONFIRM_ERROR_MESSAGES: Record<CompleteEmailChangeReason, string> = {
   invalid_or_expired:
     "This verification link is no longer valid. Please request the change again from your account page.",
-  google_linked:
-    "This account now uses Google sign-in, so its email can't be changed here.",
   email_taken:
     "That email was claimed by another account before you confirmed. Please request the change again.",
 };

@@ -23,9 +23,12 @@ import { isValidEmailFormat, normalizeEmail } from "./emailAddress";
  * are (1) authentication + current password at begin, and (2) ownership of the
  * destination inbox at confirm. There is deliberately no third password prompt.
  *
- * v1 supports credential-only accounts. Google-linked accounts are refused
- * because sign-in still resolves users by email; see ADR-015 for the path to
- * lift this once Google resolves by `googleSubject`.
+ * Eligibility is based on the ability to re-authenticate locally, not on which
+ * providers are linked: any account with a password credential can change its
+ * email, Google-linked or not (#147). Since #144, Google resolves by
+ * `googleSubject`, so email is mutable profile data and changing it never
+ * breaks Google sign-in. Google-only accounts (no password) set a password
+ * first — an existing, supported path — then re-authenticate with it.
  */
 
 /** How long a verification token stays valid after it is issued. */
@@ -43,21 +46,8 @@ export class EmailChangeRequestInvalidError extends Error {
   }
 }
 
-/**
- * Thrown inside the completion transaction when the guarded identity write
- * matches zero rows because the account became Google-linked after the
- * pre-transaction check (a TOCTOU window). Mapped at the boundary to the
- * existing "google_linked" reason.
- */
-export class EmailChangeAccountLinkedError extends Error {
-  constructor() {
-    super("Account became Google-linked");
-    this.name = "EmailChangeAccountLinkedError";
-  }
-}
-
 export type BeginEmailChangeReason =
-  | "google_linked"
+  | "password_required"
   | "invalid_email"
   | "wrong_password"
   | "same_email"
@@ -75,7 +65,6 @@ export type BeginEmailChangeResult =
 
 export type CompleteEmailChangeReason =
   | "invalid_or_expired"
-  | "google_linked"
   | "email_taken";
 
 export type CompleteEmailChangeResult =
@@ -133,13 +122,18 @@ export async function beginEmailChange(input: {
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { email: true, googleSubject: true },
+    select: { email: true, passwordHash: true },
   });
   // A missing user is treated as an auth failure rather than leaking state.
   if (!user) return { ok: false, reason: "wrong_password" };
 
-  // v1: unsupported for Google-linked accounts (ADR-015).
-  if (user.googleSubject !== null) return { ok: false, reason: "google_linked" };
+  // Eligibility is the ability to re-authenticate, not the provider mix (#147):
+  // the current password is the second proof. A Google-only account (no
+  // password) must set one first, then it becomes eligible. Distinct from
+  // wrong_password so the UI can guide the user to set a password.
+  if (user.passwordHash === null) {
+    return { ok: false, reason: "password_required" };
+  }
 
   const validation = validateNewEmail(input.newEmail);
   if (!validation.ok) return { ok: false, reason: "invalid_email" };
@@ -271,13 +265,9 @@ export async function completeEmailChange(
 
   const user = await prisma.user.findUnique({
     where: { id: request.userId },
-    select: { id: true, email: true, googleSubject: true },
+    select: { id: true, email: true },
   });
   if (!user) return { ok: false, reason: "invalid_or_expired" };
-
-  // Defensive re-check: the account may have been Google-linked between begin
-  // and confirm, invalidating this flow's assumptions (ADR-015).
-  if (user.googleSubject !== null) return { ok: false, reason: "google_linked" };
 
   const oldEmail = user.email;
   const newEmail = request.newEmail; // normalized at begin
@@ -301,15 +291,16 @@ export async function completeEmailChange(
       });
       if (consumed.count !== 1) throw new EmailChangeRequestInvalidError();
 
-      // Identity update + session revocation, atomic with consumption. This is
-      // a guarded write (googleSubject still null) so a concurrent Google-link
-      // between the pre-transaction read and here can't slip through and change
-      // the email of a now-Google-linked account.
+      // Identity update + session revocation, atomic with consumption. A
+      // guarded write on `id` so a user deleted between the pre-transaction read
+      // and here rolls the whole change back cleanly rather than silently
+      // no-op'ing. (No Google guard needed: since #144 email is not identity,
+      // so changing it is safe regardless of linked providers — #147.)
       const updated = await tx.user.updateMany({
-        where: { id: user.id, googleSubject: null },
+        where: { id: user.id },
         data: { email: newEmail, sessionVersion: { increment: 1 } },
       });
-      if (updated.count !== 1) throw new EmailChangeAccountLinkedError();
+      if (updated.count !== 1) throw new EmailChangeRequestInvalidError();
 
       // Invitations belong to the person, not the string: move still-pending
       // invites addressed to the old email onto the new one. Predicates mirror
@@ -336,9 +327,6 @@ export async function completeEmailChange(
   } catch (err) {
     if (err instanceof EmailChangeRequestInvalidError) {
       return { ok: false, reason: "invalid_or_expired" };
-    }
-    if (err instanceof EmailChangeAccountLinkedError) {
-      return { ok: false, reason: "google_linked" };
     }
     // A concurrent claim of the new email surfaces as a unique-constraint
     // violation; the whole transaction rolled back, so report it cleanly.

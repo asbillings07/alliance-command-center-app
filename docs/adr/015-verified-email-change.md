@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted (amended 2026-07 by #147: email-change eligibility is based on the ability to re-authenticate with a password, not on which providers are linked. #144 made `googleSubject` the identity anchor, so the original Google-linked restriction is lifted — any account with a password credential can change its email.)
 
 ## Guiding Principle
 
@@ -33,6 +33,12 @@ completeEmailChange() -> atomically swap identity + revoke sessions + reconcile 
 
 These are two independent proofs. We deliberately do **not** prompt for the password a third time at confirmation — the begin step already established that proof, and re-prompting adds ceremony without adding security.
 
+### Eligibility is the ability to re-authenticate, not the provider mix (amended #147)
+
+> Email change eligibility is based on the ability to perform local password re-authentication, not on which authentication providers are linked to the account. Authentication providers determine how a user signs in; password re-authentication is the second proof required for changing account identity.
+
+Concretely, `beginEmailChange` gates on `passwordHash !== null` (returning `password_required` otherwise), never on Google state. A dual account (password + Google) changes its email by re-authenticating with its password; a Google-only account sets a password first — an existing, supported path in Account settings — and then becomes eligible. This replaces the earlier "not Google-linked" rule, which asked *how* a user authenticates rather than *whether they can prove ownership*. The dedicated Google OAuth step-up re-auth once imagined for password-less accounts is unnecessary given the set-a-password path, and is deferred indefinitely.
+
 ### Token hashing is an intentional evolution
 
 The verification token is high-entropy (32 random bytes) and is delivered only in the emailed link. We store **only its SHA-256 hash** (`EmailChangeRequest.tokenHash`). This is a deliberate evolution away from the plaintext tokens used by the older invitation tables: those predated this pattern and are capability URLs, whereas an email-change token is takeover-capable. A database leak of hashes cannot be replayed into an account takeover.
@@ -41,7 +47,7 @@ Consumption is represented by `consumedAt` meaning "actually confirmed". A super
 
 ### Atomic state transition
 
-Completion is a single atomic transaction: identity update, session revocation, invitation reconciliation, and request consumption either **all** happen or **none** do. A guarded conditional consume (`updateMany where consumedAt: null AND expiresAt > now`, expecting `count === 1`) ensures that when two confirmations race, exactly one wins and the other fails cleanly. The identity write is likewise **guarded** (`updateMany where googleSubject: null`, expecting `count === 1`): a Google-link that races in between the pre-transaction check and the write matches zero rows and aborts the change, closing that TOCTOU window. Session revocation reuses the `sessionVersion` bump from the credential-change path (ADR / issue #132), so every previously issued session is invalidated and the user signs in again with the new email.
+Completion is a single atomic transaction: identity update, session revocation, invitation reconciliation, and request consumption either **all** happen or **none** do. A guarded conditional consume (`updateMany where consumedAt: null AND expiresAt > now`, expecting `count === 1`) ensures that when two confirmations race, exactly one wins and the other fails cleanly. The identity write is likewise a guarded `updateMany` (`where id`, expecting `count === 1`) so a user deleted mid-flow rolls the change back cleanly rather than silently no-op'ing. (Before #147 this write was additionally guarded on `googleSubject: null` to close a TOCTOU window where an account became Google-linked mid-flow; since #144 email is no longer identity, so that guard is obsolete and was removed.) Session revocation reuses the `sessionVersion` bump from the credential-change path (ADR / issue #132), so every previously issued session is invalidated and the user signs in again with the new email.
 
 ### Invitation reconciliation
 
@@ -53,12 +59,12 @@ The verification link lands on a confirmation page; the change is completed via 
 
 ## Non-goals
 
-- **Google-linked accounts.** v1 refuses the change when `googleSubject` is set (enforced at both begin and completion, since an account could be linked in between). Sign-in still resolves users by email, so changing a Google-linked account's email would break its Google login: Google would keep asserting the old verified address. This is a consequence of the current identity model, not a bug in this feature. The UI explains: "This email cannot currently be changed because your account uses Google sign-in."
+- **Password-less re-authentication.** A Google-only account (no `passwordHash`) cannot change its email directly, because there is no local second proof to satisfy. Rather than build a bespoke Google OAuth step-up, we rely on the existing "set a password" path: once the account has a password it is eligible like any other. (This supersedes the original v1 non-goal, which refused *all* Google-linked accounts; see the amendment above and #147.)
 - **Old-email security notification.** Notifying the previous address that a change occurred is valuable, but it is a distinct delivery path and failure mode that belongs with the broader security-notifications work (#98). This slice stays focused on verification, identity update, and session revocation.
 
 ## Future evolution
 
-Once Google authentication resolves users by `googleSubject` rather than email (tracked in #144), email becomes mutable profile data for Google-linked accounts and this workflow extends to them **without changing the verification or reconciliation model** — the Google restriction simply disappears.
+The Google-resolves-by-`googleSubject` evolution anticipated here landed in #144, and #147 duly extended this workflow to Google-linked accounts **without changing the verification or reconciliation model** — exactly as predicted, the restriction simply became an eligibility check on `passwordHash`.
 
 If invitation ownership later moves from `Invitation.email` to `acceptedByUserId` (or an explicit invitee relation), reconciliation becomes a one-time data migration rather than a permanent runtime feature.
 

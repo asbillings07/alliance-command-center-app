@@ -44,9 +44,16 @@ const mockVerifyPassword = verifyPassword as unknown as ReturnType<typeof vi.fn>
 
 const USER_ID = "user-1";
 
-/** Configure user.findUnique to answer both by-id and by-email lookups. */
+/**
+ * Configure user.findUnique to answer both by-id and by-email lookups.
+ *
+ * `passwordHash` drives email-change eligibility (#147): the current password is
+ * the re-auth proof, so a null hash (Google-only) is refused with
+ * `password_required`. `googleSubject` is intentionally NOT modeled here — the
+ * service no longer reads it, which is the whole point of the lift.
+ */
 function configureUsers(
-  currentUser: { email: string; googleSubject: string | null } | null,
+  currentUser: { email: string; passwordHash: string | null } | null,
   usersByEmail: Record<string, { id: string }> = {}
 ) {
   mockPrisma.user.findUnique.mockImplementation(async ({ where }: any) => {
@@ -58,6 +65,9 @@ function configureUsers(
     return null;
   });
 }
+
+/** A password credential exists (eligible to re-authenticate). */
+const HAS_PASSWORD = "hashed-pw";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -89,8 +99,8 @@ describe("validateNewEmail", () => {
 });
 
 describe("beginEmailChange", () => {
-  it("rejects a Google-linked account before checking the password", async () => {
-    configureUsers({ email: "me@example.com", googleSubject: "g-sub" });
+  it("rejects a password-less (Google-only) account before checking the password", async () => {
+    configureUsers({ email: "me@example.com", passwordHash: null });
 
     const result = await beginEmailChange({
       userId: USER_ID,
@@ -98,13 +108,32 @@ describe("beginEmailChange", () => {
       currentPassword: "pw",
     });
 
-    expect(result).toEqual({ ok: false, reason: "google_linked" });
+    // Eligibility is the ability to re-authenticate, not the provider mix: with
+    // no password there is no second proof, so the user is guided to set one.
+    expect(result).toEqual({ ok: false, reason: "password_required" });
     expect(mockVerifyPassword).not.toHaveBeenCalled();
     expect(mockPrisma.emailChangeRequest.create).not.toHaveBeenCalled();
   });
 
+  it("proceeds for a dual account (password + Google) with the correct password", async () => {
+    // The canonical post-#147 case: a Google-linked account that also has a
+    // password re-authenticates with it. The service never inspects Google.
+    configureUsers({ email: "me@example.com", passwordHash: HAS_PASSWORD });
+    mockVerifyPassword.mockResolvedValue(true);
+
+    const result = await beginEmailChange({
+      userId: USER_ID,
+      newEmail: "new@example.com",
+      currentPassword: "pw",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockVerifyPassword).toHaveBeenCalledOnce();
+    expect(mockPrisma.emailChangeRequest.create).toHaveBeenCalledOnce();
+  });
+
   it("rejects an invalid new email", async () => {
-    configureUsers({ email: "me@example.com", googleSubject: null });
+    configureUsers({ email: "me@example.com", passwordHash: HAS_PASSWORD });
 
     const result = await beginEmailChange({
       userId: USER_ID,
@@ -117,7 +146,7 @@ describe("beginEmailChange", () => {
   });
 
   it("rejects a wrong password and creates nothing", async () => {
-    configureUsers({ email: "me@example.com", googleSubject: null });
+    configureUsers({ email: "me@example.com", passwordHash: HAS_PASSWORD });
     mockVerifyPassword.mockResolvedValue(false);
 
     const result = await beginEmailChange({
@@ -132,7 +161,7 @@ describe("beginEmailChange", () => {
   });
 
   it("rejects the same email after normalization", async () => {
-    configureUsers({ email: "me@example.com", googleSubject: null });
+    configureUsers({ email: "me@example.com", passwordHash: HAS_PASSWORD });
     mockVerifyPassword.mockResolvedValue(true);
 
     const result = await beginEmailChange({
@@ -146,7 +175,7 @@ describe("beginEmailChange", () => {
 
   it("rejects an email already used by another account (different casing)", async () => {
     configureUsers(
-      { email: "me@example.com", googleSubject: null },
+      { email: "me@example.com", passwordHash: HAS_PASSWORD },
       { "other@example.com": { id: "other" } }
     );
     mockVerifyPassword.mockResolvedValue(true);
@@ -161,7 +190,7 @@ describe("beginEmailChange", () => {
   });
 
   it("supersedes prior unconsumed requests and issues a hashed token", async () => {
-    configureUsers({ email: "me@example.com", googleSubject: null });
+    configureUsers({ email: "me@example.com", passwordHash: HAS_PASSWORD });
     mockVerifyPassword.mockResolvedValue(true);
 
     const before = Date.now();
@@ -197,7 +226,7 @@ describe("beginEmailChange", () => {
   });
 
   it("retries once when a concurrent begin causes a write conflict", async () => {
-    configureUsers({ email: "me@example.com", googleSubject: null });
+    configureUsers({ email: "me@example.com", passwordHash: HAS_PASSWORD });
     mockVerifyPassword.mockResolvedValue(true);
 
     // First serializable transaction loses the race (P2034); the retry succeeds.
@@ -275,30 +304,22 @@ describe("completeEmailChange", () => {
     expect(result).toEqual({ ok: false, reason: "invalid_or_expired" });
   });
 
-  it("rejects when the account became Google-linked after begin (pre-check)", async () => {
+  it("rolls back cleanly when the identity write matches zero rows (user gone)", async () => {
     mockPrisma.emailChangeRequest.findUnique.mockResolvedValue(validRequest());
-    configureUsers({ email: OLD_EMAIL, googleSubject: "g-sub" });
-
-    const result = await completeEmailChange(VALID_TOKEN);
-    expect(result).toEqual({ ok: false, reason: "google_linked" });
-    expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
-  });
-
-  it("rejects a Google link that races in after the pre-check (guarded write)", async () => {
-    mockPrisma.emailChangeRequest.findUnique.mockResolvedValue(validRequest());
-    configureUsers({ email: OLD_EMAIL, googleSubject: null });
-    // The pre-check passed, but the guarded identity write (googleSubject: null)
-    // now matches zero rows because the account was linked in between.
+    configureUsers({ email: OLD_EMAIL, passwordHash: HAS_PASSWORD });
+    // The guarded identity write (on id) matches zero rows — e.g. the user was
+    // deleted mid-flow. The transaction rolls back and reports invalid_or_expired
+    // rather than silently no-op'ing. (Post-#147 there is no Google guard here.)
     mockPrisma.user.updateMany.mockResolvedValue({ count: 0 });
 
     const result = await completeEmailChange(VALID_TOKEN);
-    expect(result).toEqual({ ok: false, reason: "google_linked" });
+    expect(result).toEqual({ ok: false, reason: "invalid_or_expired" });
   });
 
   it("rejects when the new email was claimed by another user after begin", async () => {
     mockPrisma.emailChangeRequest.findUnique.mockResolvedValue(validRequest());
     configureUsers(
-      { email: OLD_EMAIL, googleSubject: null },
+      { email: OLD_EMAIL, passwordHash: HAS_PASSWORD },
       { [NEW_EMAIL]: { id: "someone-else" } }
     );
 
@@ -309,7 +330,7 @@ describe("completeEmailChange", () => {
 
   it("completes: swaps identity, bumps sessionVersion once, reconciles pending invites", async () => {
     mockPrisma.emailChangeRequest.findUnique.mockResolvedValue(validRequest());
-    configureUsers({ email: OLD_EMAIL, googleSubject: null });
+    configureUsers({ email: OLD_EMAIL, passwordHash: HAS_PASSWORD });
 
     const result = await completeEmailChange(VALID_TOKEN);
     expect(result).toEqual({ ok: true, oldEmail: OLD_EMAIL, newEmail: NEW_EMAIL });
@@ -317,11 +338,11 @@ describe("completeEmailChange", () => {
     // Guarded consume ran exactly once.
     expect(mockPrisma.emailChangeRequest.updateMany).toHaveBeenCalledTimes(1);
 
-    // Guarded identity update + session revocation, exactly once. The write is
-    // guarded on googleSubject: null to close the TOCTOU window.
+    // Identity update + session revocation, exactly once. The write is guarded
+    // only on id (no Google guard post-#147 — email is no longer identity).
     expect(mockPrisma.user.updateMany).toHaveBeenCalledTimes(1);
     expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
-      where: { id: USER_ID, googleSubject: null },
+      where: { id: USER_ID },
       data: { email: NEW_EMAIL, sessionVersion: { increment: 1 } },
     });
 
@@ -344,7 +365,7 @@ describe("completeEmailChange", () => {
 
   it("lets exactly one of two racing confirmations win", async () => {
     mockPrisma.emailChangeRequest.findUnique.mockResolvedValue(validRequest());
-    configureUsers({ email: OLD_EMAIL, googleSubject: null });
+    configureUsers({ email: OLD_EMAIL, passwordHash: HAS_PASSWORD });
 
     // The loser's guarded consume matches zero rows.
     mockPrisma.emailChangeRequest.updateMany.mockResolvedValueOnce({ count: 0 });
@@ -360,7 +381,7 @@ describe("completeEmailChange", () => {
 
   it("maps a concurrent unique-constraint violation to email_taken", async () => {
     mockPrisma.emailChangeRequest.findUnique.mockResolvedValue(validRequest());
-    configureUsers({ email: OLD_EMAIL, googleSubject: null });
+    configureUsers({ email: OLD_EMAIL, passwordHash: HAS_PASSWORD });
     mockPrisma.user.updateMany.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
         code: "P2002",
@@ -374,7 +395,7 @@ describe("completeEmailChange", () => {
 
   it("propagates (rolls back) when invitation reconciliation fails", async () => {
     mockPrisma.emailChangeRequest.findUnique.mockResolvedValue(validRequest());
-    configureUsers({ email: OLD_EMAIL, googleSubject: null });
+    configureUsers({ email: OLD_EMAIL, passwordHash: HAS_PASSWORD });
     mockPrisma.invitation.updateMany.mockRejectedValue(new Error("db down"));
 
     // A non-recoverable failure inside the transaction rethrows; the real
