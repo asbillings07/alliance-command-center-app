@@ -187,13 +187,16 @@ export async function readLinkIntent(): Promise<ReadLinkIntentResult> {
     return { status: "invalid" };
   }
 
+  // Numeric fields must be finite integers: `typeof x === "number"` alone lets
+  // NaN/Infinity through (and `NaN <= Date.now()` is false), which would breach
+  // the fail-closed contract by treating a malformed payload as valid.
   if (
     payload.p !== INTENT_PURPOSE ||
     payload.v !== INTENT_VERSION ||
     typeof payload.uid !== "string" ||
-    typeof payload.sv !== "number" ||
+    !Number.isInteger(payload.sv) ||
     typeof payload.nonce !== "string" ||
-    typeof payload.exp !== "number" ||
+    !Number.isInteger(payload.exp) ||
     payload.exp <= Date.now()
   ) {
     return { status: "invalid" };
