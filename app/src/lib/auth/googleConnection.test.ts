@@ -193,7 +193,7 @@ describe("linkGoogleToUser", () => {
       googleSubject: null,
     });
     mockEnsure.mockResolvedValue(undefined);
-    mockPrisma.user.update.mockResolvedValue({});
+    mockPrisma.user.updateMany.mockResolvedValue({ count: 1 });
 
     await linkGoogleToUser("user-1", "google-sub-1", "personal@gmail.com");
 
@@ -202,13 +202,14 @@ describe("linkGoogleToUser", () => {
       { id: "user-1", googleSubject: null },
       "google-sub-1"
     );
-    // A deliberate reconnect clears the marker and stores the display email;
-    // it must NOT write `email` (the AllianceHQ identity).
-    expect(mockPrisma.user.update).toHaveBeenCalledWith({
-      where: { id: "user-1" },
+    // A deliberate reconnect clears the marker and stores the display email,
+    // guarded on the subject still being anchored (so a racing disconnect can't
+    // be partially undone); it must NOT write `email` (the AllianceHQ identity).
+    expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
+      where: { id: "user-1", googleSubject: "google-sub-1" },
       data: { googleAutoLinkBlockedAt: null, googleEmail: "personal@gmail.com" },
     });
-    const data = mockPrisma.user.update.mock.calls[0][0].data;
+    const data = mockPrisma.user.updateMany.mock.calls[0][0].data;
     expect(data.email).toBeUndefined();
   });
 
@@ -223,7 +224,7 @@ describe("linkGoogleToUser", () => {
       linkGoogleToUser("user-1", "google-sub-1", "personal@gmail.com")
     ).rejects.toBeInstanceOf(GoogleAccountMismatchError);
 
-    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
   });
 
   it("rejects when the intent's user no longer exists", async () => {
@@ -234,7 +235,7 @@ describe("linkGoogleToUser", () => {
     ).rejects.toBeInstanceOf(GoogleAccountMismatchError);
 
     expect(mockEnsure).not.toHaveBeenCalled();
-    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
   });
 });
 

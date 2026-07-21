@@ -311,8 +311,14 @@ export async function linkGoogleToUser(
   // the durable disconnect marker so future normal sign-ins auto-resolve again,
   // and records the connected Google email for display. `User.email` is
   // untouched — Google authenticates, AllianceHQ owns the profile.
-  await prisma.user.update({
-    where: { id: userId },
+  //
+  // Guarded on `googleSubject` still being our anchored subject: if a
+  // concurrent disconnectGoogle() cleared the subject (and set the marker)
+  // between the link above and here, this write matches zero rows rather than
+  // clearing the marker while `googleSubject` is null — which would silently
+  // re-enable email-match auto-linking and leave inconsistent state.
+  await prisma.user.updateMany({
+    where: { id: userId, googleSubject },
     data: { googleAutoLinkBlockedAt: null, googleEmail },
   });
 }
