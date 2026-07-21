@@ -49,6 +49,13 @@ describe("getAppOrigin", () => {
     vi.stubEnv("NODE_ENV", "production");
     expect(() => getAppOrigin()).toThrow(/origin is not configured/i);
   });
+
+  it("throws an actionable error when NEXTAUTH_URL is malformed", () => {
+    vi.stubEnv("NEXTAUTH_URL", "alliancehqapp.com");
+    expect(() => getAppOrigin()).toThrow(
+      /NEXTAUTH_URL is not a valid absolute URL/,
+    );
+  });
 });
 
 describe("URL builders", () => {

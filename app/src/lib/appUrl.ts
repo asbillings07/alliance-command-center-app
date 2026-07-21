@@ -26,14 +26,14 @@
 export function getAppOrigin(): string {
   const configured = process.env.NEXTAUTH_URL;
   if (configured) {
-    return normalizeOrigin(configured);
+    return normalizeOrigin(configured, "NEXTAUTH_URL");
   }
 
   // Preview deployments leave NEXTAUTH_URL unset. VERCEL_URL is the deployment
   // host only (no scheme) and is always served over https.
   const vercelHost = process.env.VERCEL_URL;
   if (vercelHost) {
-    return normalizeOrigin(`https://${vercelHost}`);
+    return normalizeOrigin(`https://${vercelHost}`, "VERCEL_URL");
   }
 
   if (process.env.NODE_ENV !== "production") {
@@ -48,11 +48,20 @@ export function getAppOrigin(): string {
 /**
  * Reduce a configured URL to its origin (scheme + host [+ port]), dropping any
  * path, query, hash, or trailing slash. Guarantees the "scheme + host" contract
- * so callers can safely append their own path. Throws on a non-absolute value,
- * which is preferable to silently emitting a malformed link.
+ * so callers can safely append their own path.
+ *
+ * Throws a domain-specific error on a non-absolute/malformed value (rather than
+ * a bare `TypeError: Invalid URL`) so a misconfigured origin is actionable at
+ * this startup-critical boundary.
  */
-function normalizeOrigin(value: string): string {
-  return new URL(value).origin;
+function normalizeOrigin(value: string, source: string): string {
+  try {
+    return new URL(value).origin;
+  } catch {
+    throw new Error(
+      `${source} is not a valid absolute URL (expected e.g. "https://example.com"), received: ${value}`,
+    );
+  }
 }
 
 /**
