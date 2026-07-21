@@ -122,6 +122,18 @@ describe("runTour", () => {
     expect(h.rawDestroyCalls).toBe(0);
   });
 
+  it("tears the tour down when the signal aborts mid-run, without completing", async () => {
+    const controller = new AbortController();
+    const onFinished = vi.fn();
+    await runTour(twoStep, { onFinished, signal: controller.signal });
+
+    const before = h.rawDestroyCalls;
+    controller.abort();
+
+    expect(h.rawDestroyCalls).toBe(before + 1);
+    expect(onFinished).not.toHaveBeenCalled();
+  });
+
   it("is safe to tear down after completion (no double onFinished)", async () => {
     const onFinished = vi.fn();
     const destroy = await runTour(twoStep, { onFinished });

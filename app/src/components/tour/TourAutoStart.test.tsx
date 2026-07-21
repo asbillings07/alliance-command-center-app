@@ -41,9 +41,11 @@ async function mount() {
   await act(async () => {});
 }
 
-async function unmount() {
+// Unmount just the component (render null) so effect cleanup runs while the
+// root stays intact; the root itself is torn down in afterEach.
+async function unmountComponent() {
   await act(async () => {
-    root.unmount();
+    root.render(null);
   });
 }
 
@@ -52,8 +54,11 @@ beforeEach(() => {
   runTour.mockReset();
 });
 
-afterEach(() => {
-  container?.remove();
+afterEach(async () => {
+  await act(async () => {
+    root.unmount();
+  });
+  container.remove();
 });
 
 describe("TourAutoStart", () => {
@@ -154,7 +159,7 @@ describe("TourAutoStart", () => {
     await mount();
     const opts = runTour.mock.calls[0][1];
 
-    await unmount();
+    await unmountComponent();
     expect(opts.signal.aborted).toBe(true);
 
     // The lazy import resolves only after unmount: tear the tour down, no nav.
