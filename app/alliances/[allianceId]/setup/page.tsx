@@ -2,7 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
-import { getAllianceSetupStatus, type SetupTask } from "@/app/src/lib/allianceSetup";
+import {
+  getAllianceSetupStatus,
+  SETUP_TASK_TOURS,
+  type SetupTask,
+} from "@/app/src/lib/allianceSetup";
+import { buildTourHref } from "@/app/src/lib/tours";
 import { PageLayout } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 
@@ -54,35 +59,61 @@ function ChevronIcon() {
   );
 }
 
-function SetupTaskCard({ task }: { task: SetupTask }) {
+function SetupTaskCard({
+  task,
+  allianceId,
+}: {
+  task: SetupTask;
+  allianceId: string;
+}) {
+  // Offer the guided tour whenever the task has one. A tour is educational even
+  // after the task is done (revisiting the feature, onboarding a teammate), so
+  // it is not gated on completion.
+  const tourId = SETUP_TASK_TOURS[task.id];
+
   return (
-    <Link
-      href={task.href}
-      className={`block p-4 rounded-lg border transition-colors ${
+    <div
+      className={`rounded-lg border transition-colors ${
         task.completed
           ? "bg-surface-secondary border-border"
           : "bg-surface-secondary border-border hover:border-primary"
       }`}
     >
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5">
-          {task.completed ? <CheckIcon /> : <CircleIcon />}
+      <Link href={task.href} className="block p-4">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5">
+            {task.completed ? <CheckIcon /> : <CircleIcon />}
+          </div>
+          <div className="flex-1">
+            <div
+              className={`font-medium ${
+                task.completed ? "text-text-muted" : "text-text-primary"
+              }`}
+            >
+              {task.label}
+            </div>
+            <div className="text-sm text-text-muted mt-1">
+              {task.description}
+            </div>
+          </div>
+          {!task.completed && <ChevronIcon />}
         </div>
-        <div className="flex-1">
-          <div
-            className={`font-medium ${
-              task.completed ? "text-text-muted" : "text-text-primary"
-            }`}
+      </Link>
+      {tourId && (
+        <div className="px-4 pb-3 pl-11">
+          <Link
+            href={buildTourHref({
+              destination: task.href,
+              tourId,
+              returnTo: `/alliances/${allianceId}/setup`,
+            })}
+            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
           >
-            {task.label}
-          </div>
-          <div className="text-sm text-text-muted mt-1">
-            {task.description}
-          </div>
+            Start guided tour
+          </Link>
         </div>
-        {!task.completed && <ChevronIcon />}
-      </div>
-    </Link>
+      )}
+    </div>
   );
 }
 
@@ -161,7 +192,7 @@ export default async function AllianceSetupPage({ params }: Params) {
           </h2>
           <div className="space-y-3">
             {requiredTasks.map((task) => (
-              <SetupTaskCard key={task.id} task={task} />
+              <SetupTaskCard key={task.id} task={task} allianceId={allianceId} />
             ))}
           </div>
         </div>
@@ -175,7 +206,7 @@ export default async function AllianceSetupPage({ params }: Params) {
           </h2>
           <div className="space-y-3">
             {optionalTasks.map((task) => (
-              <SetupTaskCard key={task.id} task={task} />
+              <SetupTaskCard key={task.id} task={task} allianceId={allianceId} />
             ))}
           </div>
         </div>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button, type ButtonVariant, type ButtonSize } from "./Button";
 import type { TourDefinition } from "@/app/src/lib/tours/types";
+import { runTour } from "./tour/runTour";
 
 export type TourButtonProps = {
   /** The tour to run when clicked. */
@@ -15,10 +16,10 @@ export type TourButtonProps = {
 /**
  * Launches a contextual Driver.js tour.
  *
- * Driver.js is loaded lazily on click so it stays out of the initial bundle and
- * only downloads when a user actually asks for guidance. Tours are described as
- * plain data (see `@/app/src/lib/tours`); this component is the sole client-side
- * runner, so adding a new tour never touches Driver.js wiring.
+ * Driver.js is loaded lazily (via `runTour`) so it stays out of the initial
+ * bundle and only downloads when a user actually asks for guidance. Tours are
+ * described as plain data (see `@/app/src/lib/tours`) and run through the shared
+ * `runTour` helper, so adding a new tour never touches Driver.js wiring.
  */
 export function TourButton({
   tour,
@@ -31,19 +32,7 @@ export function TourButton({
   async function startTour() {
     setIsLoading(true);
     try {
-      const { driver } = await import("driver.js");
-      const tourDriver = driver({
-        showProgress: tour.steps.length > 1,
-        allowClose: true,
-        steps: tour.steps.map((step) => ({
-          element: step.element,
-          popover: {
-            title: step.title,
-            description: step.description,
-          },
-        })),
-      });
-      tourDriver.drive();
+      await runTour(tour);
     } finally {
       // Only guards the async import; the tour then runs via its own overlay.
       setIsLoading(false);

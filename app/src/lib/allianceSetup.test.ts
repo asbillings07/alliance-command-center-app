@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getAllianceSetupStatus, SETUP_TASKS } from "./allianceSetup";
+import {
+  getAllianceSetupStatus,
+  SETUP_TASKS,
+  SETUP_TASK_TOURS,
+} from "./allianceSetup";
+import { TOURS_BY_ID } from "./tours";
 
 vi.mock("./prisma", () => ({
   prisma: {
@@ -88,6 +93,24 @@ describe("SETUP_TASKS", () => {
     expect(SETUP_TASKS[2].href(allianceId)).toBe(`/alliances/${allianceId}/settings/invitations`);
     expect(SETUP_TASKS[3].href(allianceId)).toBe(`/alliances/${allianceId}/members/import`);
     expect(SETUP_TASKS[4].href(allianceId)).toBe(`/alliances/${allianceId}/periods`);
+  });
+});
+
+describe("SETUP_TASK_TOURS", () => {
+  it("only keys real setup tasks", () => {
+    const taskIds = new Set(SETUP_TASKS.map((t) => t.id));
+    for (const taskId of Object.keys(SETUP_TASK_TOURS)) {
+      expect(taskIds.has(taskId as (typeof SETUP_TASKS)[number]["id"])).toBe(
+        true
+      );
+    }
+  });
+
+  it("maps every task to a tour that exists in the registry", () => {
+    for (const tourId of Object.values(SETUP_TASK_TOURS)) {
+      expect(tourId).toBeDefined();
+      expect(TOURS_BY_ID.has(tourId as string)).toBe(true);
+    }
   });
 });
 
