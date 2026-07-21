@@ -84,7 +84,7 @@ export function validateEnv(): void {
       "",
       ...problems.map((p) => `- ${p}`),
       "",
-      "Please ensure all required variables are set.",
+      "Please ensure all required variables are set and valid.",
       "See .env.example for documentation.",
       "========================================",
     ].join("\n");
