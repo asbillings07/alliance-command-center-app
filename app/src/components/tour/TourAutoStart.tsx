@@ -68,7 +68,6 @@ export function TourAutoStart() {
     }
 
     const controller = new AbortController();
-    let destroy: (() => void) | undefined;
 
     void runTour(tour, {
       signal: controller.signal,
@@ -81,8 +80,9 @@ export function TourAutoStart() {
       },
     })
       .then((teardown) => {
-        destroy = teardown;
-        // Unmounted between import start and resolve: tear the tour down now.
+        // Unmounted between import start and resolve: the aborted run never
+        // created a Driver instance, so this teardown is a no-op that just keeps
+        // the contract explicit.
         if (controller.signal.aborted) {
           teardown();
         }
@@ -93,9 +93,11 @@ export function TourAutoStart() {
         // unhandled rejection.
       });
 
+    // Aborting is the single teardown path: runTour wires the signal to
+    // destroy() the active tour, so we must NOT also call the returned handle
+    // here — that would destroy() a second time.
     return () => {
       controller.abort();
-      destroy?.();
     };
   }, []);
 
