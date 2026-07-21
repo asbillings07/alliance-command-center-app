@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
@@ -47,9 +46,7 @@ export default async function PeriodsPage({ params }: Params) {
             action={<TourButton tour={createPeriodTour} />}
             maxWidth="3xl"
         >
-            <Suspense fallback={null}>
-                <TourAutoStart />
-            </Suspense>
+            <TourAutoStart />
             <div className="flex flex-col gap-4">
                 <MetricPeriodCard allianceId={allianceId} mode="create" />
                 {periods.length === 0 ? (

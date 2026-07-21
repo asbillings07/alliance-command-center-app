@@ -109,7 +109,7 @@ function SetupTaskCard({
             })}
             className="inline-flex items-center gap-1 text-sm font-medium text-primary-light hover:text-primary hover:underline"
           >
-            Start guided tour
+            {task.completed ? "Review guided tour" : "Start guided tour"}
           </Link>
         </div>
       )}
