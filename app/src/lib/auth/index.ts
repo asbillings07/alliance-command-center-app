@@ -13,6 +13,7 @@ import {
 import { AuthenticationError } from "@/app/src/lib/auth/identity/errors";
 import { resolveGoogleUser } from "@/app/src/lib/auth/resolveGoogleUser";
 import {
+  clearLinkIntent,
   readLinkIntent,
   setGoogleEmail,
 } from "@/app/src/lib/auth/googleConnection";
@@ -93,6 +94,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: {
     signIn: "/login",
     error: "/login",
+  },
+  events: {
+    // A pending Google-connect intent is bound to the signed-in user and their
+    // session version, but sign-out does not bump sessionVersion. Without this,
+    // a stale intent could outlive the session: on a shared device, someone who
+    // completes an OAuth flow after the user signs out would link *their* Google
+    // account to the signed-out user (#131). Dropping the intent when the
+    // session ends closes that window. Fail-open on cleanup errors — never block
+    // sign-out over a best-effort cookie deletion.
+    async signOut() {
+      try {
+        await clearLinkIntent();
+      } catch (error) {
+        console.warn("Failed to clear Google link intent on sign-out", error);
+      }
+    },
   },
   callbacks: {
     // Google is authentication only. The invitation model remains authoritative

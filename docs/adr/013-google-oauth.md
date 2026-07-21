@@ -88,7 +88,9 @@ Disconnect intentionally does **not** bump `sessionVersion`: it is self-service 
 
 The intent is a cookie carrying `{ purpose, version, userId, sessionVersion, nonce, expiresAt }`, HMAC-SHA256 signed with `AUTH_SECRET` (httpOnly, `Secure` in production, `SameSite=Lax`, short ~10-minute TTL). At the callback we re-verify the signature, purpose, version, and expiry, and re-check that the DB `sessionVersion` still matches — so a password change or session revocation during the OAuth round trip invalidates an in-flight connect.
 
-Reading the intent is **fail-closed and typed**: `absent | valid | invalid`. An `invalid` intent (expired, malformed, tampered, wrong purpose) is *denied*, never downgraded to a normal sign-in, so a stale or forged intent can't switch the browser to a different account. The intent is single-use in-browser: it is cleared on every terminal outcome.
+Reading the intent is **fail-closed and typed**: `absent | valid | invalid`. An `invalid` intent (expired, malformed, tampered, wrong purpose) is *denied*, never downgraded to a normal sign-in, so a stale or forged intent can't switch the browser to a different account. Numeric fields (`sessionVersion`, `expiresAt`) are validated as finite integers, so a malformed-but-signed `NaN`/`Infinity` cannot satisfy the expiry check and slip through as `valid`. The intent is single-use in-browser: it is cleared on every terminal outcome.
+
+**Sign-out drops the intent.** Sign-out does not bump `sessionVersion`, so the `sessionVersion` check alone would not invalidate a pending intent when a user signs out. On a shared device this is the meaningful escalation: a user starts a connect, signs out, and someone else then completes an OAuth flow that would link *their* Google account to the signed-out user. The `events.signOut` hook clears the intent when the session ends, closing that window. (The variant where the user stays signed in and walks away mid-consent is not an additional escalation — the attacker would already hold the victim's active session.)
 
 Known limitation: this is signed and session-version-bound but **not** a server-side single-use token. A captured cookie could in principle be replayed within its TTL, but only in an already-compromised browser whose `sessionVersion` has not changed. A DB-backed hashed single-use intent is the strongest option and is deferred as future hardening; cookie-only is acceptable for beta with this limitation stated rather than hidden.
 
@@ -167,4 +169,5 @@ Google is enabled only when `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` are both s
 - Connect a Google account already anchored to a different user -> denied, no identity switch; banner: already in use.
 - Disconnect on a Google-only account (no password) -> control disabled in UI and refused server-side (`no_password`).
 - Password change or "sign out everywhere" during a connect round trip -> intent invalidated by `sessionVersion` mismatch; connect denied.
+- Sign out during a connect round trip -> intent cleared by the `signOut` event; a later OAuth on a shared device is `absent` (normal sign-in as that Google account), never a link to the signed-out user.
 - Tampered/expired/absent intent -> `invalid`/`absent`; an `invalid` intent is denied (never a normal sign-in).
