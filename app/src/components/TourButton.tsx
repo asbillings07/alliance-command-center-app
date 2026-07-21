@@ -33,6 +33,10 @@ export function TourButton({
     setIsLoading(true);
     try {
       await runTour(tour);
+    } catch {
+      // Tours are a non-critical enhancement. If the lazy Driver.js chunk fails
+      // to load (offline / cache miss), swallow it rather than surfacing an
+      // unhandled promise rejection — React does not await this onClick handler.
     } finally {
       // Only guards the async import; the tour then runs via its own overlay.
       setIsLoading(false);
