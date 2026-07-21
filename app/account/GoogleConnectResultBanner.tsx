@@ -17,6 +17,11 @@ const RESULT_COPY: Record<GoogleConnectResult, BannerCopy> = {
     tone: "error",
     message: "That Google account is already linked to a different account.",
   },
+  email_unverified: {
+    tone: "error",
+    message:
+      "Your Google email isn't verified. Verify it with Google, then try connecting again.",
+  },
   intent_expired: {
     tone: "error",
     message: "Your connect request expired. Please try connecting again.",

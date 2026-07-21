@@ -48,12 +48,14 @@ const RESULT_TTL_MS = 5 * 60 * 1000; // 5 minutes
 export type GoogleConnectResult =
   | "connected"
   | "already_in_use"
+  | "email_unverified"
   | "intent_expired"
   | "unavailable";
 
 const RESULT_VALUES: readonly GoogleConnectResult[] = [
   "connected",
   "already_in_use",
+  "email_unverified",
   "intent_expired",
   "unavailable",
 ];

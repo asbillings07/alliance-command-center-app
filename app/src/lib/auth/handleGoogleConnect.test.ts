@@ -121,8 +121,9 @@ describe("handleGoogleConnect", () => {
     });
   });
 
-  it("denies with already_in_use when the Google email is unverified", async () => {
-    // assertVerifiedGoogleEmail throws an AuthenticationError before any linking.
+  it("denies with a distinct email_unverified result when the Google email is unverified", async () => {
+    // assertVerifiedGoogleEmail throws UnverifiedEmailError before any linking;
+    // it must surface as its own outcome (not the misleading "already_in_use").
     mockGetVersion.mockResolvedValue(3);
 
     const result = await handleGoogleConnect(VALID_INTENT, {
@@ -131,8 +132,12 @@ describe("handleGoogleConnect", () => {
     });
 
     expect(result).toBe(false);
-    expect(mockSetResult).toHaveBeenCalledWith("already_in_use");
+    expect(mockSetResult).toHaveBeenCalledWith("email_unverified");
     expect(mockLink).not.toHaveBeenCalled();
+    expect(mockLog).toHaveBeenCalledWith("connect_denied", {
+      userId: "user-1",
+      reason: "email_unverified",
+    });
   });
 
   it("denies with unavailable on an unexpected error, without switching identity", async () => {

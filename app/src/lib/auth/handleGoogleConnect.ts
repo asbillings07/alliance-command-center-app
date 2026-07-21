@@ -3,7 +3,10 @@ import {
   assertVerifiedGoogleEmail,
   type GoogleProfile,
 } from "@/app/src/lib/auth/identity/google";
-import { AuthenticationError } from "@/app/src/lib/auth/identity/errors";
+import {
+  AuthenticationError,
+  UnverifiedEmailError,
+} from "@/app/src/lib/auth/identity/errors";
 import {
   clearLinkIntent,
   linkGoogleToUser,
@@ -76,6 +79,17 @@ export async function handleGoogleConnect(
     logGoogleConnectionEvent("connected", { userId });
     return true;
   } catch (error) {
+    if (error instanceof UnverifiedEmailError) {
+      // The Google email isn't verified: distinct from "taken" so the banner can
+      // tell the user to verify it with Google and try again. (Checked before
+      // the generic AuthenticationError branch since it is a subclass.)
+      await setConnectResult("email_unverified");
+      logGoogleConnectionEvent("connect_denied", {
+        userId,
+        reason: "email_unverified",
+      });
+      return false;
+    }
     if (error instanceof AuthenticationError) {
       // Subject already anchored elsewhere / mismatch: refuse without switching
       // identity.
