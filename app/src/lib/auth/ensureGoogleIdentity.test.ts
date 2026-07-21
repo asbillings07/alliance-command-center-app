@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Prisma } from "@/app/generated/prisma/client";
 import { ensureGoogleIdentity } from "./ensureGoogleIdentity";
-import { GoogleAccountMismatchError } from "./identity/errors";
+import {
+  GoogleAccountMismatchError,
+  GoogleAutoLinkBlockedError,
+} from "./identity/errors";
 
 vi.mock("@/app/src/lib/prisma", () => ({
   prisma: {
@@ -73,7 +76,7 @@ describe("ensureGoogleIdentity", () => {
 
     expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      select: { googleSubject: true },
+      select: { googleSubject: true, googleAutoLinkBlockedAt: true },
     });
   });
 
@@ -117,5 +120,63 @@ describe("ensureGoogleIdentity", () => {
     await expect(
       ensureGoogleIdentity({ id: "user-1", googleSubject: null }, "google-sub-1")
     ).rejects.toThrow("db down");
+  });
+
+  it("guards the write on googleAutoLinkBlockedAt when auto-link is required (#131)", async () => {
+    mockPrisma.user.updateMany.mockResolvedValue({ count: 1 });
+
+    await ensureGoogleIdentity(
+      { id: "user-1", googleSubject: null },
+      "google-sub-1",
+      { requireAutoLinkEnabled: true }
+    );
+
+    // The lazy path additionally refuses to link a row that has been
+    // disconnected, so a disconnect landing mid-sign-in can't be clobbered.
+    expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "user-1",
+        googleSubject: null,
+        googleAutoLinkBlockedAt: null,
+      },
+      data: { googleSubject: "google-sub-1" },
+    });
+  });
+
+  it("throws GoogleAutoLinkBlockedError when a disconnect landed mid-write (TOCTOU, auto-link required)", async () => {
+    // Guarded write matched zero rows; re-read shows the account is now
+    // disconnected (flag set) rather than anchored elsewhere.
+    mockPrisma.user.updateMany.mockResolvedValue({ count: 0 });
+    mockPrisma.user.findUnique.mockResolvedValue({
+      googleSubject: null,
+      googleAutoLinkBlockedAt: new Date(),
+    });
+
+    await expect(
+      ensureGoogleIdentity(
+        { id: "user-1", googleSubject: null },
+        "google-sub-1",
+        { requireAutoLinkEnabled: true }
+      )
+    ).rejects.toBeInstanceOf(GoogleAutoLinkBlockedError);
+  });
+
+  it("does not consult the disconnect flag when auto-link is not required (explicit connect)", async () => {
+    // Explicit connect ignores the flag: the guarded write omits it, and a
+    // zero-count re-read that is unanchored is a plain mismatch, not a block.
+    mockPrisma.user.updateMany.mockResolvedValue({ count: 0 });
+    mockPrisma.user.findUnique.mockResolvedValue({
+      googleSubject: null,
+      googleAutoLinkBlockedAt: new Date(),
+    });
+
+    await expect(
+      ensureGoogleIdentity({ id: "user-1", googleSubject: null }, "google-sub-1")
+    ).rejects.toBeInstanceOf(GoogleAccountMismatchError);
+
+    expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
+      where: { id: "user-1", googleSubject: null },
+      data: { googleSubject: "google-sub-1" },
+    });
   });
 });

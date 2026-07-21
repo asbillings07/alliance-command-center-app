@@ -107,6 +107,18 @@ model User {
   // enabling password + Google on the same canonical identity (email). See ADR-013.
   passwordHash String?
   googleSubject String? @unique
+  // Provider metadata, NOT an identity key (ADR-013 #131): the verified email of
+  // the connected Google account, captured on connect and refreshed on Google
+  // sign-in purely so the UI can show "Connected as <email>". Deliberately not
+  // @unique and never copied into `email` — Google authenticates, AllianceHQ
+  // owns the profile. Cleared on disconnect.
+  googleEmail String?
+  // Set when the user explicitly disconnects Google (ADR-013 identity
+  // management, #131). Gives `googleSubject == null` durable meaning: null flag
+  // = legacy account still eligible for automatic email-match linking; set flag
+  // = the owner intentionally disconnected, so normal Google sign-in must NOT
+  // silently re-link. Explicit connect clears it.
+  googleAutoLinkBlockedAt DateTime?
   isPlatformAdmin Boolean @default(false)
   // Authoritative session-invalidation version. Stamped onto the JWT at sign-in
   // and revalidated against this column on every authenticated request. Bumping

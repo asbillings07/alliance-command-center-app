@@ -99,19 +99,26 @@ export type SignInMethods = {
   hasPassword: boolean;
   /** Whether a Google account is linked to this account. */
   hasGoogle: boolean;
+  /**
+   * The connected Google account's email, for display ("Connected as ..."). It
+   * is provider metadata, not identity (ADR-013 #131), and is independent of the
+   * account's own `email`. Null when Google is not connected.
+   */
+  googleEmail: string | null;
 };
 
 /**
  * Report which sign-in capabilities the account has, derived from the presence
  * of the credential columns (ADR-013). Never returns the hash or subject
- * themselves — only whether each capability exists.
+ * themselves — only whether each capability exists, plus the connected Google
+ * email for display.
  */
 export async function getSignInMethods(
   userId: string
 ): Promise<SignInMethods | null> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { passwordHash: true, googleSubject: true },
+    select: { passwordHash: true, googleSubject: true, googleEmail: true },
   });
 
   if (!user) {
@@ -121,6 +128,8 @@ export async function getSignInMethods(
   return {
     hasPassword: user.passwordHash !== null,
     hasGoogle: user.googleSubject !== null,
+    // Only meaningful while connected; guard against a stale value.
+    googleEmail: user.googleSubject !== null ? user.googleEmail : null,
   };
 }
 
