@@ -53,6 +53,13 @@ export function getRedeemUrl(token: string): string {
 }
 
 /**
+ * Build the absolute acceptance URL for an alliance invitation token.
+ */
+export function getInviteUrl(token: string): string {
+  return `${getAppOrigin()}/invite/${token}`;
+}
+
+/**
  * Build the absolute email-change verification URL for a raw token. The link
  * lands on a confirmation page (the change is completed via POST, never on
  * GET) so scanners and prefetchers cannot burn a single-use token.

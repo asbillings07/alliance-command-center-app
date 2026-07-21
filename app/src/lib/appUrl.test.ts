@@ -1,5 +1,10 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { getAppOrigin, getRedeemUrl, getEmailChangeVerifyUrl } from "./appUrl";
+import {
+  getAppOrigin,
+  getRedeemUrl,
+  getInviteUrl,
+  getEmailChangeVerifyUrl,
+} from "./appUrl";
 
 describe("getAppOrigin", () => {
   afterEach(() => {
@@ -46,8 +51,17 @@ describe("URL builders", () => {
   it("compose against the resolved origin", () => {
     vi.stubEnv("NEXTAUTH_URL", "https://alliancehqapp.com");
     expect(getRedeemUrl("tok123")).toBe("https://alliancehqapp.com/redeem/tok123");
+    expect(getInviteUrl("tok789")).toBe("https://alliancehqapp.com/invite/tok789");
     expect(getEmailChangeVerifyUrl("raw456")).toBe(
       "https://alliancehqapp.com/account/email/verify/raw456",
+    );
+  });
+
+  it("invite links follow the preview host when NEXTAUTH_URL is unset", () => {
+    vi.stubEnv("NEXTAUTH_URL", undefined);
+    vi.stubEnv("VERCEL_URL", "acc-git-feature-xyz.vercel.app");
+    expect(getInviteUrl("tok789")).toBe(
+      "https://acc-git-feature-xyz.vercel.app/invite/tok789",
     );
   });
 });

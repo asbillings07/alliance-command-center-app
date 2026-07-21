@@ -1,5 +1,6 @@
 import { randomUUID, randomBytes } from "node:crypto";
 import { prisma } from "./prisma";
+import { getInviteUrl } from "./appUrl";
 import type { AllianceRole, Invitation, AllianceMember } from "@/app/generated/prisma/client";
 
 export type InviteLeadershipInput = {
@@ -186,13 +187,11 @@ export async function inviteLeadershipCollaborator(
     },
   });
 
-  const origin = process.env.NEXTAUTH_URL || "http://localhost:3000";
-
   return {
     invitation,
     member,
     memberCreated,
-    inviteUrl: `${origin}/invite/${token}`,
+    inviteUrl: getInviteUrl(token),
     inviteCode: code,
   };
 }
@@ -252,11 +251,9 @@ export async function resendInvitation(invitationId: string): Promise<{
     },
   });
 
-  const origin = process.env.NEXTAUTH_URL || "http://localhost:3000";
-
   return {
     invitation,
-    inviteUrl: `${origin}/invite/${newToken}`,
+    inviteUrl: getInviteUrl(newToken),
     inviteCode: newCode,
   };
 }
