@@ -9,7 +9,11 @@ const initialState: UpdateProfileState = { status: "idle", message: null };
 
 type AccountEmailFormProps = {
   email: string;
-  /** False when the account uses Google sign-in (email change unsupported in v1). */
+  /**
+   * Whether the account can change its email. Gated on having a password (#147):
+   * the current password is the re-auth proof, so a password-less (Google-only)
+   * account must set one first. Not about which providers are linked.
+   */
   canChange: boolean;
 };
 
@@ -29,8 +33,8 @@ export function AccountEmailForm({ email, canChange }: AccountEmailFormProps) {
         </div>
         {!canChange && (
           <p className="mt-2 text-sm text-text-muted">
-            This email cannot currently be changed because your account uses
-            Google sign-in.
+            Set a password in Sign-in &amp; Security below to enable email
+            changes. It confirms the change is really you.
           </p>
         )}
       </div>

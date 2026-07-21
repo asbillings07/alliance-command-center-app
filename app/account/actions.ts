@@ -142,8 +142,8 @@ export async function updatePassword(
 }
 
 const BEGIN_EMAIL_CHANGE_MESSAGES: Record<BeginEmailChangeReason, string> = {
-  google_linked:
-    "This email cannot currently be changed because your account uses Google sign-in.",
+  password_required:
+    "Set a password first to change your email. You can add one under Sign-in & Security.",
   invalid_email: "Please enter a valid email address.",
   wrong_password: "Current password is incorrect.",
   same_email: "That is already your email address.",
