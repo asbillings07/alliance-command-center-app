@@ -49,13 +49,18 @@ export function GoogleConnectResultBanner({
   }, []);
 
   const copy = RESULT_COPY[result];
-  const classes =
-    copy.tone === "success"
-      ? "bg-success/10 border-success text-success"
-      : "bg-danger/10 border-danger text-danger";
+  const isError = copy.tone === "error";
+  const classes = isError
+    ? "bg-danger/10 border-danger text-danger"
+    : "bg-success/10 border-success text-success";
 
   return (
-    <div className={`mb-4 rounded-md border p-3 text-sm ${classes}`} role="status">
+    <div
+      className={`mb-4 rounded-md border p-3 text-sm ${classes}`}
+      // Errors are announced promptly (assertive); a success confirmation is a
+      // non-urgent status update (polite).
+      role={isError ? "alert" : "status"}
+    >
       {copy.message}
     </div>
   );
