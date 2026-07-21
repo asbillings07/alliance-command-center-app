@@ -10,6 +10,7 @@
 
 import "dotenv/config";
 import { issueBetaInvitation } from "../app/src/lib/betaInvitation";
+import { getRedeemUrl } from "../app/src/lib/appUrl";
 import { prisma } from "../app/src/lib/prisma";
 
 function printInvitation(invitation: {
@@ -20,7 +21,6 @@ function printInvitation(invitation: {
   acceptedAt: Date | null;
   allianceId: string | null;
 }) {
-  const origin = process.env.NEXTAUTH_URL || "http://localhost:3000";
   const status = invitation.acceptedAt
     ? invitation.allianceId
       ? "Accepted (alliance created)"
@@ -31,7 +31,7 @@ function printInvitation(invitation: {
 
   console.log("Email:      ", invitation.email);
   console.log("Code:       ", invitation.code);
-  console.log("URL:        ", `${origin}/redeem/${invitation.token}`);
+  console.log("URL:        ", getRedeemUrl(invitation.token));
   console.log("Expires:    ", invitation.expiresAt.toLocaleDateString());
   console.log("Status:     ", status);
 }
