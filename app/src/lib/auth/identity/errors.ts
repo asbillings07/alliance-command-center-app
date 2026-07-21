@@ -55,3 +55,17 @@ export class GoogleAccountMismatchError extends AuthenticationError {
     super(message);
   }
 }
+
+/**
+ * The email matches an account whose owner explicitly disconnected Google
+ * (`googleAutoLinkBlockedAt` is set, ADR-013 #131). Normal sign-in must not
+ * silently re-link by email — the disconnection is a durable, intentional
+ * state. The user can reconnect explicitly from Account settings.
+ */
+export class GoogleAutoLinkBlockedError extends AuthenticationError {
+  constructor(
+    message = "This account was disconnected from Google sign-in. Sign in with your password, then reconnect Google from Account settings."
+  ) {
+    super(message);
+  }
+}

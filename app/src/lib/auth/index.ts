@@ -13,6 +13,12 @@ import {
 import { AuthenticationError } from "@/app/src/lib/auth/identity/errors";
 import { resolveGoogleUser } from "@/app/src/lib/auth/resolveGoogleUser";
 import {
+  clearLinkIntent,
+  readLinkIntent,
+  setGoogleEmail,
+} from "@/app/src/lib/auth/googleConnection";
+import { handleGoogleConnect } from "@/app/src/lib/auth/handleGoogleConnect";
+import {
   getSessionVersion,
   validateSessionVersion,
 } from "@/app/src/lib/auth/session";
@@ -89,6 +95,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
     error: "/login",
   },
+  events: {
+    // A pending Google-connect intent is bound to the signed-in user and their
+    // session version, but sign-out does not bump sessionVersion. Without this,
+    // a stale intent could outlive the session: on a shared device, someone who
+    // completes an OAuth flow after the user signs out would link *their* Google
+    // account to the signed-out user (#131). Dropping the intent when the
+    // session ends closes that window. Fail-open on cleanup errors — never block
+    // sign-out over a best-effort cookie deletion.
+    async signOut() {
+      try {
+        await clearLinkIntent();
+      } catch (error) {
+        console.warn("Failed to clear Google link intent on sign-out", error);
+      }
+    },
+  },
   callbacks: {
     // Google is authentication only. The invitation model remains authoritative
     // for eligibility. Expected denials (unverified email, no invitation) throw
@@ -100,8 +122,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return true; // credentials already authorized in authorize()
       }
 
+      const googleProfile = profile as GoogleProfile | undefined;
+
+      // A link-intent cookie means this is an explicit connect (or a fail-closed
+      // denial). It must never fall through to a normal sign-in, so it is
+      // handled entirely in its own path.
+      const intent = await readLinkIntent();
+      if (intent.status !== "absent") {
+        return handleGoogleConnect(intent, googleProfile);
+      }
+
       try {
-        const googleProfile = profile as GoogleProfile | undefined;
         if (!googleProfile) {
           // Unexpected: Google always returns a profile. Throw so this
           // surfaces as an error rather than a TypeError/500 downstream.
@@ -115,11 +146,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // resolveGoogleUser links/provisions as needed and guarantees the
         // returned user is anchored to this subject; a mismatch or missing
         // invitation throws and is surfaced as AccessDenied.
-        await resolveGoogleUser({
+        const user = await resolveGoogleUser({
           email,
           googleSubject,
           displayName: googleProfile.name?.trim() || email,
         });
+
+        // Keep the connected-Google-email display metadata current (#131).
+        // Display only: this NEVER changes `User.email`. Written only when it
+        // actually changed to avoid a needless write on every sign-in.
+        if (user.googleEmail !== email) {
+          await setGoogleEmail(user.id, email);
+        }
 
         return true;
       } catch (error) {

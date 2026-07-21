@@ -7,6 +7,7 @@ import {
   PASSWORD_MIN_LENGTH,
   PASSWORD_MAX_BYTES,
 } from "@/app/src/lib/password";
+import { GoogleConnectionControls } from "./GoogleConnectionControls";
 
 // Single shared encoder: passwordByteLength runs on every keystroke, so reuse
 // one instance rather than allocating a TextEncoder per call.
@@ -19,6 +20,10 @@ const initialState: UpdateProfileState = { status: "idle", message: null };
 type AccountSecurityFormProps = {
   hasPassword: boolean;
   hasGoogle: boolean;
+  /** The connected Google account's email, for display only. */
+  googleEmail: string | null;
+  /** Whether Google OAuth is configured for this deployment. */
+  isGoogleEnabled: boolean;
 };
 
 function MethodRow({ label, active, activeText, inactiveText }: {
@@ -174,6 +179,8 @@ function PasswordChecklist({
 export function AccountSecurityForm({
   hasPassword,
   hasGoogle,
+  googleEmail,
+  isGoogleEnabled,
 }: AccountSecurityFormProps) {
   const [state, formAction, isPending] = useActionState(
     updatePassword,
@@ -225,12 +232,20 @@ export function AccountSecurityForm({
             activeText="Set"
             inactiveText="Not set"
           />
-          <MethodRow
-            label="Google"
-            active={hasGoogle}
-            activeText="Connected"
-            inactiveText="Not connected"
-          />
+          {isGoogleEnabled ? (
+            <GoogleConnectionControls
+              hasPassword={hasPassword}
+              hasGoogle={hasGoogle}
+              googleEmail={googleEmail}
+            />
+          ) : (
+            <MethodRow
+              label="Google"
+              active={hasGoogle}
+              activeText="Connected"
+              inactiveText="Not connected"
+            />
+          )}
         </div>
       </div>
 

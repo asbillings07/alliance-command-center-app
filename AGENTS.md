@@ -245,6 +245,7 @@ Google proves a user owns a verified email. Authorization and account eligibilit
 * Authentication is modeled as capabilities, not a provider enum: `User.passwordHash` present enables password login, `User.googleSubject` present enables Google login. A user may have both (e.g. the operator's break-glass account).
 * Google's subject (`sub`) is both the security anchor and the resolution key: Google sign-in resolves the internal user by `googleSubject` (via `resolveGoogleUser`), falling back to the verified email only to link an existing account on first sign-in or provision a new one (#144). Identity providers authenticate; AllianceHQ owns profile data, so a linked account's stored email/name are never resynced from Google.
 * Every JWT `sub` is always the internal `User.id`, resolved by `googleSubject` for Google logins.
+* Self-service connect/disconnect (#131): a signed-in user can explicitly connect Google (an explicit link to the current user via a signed, session-bound intent — not an email match) or disconnect it (only while a password remains, so no lockout). Disconnect is durable: `User.googleAutoLinkBlockedAt` blocks a later normal sign-in from silently re-linking by email; explicit reconnect clears it. The domain owns the policy (`googleConnection.ts`); the `signIn` callback orchestrates and fails closed on an untrusted intent.
 
 See `docs/adr/013-google-oauth.md` for full details.
 

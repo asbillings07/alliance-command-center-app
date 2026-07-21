@@ -1,8 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
-import { refreshCurrentSession } from "@/app/src/lib/auth/session";
+import { signIn } from "@/app/src/lib/auth";
+import {
+  getSessionVersion,
+  refreshCurrentSession,
+} from "@/app/src/lib/auth/session";
+import { isGoogleAuthEnabled } from "@/app/src/lib/auth/identity/google";
+import {
+  clearConnectResult,
+  disconnectGoogle as disconnectGoogleService,
+  logGoogleConnectionEvent,
+  setLinkIntent,
+} from "@/app/src/lib/auth/googleConnection";
 import {
   getSignInMethods,
   updateCredential,
@@ -211,4 +223,132 @@ export async function beginEmailChange(
     status: "success",
     message: `Check your inbox — we've sent a verification link to ${result.newEmail}. Your sign-in email won't change until you confirm it.`,
   };
+}
+
+/**
+ * Begin an explicit Google connect (#131).
+ *
+ * Mints a signed, session-bound link intent tied to the current user, then
+ * starts the Google OAuth challenge. The intent (not an email match) is what
+ * binds the returning Google subject to this account, so connect is correct even
+ * when the app email and the Google email differ. On return the signIn callback
+ * verifies the intent and links; the outcome is surfaced as a banner on
+ * /account via the read-once result cookie.
+ */
+export async function connectGoogle(): Promise<void> {
+  const { id } = await requireAuth();
+
+  // The Google provider is only registered when OAuth is configured; guard
+  // against a stale UI / direct POST so we bounce back rather than 500.
+  if (!isGoogleAuthEnabled()) {
+    redirect("/account");
+  }
+
+  // Bind the intent to the current session version so a password change or
+  // revocation mid-round-trip invalidates it.
+  const sessionVersion = await getSessionVersion(id);
+  if (sessionVersion === null) {
+    redirect("/login");
+  }
+
+  await setLinkIntent({ userId: id, sessionVersion });
+
+  // signIn redirects to Google (throws NEXT_REDIRECT); control does not return.
+  await signIn("google", { redirectTo: "/account" });
+}
+
+const DISCONNECT_GOOGLE_MESSAGES = {
+  no_password:
+    "Set a password before disconnecting Google, so you don't lose access to your account.",
+  not_connected: "Google isn't connected to your account.",
+  incorrect_password: "Password is incorrect.",
+  password_required: "Enter your password to disconnect Google.",
+  not_found: "Account not found.",
+} as const;
+
+/**
+ * Disconnect Google from the signed-in user (#131).
+ *
+ * Requires current-password re-authentication (a destructive identity change)
+ * and refuses when Google is the only sign-in method (lockout safety) — enforced
+ * again in the domain service as defense in depth. Does not revoke sessions: the
+ * user chose to manage their own account.
+ */
+export async function disconnectGoogle(
+  _prev: UpdateProfileState,
+  formData: FormData
+): Promise<UpdateProfileState> {
+  const { id } = await requireAuth();
+
+  const methods = await getSignInMethods(id);
+  if (!methods) {
+    return { status: "error", message: DISCONNECT_GOOGLE_MESSAGES.not_found };
+  }
+  if (!methods.hasGoogle) {
+    return {
+      status: "error",
+      message: DISCONNECT_GOOGLE_MESSAGES.not_connected,
+    };
+  }
+  // Lockout guard: without a password, disconnecting would remove the last
+  // sign-in method. The UI disables this, but never trust the client.
+  if (!methods.hasPassword) {
+    logGoogleConnectionEvent("disconnect_denied", {
+      userId: id,
+      reason: "no_password",
+    });
+    return { status: "error", message: DISCONNECT_GOOGLE_MESSAGES.no_password };
+  }
+
+  const currentPassword = formData.get("currentPassword");
+  if (typeof currentPassword !== "string" || currentPassword.length === 0) {
+    return {
+      status: "error",
+      message: DISCONNECT_GOOGLE_MESSAGES.password_required,
+    };
+  }
+  if (!(await verifyPassword(id, currentPassword))) {
+    return {
+      status: "error",
+      message: DISCONNECT_GOOGLE_MESSAGES.incorrect_password,
+    };
+  }
+
+  const result = await disconnectGoogleService(id);
+
+  switch (result.status) {
+    case "success":
+      logGoogleConnectionEvent("disconnected", { userId: id });
+      revalidatePath("/account");
+      return {
+        status: "success",
+        message: "Google has been disconnected from your account.",
+      };
+    case "no_password":
+      logGoogleConnectionEvent("disconnect_denied", {
+        userId: id,
+        reason: "no_password",
+      });
+      return {
+        status: "error",
+        message: DISCONNECT_GOOGLE_MESSAGES.no_password,
+      };
+    case "not_connected":
+      return {
+        status: "error",
+        message: DISCONNECT_GOOGLE_MESSAGES.not_connected,
+      };
+  }
+}
+
+/**
+ * Acknowledge (clear) the read-once Google connect-result banner cookie.
+ *
+ * Reading happens during the /account server render (safe), but a cookie can
+ * only be *cleared* from an action/route handler — so the banner triggers this
+ * on mount. Clearing the caller's own transient banner cookie is harmless, so
+ * it needs no re-auth.
+ */
+export async function acknowledgeGoogleConnectResult(): Promise<void> {
+  await clearConnectResult();
 }

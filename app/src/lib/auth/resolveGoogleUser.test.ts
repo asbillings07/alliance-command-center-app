@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { resolveGoogleUser } from "./resolveGoogleUser";
 import {
   GoogleAccountMismatchError,
+  GoogleAutoLinkBlockedError,
   InvitationRequiredError,
 } from "./identity/errors";
 
@@ -88,6 +89,7 @@ describe("resolveGoogleUser", () => {
       email: EMAIL,
       displayName: "Existing",
       googleSubject: null,
+      googleAutoLinkBlockedAt: null,
     };
     configure({ byEmail: existing });
     mockEnsure.mockResolvedValue(undefined);
@@ -98,7 +100,10 @@ describe("resolveGoogleUser", () => {
       displayName: "Existing",
     });
 
-    expect(mockEnsure).toHaveBeenCalledWith(existing, SUBJECT);
+    // Lazy path asks ensureGoogleIdentity to respect the disconnect flag.
+    expect(mockEnsure).toHaveBeenCalledWith(existing, SUBJECT, {
+      requireAutoLinkEnabled: true,
+    });
     expect(mockProvision).not.toHaveBeenCalled();
     // Postcondition holds even though the read row was still unanchored.
     expect(result.googleSubject).toBe(SUBJECT);
@@ -112,6 +117,7 @@ describe("resolveGoogleUser", () => {
         email: EMAIL,
         displayName: "Other",
         googleSubject: "some-other-subject",
+        googleAutoLinkBlockedAt: null,
       },
     });
     mockEnsure.mockRejectedValue(new GoogleAccountMismatchError());
@@ -124,6 +130,33 @@ describe("resolveGoogleUser", () => {
       })
     ).rejects.toBeInstanceOf(GoogleAccountMismatchError);
 
+    expect(mockProvision).not.toHaveBeenCalled();
+  });
+
+  it("refuses to auto-link an account that explicitly disconnected Google (#131)", async () => {
+    // googleSubject is null (disconnect clears it) but the disconnect flag is
+    // set, so a verified email match must NOT silently re-link. The user has to
+    // reconnect deliberately.
+    configure({
+      byEmail: {
+        id: "user-5",
+        email: EMAIL,
+        displayName: "Disconnected",
+        googleSubject: null,
+        googleAutoLinkBlockedAt: new Date(),
+      },
+    });
+
+    await expect(
+      resolveGoogleUser({
+        email: EMAIL,
+        googleSubject: SUBJECT,
+        displayName: "Disconnected",
+      })
+    ).rejects.toBeInstanceOf(GoogleAutoLinkBlockedError);
+
+    // Denied before any linking or provisioning is attempted.
+    expect(mockEnsure).not.toHaveBeenCalled();
     expect(mockProvision).not.toHaveBeenCalled();
   });
 
