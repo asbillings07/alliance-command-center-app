@@ -5,15 +5,20 @@
  * Fails fast if critical configuration is missing.
  */
 
-const requiredVars = [
-  "DATABASE_URL",
-  "AUTH_SECRET",
-  "NEXTAUTH_URL",
-] as const;
+import { resolveAppOrigin } from "./appUrl";
 
-// Optional vars (not validated at startup, but typed for getEnv)
+const requiredVars = ["DATABASE_URL", "AUTH_SECRET"] as const;
+
+// Optional vars (not validated at startup, but typed for getEnv).
+//
+// NEXTAUTH_URL lives here rather than in requiredVars because whether it is
+// required depends on the deployment stack: it is optional on Vercel Preview
+// (the origin comes from VERCEL_URL) and required in production. That policy is
+// owned entirely by resolveAppOrigin, which we exercise below, so validation can
+// never drift from how URLs are actually built at runtime.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const optionalVars = [
+  "NEXTAUTH_URL",
   "PLATFORM_ADMIN_EMAILS",
   "PLATFORM_BOOTSTRAP_SECRET",
   "AUTH_GOOGLE_ID",
@@ -47,35 +52,37 @@ export function validateEnv(): void {
     return;
   }
 
-  const missing: string[] = [];
+  const problems: string[] = [];
 
   for (const varName of requiredVars) {
     if (!process.env[varName]) {
-      // NEXTAUTH_URL is intentionally left unset on Vercel Preview deployments so
-      // the app derives its origin from the per-deployment host instead of the
-      // canonical production domain (see getAppOrigin / VERCEL_URL). Vercel marks
-      // those builds with VERCEL_ENV="preview" and always provides VERCEL_URL as
-      // the alternate origin source; only skip the check when that fallback is
-      // actually present, so a misconfigured preview still fails fast. The
-      // guardrail still applies to real production and self-hosted deployments.
-      if (
-        varName === "NEXTAUTH_URL" &&
-        process.env.VERCEL_ENV === "preview" &&
-        process.env.VERCEL_URL
-      ) {
-        continue;
-      }
-      missing.push(varName);
+      problems.push(`${varName} is missing`);
     }
   }
 
-  if (missing.length > 0) {
+  // Validate the application origin through the same resolver getAppOrigin uses,
+  // so the "is NEXTAUTH_URL required here?" policy has a single source of truth
+  // and a malformed origin fails at startup rather than when the first email is
+  // sent. resolveAppOrigin returns a localhost fallback in development, so this
+  // only surfaces genuine production/preview misconfiguration.
+  try {
+    resolveAppOrigin({
+      nodeEnv: process.env.NODE_ENV,
+      vercelEnv: process.env.VERCEL_ENV,
+      nextAuthUrl: process.env.NEXTAUTH_URL,
+      vercelUrl: process.env.VERCEL_URL,
+    });
+  } catch (error) {
+    problems.push(error instanceof Error ? error.message : String(error));
+  }
+
+  if (problems.length > 0) {
     const message = [
       "========================================",
-      "FATAL: Missing required environment variables",
+      "FATAL: Invalid environment configuration",
       "========================================",
       "",
-      `Missing: ${missing.join(", ")}`,
+      ...problems.map((p) => `- ${p}`),
       "",
       "Please ensure all required variables are set.",
       "See .env.example for documentation.",
@@ -86,11 +93,11 @@ export function validateEnv(): void {
 
     // In development, warn but don't crash (allows gradual setup)
     if (process.env.NODE_ENV === "development") {
-      console.warn("Continuing in development mode despite missing variables.");
+      console.warn("Continuing in development mode despite invalid configuration.");
       return;
     }
 
-    throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+    throw new Error(`Invalid environment configuration: ${problems.join("; ")}`);
   }
 }
 
