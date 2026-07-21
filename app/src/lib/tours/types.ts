@@ -21,4 +21,12 @@ export type TourDefinition = {
   /** Stable identifier, used for analytics and (later) persisted preferences. */
   id: string;
   steps: TourStep[];
+  /**
+   * Optional handoff copy shown on the destination page after the user COMPLETES
+   * the tour (clicks Done). It bridges learning → doing ("Tour complete. You can
+   * create your first evaluation period below.") without navigating them away.
+   * Only surfaced by `TourAutoStart` on positive completion; dismissing the tour
+   * shows nothing. Omit for tours that don't hand off to an on-page action.
+   */
+  completionMessage?: string;
 };

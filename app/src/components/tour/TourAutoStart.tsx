@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   TOURS_BY_ID,
   TOUR_QUERY_PARAM,
@@ -10,12 +10,16 @@ import { runTour } from "./runTour";
 
 /**
  * Auto-starts a tour when the page is opened via a deep link like `?tour={id}`
- * (see `buildTourHref`). Renders nothing.
+ * (see `buildTourHref`). Renders nothing until (and unless) the tour is
+ * completed, at which point it shows a dismissible handoff banner.
  *
  * The tour teaches the task; it does NOT perform it. So when the tour finishes
  * (or the user dismisses it), we deliberately leave the user on the destination
  * page — ready to create the metric/period or import members — rather than
- * navigating them anywhere. There is no return-path handling.
+ * navigating them anywhere. There is no return-path handling. On positive
+ * completion we surface the tour's `completionMessage` (a gentle "you can do X
+ * below" handoff) in a banner the user can dismiss; abandoning the tour shows
+ * nothing.
  *
  * Lifecycle notes:
  * - The launch parameter is read ONCE, directly from `window.location`, inside a
@@ -36,6 +40,10 @@ import { runTour } from "./runTour";
  *   global DOM that could leave the tour broken/invisible.
  */
 export function TourAutoStart() {
+  const [completionMessage, setCompletionMessage] = useState<string | null>(
+    null
+  );
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tourId = params.get(TOUR_QUERY_PARAM);
@@ -62,7 +70,16 @@ export function TourAutoStart() {
     const controller = new AbortController();
     let destroy: (() => void) | undefined;
 
-    void runTour(tour, { signal: controller.signal })
+    void runTour(tour, {
+      signal: controller.signal,
+      // Fires ONLY on positive completion (Done), never on dismissal/abort. We
+      // stay on the page and surface the handoff copy rather than navigating.
+      onFinished: () => {
+        if (tour.completionMessage) {
+          setCompletionMessage(tour.completionMessage);
+        }
+      },
+    })
       .then((teardown) => {
         destroy = teardown;
         // Unmounted between import start and resolve: tear the tour down now.
@@ -82,5 +99,25 @@ export function TourAutoStart() {
     };
   }, []);
 
-  return null;
+  if (!completionMessage) {
+    return null;
+  }
+
+  return (
+    <div
+      className="mb-4 flex items-start justify-between gap-3 rounded-md border border-success bg-success/10 p-3 text-sm text-success"
+      // A completed-tour confirmation is a non-urgent status update (polite).
+      role="status"
+    >
+      <span>{completionMessage}</span>
+      <button
+        type="button"
+        onClick={() => setCompletionMessage(null)}
+        className="flex-shrink-0 font-medium underline hover:no-underline"
+        aria-label="Dismiss"
+      >
+        Dismiss
+      </button>
+    </div>
+  );
 }

@@ -8,7 +8,7 @@ const runTour = vi.hoisted(() => vi.fn());
 vi.mock("./runTour", () => ({ runTour }));
 
 import { TourAutoStart } from "./TourAutoStart";
-import { CREATE_PERIOD_TOUR_ID } from "@/app/src/lib/tours";
+import { CREATE_PERIOD_TOUR_ID, createPeriodTour } from "@/app/src/lib/tours";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -83,18 +83,49 @@ describe("TourAutoStart", () => {
     expect(teardown).not.toHaveBeenCalled();
   });
 
-  it("does not wire a completion handler, so finishing or dismissing stays on the page", async () => {
+  it("shows the completion banner in place when the tour finishes, without navigating", async () => {
     runTour.mockResolvedValue(vi.fn());
     setLocation(`?tour=${CREATE_PERIOD_TOUR_ID}`);
 
     await mount();
 
-    // The tour teaches the task; it never navigates the user away. The runner is
-    // invoked without an onFinished callback and the location is unchanged.
+    // No banner before the user completes the tour.
+    expect(container.querySelector('[role="status"]')).toBeNull();
+
     const opts = runTour.mock.calls[0][1];
-    expect(opts.onFinished).toBeUndefined();
+    expect(typeof opts.onFinished).toBe("function");
+
+    // Positive completion surfaces the handoff copy in place — the tour teaches
+    // the task and hands off to the on-page action; it never navigates away.
+    await act(async () => {
+      opts.onFinished();
+    });
+
+    const banner = container.querySelector('[role="status"]');
+    expect(banner?.textContent).toContain(createPeriodTour.completionMessage);
     expect(window.location.pathname).toBe(PERIODS);
     expect(window.location.search).toBe("");
+  });
+
+  it("lets the user dismiss the completion banner", async () => {
+    runTour.mockResolvedValue(vi.fn());
+    setLocation(`?tour=${CREATE_PERIOD_TOUR_ID}`);
+
+    await mount();
+    const opts = runTour.mock.calls[0][1];
+    await act(async () => {
+      opts.onFinished();
+    });
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+
+    const dismiss = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Dismiss"]'
+    );
+    await act(async () => {
+      dismiss?.click();
+    });
+
+    expect(container.querySelector('[role="status"]')).toBeNull();
   });
 
   it("does not abort or destroy the active tour when the URL is cleaned or the component re-renders", async () => {

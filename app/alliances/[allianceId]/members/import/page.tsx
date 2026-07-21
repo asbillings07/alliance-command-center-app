@@ -2,7 +2,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { RosterImportForm } from "./RosterImportForm";
-import { PageLayout, Card } from "@/app/src/components";
+import { PageLayout, Card, BackToSetupLink } from "@/app/src/components";
 import { TourAutoStart } from "@/app/src/components/client";
 
 type Params = {
@@ -43,6 +43,7 @@ export default async function MemberImportPage({ params }: Params) {
             ]}
             title="Import Roster"
             description="Upload a CSV to add members to your alliance"
+            action={<BackToSetupLink allianceId={allianceId} />}
         >
             <TourAutoStart />
             <Card>

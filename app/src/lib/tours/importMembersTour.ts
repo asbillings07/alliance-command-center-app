@@ -14,6 +14,8 @@ export const IMPORT_MEMBERS_TOUR_ID = "import-members";
  */
 export const importMembersTour: TourDefinition = {
   id: IMPORT_MEMBERS_TOUR_ID,
+  completionMessage:
+    "Tour complete. You can upload your roster below to add members.",
   steps: [
     {
       element: '[data-tour="roster-upload"]',
