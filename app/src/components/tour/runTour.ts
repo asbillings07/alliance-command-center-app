@@ -81,13 +81,22 @@ export async function runTour(
     },
   });
 
-  driverObj.drive();
-
   // Honor the signal for the whole run, not just the import window: if it aborts
   // while the tour is on screen, tear the tour down rather than relying on the
   // caller to also invoke the returned handle. Aborting is not completion, so
   // onFinished never fires (completed stays false).
+  //
+  // Register BEFORE drive() so an abort can't slip through the gap between the
+  // post-import check and registration. A fired abort is never replayed to a
+  // listener added afterwards, so also re-check synchronously: if the signal is
+  // already aborted, the listener won't run, so tear down here instead.
   signal?.addEventListener("abort", handleAbort, { once: true });
+  if (signal?.aborted) {
+    driverObj.destroy();
+    return () => {};
+  }
+
+  driverObj.drive();
 
   return () => driverObj.destroy();
 }
