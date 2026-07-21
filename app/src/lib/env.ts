@@ -54,9 +54,15 @@ export function validateEnv(): void {
       // NEXTAUTH_URL is intentionally left unset on Vercel Preview deployments so
       // the app derives its origin from the per-deployment host instead of the
       // canonical production domain (see getAppOrigin / VERCEL_URL). Vercel marks
-      // those builds with VERCEL_ENV="preview"; don't fail startup there. The
+      // those builds with VERCEL_ENV="preview" and always provides VERCEL_URL as
+      // the alternate origin source; only skip the check when that fallback is
+      // actually present, so a misconfigured preview still fails fast. The
       // guardrail still applies to real production and self-hosted deployments.
-      if (varName === "NEXTAUTH_URL" && process.env.VERCEL_ENV === "preview") {
+      if (
+        varName === "NEXTAUTH_URL" &&
+        process.env.VERCEL_ENV === "preview" &&
+        process.env.VERCEL_URL
+      ) {
         continue;
       }
       missing.push(varName);

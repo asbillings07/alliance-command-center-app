@@ -27,22 +27,25 @@ describe("getAppOrigin", () => {
     expect(getAppOrigin()).toBe("https://alliancehqapp.com");
   });
 
+  // getAppOrigin() treats an empty value as "unset" (truthiness check), so an
+  // empty string faithfully simulates an absent env var while staying portable
+  // across Vitest versions (vi.stubEnv is typed for string values).
   it("falls back to https://VERCEL_URL when NEXTAUTH_URL is unset (preview stacks)", () => {
-    vi.stubEnv("NEXTAUTH_URL", undefined);
+    vi.stubEnv("NEXTAUTH_URL", "");
     vi.stubEnv("VERCEL_URL", "acc-git-feature-xyz.vercel.app");
     expect(getAppOrigin()).toBe("https://acc-git-feature-xyz.vercel.app");
   });
 
   it("falls back to localhost outside production when nothing is configured", () => {
-    vi.stubEnv("NEXTAUTH_URL", undefined);
-    vi.stubEnv("VERCEL_URL", undefined);
+    vi.stubEnv("NEXTAUTH_URL", "");
+    vi.stubEnv("VERCEL_URL", "");
     vi.stubEnv("NODE_ENV", "development");
     expect(getAppOrigin()).toBe("http://localhost:3000");
   });
 
   it("throws in production when neither NEXTAUTH_URL nor VERCEL_URL is available", () => {
-    vi.stubEnv("NEXTAUTH_URL", undefined);
-    vi.stubEnv("VERCEL_URL", undefined);
+    vi.stubEnv("NEXTAUTH_URL", "");
+    vi.stubEnv("VERCEL_URL", "");
     vi.stubEnv("NODE_ENV", "production");
     expect(() => getAppOrigin()).toThrow(/origin is not configured/i);
   });
@@ -63,7 +66,7 @@ describe("URL builders", () => {
   });
 
   it("invite links follow the preview host when NEXTAUTH_URL is unset", () => {
-    vi.stubEnv("NEXTAUTH_URL", undefined);
+    vi.stubEnv("NEXTAUTH_URL", "");
     vi.stubEnv("VERCEL_URL", "acc-git-feature-xyz.vercel.app");
     expect(getInviteUrl("tok789")).toBe(
       "https://acc-git-feature-xyz.vercel.app/invite/tok789",
