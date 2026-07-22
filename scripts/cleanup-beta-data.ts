@@ -349,8 +349,18 @@ async function buildPlan(
 
   const targetUserIds = await emailsToUserIds(db, args.userEmails);
   const unknownUserEmails = args.userEmails.filter((e) => !targetUserIds.has(e));
+  // Iterate in the deterministic CLI input order, not Map.values() order —
+  // the latter reflects Postgres's findMany() result ordering for an `IN`
+  // clause, which isn't guaranteed to be stable. A different user-plan
+  // processing order can change WHICH user's sub-plan first introduces a
+  // given op key, changing the merged plan's array order and therefore its
+  // checksum, even though the underlying data (and set of ops) is identical.
   const userPlans: CleanupOp[][] = [];
-  for (const uid of targetUserIds.values()) {
+  const seenUserIds = new Set<string>();
+  for (const email of args.userEmails) {
+    const uid = targetUserIds.get(email);
+    if (!uid || seenUserIds.has(uid)) continue;
+    seenUserIds.add(uid);
     userPlans.push(assembleUserPlan(await resolveUser(db, uid)));
   }
 

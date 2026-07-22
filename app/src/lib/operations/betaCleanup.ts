@@ -436,6 +436,12 @@ function manifestShapeProblem(value: unknown): string | null {
     if (!Array.isArray(o.ids) || !o.ids.every((id) => typeof id === "string")) {
       return `ops[${i}].ids must be an array of strings`;
     }
+    if (o.model === "MetricPeriodMetric") {
+      const malformed = (o.ids as string[]).find((id) => !/^[^:]+::[^:]+$/.test(id));
+      if (malformed !== undefined) {
+        return `ops[${i}].ids contains a malformed MetricPeriodMetric key (expected "periodId::metricId"): ${JSON.stringify(malformed)}`;
+      }
+    }
   }
   return null;
 }

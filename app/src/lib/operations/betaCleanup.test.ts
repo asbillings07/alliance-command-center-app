@@ -496,4 +496,22 @@ describe("manifest integrity + shape validation", () => {
     const bad = { ...manifest, ops: [{ kind: "delete", model: "Alliance", field: null, ids: [123] }] };
     expect(() => validateManifestShape(bad)).toThrow(/array of strings/);
   });
+
+  it("validateManifestShape rejects a malformed MetricPeriodMetric composite key", () => {
+    const manifest = buildManifest(args);
+    const bad = {
+      ...manifest,
+      ops: [{ kind: "delete", model: "MetricPeriodMetric", field: null, ids: ["not-a-composite-key"] }],
+    };
+    expect(() => validateManifestShape(bad)).toThrow(/malformed MetricPeriodMetric key/);
+  });
+
+  it("validateManifestShape accepts a well-formed MetricPeriodMetric composite key", () => {
+    const manifest = buildManifest(args);
+    const good = {
+      ...manifest,
+      ops: [{ kind: "delete", model: "MetricPeriodMetric", field: null, ids: ["p1::m1"] }],
+    };
+    expect(() => validateManifestShape(good)).not.toThrow();
+  });
 });
