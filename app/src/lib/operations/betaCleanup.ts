@@ -5,9 +5,10 @@ import { createHash } from "node:crypto";
  *
  * This module contains NO database access. It turns already-resolved id sets
  * into an ordered, deterministic deletion plan, and binds a reviewed dry run to
- * its later execution via a checksum. The DB queries and execution live in
- * `scripts/cleanup-beta-data.ts`, which keeps the risky IO thin and this logic
- * unit-testable.
+ * its later execution via a checksum. The DB queries and transactional
+ * execution live in `./betaCleanupDb` (directly importable by a real-Postgres
+ * integration test), and `scripts/cleanup-beta-data.ts` is a thin CLI over
+ * both — which keeps the risky IO thin and this logic unit-testable.
  *
  * Design constraints (from the beta-readiness review):
  *   - dry-run is the default; `--execute` never trusts the manifest's `ops`

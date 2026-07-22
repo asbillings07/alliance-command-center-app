@@ -5,8 +5,12 @@ removes test/smoke data through a reviewed, manifest-bound, transactional
 operation — never manual row deletion or a database reset.
 
 The tooling is [`scripts/cleanup-beta-data.ts`](../../scripts/cleanup-beta-data.ts)
-(`npm run beta:cleanup`); its planning core is
-[`app/src/lib/operations/betaCleanup.ts`](../../app/src/lib/operations/betaCleanup.ts).
+(`npm run beta:cleanup`), a thin CLI over two importable modules: its planning
+core, [`app/src/lib/operations/betaCleanup.ts`](../../app/src/lib/operations/betaCleanup.ts)
+(pure, no DB access — unit tested), and its database orchestration,
+[`app/src/lib/operations/betaCleanupDb.ts`](../../app/src/lib/operations/betaCleanupDb.ts)
+(the transactional execute/`--verify` path — covered by real-Postgres
+integration tests in `betaCleanupDb.integration.test.ts`).
 
 ## Safety model
 

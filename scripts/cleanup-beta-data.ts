@@ -7,6 +7,12 @@
  * --execute this only reads, prints an inventory + the proposed plan, and
  * writes a manifest for review.
  *
+ * This file is a thin CLI: argument parsing lives in
+ * `app/src/lib/operations/betaCleanup.ts` (pure, no DB access) and the
+ * database orchestration (plan resolution, transactional execute, --verify)
+ * lives in `app/src/lib/operations/betaCleanupDb.ts` — split out specifically
+ * so it's directly importable by a real-Postgres integration test.
+ *
  * Safety model:
  *   - The manifest's checksum is never trusted to authenticate `manifest.ops`
  *     directly. Execution instead RE-RESOLVES the plan live from the database
@@ -26,7 +32,12 @@
  *     separate. `--keep-user-email` / `--keep-alliance-id` are enforced (not
  *     just recorded): any overlap with the target selection, or any keep-listed
  *     row appearing in the resolved plan, aborts before anything runs.
- *     Unresolved keep-list emails fail closed (never silently ignored).
+ *   - EVERY explicit target/keep id or email that doesn't resolve to an
+ *     existing row (typo, already deleted, etc.) fails closed — the run
+ *     aborts rather than silently proceeding with a smaller plan than the
+ *     operator asked for. This applies uniformly to --user-email,
+ *     --keep-user-email, --keep-alliance-id, --access-request-ids, and
+ *     --feedback-ids.
  *   - The target database identity is resolved with the SAME resolver the app
  *     uses (app/src/lib/productionDb), so the tool and the app can never
  *     disagree about which database is production.
@@ -37,6 +48,10 @@
  *     age — this is an intentional design choice (these categories need human
  *     judgment, not an age heuristic), not a gap. Invitations are revoked
  *     (audit-preserving), not deleted.
+ *   - `--verify` independently confirms delete/nullify/revoke targets are
+ *     fully applied, AND that nullify/revoke targets still EXIST (a row
+ *     unexpectedly deleted entirely would otherwise vacuously pass a
+ *     "field is null" check).
  *
  * Usage (dry run):
  *   npx tsx scripts/cleanup-beta-data.ts \
@@ -56,348 +71,27 @@
 
 import "dotenv/config";
 import { readFileSync, writeFileSync } from "node:fs";
-import { Prisma } from "../app/generated/prisma/client";
 import { prisma } from "../app/src/lib/prisma";
-import { connectionIdentity, productionIdentities } from "../app/src/lib/productionDb";
+import { productionIdentities } from "../app/src/lib/productionDb";
 import {
   parseArgs,
-  assembleTenantPlan,
-  assembleUserPlan,
-  mergePlans,
   buildManifest,
-  toChecksumPayload,
-  verifyManifest,
-  verifyManifestIntegrity,
   validateManifestShape,
+  verifyManifestIntegrity,
   validateSelectionOverlaps,
   summarizePlan,
   summarizeDeletes,
-  summarizeOpCounts,
-  planOpKey,
-  resolveCutoffDate,
-  keepListViolations,
-  allianceKeepListViolations,
   EXECUTION_CONFIRMATION_PHRASE,
-  type CleanupArgs,
   type CleanupOp,
-  type CleanupModel,
-  type TenantResolved,
-  type UserResolved,
-  type CleanupManifest,
 } from "../app/src/lib/operations/betaCleanup";
-
-/** Deterministic key so concurrent runs serialize (transaction-scoped). */
-const ADVISORY_LOCK_KEY = 8161161161161161;
-
-const DELEGATE: Record<CleanupModel, string> = {
-  PasswordResetToken: "passwordResetToken",
-  EmailChangeRequest: "emailChangeRequest",
-  MemberMetricEntry: "memberMetricEntry",
-  LeadershipNote: "leadershipNote",
-  Invitation: "invitation",
-  MetricPeriodMetric: "metricPeriodMetric",
-  Metric: "metric",
-  MetricPeriod: "metricPeriod",
-  AllianceMember: "allianceMember",
-  AllianceMembership: "allianceMembership",
-  BetaInvitation: "betaInvitation",
-  Feedback: "feedback",
-  AccessRequest: "accessRequest",
-  Alliance: "alliance",
-  User: "user",
-};
-
-// The Prisma client/transaction client is intentionally accessed dynamically
-// by delegate name, and interchangeably as either the top-level client (dry
-// run, --verify) or an interactive-transaction client (--execute).
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type Db = any;
-
-function ids<T extends { id: string }>(rows: T[]): string[] {
-  return rows.map((r) => r.id);
-}
-
-function resolveTargetIdentity(): { identity: string; isProduction: boolean } {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) throw new Error("DATABASE_URL is required.");
-  const identity = connectionIdentity(dbUrl);
-  const directUrl = process.env.DIRECT_URL;
-  if (directUrl && connectionIdentity(directUrl) !== identity) {
-    throw new Error(
-      "DATABASE_URL and DIRECT_URL resolve to different databases; refusing to run."
-    );
-  }
-  const allow = productionIdentities(process.env.PRODUCTION_DB_HOSTS);
-  return { identity, isProduction: allow.includes(identity) };
-}
-
-async function inventory(db: Db): Promise<Record<string, number>> {
-  const [
-    users,
-    alliances,
-    members,
-    memberships,
-    invitations,
-    betaInvitations,
-    feedback,
-    accessRequests,
-    resetTokens,
-    emailChanges,
-    metrics,
-    metricPeriods,
-    metricPeriodMetrics,
-    memberMetricEntries,
-    leadershipNotes,
-  ] = await Promise.all([
-    db.user.count(),
-    db.alliance.count(),
-    db.allianceMember.count(),
-    db.allianceMembership.count(),
-    db.invitation.count(),
-    db.betaInvitation.count(),
-    db.feedback.count(),
-    db.accessRequest.count(),
-    db.passwordResetToken.count(),
-    db.emailChangeRequest.count(),
-    db.metric.count(),
-    db.metricPeriod.count(),
-    db.metricPeriodMetric.count(),
-    db.memberMetricEntry.count(),
-    db.leadershipNote.count(),
-  ]);
-  return {
-    User: users,
-    Alliance: alliances,
-    AllianceMember: members,
-    AllianceMembership: memberships,
-    Invitation: invitations,
-    BetaInvitation: betaInvitations,
-    Feedback: feedback,
-    AccessRequest: accessRequests,
-    PasswordResetToken: resetTokens,
-    EmailChangeRequest: emailChanges,
-    Metric: metrics,
-    MetricPeriod: metricPeriods,
-    MetricPeriodMetric: metricPeriodMetrics,
-    MemberMetricEntry: memberMetricEntries,
-    LeadershipNote: leadershipNotes,
-  };
-}
-
-/**
- * Reads are sequential, not `Promise.all`-parallel: during `--execute`, `db`
- * is an interactive transaction client bound to a single connection, and
- * issuing concurrent queries against it is unreliable across drivers. Dry
- * runs pay a small latency cost for the same, single code path.
- */
-async function resolveTenant(db: Db, allianceId: string): Promise<TenantResolved> {
-  const members = await db.allianceMember.findMany({ where: { allianceId }, select: { id: true } });
-  const entries = await db.memberMetricEntry.findMany({
-    where: { allianceMember: { allianceId } },
-    select: { id: true },
-  });
-  const notes = await db.leadershipNote.findMany({
-    where: { allianceMember: { allianceId } },
-    select: { id: true },
-  });
-  const invitations = await db.invitation.findMany({ where: { allianceId }, select: { id: true } });
-  const periods = await db.metricPeriod.findMany({ where: { allianceId }, select: { id: true } });
-  const metrics = await db.metric.findMany({ where: { allianceId }, select: { id: true } });
-  const periodMetrics = await db.metricPeriodMetric.findMany({
-    where: { period: { allianceId } },
-    select: { periodId: true, metricId: true },
-  });
-  const memberships = await db.allianceMembership.findMany({ where: { allianceId }, select: { id: true } });
-  const betaInvitations = await db.betaInvitation.findMany({ where: { allianceId }, select: { id: true } });
-  return {
-    allianceId,
-    allianceMemberIds: ids(members),
-    memberMetricEntryIds: ids(entries),
-    leadershipNoteIds: ids(notes),
-    invitationIds: ids(invitations),
-    metricPeriodIds: ids(periods),
-    metricIds: ids(metrics),
-    metricPeriodMetricKeys: periodMetrics.map((pm: { periodId: string; metricId: string }) => `${pm.periodId}::${pm.metricId}`),
-    allianceMembershipIds: ids(memberships),
-    betaInvitationIds: ids(betaInvitations),
-  };
-}
-
-async function resolveUser(db: Db, userId: string): Promise<UserResolved> {
-  const resetTokens = await db.passwordResetToken.findMany({ where: { userId }, select: { id: true } });
-  const emailChanges = await db.emailChangeRequest.findMany({ where: { userId }, select: { id: true } });
-  const feedback = await db.feedback.findMany({ where: { userId }, select: { id: true } });
-  const notes = await db.leadershipNote.findMany({ where: { authorId: userId }, select: { id: true } });
-  const sent = await db.invitation.findMany({ where: { invitedById: userId }, select: { id: true } });
-  const accepted = await db.invitation.findMany({ where: { acceptedByUserId: userId }, select: { id: true } });
-  const betaAccepted = await db.betaInvitation.findMany({
-    where: { acceptedByUserId: userId },
-    select: { id: true },
-  });
-  const linkedMembers = await db.allianceMember.findMany({ where: { userId }, select: { id: true } });
-  const memberships = await db.allianceMembership.findMany({ where: { userId }, select: { id: true } });
-  return {
-    userId,
-    passwordResetTokenIds: ids(resetTokens),
-    emailChangeRequestIds: ids(emailChanges),
-    feedbackIds: ids(feedback),
-    leadershipNoteIds: ids(notes),
-    invitationSentIds: ids(sent),
-    invitationAcceptedIds: ids(accepted),
-    betaInvitationAcceptedIds: ids(betaAccepted),
-    allianceMemberLinkedIds: ids(linkedMembers),
-    allianceMembershipIds: ids(memberships),
-  };
-}
-
-/**
- * `frozenCutoff`: pass `null` on a dry run (compute a fresh cutoff from
- * `cutoffDays`); pass the manifest's own recorded `cutoff` on execute, so the
- * age-based boundary is byte-for-byte identical to what was reviewed.
- */
-async function resolveStaleOps(
-  db: Db,
-  args: CleanupArgs,
-  opts: { now: Date; frozenCutoff: string | null }
-): Promise<{ ops: CleanupOp[]; cutoff: string | null }> {
-  const usesCutoff = args.stale.betaInvitations || args.stale.invitations;
-  const cutoffDate = usesCutoff
-    ? resolveCutoffDate({ cutoffDays: args.cutoffDays, frozenCutoffIso: opts.frozenCutoff, now: opts.now })
-    : opts.now;
-  const cutoffUsed = usesCutoff ? cutoffDate.toISOString() : null;
-  const ops: CleanupOp[] = [];
-
-  if (args.stale.expiredResetTokens) {
-    const rows = await db.passwordResetToken.findMany({
-      where: { OR: [{ expiresAt: { lt: opts.now } }, { usedAt: { not: null } }] },
-      select: { id: true },
-    });
-    ops.push({ kind: "delete", model: "PasswordResetToken", ids: ids(rows), reason: "expired or consumed reset token" });
-  }
-
-  if (args.stale.consumedEmailChanges) {
-    const rows = await db.emailChangeRequest.findMany({
-      where: { OR: [{ expiresAt: { lt: opts.now } }, { consumedAt: { not: null } }] },
-      select: { id: true },
-    });
-    ops.push({ kind: "delete", model: "EmailChangeRequest", ids: ids(rows), reason: "expired or consumed email-change request" });
-  }
-
-  if (args.stale.betaInvitations) {
-    const rows = await db.betaInvitation.findMany({
-      where: { revokedAt: null, acceptedAt: null, expiresAt: { lt: cutoffDate } },
-      select: { id: true },
-    });
-    ops.push({ kind: "revoke", model: "BetaInvitation", field: "revokedAt", ids: ids(rows), reason: "stale unaccepted beta invitation (revoked, not deleted)" });
-  }
-
-  if (args.stale.invitations) {
-    const rows = await db.invitation.findMany({
-      where: { cancelledAt: null, acceptedAt: null, expiresAt: { lt: cutoffDate } },
-      select: { id: true },
-    });
-    ops.push({ kind: "revoke", model: "Invitation", field: "cancelledAt", ids: ids(rows), reason: "stale unaccepted alliance invitation (cancelled, not deleted)" });
-  }
-
-  if (args.accessRequestIds.length > 0) {
-    const rows = await db.accessRequest.findMany({
-      where: { id: { in: args.accessRequestIds } },
-      select: { id: true },
-    });
-    ops.push({ kind: "delete", model: "AccessRequest", ids: ids(rows), reason: "explicitly identified test access request" });
-  }
-
-  if (args.feedbackIds.length > 0) {
-    const rows = await db.feedback.findMany({
-      where: { id: { in: args.feedbackIds } },
-      select: { id: true },
-    });
-    ops.push({ kind: "delete", model: "Feedback", ids: ids(rows), reason: "explicitly identified test feedback" });
-  }
-
-  return { ops: ops.filter((o) => o.ids.length > 0), cutoff: cutoffUsed };
-}
-
-async function emailsToUserIds(db: Db, emails: string[]): Promise<Map<string, string>> {
-  if (emails.length === 0) return new Map();
-  const users = await db.user.findMany({
-    where: { email: { in: emails } },
-    select: { id: true, email: true },
-  });
-  return new Map(users.map((u: { id: string; email: string }) => [u.email.toLowerCase(), u.id]));
-}
-
-interface BuiltPlan {
-  plan: CleanupOp[];
-  cutoff: string | null;
-  keepUserIds: string[];
-  unknownUserEmails: string[];
-  /** Keep-listed emails that don't resolve to an account. Must fail closed. */
-  unknownKeepUserEmails: string[];
-}
-
-async function buildPlan(
-  db: Db,
-  args: CleanupArgs,
-  opts: { now: Date; frozenCutoff: string | null }
-): Promise<BuiltPlan> {
-  // Sequential, not parallel: see the note on resolveTenant/resolveUser.
-  const tenantPlans: CleanupOp[][] = [];
-  for (const id of args.allianceIds) {
-    tenantPlans.push(assembleTenantPlan(await resolveTenant(db, id)));
-  }
-
-  const targetUserIds = await emailsToUserIds(db, args.userEmails);
-  const unknownUserEmails = args.userEmails.filter((e) => !targetUserIds.has(e));
-  // Iterate in the deterministic CLI input order, not Map.values() order —
-  // the latter reflects Postgres's findMany() result ordering for an `IN`
-  // clause, which isn't guaranteed to be stable. A different user-plan
-  // processing order can change WHICH user's sub-plan first introduces a
-  // given op key, changing the merged plan's array order and therefore its
-  // checksum, even though the underlying data (and set of ops) is identical.
-  const userPlans: CleanupOp[][] = [];
-  const seenUserIds = new Set<string>();
-  for (const email of args.userEmails) {
-    const uid = targetUserIds.get(email);
-    if (!uid || seenUserIds.has(uid)) continue;
-    seenUserIds.add(uid);
-    userPlans.push(assembleUserPlan(await resolveUser(db, uid)));
-  }
-
-  const stale = await resolveStaleOps(db, args, opts);
-  const keepMap = await emailsToUserIds(db, args.keepUserEmails);
-  const unknownKeepUserEmails = args.keepUserEmails.filter((e) => !keepMap.has(e));
-
-  const plan = mergePlans([...tenantPlans, ...userPlans, stale.ops]);
-  return {
-    plan,
-    cutoff: stale.cutoff,
-    keepUserIds: Array.from(keepMap.values()),
-    unknownUserEmails,
-    unknownKeepUserEmails,
-  };
-}
-
-/** Fail closed on any unresolved keep-listed account or overlapping selection. */
-function assertSafeSelection(args: CleanupArgs, fresh: BuiltPlan): void {
-  if (fresh.unknownKeepUserEmails.length > 0) {
-    throw new Error(
-      `Refusing to continue: --keep-user-email does not match any account (fail closed, fix the typo or remove it): ${fresh.unknownKeepUserEmails.join(", ")}`
-    );
-  }
-  const overlaps = validateSelectionOverlaps(args);
-  if (overlaps.length > 0) {
-    throw new Error(`Refusing to continue: ${overlaps.join("; ")}`);
-  }
-  const userViolations = keepListViolations(fresh.plan, fresh.keepUserIds);
-  if (userViolations.length > 0) {
-    throw new Error(`Refusing to continue: plan would delete keep-listed user(s): ${userViolations.join(", ")}`);
-  }
-  const allianceViolations = allianceKeepListViolations(fresh.plan, args.keepAllianceIds);
-  if (allianceViolations.length > 0) {
-    throw new Error(`Refusing to continue: plan would delete keep-listed alliance(s): ${allianceViolations.join(", ")}`);
-  }
-}
+import {
+  resolveTargetIdentity,
+  inventory,
+  buildPlan,
+  assertSafeSelection,
+  execute,
+  runVerify,
+} from "../app/src/lib/operations/betaCleanupDb";
 
 function printInventory(label: string, counts: Record<string, number>): void {
   console.log(`\n${label}`);
@@ -424,151 +118,20 @@ function printPlan(plan: CleanupOp[]): void {
   console.log("\nRows to delete by model:", JSON.stringify(summarizeDeletes(plan)));
 }
 
-async function executeOp(tx: Db, op: CleanupOp, now: Date): Promise<number> {
-  if (op.kind === "delete") {
-    if (op.model === "MetricPeriodMetric") {
-      const pairs = op.ids.map((key) => {
-        const [periodId, metricId] = key.split("::");
-        return { periodId, metricId };
-      });
-      const { count } = await tx.metricPeriodMetric.deleteMany({ where: { OR: pairs } });
-      return count;
-    }
-    const { count } = await tx[DELEGATE[op.model]].deleteMany({ where: { id: { in: op.ids } } });
-    return count;
-  }
-  const data = op.kind === "nullify" ? { [op.field!]: null } : { [op.field!]: now };
-  const { count } = await tx[DELEGATE[op.model]].updateMany({ where: { id: { in: op.ids } }, data });
-  return count;
-}
-
-async function execute(args: CleanupArgs, manifest: CleanupManifest, identity: string): Promise<Record<string, number>> {
-  return prisma.$transaction(
-    async (tx: Db) => {
-      // Serialize concurrent cleanup runs; released automatically at the end
-      // of this transaction. Combined with Serializable isolation, this also
-      // protects against interleaving with ordinary application writes.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_KEY})`;
-
-      const now = new Date();
-      // Re-resolve EVERYTHING live, through this transaction. `manifest.ops`
-      // is never read here — only `manifest.cutoff` (frozen boundary),
-      // `manifest.dbIdentity`, and `manifest.checksum` (comparison target).
-      const fresh = await buildPlan(tx, args, { now, frozenCutoff: manifest.cutoff });
-      assertSafeSelection(args, fresh);
-
-      const freshPayload = toChecksumPayload({
-        cutoff: fresh.cutoff,
-        dbIdentity: identity,
-        keep: { userEmails: args.keepUserEmails, allianceIds: args.keepAllianceIds },
-        plan: fresh.plan,
-      });
-      const verdict = verifyManifest(manifest, { dbIdentity: identity, payload: freshPayload });
-      if (!verdict.ok) {
-        throw new Error(`Refusing to execute: ${verdict.reason}`);
-      }
-
-      const expectedCounts = summarizeOpCounts(fresh.plan);
-      const deleteCounts: Record<string, number> = {};
-
-      for (const op of fresh.plan) {
-        const affected = await executeOp(tx, op, now);
-        const expected = expectedCounts[planOpKey(op)];
-        if (affected !== expected) {
-          throw new Error(
-            `Refusing to commit: ${planOpKey(op)} affected ${affected} row(s), expected ${expected} (rolling back)`
-          );
-        }
-        if (op.kind === "delete") {
-          deleteCounts[op.model] = (deleteCounts[op.model] ?? 0) + affected;
-        }
-      }
-
-      return deleteCounts;
-    },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 60_000 }
-  );
-}
-
-async function runVerify(manifestPath: string): Promise<void> {
-  const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
-  const manifest = validateManifestShape(raw);
-  const integrity = verifyManifestIntegrity(manifest);
-  if (!integrity.ok) {
-    throw new Error(`Manifest failed integrity check: ${integrity.reason}`);
-  }
-
-  // Without this, verifying against the WRONG database (e.g. local dev) would
-  // find none of the manifest's ids and print a false PASS.
-  const { identity } = resolveTargetIdentity();
-  if (identity !== manifest.dbIdentity) {
-    throw new Error(
-      `Refusing to verify: manifest was generated for database "${manifest.dbIdentity}" but the current target is "${identity}".`
-    );
-  }
-
-  console.log(`Verifying ${manifest.ops.length} recorded operation(s) from ${manifestPath}\n(generated ${manifest.generatedAt})\n`);
-  let failures = 0;
-
-  for (const op of manifest.ops) {
-    if (op.ids.length === 0) continue;
-
-    if (op.model === "MetricPeriodMetric") {
-      const pairs = op.ids.map((key) => {
-        const [periodId, metricId] = key.split("::");
-        return { periodId, metricId };
-      });
-      const remaining = await prisma.metricPeriodMetric.count({ where: { OR: pairs } });
-      if (remaining > 0) {
-        failures++;
-        console.error(`FAIL: ${remaining}/${op.ids.length} MetricPeriodMetric row(s) still exist (expected deleted)`);
-      } else {
-        console.log(`OK:   MetricPeriodMetric delete (${op.ids.length} keys) fully applied`);
-      }
-      continue;
-    }
-
-    const delegate = (prisma as Db)[DELEGATE[op.model]];
-    if (op.kind === "delete") {
-      const remaining = await delegate.count({ where: { id: { in: op.ids } } });
-      if (remaining > 0) {
-        failures++;
-        console.error(`FAIL: ${remaining}/${op.ids.length} ${op.model} row(s) still exist (expected deleted)`);
-      } else {
-        console.log(`OK:   ${op.model} delete (${op.ids.length} rows) fully applied`);
-      }
-    } else if (op.kind === "nullify") {
-      const notNulled = await delegate.count({ where: { id: { in: op.ids }, [op.field!]: { not: null } } });
-      if (notNulled > 0) {
-        failures++;
-        console.error(`FAIL: ${notNulled}/${op.ids.length} ${op.model}.${op.field} row(s) were NOT nullified`);
-      } else {
-        console.log(`OK:   ${op.model}.${op.field} nullify (${op.ids.length} rows) fully applied`);
-      }
-    } else {
-      const notRevoked = await delegate.count({ where: { id: { in: op.ids }, [op.field!]: null } });
-      if (notRevoked > 0) {
-        failures++;
-        console.error(`FAIL: ${notRevoked}/${op.ids.length} ${op.model}.${op.field} row(s) were NOT revoked`);
-      } else {
-        console.log(`OK:   ${op.model}.${op.field} revoke (${op.ids.length} rows) fully applied`);
-      }
-    }
-  }
-
-  if (failures > 0) {
-    console.error(`\nVerification FAILED: ${failures} operation(s) did not fully apply.`);
-    process.exitCode = 1;
-  } else {
-    console.log(`\nVerification PASSED: all recorded operations were fully applied.`);
-  }
-}
-
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
   if (args.verify) {
-    await runVerify(args.manifestPath);
+    const result = await runVerify(args.manifestPath);
+    for (const line of result.lines) {
+      (line.startsWith("FAIL") ? console.error : console.log)(line);
+    }
+    if (!result.ok) {
+      console.error(`\nVerification FAILED: ${result.failures} operation(s) did not fully apply.`);
+      process.exitCode = 1;
+    } else {
+      console.log(`\nVerification PASSED: all recorded operations were fully applied.`);
+    }
     return;
   }
 
@@ -614,10 +177,6 @@ async function main(): Promise<void> {
   printInventory("Inventory (before):", await inventory(prisma));
 
   const fresh = await buildPlan(prisma, args, { now: new Date(), frozenCutoff: null });
-
-  if (fresh.unknownUserEmails.length > 0) {
-    console.warn(`\nWARNING: no account found for --user-email: ${fresh.unknownUserEmails.join(", ")}`);
-  }
 
   assertSafeSelection(args, fresh);
 
