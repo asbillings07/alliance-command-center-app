@@ -52,7 +52,7 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
     >
       <AuthError>{state.error || oauthError}</AuthError>
 
-      {resetSuccess && !state.error && (
+      {resetSuccess && !state.error && !oauthError && (
         <div className="mb-4 p-3 bg-success/10 border border-success/20 rounded-lg">
           <p className="text-sm text-success">
             Your password has been reset. Please sign in with your new password.

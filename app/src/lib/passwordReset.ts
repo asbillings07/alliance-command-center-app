@@ -1,11 +1,17 @@
 import { createHash, randomBytes } from "node:crypto";
-import bcrypt from "bcrypt";
 import { prisma } from "./prisma";
 import { validatePassword } from "./password";
 
 /** How long a reset link stays valid. */
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const BCRYPT_COST = 12;
+
+// Lazy-load bcrypt (a native addon) so the forgot-password path — which only
+// creates tokens via createPasswordResetToken — never pays to load it. Mirrors
+// the pattern in account.ts.
+async function getBcrypt() {
+  return (await import("bcrypt")).default;
+}
 
 export type CreatedPasswordResetToken = {
   /** The raw token to embed in the emailed link. Never persisted. */
@@ -86,9 +92,26 @@ export async function resetPassword(
   }
 
   const tokenHash = hashToken(rawToken);
+
+  // Cheap existence pre-check BEFORE the expensive bcrypt hash. This endpoint is
+  // unauthenticated, so hashing on every request with an arbitrary token would
+  // be a CPU/DoS vector — bail out on obviously-invalid tokens for free. The
+  // AUTHORITATIVE single-use claim still happens inside the transaction below,
+  // so this pre-check never weakens the concurrency guarantee. The `<=` here
+  // matches the transaction's strict `gt: now`, so a token expiring exactly now
+  // is rejected consistently.
+  const existing = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash },
+    select: { usedAt: true, expiresAt: true },
+  });
+  if (!existing || existing.usedAt || existing.expiresAt <= new Date()) {
+    return { status: "invalid_token" };
+  }
+
   // Hashing is expensive and involves no shared state, so do it OUTSIDE the
   // transaction; the token is still authoritatively rechecked and claimed
   // inside it, so a concurrent consumer can never slip through.
+  const bcrypt = await getBcrypt();
   const passwordHash = await bcrypt.hash(passwordCheck.value, BCRYPT_COST);
   const now = new Date();
 
@@ -154,5 +177,7 @@ export async function isValidPasswordResetToken(
   const token = await prisma.passwordResetToken.findUnique({
     where: { tokenHash },
   });
-  return Boolean(token && !token.usedAt && token.expiresAt >= new Date());
+  // Strict `>` so this agrees with resetPassword's `expiresAt: { gt: now }`: a
+  // token expiring exactly now must not render a form that would fail on submit.
+  return Boolean(token && !token.usedAt && token.expiresAt > new Date());
 }

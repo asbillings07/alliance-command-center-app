@@ -97,6 +97,8 @@ describe("resetPassword", () => {
     mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
       id: "t1",
       userId: "user-9",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
     });
 
     const result = await resetPassword("rawtoken", EIGHT_CHARS);
@@ -115,6 +117,8 @@ describe("resetPassword", () => {
     mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
       id: "t1",
       userId: "user-9",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
     });
 
     const result = await resetPassword("rawtoken", VALID_PASSWORD);
@@ -151,10 +155,27 @@ describe("resetPassword", () => {
     expect(mockPrisma.user.update).not.toHaveBeenCalled();
   });
 
+  it("rejects a missing/expired token cheaply, before hashing or a transaction (DoS guard)", async () => {
+    // Unauthenticated endpoint: an obviously-invalid token must not trigger the
+    // expensive bcrypt hash or open a transaction.
+    mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+      usedAt: null,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+
+    const result = await resetPassword("rawtoken", VALID_PASSWORD);
+
+    expect(result.status).toBe("invalid_token");
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
   it("returns invalid_token when the guarded claim affects no rows (expired/used/raced)", async () => {
     mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
       id: "t1",
       userId: "user-9",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
     });
     // The conditional claim finds nothing to update: the token was already used
     // or has expired — including the concurrent double-use race, where a second
@@ -171,6 +192,8 @@ describe("resetPassword", () => {
     mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
       id: "t1",
       userId: "user-9",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
     });
     // First claim succeeds (count 1); every subsequent claim sees count 0.
     mockPrisma.passwordResetToken.updateMany

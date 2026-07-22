@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_BYTES } from "@/app/src/lib/password";
 
 // Single shared encoder: the byte-length check runs on every keystroke, so
@@ -60,7 +61,7 @@ function Requirement({
   children,
 }: {
   status: RequirementStatus;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   const tone =
     status === "met"
