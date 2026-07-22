@@ -10,7 +10,9 @@ import { createHash } from "node:crypto";
  * unit-testable.
  *
  * Design constraints (from the beta-readiness review):
- *   - dry-run is the default; execution replays ONLY the recorded ids;
+ *   - dry-run is the default; `--execute` never trusts the manifest's `ops`
+ *     for mutation — it re-resolves the plan live from the database and
+ *     refuses to run unless that fresh plan's checksum matches the manifest;
  *   - tenant deletion and user deletion are separate concerns;
  *   - deletion is FK-ordered (children before parents), since only
  *     PasswordResetToken/EmailChangeRequest cascade from User in the schema;
@@ -165,6 +167,13 @@ export function planOpKey(op: Pick<CleanupOp, "kind" | "model" | "field">): stri
  * ordered plan. Ops of the same (kind, model, field) are coalesced with their
  * ids de-duplicated and sorted; the FIRST occurrence fixes execution position,
  * preserving the FK ordering established by the assemblers.
+ *
+ * Deletion takes precedence: a row can be selected by one sub-plan for
+ * deletion (e.g. a tenant's Invitation) and by another for a nullify/revoke
+ * update (e.g. that same Invitation's `acceptedByUserId`, because the
+ * accepting user is also being deleted). Once the row is deleted, the update
+ * would affect 0 rows — so any such id is dropped from nullify/revoke ops for
+ * that model, rather than letting the row-count check reject a valid plan.
  */
 export function mergePlans(plans: CleanupOp[][]): CleanupOp[] {
   const order: string[] = [];
@@ -180,6 +189,15 @@ export function mergePlans(plans: CleanupOp[][]): CleanupOp[] {
         order.push(key);
         byKey.set(key, { ...op, ids: uniqueSorted(op.ids) });
       }
+    }
+  }
+
+  for (const deleteOp of byKey.values()) {
+    if (deleteOp.kind !== "delete") continue;
+    const deletedIds = new Set(deleteOp.ids);
+    for (const other of byKey.values()) {
+      if (other === deleteOp || other.kind === "delete" || other.model !== deleteOp.model) continue;
+      other.ids = other.ids.filter((id) => !deletedIds.has(id));
     }
   }
 

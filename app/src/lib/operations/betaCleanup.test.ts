@@ -114,6 +114,52 @@ describe("mergePlans", () => {
     // AllianceMembership stays before Alliance (first-seen order).
     expect(merged.map((o) => o.model)).toEqual(["AllianceMembership", "Alliance"]);
   });
+
+  it("drops a nullify/revoke id once the same row is also deleted (deletion takes precedence)", () => {
+    // A tenant deletes Invitation inv1; a separately-selected user who
+    // accepted inv1 would otherwise nullify Invitation.acceptedByUserId=inv1.
+    // Once inv1 is deleted, that update would affect 0 rows — it must be
+    // dropped from the merged plan rather than rejected at execute time.
+    const tenantPlan: CleanupOp[] = [
+      { kind: "delete", model: "Invitation", ids: ["inv1", "inv2"], reason: "tenant" },
+    ];
+    const userPlan: CleanupOp[] = [
+      {
+        kind: "nullify",
+        model: "Invitation",
+        field: "acceptedByUserId",
+        ids: ["inv1", "inv3"],
+        reason: "user",
+      },
+    ];
+    const merged = mergePlans([tenantPlan, userPlan]);
+    const del = merged.find((o) => o.kind === "delete" && o.model === "Invitation")!;
+    expect(del.ids).toEqual(["inv1", "inv2"]);
+    // inv1 dropped (also deleted); inv3 (never deleted) survives.
+    const nullify = merged.find((o) => o.kind === "nullify" && o.model === "Invitation");
+    expect(nullify?.ids).toEqual(["inv3"]);
+  });
+
+  it("drops the whole nullify/revoke op when every id it targets is also deleted", () => {
+    const tenantPlan: CleanupOp[] = [
+      { kind: "delete", model: "BetaInvitation", ids: ["bi1"], reason: "tenant" },
+    ];
+    const otherPlan: CleanupOp[] = [
+      { kind: "nullify", model: "BetaInvitation", field: "allianceId", ids: ["bi1"], reason: "other" },
+    ];
+    const merged = mergePlans([tenantPlan, otherPlan]);
+    expect(merged.some((o) => o.kind === "nullify" && o.model === "BetaInvitation")).toBe(false);
+    expect(merged.find((o) => o.kind === "delete" && o.model === "BetaInvitation")!.ids).toEqual(["bi1"]);
+  });
+
+  it("does not let a delete affect a different model's nullify/revoke ids", () => {
+    const a: CleanupOp[] = [{ kind: "delete", model: "Invitation", ids: ["shared-id"], reason: "a" }];
+    const b: CleanupOp[] = [
+      { kind: "nullify", model: "AllianceMember", field: "userId", ids: ["shared-id"], reason: "b" },
+    ];
+    const merged = mergePlans([a, b]);
+    expect(merged.find((o) => o.model === "AllianceMember")!.ids).toEqual(["shared-id"]);
+  });
 });
 
 describe("summarizeDeletes", () => {

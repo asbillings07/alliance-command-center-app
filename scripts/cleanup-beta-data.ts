@@ -476,6 +476,15 @@ async function runVerify(manifestPath: string): Promise<void> {
     throw new Error(`Manifest failed integrity check: ${integrity.reason}`);
   }
 
+  // Without this, verifying against the WRONG database (e.g. local dev) would
+  // find none of the manifest's ids and print a false PASS.
+  const { identity } = resolveTargetIdentity();
+  if (identity !== manifest.dbIdentity) {
+    throw new Error(
+      `Refusing to verify: manifest was generated for database "${manifest.dbIdentity}" but the current target is "${identity}".`
+    );
+  }
+
   console.log(`Verifying ${manifest.ops.length} recorded operation(s) from ${manifestPath}\n(generated ${manifest.generatedAt})\n`);
   let failures = 0;
 
