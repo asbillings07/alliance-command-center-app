@@ -32,6 +32,7 @@
     "syncDevDb": "prisma generate && prisma db push",
     "db:init": "docker compose up -d && sleep 10 && npm run syncDevDb && npm run seedDb",
     "beta:invite": "tsx scripts/create-beta-invite.ts",
+    "beta:cleanup": "tsx scripts/cleanup-beta-data.ts",
     "e2e:setup": "tsx scripts/setup-e2e-env.ts",
     "e2e": "tsx ./node_modules/@playwright/test/cli.js test",
     "e2e:ui": "tsx ./node_modules/@playwright/test/cli.js test --ui",
