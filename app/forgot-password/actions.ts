@@ -38,12 +38,19 @@ export async function requestPasswordReset(
     // Only password-capable accounts can reset. Google-only users have no
     // passwordHash; unknown emails have no user. Both paths do nothing here.
     if (user?.passwordHash) {
-      const { rawToken, expiresAt } = await createPasswordResetToken(user.id);
-      await emailService.sendPasswordReset({
-        to: user.email,
-        reset: { resetUrl: getResetPasswordUrl(rawToken), expiresAt },
-        userId: user.id,
-      });
+      const token = await createPasswordResetToken(user.id);
+      // If a concurrent request already issued the single active token, it
+      // sends the email; we must not (we don't hold that raw token).
+      if (token.created) {
+        await emailService.sendPasswordReset({
+          to: user.email,
+          reset: {
+            resetUrl: getResetPasswordUrl(token.rawToken),
+            expiresAt: token.expiresAt,
+          },
+          userId: user.id,
+        });
+      }
     }
   } catch (error) {
     // Never surface failures to the client: a DB/provider hiccup must not

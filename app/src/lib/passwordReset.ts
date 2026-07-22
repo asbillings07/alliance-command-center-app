@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { Prisma } from "@/app/generated/prisma/client";
 import { prisma } from "./prisma";
 import { validatePassword } from "./password";
 
@@ -13,11 +14,23 @@ async function getBcrypt() {
   return (await import("bcrypt")).default;
 }
 
-export type CreatedPasswordResetToken = {
-  /** The raw token to embed in the emailed link. Never persisted. */
-  rawToken: string;
-  expiresAt: Date;
-};
+export type CreatedPasswordResetToken =
+  | {
+      /** A fresh token was issued for this request. */
+      created: true;
+      /** The raw token to embed in the emailed link. Never persisted. */
+      rawToken: string;
+      expiresAt: Date;
+    }
+  | {
+      /**
+       * A concurrent request won the race to issue the single active token
+       * (see the partial unique index). This request created nothing; the
+       * caller must NOT email a link it doesn't have. The winning request emails
+       * the one valid link, so the user still gets exactly one reset email.
+       */
+      created: false;
+    };
 
 /**
  * Hash a raw token for storage/lookup. Reset tokens are high-entropy random
@@ -45,17 +58,31 @@ export async function createPasswordResetToken(
   const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
   const now = new Date();
 
-  await prisma.$transaction([
-    prisma.passwordResetToken.updateMany({
-      where: { userId, usedAt: null },
-      data: { usedAt: now },
-    }),
-    prisma.passwordResetToken.create({
-      data: { userId, tokenHash, expiresAt },
-    }),
-  ]);
+  try {
+    await prisma.$transaction([
+      prisma.passwordResetToken.updateMany({
+        where: { userId, usedAt: null },
+        data: { usedAt: now },
+      }),
+      prisma.passwordResetToken.create({
+        data: { userId, tokenHash, expiresAt },
+      }),
+    ]);
+  } catch (err) {
+    // Lost the race to a concurrent request: the partial unique index
+    // (one active token per user) rejected this insert, rolling the whole
+    // transaction back (so the winner's token stays valid). Report it as
+    // "not created" rather than throwing — the caller silently skips emailing.
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      return { created: false };
+    }
+    throw err;
+  }
 
-  return { rawToken, expiresAt };
+  return { created: true, rawToken, expiresAt };
 }
 
 export type ResetPasswordResult =

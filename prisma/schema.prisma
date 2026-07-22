@@ -146,6 +146,13 @@ model User {
 // database leak can't be replayed to reset passwords. `usedAt` enforces
 // one-time use and `expiresAt` bounds the window. Deleted with the user
 // (Cascade).
+//
+// INVARIANT (not expressible in Prisma schema): at most one ACTIVE (unused)
+// token per user. Enforced by a partial unique index —
+// `PasswordResetToken_userId_active_key ON ("userId") WHERE "usedAt" IS NULL` —
+// created in migration 20260722010000_password_reset_one_active_per_user.
+// Prisma can't model partial/filtered indexes, so it isn't declared here; do
+// NOT "fix" a migrate-dev drift prompt by dropping that index.
 model PasswordResetToken {
   id        String    @id @default(cuid())
   userId    String

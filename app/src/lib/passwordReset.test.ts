@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import bcrypt from "bcrypt";
+import { Prisma } from "@/app/generated/prisma/client";
 import {
   createPasswordResetToken,
   resetPassword,
@@ -60,7 +61,12 @@ beforeEach(() => {
 describe("createPasswordResetToken", () => {
   it("returns a raw token + expiry and persists only the hash", async () => {
     const before = Date.now();
-    const { rawToken, expiresAt } = await createPasswordResetToken("user-1");
+    const result = await createPasswordResetToken("user-1");
+
+    if (!result.created) {
+      throw new Error("expected a token to be created");
+    }
+    const { rawToken, expiresAt } = result;
 
     // 32 random bytes hex-encoded.
     expect(rawToken).toMatch(/^[0-9a-f]{64}$/);
@@ -81,6 +87,21 @@ describe("createPasswordResetToken", () => {
     expect(createArg.data.userId).toBe("user-1");
     expect(createArg.data.tokenHash).toMatch(SHA256_HEX);
     expect(createArg.data.tokenHash).not.toBe(rawToken);
+  });
+
+  it("reports created:false when the active-token index rejects a concurrent insert", async () => {
+    // The partial unique index (one active token per user) rejects the losing
+    // request in a race; the whole transaction rolls back.
+    mockPrisma.$transaction.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+        code: "P2002",
+        clientVersion: "test",
+      })
+    );
+
+    const result = await createPasswordResetToken("user-1");
+
+    expect(result.created).toBe(false);
   });
 });
 

@@ -56,6 +56,16 @@ function RequirementIcon({ status }: { status: RequirementStatus }) {
   );
 }
 
+// Non-visual equivalent of the color + icon. Screen readers can't perceive the
+// green check / red x / neutral dot, so each row also carries a hidden status
+// phrase; combined with the row text this reads e.g. "At least 8 characters:
+// met".
+const STATUS_LABEL: Record<RequirementStatus, string> = {
+  met: "met",
+  error: "not met",
+  pending: "not met yet",
+};
+
 function Requirement({
   status,
   children,
@@ -73,6 +83,7 @@ function Requirement({
     <li className={`flex items-center gap-2 ${tone}`}>
       <RequirementIcon status={status} />
       <span>{children}</span>
+      <span className="sr-only">: {STATUS_LABEL[status]}</span>
     </li>
   );
 }
