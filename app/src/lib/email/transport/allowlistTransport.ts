@@ -48,8 +48,11 @@ export class AllowlistTransport implements EmailTransport {
 
 /** Every address across the message envelope (today: the `to` field only). */
 function extractRecipients(request: DeliverEmailRequest): string[] {
+  // Split on comma OR whitespace — matches parseAllowlist()'s separators, so
+  // a whitespace- or newline-joined `to` can't be misread as one address and
+  // slip past the allowlist check.
   return request.to
-    .split(",")
+    .split(/[,\s]+/)
     .map((s) => s.trim())
     .filter(Boolean);
 }

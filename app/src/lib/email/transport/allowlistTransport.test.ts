@@ -64,6 +64,18 @@ describe("AllowlistTransport", () => {
     expect(deliver).toHaveBeenCalledTimes(1);
   });
 
+  it("recognizes whitespace-separated recipients, not just comma-separated", async () => {
+    const { transport, deliver } = makeInner();
+    const t = new AllowlistTransport(transport, ["a@example.com"]);
+    const blocked = await t.deliver({ ...base, to: "a@example.com b@evil.com" });
+    expect(blocked.status).toBe("skipped");
+    expect(deliver).not.toHaveBeenCalled();
+
+    const allowed = new AllowlistTransport(transport, ["a@example.com", "b@example.com"]);
+    const result = await allowed.deliver({ ...base, to: "a@example.com \n b@example.com" });
+    expect(result.status).toBe("sent");
+  });
+
   it("skips an empty recipient list rather than delivering", async () => {
     const { transport, deliver } = makeInner();
     const t = new AllowlistTransport(transport, ["a@example.com"]);
