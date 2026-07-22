@@ -122,7 +122,12 @@ npm run beta:cleanup -- \
 `--include-stale-invitations` is set — the script refuses to run without it.
 Without an explicit value, "stale" would silently mean "expired as of right
 now," a much narrower and easy-to-miss window than a real staleness buffer.
-Choose a value that gives leaders a comfortable grace period (30 days above).
+
+The selection is **`expiresAt < now - cutoffDays`** — i.e. an invitation is
+only selected once it has been expired for at least that many days, not
+`cutoffDays` after it was created/sent. Choose a value that gives leaders a
+comfortable grace period *after expiration* before revocation (30 days
+above).
 
 Review, per category, the printed plan and the written manifest:
 
