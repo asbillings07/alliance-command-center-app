@@ -112,11 +112,17 @@ npm run beta:cleanup -- \
   --keep-alliance-id <smoke-alliance-id> \
   --include-expired-reset-tokens \
   --include-consumed-email-changes \
-  --include-stale-beta-invitations \
+  --include-stale-beta-invitations --cutoff-days 30 \
   --feedback-ids <id,id> \
   --access-request-ids <id,id> \
   --manifest ./beta-cleanup-manifest.json
 ```
+
+`--cutoff-days` is **required** whenever `--include-stale-beta-invitations` or
+`--include-stale-invitations` is set — the script refuses to run without it.
+Without an explicit value, "stale" would silently mean "expired as of right
+now," a much narrower and easy-to-miss window than a real staleness buffer.
+Choose a value that gives leaders a comfortable grace period (30 days above).
 
 Review, per category, the printed plan and the written manifest:
 

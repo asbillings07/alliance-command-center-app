@@ -308,6 +308,17 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--cutoff-days", "-1"])).toThrow(/non-negative/);
   });
 
+  it("requires an explicit --cutoff-days when stale-by-age cleanup is enabled", () => {
+    expect(() => parseArgs(["--include-stale-beta-invitations"])).toThrow(/--cutoff-days is required/);
+    expect(() => parseArgs(["--include-stale-invitations"])).toThrow(/--cutoff-days is required/);
+    // Explicit --cutoff-days 0 is a deliberate operator choice, not the silent default.
+    expect(() =>
+      parseArgs(["--include-stale-beta-invitations", "--cutoff-days", "0"])
+    ).not.toThrow();
+    // Unrelated stale categories don't require it.
+    expect(() => parseArgs(["--include-expired-reset-tokens"])).not.toThrow();
+  });
+
   it("parses --verify and the exact --confirm phrase", () => {
     const args = parseArgs(["--verify", "--manifest", "/tmp/m.json"]);
     expect(args.verify).toBe(true);

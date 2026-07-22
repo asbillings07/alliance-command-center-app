@@ -553,6 +553,7 @@ export function parseArgs(argv: string[]): CleanupArgs {
     accessRequestIds: [],
     feedbackIds: [],
   };
+  let cutoffDaysExplicit = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -594,6 +595,7 @@ export function parseArgs(argv: string[]): CleanupArgs {
         break;
       case "--cutoff-days":
         args.cutoffDays = parseCutoffDays(next());
+        cutoffDaysExplicit = true;
         break;
       case "--include-stale-beta-invitations":
         args.stale.betaInvitations = true;
@@ -616,6 +618,16 @@ export function parseArgs(argv: string[]): CleanupArgs {
       default:
         throw new Error(`Unknown argument: ${arg}`);
     }
+  }
+
+  // cutoffDays defaults to 0, which would silently mean "as of right now" —
+  // a much narrower (and easy-to-miss) staleness window than an operator
+  // typing --include-stale-* almost certainly intends. Require them to state
+  // the window explicitly rather than rely on the default.
+  if ((args.stale.betaInvitations || args.stale.invitations) && !cutoffDaysExplicit) {
+    throw new Error(
+      "--cutoff-days is required when --include-stale-beta-invitations or --include-stale-invitations is set (e.g. --cutoff-days 30) — the default of 0 would mean \"stale as of right now\", not a real staleness window."
+    );
   }
 
   return args;
