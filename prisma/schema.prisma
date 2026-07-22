@@ -134,9 +134,28 @@ model User {
   betaInvitationsAccepted BetaInvitation[] @relation("BetaInvitationsAccepted")
   feedback Feedback[]
   emailChangeRequests EmailChangeRequest[]
+  passwordResetTokens PasswordResetToken[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// Single-use, hashed password reset tokens.
+//
+// The raw token lives only in the emailed link; we persist a SHA-256 hash so a
+// database leak can't be replayed to reset passwords. `usedAt` enforces
+// one-time use and `expiresAt` bounds the window. Deleted with the user
+// (Cascade).
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 // A pending, verified email change (ADR-015). Email is the canonical identity

@@ -41,3 +41,4 @@ export {
   type FormFieldProps,
 } from "./Input";
 export { PasswordField, type PasswordFieldProps } from "./PasswordField";
+export { PasswordRequirements } from "./PasswordRequirements";

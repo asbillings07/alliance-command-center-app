@@ -28,4 +28,6 @@ export type {
   FeedbackNotificationEmailInput,
   EmailChangeVerificationView,
   EmailChangeVerificationEmailInput,
+  PasswordResetView,
+  PasswordResetEmailInput,
 } from "./types";

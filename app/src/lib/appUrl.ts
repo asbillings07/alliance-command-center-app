@@ -118,3 +118,11 @@ export function getInviteUrl(token: string): string {
 export function getEmailChangeVerifyUrl(rawToken: string): string {
   return `${getAppOrigin()}/account/email/verify/${encodeURIComponent(rawToken)}`;
 }
+
+/**
+ * Build the absolute password reset URL for a raw (unhashed) reset token. The
+ * token is URL-encoded so it survives transit intact as a single path segment.
+ */
+export function getResetPasswordUrl(rawToken: string): string {
+  return `${getAppOrigin()}/reset-password/${encodeURIComponent(rawToken)}`;
+}
