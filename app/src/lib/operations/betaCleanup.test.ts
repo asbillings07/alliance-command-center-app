@@ -514,4 +514,12 @@ describe("manifest integrity + shape validation", () => {
     };
     expect(() => validateManifestShape(good)).not.toThrow();
   });
+
+  it("validateManifestShape rejects non-string elements in keep.userEmails/allianceIds", () => {
+    const manifest = buildManifest(args);
+    const badEmails = { ...manifest, keep: { userEmails: [42], allianceIds: [] } };
+    expect(() => validateManifestShape(badEmails)).toThrow(/keep.userEmails.*arrays of strings/);
+    const badAlliances = { ...manifest, keep: { userEmails: [], allianceIds: [null] } };
+    expect(() => validateManifestShape(badAlliances)).toThrow(/keep.userEmails.*arrays of strings/);
+  });
 });

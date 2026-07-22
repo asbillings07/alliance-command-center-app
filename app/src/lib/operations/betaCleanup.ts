@@ -410,8 +410,14 @@ function manifestShapeProblem(value: unknown): string | null {
     return "generatedAt is missing";
   }
   const keep = m.keep as { userEmails?: unknown; allianceIds?: unknown } | undefined;
-  if (!keep || !Array.isArray(keep.userEmails) || !Array.isArray(keep.allianceIds)) {
-    return "keep.userEmails/keep.allianceIds must be arrays";
+  if (
+    !keep ||
+    !Array.isArray(keep.userEmails) ||
+    !keep.userEmails.every((e) => typeof e === "string") ||
+    !Array.isArray(keep.allianceIds) ||
+    !keep.allianceIds.every((id) => typeof id === "string")
+  ) {
+    return "keep.userEmails/keep.allianceIds must be arrays of strings";
   }
   if (!m.deleteCounts || typeof m.deleteCounts !== "object") {
     return "deleteCounts is missing";
