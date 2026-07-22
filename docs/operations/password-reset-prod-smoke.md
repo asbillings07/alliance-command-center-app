@@ -26,10 +26,12 @@ this; you only add secrets (section 2) and enter dispatch inputs (section 5).
 | Safety rails + shared helpers | `e2e/prod-smoke/smoke.helpers.ts` |
 | The canaries | `e2e/prod-smoke/password-reset.prod-smoke.spec.ts` |
 
-The suite fails closed unless all three hold: the `prod-smoke` project is
-selected, `PROD_SMOKE=1`, and `ALLOW_PROD_MUTATIONS=true`. It also refuses to
-run against `localhost` and — when `PROD_SMOKE_EXPECTED_HOST` is set — against
-any host that isn't an exact match.
+The suite fails closed. It refuses to run unless **all** of these hold: the
+`prod-smoke` project is selected, `PROD_SMOKE=1`, `ALLOW_PROD_MUTATIONS=true`,
+`PROD_SMOKE_EXPECTED_HOST` is set (no "allow anything" mode), and
+`PROD_SMOKE_BASE_URL` is an **https** URL whose host exactly matches the
+expected host (never `localhost`). Every guard errors rather than defaulting to
+permissive.
 
 ---
 
@@ -58,7 +60,7 @@ match exactly — the workflow maps them into the run):
 | `PROD_SMOKE_EXPECTED_HOST` | `alliancehqapp.com` — the host lock |
 | `SMOKE_PASSWORD_EMAIL` | The password-only smoke account's email |
 | `SMOKE_PASSWORD_CURRENT` | That account's current password |
-| `SMOKE_PASSWORD_NEW` | The password the reset run will set (any value ≥ 8 chars; e.g. a long random string) |
+| `SMOKE_PASSWORD_NEW` | **Required.** The password the reset run will set (≥ 8 chars; use a long random string). No fallback — the suite refuses the full reset without it, since a run-ID-derived default would be publicly guessable |
 | `SMOKE_GOOGLE_EMAIL` | The Google-only smoke account's email |
 | `SMOKE_DUAL_EMAIL` | The dual-auth (password + Google) smoke account's email |
 | `SMOKE_DUAL_PASSWORD` | The dual-auth account's password |
@@ -66,8 +68,9 @@ match exactly — the workflow maps them into the run):
 Notes:
 - `base_url`, the optional `reset_link`, and the `confirm` phrase are **not**
   secrets — you type them into the "Run workflow" form each time (section 5).
-- `SMOKE_PASSWORD_NEW` is optional; if omitted the suite derives a per-run
-  value. Setting it explicitly makes the post-run rotation in section 7 simpler.
+- All seven secrets are required. `PROD_SMOKE_EXPECTED_HOST` locks the origin;
+  `SMOKE_PASSWORD_NEW` is the exact password the reset sets (used for the
+  section 7 rotation).
 
 ### 2c. Prepare the smoke accounts (one-time)
 
@@ -140,21 +143,28 @@ GitHub → **Actions → "Prod Smoke (password reset)" → Run workflow**:
 
 Approve the run when it pauses on the `production` environment gate.
 
+The suite is built as a **two-run** flow so a single reset link is never
+invalidated before it's consumed:
+
 First run (no `reset_link`) covers: production reachable, `/forgot-password`
 generic response, invalid-token state, post-reset banner, anti-enumeration
-parity (password vs Google-only), and password-account sign-in/sign-out. The
-full-reset canary skips.
+parity (an existing Google-only account looks identical to an unknown email),
+and password-account sign-in/sign-out. Exactly **one** test —
+"issues a reset email for the password account" — requests a link for the reset
+target, so the smoke inbox receives exactly one unambiguous link. The full-reset
+canary skips.
 
 ### The one manual hand-off, then finish automated
 
-1. The first run triggers a reset email to `SMOKE_PASSWORD_EMAIL`. Open the
-   smoke inbox and copy the reset link (this is also your **manual email
+1. The first run sends exactly one reset email to `SMOKE_PASSWORD_EMAIL`. Open
+   the smoke inbox and copy the reset link (this is also your **manual email
    checkpoint** — section 6).
 2. Re-run the workflow with the same inputs **plus** `reset_link` = the copied
-   URL. The full-reset canary now runs automated: it establishes a session on
-   the old password, consumes the link to set the new password, and asserts the
-   old session is revoked, the old password fails, the new password works, and
-   the link is single-use.
+   URL. In this run the link-generator test is **skipped** (so nothing
+   re-requests a token and invalidates the pasted link), and the full-reset
+   canary runs automated: it establishes a session on the old password, consumes
+   the link to set the new password, and asserts the old session is revoked, the
+   old password fails, the new password works, and the link is single-use.
 
 ---
 

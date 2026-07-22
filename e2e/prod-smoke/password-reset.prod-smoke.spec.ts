@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import {
   requireProdSmokeEnv,
   smokeAccounts,
+  requireNewPassword,
   submitForgotPassword,
   loginWithPassword,
   expectAuthenticated,
@@ -12,18 +13,30 @@ import {
 /**
  * Production smoke: password reset (#159).
  *
- * A few controlled requests against a live deployment — NOT a load test. Split
- * into deterministic canaries (no emailed link needed) and token-dependent
- * canaries gated on SMOKE_RESET_LINK: the operator fetches the real link from
- * the smoke inbox (the one genuinely manual step) and the rest stays automated.
+ * A few controlled requests against a live deployment — NOT a load test. The
+ * suite is designed around a TWO-RUN flow so a single reset link is never
+ * invalidated before it's consumed:
  *
- * Runs only via the `prod-smoke` Playwright project; the safety rails below fail
- * closed if the environment isn't an explicit, host-locked, mutation-approved
- * target.
+ *   Run 1 (no SMOKE_RESET_LINK): the deterministic canaries run, and exactly
+ *   ONE test ("issues a reset email…") requests a link for the password
+ *   account. The operator fetches that link from the smoke inbox.
+ *
+ *   Run 2 (SMOKE_RESET_LINK pasted in): the link-generator test is skipped —
+ *   so nothing re-requests a token and invalidates the pasted link — and the
+ *   full-reset canary consumes it.
+ *
+ * Anti-enumeration deliberately probes the Google-only account (never the
+ * password account) so it can't consume the link either.
+ *
+ * Runs only via the `prod-smoke` Playwright project; requireProdSmokeEnv() fails
+ * closed unless the target is an explicit, https, host-locked, mutation-approved
+ * origin.
  *
  * @tags @prod-smoke
  */
 requireProdSmokeEnv();
+
+const hasResetLink = Boolean(process.env.SMOKE_RESET_LINK);
 
 test.describe("@prod-smoke password reset", () => {
   test("production is reachable and serving the login page", async ({
@@ -57,16 +70,20 @@ test.describe("@prod-smoke password reset", () => {
     ).toBeVisible();
   });
 
-  test("anti-enumeration: password + Google-only accounts get the same response", async ({
+  test("anti-enumeration: an existing Google-only account looks like an unknown email", async ({
     page,
   }) => {
     test.skip(
-      !process.env.SMOKE_PASSWORD_EMAIL || !process.env.SMOKE_GOOGLE_EMAIL,
-      "SMOKE_PASSWORD_EMAIL + SMOKE_GOOGLE_EMAIL required"
+      !process.env.SMOKE_GOOGLE_EMAIL,
+      "SMOKE_GOOGLE_EMAIL required"
     );
-    const { password, googleOnly } = smokeAccounts();
+    const { googleOnly } = smokeAccounts();
 
-    await submitForgotPassword(page, password.email);
+    // A real (Google-only, non-resettable) account must produce the SAME
+    // response as an unknown email — no existence disclosure. Probing the
+    // Google-only account never issues a password-reset token, so it can't
+    // invalidate the link under test.
+    await submitForgotPassword(page, `unknown-${SMOKE_ID}@example.test`);
     await expect(page.getByText(GENERIC_RESET_RESPONSE)).toBeVisible();
 
     await submitForgotPassword(page, googleOnly.email);
@@ -87,15 +104,33 @@ test.describe("@prod-smoke password reset", () => {
     await page.waitForURL(/\/login/);
   });
 
+  test("issues a reset email for the password account (fetch this link for run 2)", async ({
+    page,
+  }) => {
+    // Only the FIRST run may request a token for the reset target. In run 2 this
+    // is skipped so it can't invalidate the pasted SMOKE_RESET_LINK.
+    test.skip(
+      hasResetLink,
+      "skipped when SMOKE_RESET_LINK is set (would invalidate the pasted link)"
+    );
+    test.skip(!process.env.SMOKE_PASSWORD_EMAIL, "SMOKE_PASSWORD_EMAIL required");
+    const { password } = smokeAccounts();
+
+    // Also confirms the resettable account returns the same generic response.
+    await submitForgotPassword(page, password.email);
+    await expect(page.getByText(GENERIC_RESET_RESPONSE)).toBeVisible();
+  });
+
   test("completing a reset revokes sessions, rotates the password, and burns the link", async ({
     browser,
   }) => {
     test.skip(
-      !process.env.SMOKE_RESET_LINK,
+      !hasResetLink,
       "SMOKE_RESET_LINK required (paste the link from the smoke inbox)"
     );
     const link = process.env.SMOKE_RESET_LINK!;
     const { password } = smokeAccounts();
+    const newPassword = requireNewPassword();
 
     // 1. Establish a live authenticated session with the OLD password.
     const sessionCtx = await browser.newContext();
@@ -112,8 +147,8 @@ test.describe("@prod-smoke password reset", () => {
     const resetCtx = await browser.newContext();
     const resetPage = await resetCtx.newPage();
     await resetPage.goto(link);
-    await resetPage.fill('input[name="password"]', password.newPassword);
-    await resetPage.fill('input[name="confirmPassword"]', password.newPassword);
+    await resetPage.fill('input[name="password"]', newPassword);
+    await resetPage.fill('input[name="confirmPassword"]', newPassword);
     await resetPage.getByRole("button", { name: /reset password/i }).click();
     await resetPage.waitForURL(/\/login\?reset=success/);
 
@@ -131,7 +166,7 @@ test.describe("@prod-smoke password reset", () => {
       resetPage.getByText(/invalid|incorrect|do(es)? not match/i)
     ).toBeVisible();
 
-    await loginWithPassword(resetPage, password.email, password.newPassword);
+    await loginWithPassword(resetPage, password.email, newPassword);
     await expectAuthenticated(resetPage);
 
     // 5. The link is single-use: revisiting it is rejected.
@@ -143,7 +178,7 @@ test.describe("@prod-smoke password reset", () => {
     await sessionCtx.close();
     await resetCtx.close();
 
-    // NOTE: the smoke account's password is now `password.newPassword`. Update
-    // the stored SMOKE_PASSWORD_CURRENT secret before the next run.
+    // NOTE: the smoke account's password is now `newPassword`. Update the stored
+    // SMOKE_PASSWORD_CURRENT secret to it before the next run.
   });
 });

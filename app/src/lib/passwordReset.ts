@@ -7,6 +7,44 @@ import { validatePassword } from "./password";
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const BCRYPT_COST = 12;
 
+/** Shape of a raw reset token: 32 random bytes, hex-encoded. */
+const RAW_TOKEN_PATTERN = /^[0-9a-f]{64}$/;
+
+/**
+ * The partial unique index enforcing "one active (unused) token per user"
+ * (migration 20260722010000). Used to recognise the specific collision that
+ * represents the concurrency race — see isActiveTokenConflict.
+ */
+const ACTIVE_TOKEN_INDEX = "PasswordResetToken_userId_active_key";
+
+/**
+ * Is this P2002 the expected "another request already holds the single active
+ * token" race — as opposed to an unrelated uniqueness failure (e.g. the
+ * tokenHash unique) that must NOT be silently swallowed?
+ *
+ * Prisma surfaces the offending constraint differently across engines: the
+ * native binary uses `meta.target`, while the pg driver adapter nests it under
+ * `meta.driverAdapterError.cause`. Rather than hard-code a shape, match our
+ * index by name anywhere in the reported metadata.
+ */
+function isActiveTokenConflict(
+  err: Prisma.PrismaClientKnownRequestError
+): boolean {
+  const meta = err.meta as Record<string, unknown> | undefined;
+  if (!meta) return false;
+  const target = meta.target;
+  if (typeof target === "string" && target.includes(ACTIVE_TOKEN_INDEX)) {
+    return true;
+  }
+  if (
+    Array.isArray(target) &&
+    target.some((t) => String(t).includes(ACTIVE_TOKEN_INDEX))
+  ) {
+    return true;
+  }
+  return JSON.stringify(meta).includes(ACTIVE_TOKEN_INDEX);
+}
+
 // Lazy-load bcrypt (a native addon) so the forgot-password path — which only
 // creates tokens via createPasswordResetToken — never pays to load it. Mirrors
 // the pattern in account.ts.
@@ -73,9 +111,12 @@ export async function createPasswordResetToken(
     // (one active token per user) rejected this insert, rolling the whole
     // transaction back (so the winner's token stays valid). Report it as
     // "not created" rather than throwing — the caller silently skips emailing.
+    // Only THIS specific conflict is benign; any other uniqueness failure is a
+    // real invariant violation and must propagate.
     if (
       err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === "P2002"
+      err.code === "P2002" &&
+      isActiveTokenConflict(err)
     ) {
       return { created: false };
     }
@@ -116,6 +157,13 @@ export async function resetPassword(
   const passwordCheck = validatePassword(newPassword);
   if (!passwordCheck.ok) {
     return { status: "invalid_password", message: passwordCheck.message };
+  }
+
+  // Reject structurally-impossible tokens for free, before any hashing or DB
+  // work. A well-formed link always matches this shape, so real resets are
+  // unaffected; only direct/abusive POSTs are short-circuited.
+  if (!RAW_TOKEN_PATTERN.test(rawToken)) {
+    return { status: "invalid_token" };
   }
 
   const tokenHash = hashToken(rawToken);
@@ -200,9 +248,11 @@ export async function resetPassword(
 export async function isValidPasswordResetToken(
   rawToken: string
 ): Promise<boolean> {
+  if (!RAW_TOKEN_PATTERN.test(rawToken)) return false;
   const tokenHash = hashToken(rawToken);
   const token = await prisma.passwordResetToken.findUnique({
     where: { tokenHash },
+    select: { usedAt: true, expiresAt: true },
   });
   // Strict `>` so this agrees with resetPassword's `expiresAt: { gt: now }`: a
   // token expiring exactly now must not render a form that would fail on submit.

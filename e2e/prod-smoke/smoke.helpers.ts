@@ -16,7 +16,11 @@ export type SmokeConfig = {
   host: string;
 };
 
-/** Throws (failing the run) unless every production-safety precondition holds. */
+/**
+ * Throws (failing the run) unless every production-safety precondition holds.
+ * All guards fail CLOSED: a missing or ambiguous value is an error, never a
+ * silent "allow".
+ */
 export function requireProdSmokeEnv(): SmokeConfig {
   const errors: string[] = [];
 
@@ -29,29 +33,43 @@ export function requireProdSmokeEnv(): SmokeConfig {
     );
   }
 
+  // The expected host is REQUIRED (no optional/allow-anything mode): the run
+  // must state exactly which origin it intends to mutate.
+  const expected = process.env.PROD_SMOKE_EXPECTED_HOST;
+  if (!expected) {
+    errors.push(
+      "PROD_SMOKE_EXPECTED_HOST is required — the exact production host, e.g. 'alliancehqapp.com' (no scheme)"
+    );
+  }
+
   const baseUrl = process.env.PROD_SMOKE_BASE_URL ?? "";
-  let host = "";
+  let parsed: URL | null = null;
   if (!baseUrl) {
     errors.push("PROD_SMOKE_BASE_URL is required");
   } else {
     try {
-      host = new URL(baseUrl).host;
+      parsed = new URL(baseUrl);
     } catch {
       errors.push(`PROD_SMOKE_BASE_URL is not a valid URL: ${baseUrl}`);
     }
   }
 
-  if (host) {
-    // Never mutate localhost, and — when the operator pins it — require an exact
-    // hostname match so a stray preview/staging URL can't be smoke-tested as if
-    // it were production.
-    if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/i.test(host)) {
-      errors.push(`Refusing to run the mutating smoke suite against '${host}'`);
-    }
-    const expected = process.env.PROD_SMOKE_EXPECTED_HOST;
-    if (expected && host !== expected) {
+  if (parsed) {
+    // Enforce the exact origin: https + an explicit host match. No plaintext,
+    // no localhost, no "close enough" preview/staging URL.
+    if (parsed.protocol !== "https:") {
       errors.push(
-        `PROD_SMOKE_BASE_URL host '${host}' does not match PROD_SMOKE_EXPECTED_HOST '${expected}'`
+        `PROD_SMOKE_BASE_URL must use https (got '${parsed.protocol}')`
+      );
+    }
+    if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/i.test(parsed.host)) {
+      errors.push(
+        `Refusing to run the mutating smoke suite against '${parsed.host}'`
+      );
+    }
+    if (expected && parsed.host !== expected) {
+      errors.push(
+        `PROD_SMOKE_BASE_URL host '${parsed.host}' does not match PROD_SMOKE_EXPECTED_HOST '${expected}'`
       );
     }
   }
@@ -62,7 +80,7 @@ export function requireProdSmokeEnv(): SmokeConfig {
     );
   }
 
-  return { baseUrl, host };
+  return { baseUrl, host: parsed!.host };
 }
 
 /**
@@ -72,9 +90,15 @@ export function requireProdSmokeEnv(): SmokeConfig {
  */
 export const SMOKE_ID = `SMOKE-${process.env.PROD_SMOKE_RUN_ID ?? Date.now()}`;
 
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`[prod-smoke] missing required env ${name}`);
+  return v;
+}
+
 export type SmokeAccounts = {
   /** Password-only account: exercises the full reset path. */
-  password: { email: string; currentPassword: string; newPassword: string };
+  password: { email: string; currentPassword: string };
   /** Google-only account: must get the same anti-enumeration response. */
   googleOnly: { email: string };
   /** Dual-auth account: Google login must still work after a password reset. */
@@ -82,22 +106,23 @@ export type SmokeAccounts = {
 };
 
 export function smokeAccounts(): SmokeAccounts {
-  const require = (name: string): string => {
-    const v = process.env[name];
-    if (!v) throw new Error(`[prod-smoke] missing required env ${name}`);
-    return v;
-  };
   return {
     password: {
-      email: require("SMOKE_PASSWORD_EMAIL"),
-      currentPassword: require("SMOKE_PASSWORD_CURRENT"),
-      // Deterministic per-run so the operator can update the stored "current"
-      // password after a successful reset run.
-      newPassword: process.env.SMOKE_PASSWORD_NEW ?? `${SMOKE_ID}-pw-9f2`,
+      email: requireEnv("SMOKE_PASSWORD_EMAIL"),
+      currentPassword: requireEnv("SMOKE_PASSWORD_CURRENT"),
     },
-    googleOnly: { email: require("SMOKE_GOOGLE_EMAIL") },
-    dualAuth: { email: require("SMOKE_DUAL_EMAIL") },
+    googleOnly: { email: requireEnv("SMOKE_GOOGLE_EMAIL") },
+    dualAuth: { email: requireEnv("SMOKE_DUAL_EMAIL") },
   };
+}
+
+/**
+ * The password the full-reset canary will set. REQUIRED (no derived fallback):
+ * the workflow run ID is public, so a run-ID-derived password would be
+ * guessable. Supplied as a secret.
+ */
+export function requireNewPassword(): string {
+  return requireEnv("SMOKE_PASSWORD_NEW");
 }
 
 /** The generic anti-enumeration response text shown by /forgot-password. */
