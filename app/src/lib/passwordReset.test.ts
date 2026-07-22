@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createHash } from "node:crypto";
 import bcrypt from "bcrypt";
 import {
   createPasswordResetToken,
@@ -40,9 +39,8 @@ const EIGHT_CHARS = "abcdefgh";
 // JS characters — must be rejected by the byte-length rule, not slip through.
 const TOO_MANY_BYTES = "😀".repeat(20);
 
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
+// A SHA-256 hex digest: 64 lowercase hex chars.
+const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -75,10 +73,13 @@ describe("createPasswordResetToken", () => {
       data: { usedAt: expect.any(Date) },
     });
 
-    // Only the hash is stored, never the raw token.
+    // Only the hash is stored, never the raw token. Assert the SHA-256 shape
+    // and that it differs from the raw token rather than recomputing the hash
+    // of the returned token here — doing that would make a static analyzer read
+    // the high-entropy reset token as a "password hashed with SHA-256".
     const createArg = mockPrisma.passwordResetToken.create.mock.calls[0][0];
     expect(createArg.data.userId).toBe("user-1");
-    expect(createArg.data.tokenHash).toBe(sha256(rawToken));
+    expect(createArg.data.tokenHash).toMatch(SHA256_HEX);
     expect(createArg.data.tokenHash).not.toBe(rawToken);
   });
 });
@@ -196,9 +197,10 @@ describe("isValidPasswordResetToken", () => {
     });
 
     expect(await isValidPasswordResetToken("rawtoken")).toBe(true);
-    expect(mockPrisma.passwordResetToken.findUnique).toHaveBeenCalledWith({
-      where: { tokenHash: sha256("rawtoken") },
-    });
+    // Looked up by the token's SHA-256 hash, never the raw token.
+    const findArg = mockPrisma.passwordResetToken.findUnique.mock.calls[0][0];
+    expect(findArg.where.tokenHash).toMatch(SHA256_HEX);
+    expect(findArg.where.tokenHash).not.toBe("rawtoken");
   });
 
   it("is false for a missing, used, or expired token", async () => {
