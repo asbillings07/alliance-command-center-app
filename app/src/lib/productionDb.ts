@@ -26,13 +26,20 @@ const NEON_DOMAIN_SUFFIX = ".neon.tech";
 
 /** Reduce a Postgres connection string to a stable database identity. */
 export function connectionIdentity(connectionString: string): string {
-  let host: string;
+  let url: URL;
   try {
-    host = new URL(connectionString).hostname.toLowerCase();
+    url = new URL(connectionString);
   } catch {
     throw new Error("Connection string is not a valid URL");
   }
-  if (!host.endsWith(NEON_DOMAIN_SUFFIX)) return host;
+  const host = url.hostname.toLowerCase();
+  if (!host.endsWith(NEON_DOMAIN_SUFFIX)) {
+    // Neon endpoint ids are stable regardless of port, but a non-Neon host is
+    // identified by hostname alone unless we also keep the port — otherwise
+    // two distinct instances sharing a hostname on different ports would
+    // collapse to the same identity, weakening the isolation guard.
+    return url.port ? `${host}:${url.port}` : host;
+  }
   const label = host.split(".")[0]; // e.g. ep-cool-name-123456-pooler
   return label.replace(/-pooler$/, ""); // e.g. ep-cool-name-123456
 }

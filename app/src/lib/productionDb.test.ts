@@ -20,9 +20,9 @@ describe("connectionIdentity", () => {
     expect(connectionIdentity(PROD_POOLED)).toBe(connectionIdentity(PROD_DIRECT));
   });
 
-  it("falls back to the full host for non-Neon providers", () => {
+  it("falls back to the full host (with port, if present) for non-Neon providers", () => {
     expect(connectionIdentity("postgresql://u:p@db.internal.example.com:5432/x")).toBe(
-      "db.internal.example.com"
+      "db.internal.example.com:5432"
     );
   });
 
@@ -67,8 +67,29 @@ describe("productionIdentities", () => {
 
   it("treats a bare id with a port as a host, not a bare endpoint id", () => {
     // A bare endpoint id has no port; `ep-x-123:5432` must be parsed as a host
-    // via connectionIdentity (a non-Neon host keeps its exact identity).
-    expect(productionIdentities("ep-x-123:5432")).toEqual(["ep-x-123"]);
+    // via connectionIdentity (a non-Neon host keeps its exact identity,
+    // including the port — see the port-preservation test below).
+    expect(productionIdentities("ep-x-123:5432")).toEqual(["ep-x-123:5432"]);
+  });
+});
+
+describe("connectionIdentity port handling", () => {
+  it("keeps the port for a non-Neon host, so two instances on one hostname stay distinct", () => {
+    const a = connectionIdentity("postgresql://u:p@db.example.com:5432/foo");
+    const b = connectionIdentity("postgresql://u:p@db.example.com:5433/bar");
+    expect(a).toBe("db.example.com:5432");
+    expect(b).toBe("db.example.com:5433");
+    expect(a).not.toBe(b);
+  });
+
+  it("ignores the port for a Neon host (endpoint id is already port-independent)", () => {
+    expect(
+      connectionIdentity("postgresql://u:p@ep-cool-name-123456.us-east-2.aws.neon.tech:5432/db")
+    ).toBe("ep-cool-name-123456");
+  });
+
+  it("omits the port from a non-Neon identity when none is specified", () => {
+    expect(connectionIdentity("postgresql://u:p@db.example.com/foo")).toBe("db.example.com");
   });
 });
 
