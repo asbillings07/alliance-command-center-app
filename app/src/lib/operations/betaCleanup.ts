@@ -38,6 +38,25 @@ export type CleanupModel =
   | "Alliance"
   | "User";
 
+/** Runtime mirror of {@link CleanupModel}, for validating manifests loaded from disk. */
+const CLEANUP_MODELS: readonly CleanupModel[] = [
+  "PasswordResetToken",
+  "EmailChangeRequest",
+  "MemberMetricEntry",
+  "LeadershipNote",
+  "Invitation",
+  "MetricPeriodMetric",
+  "Metric",
+  "MetricPeriod",
+  "AllianceMember",
+  "AllianceMembership",
+  "BetaInvitation",
+  "Feedback",
+  "AccessRequest",
+  "Alliance",
+  "User",
+];
+
 /**
  * A single ordered plan step.
  * - `delete`: remove rows by primary key (composite keys for MetricPeriodMetric
@@ -406,9 +425,17 @@ function manifestShapeProblem(value: unknown): string | null {
     if (o.kind !== "delete" && o.kind !== "nullify" && o.kind !== "revoke") {
       return `ops[${i}].kind is invalid: ${JSON.stringify(o.kind)}`;
     }
-    if (typeof o.model !== "string") return `ops[${i}].model must be a string`;
-    if (o.field !== null && typeof o.field !== "string") return `ops[${i}].field must be a string or null`;
-    if (!Array.isArray(o.ids)) return `ops[${i}].ids must be an array`;
+    if (typeof o.model !== "string" || !CLEANUP_MODELS.includes(o.model as CleanupModel)) {
+      return `ops[${i}].model is invalid: ${JSON.stringify(o.model)}`;
+    }
+    if (o.kind === "delete") {
+      if (o.field !== null) return `ops[${i}].field must be null for a delete op`;
+    } else if (typeof o.field !== "string" || o.field.length === 0) {
+      return `ops[${i}].field is required (a non-empty string) for a ${o.kind} op`;
+    }
+    if (!Array.isArray(o.ids) || !o.ids.every((id) => typeof id === "string")) {
+      return `ops[${i}].ids must be an array of strings`;
+    }
   }
   return null;
 }

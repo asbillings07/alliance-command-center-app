@@ -184,22 +184,31 @@ async function inventory(db: Db): Promise<Record<string, number>> {
   };
 }
 
+/**
+ * Reads are sequential, not `Promise.all`-parallel: during `--execute`, `db`
+ * is an interactive transaction client bound to a single connection, and
+ * issuing concurrent queries against it is unreliable across drivers. Dry
+ * runs pay a small latency cost for the same, single code path.
+ */
 async function resolveTenant(db: Db, allianceId: string): Promise<TenantResolved> {
-  const [members, entries, notes, invitations, periods, metrics, periodMetrics, memberships, betaInvitations] =
-    await Promise.all([
-      db.allianceMember.findMany({ where: { allianceId }, select: { id: true } }),
-      db.memberMetricEntry.findMany({ where: { allianceMember: { allianceId } }, select: { id: true } }),
-      db.leadershipNote.findMany({ where: { allianceMember: { allianceId } }, select: { id: true } }),
-      db.invitation.findMany({ where: { allianceId }, select: { id: true } }),
-      db.metricPeriod.findMany({ where: { allianceId }, select: { id: true } }),
-      db.metric.findMany({ where: { allianceId }, select: { id: true } }),
-      db.metricPeriodMetric.findMany({
-        where: { period: { allianceId } },
-        select: { periodId: true, metricId: true },
-      }),
-      db.allianceMembership.findMany({ where: { allianceId }, select: { id: true } }),
-      db.betaInvitation.findMany({ where: { allianceId }, select: { id: true } }),
-    ]);
+  const members = await db.allianceMember.findMany({ where: { allianceId }, select: { id: true } });
+  const entries = await db.memberMetricEntry.findMany({
+    where: { allianceMember: { allianceId } },
+    select: { id: true },
+  });
+  const notes = await db.leadershipNote.findMany({
+    where: { allianceMember: { allianceId } },
+    select: { id: true },
+  });
+  const invitations = await db.invitation.findMany({ where: { allianceId }, select: { id: true } });
+  const periods = await db.metricPeriod.findMany({ where: { allianceId }, select: { id: true } });
+  const metrics = await db.metric.findMany({ where: { allianceId }, select: { id: true } });
+  const periodMetrics = await db.metricPeriodMetric.findMany({
+    where: { period: { allianceId } },
+    select: { periodId: true, metricId: true },
+  });
+  const memberships = await db.allianceMembership.findMany({ where: { allianceId }, select: { id: true } });
+  const betaInvitations = await db.betaInvitation.findMany({ where: { allianceId }, select: { id: true } });
   return {
     allianceId,
     allianceMemberIds: ids(members),
@@ -215,18 +224,18 @@ async function resolveTenant(db: Db, allianceId: string): Promise<TenantResolved
 }
 
 async function resolveUser(db: Db, userId: string): Promise<UserResolved> {
-  const [resetTokens, emailChanges, feedback, notes, sent, accepted, betaAccepted, linkedMembers, memberships] =
-    await Promise.all([
-      db.passwordResetToken.findMany({ where: { userId }, select: { id: true } }),
-      db.emailChangeRequest.findMany({ where: { userId }, select: { id: true } }),
-      db.feedback.findMany({ where: { userId }, select: { id: true } }),
-      db.leadershipNote.findMany({ where: { authorId: userId }, select: { id: true } }),
-      db.invitation.findMany({ where: { invitedById: userId }, select: { id: true } }),
-      db.invitation.findMany({ where: { acceptedByUserId: userId }, select: { id: true } }),
-      db.betaInvitation.findMany({ where: { acceptedByUserId: userId }, select: { id: true } }),
-      db.allianceMember.findMany({ where: { userId }, select: { id: true } }),
-      db.allianceMembership.findMany({ where: { userId }, select: { id: true } }),
-    ]);
+  const resetTokens = await db.passwordResetToken.findMany({ where: { userId }, select: { id: true } });
+  const emailChanges = await db.emailChangeRequest.findMany({ where: { userId }, select: { id: true } });
+  const feedback = await db.feedback.findMany({ where: { userId }, select: { id: true } });
+  const notes = await db.leadershipNote.findMany({ where: { authorId: userId }, select: { id: true } });
+  const sent = await db.invitation.findMany({ where: { invitedById: userId }, select: { id: true } });
+  const accepted = await db.invitation.findMany({ where: { acceptedByUserId: userId }, select: { id: true } });
+  const betaAccepted = await db.betaInvitation.findMany({
+    where: { acceptedByUserId: userId },
+    select: { id: true },
+  });
+  const linkedMembers = await db.allianceMember.findMany({ where: { userId }, select: { id: true } });
+  const memberships = await db.allianceMembership.findMany({ where: { userId }, select: { id: true } });
   return {
     userId,
     passwordResetTokenIds: ids(resetTokens),
@@ -332,15 +341,18 @@ async function buildPlan(
   args: CleanupArgs,
   opts: { now: Date; frozenCutoff: string | null }
 ): Promise<BuiltPlan> {
-  const tenantPlans = await Promise.all(
-    args.allianceIds.map(async (id) => assembleTenantPlan(await resolveTenant(db, id)))
-  );
+  // Sequential, not parallel: see the note on resolveTenant/resolveUser.
+  const tenantPlans: CleanupOp[][] = [];
+  for (const id of args.allianceIds) {
+    tenantPlans.push(assembleTenantPlan(await resolveTenant(db, id)));
+  }
 
   const targetUserIds = await emailsToUserIds(db, args.userEmails);
   const unknownUserEmails = args.userEmails.filter((e) => !targetUserIds.has(e));
-  const userPlans = await Promise.all(
-    Array.from(targetUserIds.values()).map(async (uid) => assembleUserPlan(await resolveUser(db, uid)))
-  );
+  const userPlans: CleanupOp[][] = [];
+  for (const uid of targetUserIds.values()) {
+    userPlans.push(assembleUserPlan(await resolveUser(db, uid)));
+  }
 
   const stale = await resolveStaleOps(db, args, opts);
   const keepMap = await emailsToUserIds(db, args.keepUserEmails);

@@ -461,4 +461,28 @@ describe("manifest integrity + shape validation", () => {
     const manifest = buildManifest(args);
     expect(validateManifestShape(manifest)).toEqual(manifest);
   });
+
+  it("validateManifestShape rejects an op with an unknown model", () => {
+    const manifest = buildManifest(args);
+    const bad = { ...manifest, ops: [{ kind: "delete", model: "NotARealModel", field: null, ids: ["x"] }] };
+    expect(() => validateManifestShape(bad)).toThrow(/model is invalid/);
+  });
+
+  it("validateManifestShape rejects a nullify/revoke op with no field", () => {
+    const manifest = buildManifest(args);
+    const bad = { ...manifest, ops: [{ kind: "nullify", model: "AllianceMember", field: null, ids: ["x"] }] };
+    expect(() => validateManifestShape(bad)).toThrow(/field is required/);
+  });
+
+  it("validateManifestShape rejects a delete op that carries a field", () => {
+    const manifest = buildManifest(args);
+    const bad = { ...manifest, ops: [{ kind: "delete", model: "Alliance", field: "oops", ids: ["x"] }] };
+    expect(() => validateManifestShape(bad)).toThrow(/field must be null/);
+  });
+
+  it("validateManifestShape rejects non-string ids", () => {
+    const manifest = buildManifest(args);
+    const bad = { ...manifest, ops: [{ kind: "delete", model: "Alliance", field: null, ids: [123] }] };
+    expect(() => validateManifestShape(bad)).toThrow(/array of strings/);
+  });
 });
