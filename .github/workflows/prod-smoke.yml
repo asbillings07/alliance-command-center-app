@@ -44,13 +44,14 @@ jobs:
       PROD_SMOKE_RUN_ID: ${{ github.run_id }}
       SMOKE_RESET_LINK: ${{ inputs.reset_link }}
       # Host lock + credentials live in the `production` environment secrets.
+      # Only the values the automated canaries actually consume are wired in;
+      # the dual-auth account is used by hand in the manual checkpoint, so its
+      # credentials are deliberately NOT exported here.
       PROD_SMOKE_EXPECTED_HOST: ${{ secrets.PROD_SMOKE_EXPECTED_HOST }}
       SMOKE_PASSWORD_EMAIL: ${{ secrets.SMOKE_PASSWORD_EMAIL }}
       SMOKE_PASSWORD_CURRENT: ${{ secrets.SMOKE_PASSWORD_CURRENT }}
       SMOKE_PASSWORD_NEW: ${{ secrets.SMOKE_PASSWORD_NEW }}
       SMOKE_GOOGLE_EMAIL: ${{ secrets.SMOKE_GOOGLE_EMAIL }}
-      SMOKE_DUAL_EMAIL: ${{ secrets.SMOKE_DUAL_EMAIL }}
-      SMOKE_DUAL_PASSWORD: ${{ secrets.SMOKE_DUAL_PASSWORD }}
     steps:
       - name: Guard — confirmation phrase
         if: ${{ inputs.confirm != 'PRODUCTION' }}

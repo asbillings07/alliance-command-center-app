@@ -101,10 +101,14 @@ export type SmokeAccounts = {
   password: { email: string; currentPassword: string };
   /** Google-only account: must get the same anti-enumeration response. */
   googleOnly: { email: string };
-  /** Dual-auth account: Google login must still work after a password reset. */
-  dualAuth: { email: string };
 };
 
+/**
+ * Accounts the AUTOMATED canaries read. The dual-auth account is intentionally
+ * absent: it's only exercised by the manual Google-after-reset checkpoint (see
+ * the runbook), so requiring its credentials here would fail the suite for no
+ * automated coverage.
+ */
 export function smokeAccounts(): SmokeAccounts {
   return {
     password: {
@@ -112,7 +116,6 @@ export function smokeAccounts(): SmokeAccounts {
       currentPassword: requireEnv("SMOKE_PASSWORD_CURRENT"),
     },
     googleOnly: { email: requireEnv("SMOKE_GOOGLE_EMAIL") },
-    dualAuth: { email: requireEnv("SMOKE_DUAL_EMAIL") },
   };
 }
 

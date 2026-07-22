@@ -7,7 +7,7 @@ import {
   isValidPasswordResetToken,
 } from "./passwordReset";
 
-vi.mock("@/app/src/lib/prisma", () => ({
+vi.mock("./prisma", () => ({
   prisma: {
     passwordResetToken: {
       updateMany: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock("@/app/src/lib/prisma", () => ({
   },
 }));
 
-import { prisma } from "@/app/src/lib/prisma";
+import { prisma } from "./prisma";
 
 const mockPrisma = prisma as unknown as {
   passwordResetToken: {

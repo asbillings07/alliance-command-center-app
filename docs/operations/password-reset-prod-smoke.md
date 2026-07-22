@@ -53,7 +53,8 @@ name). Then, on that environment:
 ### 2b. Add the environment secrets
 
 Same page → **Environment secrets → Add secret**. Add each of these (names must
-match exactly — the workflow maps them into the run):
+match exactly — the workflow maps them into the run). These are the **five**
+secrets the automated canaries consume:
 
 | Secret | What it is |
 | --- | --- |
@@ -62,23 +63,28 @@ match exactly — the workflow maps them into the run):
 | `SMOKE_PASSWORD_CURRENT` | That account's current password |
 | `SMOKE_PASSWORD_NEW` | **Required.** The password the reset run will set (≥ 8 chars; use a long random string). No fallback — the suite refuses the full reset without it, since a run-ID-derived default would be publicly guessable |
 | `SMOKE_GOOGLE_EMAIL` | The Google-only smoke account's email |
-| `SMOKE_DUAL_EMAIL` | The dual-auth (password + Google) smoke account's email |
-| `SMOKE_DUAL_PASSWORD` | The dual-auth account's password |
 
 Notes:
 - `base_url`, the optional `reset_link`, and the `confirm` phrase are **not**
   secrets — you type them into the "Run workflow" form each time (section 5).
-- All seven secrets are required. `PROD_SMOKE_EXPECTED_HOST` locks the origin;
+- All five secrets are required. `PROD_SMOKE_EXPECTED_HOST` locks the origin;
   `SMOKE_PASSWORD_NEW` is the exact password the reset sets (used for the
   section 7 rotation).
+- The **dual-auth account** (password + Google) is used only by the manual
+  Google-after-reset checkpoint (section 6), never by the automated suite, so
+  its credentials are NOT workflow secrets — keep them wherever you keep manual
+  test creds and use them by hand in a browser.
 
 ### 2c. Prepare the smoke accounts (one-time)
 
 - Create a dedicated smoke inbox (e.g. a Gmail alias) you can read.
 - Provision three accounts via the normal beta/registration flow:
   - **password-only** → `SMOKE_PASSWORD_EMAIL` / `SMOKE_PASSWORD_CURRENT`
-  - **Google-only** → `SMOKE_GOOGLE_EMAIL`
-  - **dual-auth** → `SMOKE_DUAL_EMAIL` / `SMOKE_DUAL_PASSWORD`, with Google linked
+    (workflow secret; exercised by the automated canaries)
+  - **Google-only** → `SMOKE_GOOGLE_EMAIL` (workflow secret; anti-enumeration)
+  - **dual-auth** (password + Google linked) → used only by the manual
+    Google-after-reset checkpoint in section 6; keep its credentials with your
+    manual test creds, not as workflow secrets
 
 ### 2d. Generate the beta invitation (per run)
 

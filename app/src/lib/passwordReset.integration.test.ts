@@ -1,8 +1,8 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, beforeAll } from "vitest";
 import { randomBytes, createHash } from "node:crypto";
-import bcrypt from "bcrypt";
-import { prisma } from "./prisma";
-import { createPasswordResetToken, resetPassword } from "./passwordReset";
+import type { PrismaClient } from "@/app/generated/prisma/client";
+import type * as PasswordReset from "./passwordReset";
+import type BcryptType from "bcrypt";
 
 /**
  * Real-Postgres integration tests for the invariants that can only be proven
@@ -35,6 +35,24 @@ const OLD_PASSWORD = "old-smoke-passphrase";
 
 describe.skipIf(!runDb)("passwordReset [integration]", () => {
   const createdUserIds: string[] = [];
+
+  // Imported lazily (only when this suite actually runs) so the DB-less unit
+  // job never constructs a PrismaClient / requires DATABASE_URL just by loading
+  // this file. When the suite is skipped, beforeAll doesn't run.
+  let prisma: PrismaClient;
+  let createPasswordResetToken: typeof PasswordReset.createPasswordResetToken;
+  let resetPassword: typeof PasswordReset.resetPassword;
+  let bcrypt: typeof BcryptType;
+
+  beforeAll(async () => {
+    ({ prisma } = (await import("./prisma")) as unknown as {
+      prisma: PrismaClient;
+    });
+    ({ createPasswordResetToken, resetPassword } = await import(
+      "./passwordReset"
+    ));
+    bcrypt = (await import("bcrypt")).default;
+  });
 
   async function makeUser(passwordHash: string = PLACEHOLDER_HASH) {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
