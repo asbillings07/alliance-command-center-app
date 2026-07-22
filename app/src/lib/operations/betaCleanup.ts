@@ -155,7 +155,8 @@ function hasWork(op: CleanupOp): boolean {
   return op.ids.length > 0;
 }
 
-function opKey(op: CleanupOp): string {
+/** Stable key identifying "this operation" independent of which ids it targets. */
+export function planOpKey(op: Pick<CleanupOp, "kind" | "model" | "field">): string {
   return `${op.kind}:${op.model}:${op.field ?? ""}`;
 }
 
@@ -171,7 +172,7 @@ export function mergePlans(plans: CleanupOp[][]): CleanupOp[] {
 
   for (const plan of plans) {
     for (const op of plan) {
-      const key = opKey(op);
+      const key = planOpKey(op);
       const existing = byKey.get(key);
       if (existing) {
         existing.ids = uniqueSorted([...existing.ids, ...op.ids]);
@@ -195,6 +196,20 @@ export function summarizeDeletes(plan: CleanupOp[]): Record<string, number> {
   for (const op of plan) {
     if (op.kind !== "delete") continue;
     counts[op.model] = (counts[op.model] ?? 0) + op.ids.length;
+  }
+  return counts;
+}
+
+/**
+ * Expected affected-row count per operation (delete AND nullify/revoke),
+ * keyed by {@link planOpKey}. Used to validate that execution affected exactly
+ * as many rows as the reviewed plan expected, for EVERY operation kind — not
+ * just deletes — before a transaction is allowed to commit.
+ */
+export function summarizeOpCounts(plan: CleanupOp[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const op of plan) {
+    counts[planOpKey(op)] = op.ids.length;
   }
   return counts;
 }
@@ -325,11 +340,134 @@ export function verifyManifest(
   return { ok: true };
 }
 
+/**
+ * Runtime-validate that a value parsed from disk has the shape of a
+ * {@link CleanupManifest} before any of its fields are trusted. Throws a
+ * descriptive error on the first problem found.
+ */
+export function validateManifestShape(value: unknown): CleanupManifest {
+  const problem = manifestShapeProblem(value);
+  if (problem) {
+    throw new Error(`Invalid manifest: ${problem}`);
+  }
+  return value as CleanupManifest;
+}
+
+function manifestShapeProblem(value: unknown): string | null {
+  if (!value || typeof value !== "object") return "manifest is not an object";
+  const m = value as Record<string, unknown>;
+
+  if (m.version !== MANIFEST_VERSION) {
+    return `manifest version ${JSON.stringify(m.version)} is unsupported (expected ${MANIFEST_VERSION})`;
+  }
+  if (typeof m.checksum !== "string" || !/^[0-9a-f]{64}$/.test(m.checksum)) {
+    return "checksum is missing or is not a 64-character hex string";
+  }
+  if (typeof m.dbIdentity !== "string" || m.dbIdentity.length === 0) {
+    return "dbIdentity is missing";
+  }
+  if (m.cutoff !== null && typeof m.cutoff !== "string") {
+    return "cutoff must be a string or null";
+  }
+  if (typeof m.generatedAt !== "string") {
+    return "generatedAt is missing";
+  }
+  const keep = m.keep as { userEmails?: unknown; allianceIds?: unknown } | undefined;
+  if (!keep || !Array.isArray(keep.userEmails) || !Array.isArray(keep.allianceIds)) {
+    return "keep.userEmails/keep.allianceIds must be arrays";
+  }
+  if (!m.deleteCounts || typeof m.deleteCounts !== "object") {
+    return "deleteCounts is missing";
+  }
+  if (!Array.isArray(m.ops)) {
+    return "ops must be an array";
+  }
+  for (const [i, op] of (m.ops as unknown[]).entries()) {
+    if (!op || typeof op !== "object") return `ops[${i}] is not an object`;
+    const o = op as Record<string, unknown>;
+    if (o.kind !== "delete" && o.kind !== "nullify" && o.kind !== "revoke") {
+      return `ops[${i}].kind is invalid: ${JSON.stringify(o.kind)}`;
+    }
+    if (typeof o.model !== "string") return `ops[${i}].model must be a string`;
+    if (o.field !== null && typeof o.field !== "string") return `ops[${i}].field must be a string or null`;
+    if (!Array.isArray(o.ids)) return `ops[${i}].ids must be an array`;
+  }
+  return null;
+}
+
+/**
+ * Defense-in-depth self-consistency check: recompute the checksum from the
+ * manifest's OWN recorded fields (not the live database) and confirm it
+ * matches the manifest's stored checksum. Catches a hand-edited or corrupted
+ * manifest file independent of whatever the live database currently contains.
+ *
+ * This does NOT, by itself, make it safe to execute `manifest.ops` — the
+ * orchestrator re-resolves the plan fresh from the database and executes
+ * THAT (see {@link verifyManifest}), so a tampered `ops` array can never
+ * change what actually gets mutated. This check exists purely to fail fast
+ * and loudly on a corrupted/tampered file before doing any other work.
+ */
+export function verifyManifestIntegrity(manifest: CleanupManifest): ManifestVerdict {
+  const shapeProblem = manifestShapeProblem(manifest);
+  if (shapeProblem) {
+    return { ok: false, reason: shapeProblem };
+  }
+  const selfPayload: ChecksumPayload = {
+    version: manifest.version,
+    cutoff: manifest.cutoff,
+    dbIdentity: manifest.dbIdentity,
+    keep: manifest.keep,
+    ops: manifest.ops,
+  };
+  const selfChecksum = computeChecksum(selfPayload);
+  if (selfChecksum !== manifest.checksum) {
+    return {
+      ok: false,
+      reason:
+        "manifest checksum does not match its own recorded contents (the file may be corrupted or was hand-edited); regenerate it with a fresh dry run",
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Resolve the reference date for age-based staleness (e.g. "invitation older
+ * than N days"). Passing `frozenCutoffIso` (the manifest's own recorded
+ * cutoff) makes the boundary IDENTICAL between dry run and execute, even
+ * though real wall-clock time has moved on in between — otherwise recomputing
+ * "now - cutoffDays" at execute time would produce a different boundary from
+ * the one reviewed, and the re-resolved plan would never match the manifest.
+ */
+export function resolveCutoffDate(args: {
+  cutoffDays: number;
+  frozenCutoffIso: string | null;
+  now: Date;
+}): Date {
+  if (args.frozenCutoffIso !== null) {
+    const parsed = new Date(args.frozenCutoffIso);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error(`Manifest cutoff "${args.frozenCutoffIso}" is not a valid date`);
+    }
+    return parsed;
+  }
+  return new Date(args.now.getTime() - args.cutoffDays * 86_400_000);
+}
+
 // --- CLI argument parsing (pure) --------------------------------------------
+
+/**
+ * Exact phrase an operator must pass via `--confirm` to run `--execute`,
+ * independent of whether the target is production. Guards against a
+ * copy/pasted or scripted invocation accidentally running destructively.
+ */
+export const EXECUTION_CONFIRMATION_PHRASE = "DELETE BETA DATA";
 
 export interface CleanupArgs {
   execute: boolean;
+  verify: boolean;
   confirmProduction: boolean;
+  /** Must exactly equal {@link EXECUTION_CONFIRMATION_PHRASE} to --execute. */
+  confirmPhrase: string | null;
   manifestPath: string;
   allianceIds: string[];
   userEmails: string[];
@@ -352,7 +490,9 @@ const DEFAULT_MANIFEST_PATH = "./beta-cleanup-manifest.json";
 export function parseArgs(argv: string[]): CleanupArgs {
   const args: CleanupArgs = {
     execute: false,
+    verify: false,
     confirmProduction: false,
+    confirmPhrase: null,
     manifestPath: DEFAULT_MANIFEST_PATH,
     allianceIds: [],
     userEmails: [],
@@ -383,8 +523,14 @@ export function parseArgs(argv: string[]): CleanupArgs {
       case "--execute":
         args.execute = true;
         break;
+      case "--verify":
+        args.verify = true;
+        break;
       case "--confirm-production":
         args.confirmProduction = true;
+        break;
+      case "--confirm":
+        args.confirmPhrase = next();
         break;
       case "--manifest":
         args.manifestPath = next();
@@ -458,4 +604,45 @@ export function keepListViolations(
   const userDelete = plan.find((op) => op.kind === "delete" && op.model === "User");
   if (!userDelete) return [];
   return userDelete.ids.filter((id) => keep.has(id));
+}
+
+/**
+ * Refuse a plan that would delete a keep-listed alliance (the smoke tenant).
+ * Returns offending alliance ids, empty when safe.
+ */
+export function allianceKeepListViolations(
+  plan: CleanupOp[],
+  keepAllianceIds: string[]
+): string[] {
+  const keep = new Set(keepAllianceIds);
+  const allianceDelete = plan.find((op) => op.kind === "delete" && op.model === "Alliance");
+  if (!allianceDelete) return [];
+  return allianceDelete.ids.filter((id) => keep.has(id));
+}
+
+/**
+ * Cheap, pre-database check: refuse a selection that directly names the same
+ * alliance/user in both the target and keep lists. `keepListViolations` /
+ * `allianceKeepListViolations` catch this too (after resolving the plan), but
+ * this fails fast — before any query runs — on the unambiguous case of a
+ * literal id/email appearing in both lists.
+ */
+export function validateSelectionOverlaps(args: CleanupArgs): string[] {
+  const problems: string[] = [];
+
+  const keepAlliances = new Set(args.keepAllianceIds);
+  const allianceOverlap = args.allianceIds.filter((id) => keepAlliances.has(id));
+  if (allianceOverlap.length > 0) {
+    problems.push(
+      `--alliance-id and --keep-alliance-id overlap: ${allianceOverlap.join(", ")}`
+    );
+  }
+
+  const keepUsers = new Set(args.keepUserEmails);
+  const userOverlap = args.userEmails.filter((email) => keepUsers.has(email));
+  if (userOverlap.length > 0) {
+    problems.push(`--user-email and --keep-user-email overlap: ${userOverlap.join(", ")}`);
+  }
+
+  return problems;
 }

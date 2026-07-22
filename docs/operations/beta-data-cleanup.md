@@ -12,24 +12,57 @@ The tooling is [`scripts/cleanup-beta-data.ts`](../../scripts/cleanup-beta-data.
 
 - **Dry run is the default.** Without `--execute` the script only reads, prints
   an inventory + the proposed plan, and writes a manifest for review.
-- **Execution is bound to the reviewed dry run.** `--execute` re-resolves the
-  plan from the live database and aborts unless its checksum matches the
-  manifest and the manifest was generated for this exact database. Time-based
-  drift (a token expiring between runs) aborts too — regenerate and re-review.
-- **PostgreSQL advisory lock.** Execution runs inside one transaction holding
-  `pg_advisory_xact_lock`, so two runs can't interleave.
+- **The manifest never authenticates its own `ops` field.** `--execute`
+  re-resolves the plan **live from the database, inside the execution
+  transaction**, and only that freshly-resolved plan is ever mutated. A
+  hand-edited `ops` array in the manifest file has no effect on what runs —
+  only the checksum, cutoff, and database identity recorded in the manifest are
+  trusted, and execution aborts unless the live re-resolution reproduces the
+  exact same checksum. The manifest is also self-checked (its own recorded
+  fields must reproduce its own checksum) before anything else happens, to
+  fail fast on a corrupted or tampered file.
+- **One Serializable transaction, start to finish.** Acquiring the
+  `pg_advisory_xact_lock`, re-resolving the plan, verifying it against the
+  manifest, and executing every operation all happen inside the same
+  `Serializable` transaction — so two runs can't interleave, and the
+  verification reads can't be stale relative to the writes that follow.
+- **Every operation's row count is checked before commit.** Delete, nullify,
+  *and* revoke operations each have their affected-row count compared against
+  the reviewed plan's expected count **inside the transaction**; any mismatch
+  throws and rolls back the entire transaction — nothing partially applies.
+- **Frozen cutoff for age-based staleness.** The dry run records the resolved
+  cutoff date/time in the manifest; `--execute` reuses that exact value rather
+  than recomputing "N days ago" against the current time, so the boundary
+  never drifts between review and execution.
+- **An explicit confirmation phrase is always required.** `--execute` requires
+  `--confirm "DELETE BETA DATA"` (the exact phrase), independent of whether the
+  target is production — this guards against a copy/pasted or scripted
+  invocation running destructively by accident.
 - **Same identity resolver as the app.** The target database is identified with
   `app/src/lib/productionDb` (ADR-016) — pooled and direct Neon hosts collapse
   to one endpoint id — so the tool and the app never disagree about which
-  database is production. `--execute` against a production identity requires
-  `--confirm-production`, and refuses entirely if `PRODUCTION_DB_HOSTS` is unset.
-- **Tenant and user deletion are separate.** `--alliance-id` deletes a tenant's
-  owned records; `--user-email` deletes an account. A keep-listed user may lose
-  data from a deleted tenant but their account is never deleted (the plan aborts
-  if it would).
+  database is production. `--execute` against a production identity additionally
+  requires `--confirm-production`, and refuses entirely if `PRODUCTION_DB_HOSTS`
+  is unset.
+- **Tenant and user deletion are separate, and keep lists are enforced, not just
+  recorded.** `--alliance-id` deletes a tenant's owned records; `--user-email`
+  deletes an account. Naming the same id/email in both a target flag and its
+  `--keep-*` counterpart aborts immediately (before any query runs). A
+  keep-listed user may still lose data from a deleted tenant, but their account
+  is never deleted — the plan aborts if it would. An unresolved
+  `--keep-user-email` (a typo) **fails closed**: the run aborts rather than
+  silently treating it as "nothing to keep."
 - **Conservative stale cleanup.** `Feedback` and `AccessRequest` are removed
-  only by **explicit id**, never by age. Invitations are **revoked**
-  (audit-preserving), not deleted. Expired/consumed security tokens are deleted.
+  only by **explicit id**, never by age — these categories need a human
+  decision about what's genuinely test data, not an age heuristic, so this is
+  an intentional scope boundary rather than a missing feature. Invitations are
+  **revoked** (audit-preserving), not deleted. Expired/consumed security tokens
+  are deleted by age, since they carry no information worth preserving once
+  invalid.
+- **Independent post-hoc audit.** `--verify` re-checks, read-only, that every
+  operation recorded in a manifest was actually fully applied (rows gone,
+  fields nulled/timestamped as expected) — useful right after an execute, or
+  any time later, without re-running anything destructive.
 
 ## Preconditions (gates)
 
@@ -95,23 +128,37 @@ Review, per category, the printed plan and the written manifest:
 
 ## Step 6 — Execute
 
-Re-run with `--execute --confirm-production` and the **same** flags/manifest:
+Re-run with `--execute`, the exact confirmation phrase, `--confirm-production`
+(when targeting production), and the **same** selection/keep/stale flags used
+for the dry run:
 
 ```bash
 npm run beta:cleanup -- --execute --confirm-production \
+  --confirm "DELETE BETA DATA" \
   <same selection + keep + stale flags as the dry run> \
   --manifest ./beta-cleanup-manifest.json
 ```
 
-If the database changed since the dry run, the run aborts before mutating
-anything — regenerate the manifest (Step 5) and re-review.
+If the database changed since the dry run — including a stale-invitation
+selection where new rows now qualify — the run aborts before mutating
+anything, inside the transaction, and rolls back cleanly. Regenerate the
+manifest (Step 5) and re-review.
 
 ## Step 7 — Verify
 
-The script prints the after-inventory. Additionally:
+The script prints the after-inventory on a successful execute. Then run the
+independent, read-only audit against the same manifest:
+
+```bash
+npm run beta:cleanup -- --verify --manifest ./beta-cleanup-manifest.json
+```
+
+This re-checks every recorded operation directly against the database (rows
+gone for deletes, fields nulled/timestamped for nullify/revoke) and prints a
+PASS/FAIL summary. Additionally:
 
 - Confirm expected post-cleanup record counts (users, alliances, invitations,
-  feedback, tokens) match your intent.
+  feedback, tokens, metrics, periods, entries, notes) match your intent.
 - **Human check:** open the Platform Console and confirm no test alliances
   remain (an operator lens, not a count).
 

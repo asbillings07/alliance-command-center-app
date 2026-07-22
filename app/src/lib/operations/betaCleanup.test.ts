@@ -4,16 +4,25 @@ import {
   assembleUserPlan,
   mergePlans,
   summarizeDeletes,
+  summarizeOpCounts,
+  planOpKey,
   toChecksumPayload,
   computeChecksum,
   buildManifest,
   verifyManifest,
+  verifyManifestIntegrity,
+  validateManifestShape,
+  resolveCutoffDate,
+  validateSelectionOverlaps,
   parseArgs,
   keepListViolations,
+  allianceKeepListViolations,
   canonicalJson,
+  EXECUTION_CONFIRMATION_PHRASE,
   type TenantResolved,
   type UserResolved,
   type CleanupOp,
+  type CleanupArgs,
 } from "./betaCleanup";
 
 const tenant: TenantResolved = {
@@ -251,5 +260,159 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--nope"])).toThrow(/Unknown argument/);
     expect(() => parseArgs(["--alliance-id"])).toThrow(/requires a value/);
     expect(() => parseArgs(["--cutoff-days", "-1"])).toThrow(/non-negative/);
+  });
+
+  it("parses --verify and the exact --confirm phrase", () => {
+    const args = parseArgs(["--verify", "--manifest", "/tmp/m.json"]);
+    expect(args.verify).toBe(true);
+
+    const execArgs = parseArgs(["--execute", "--confirm", EXECUTION_CONFIRMATION_PHRASE]);
+    expect(execArgs.confirmPhrase).toBe(EXECUTION_CONFIRMATION_PHRASE);
+  });
+});
+
+describe("allianceKeepListViolations", () => {
+  it("flags a plan that would delete a keep-listed alliance", () => {
+    const plan: CleanupOp[] = [
+      { kind: "delete", model: "Alliance", ids: ["A1", "SMOKE"], reason: "" },
+    ];
+    expect(allianceKeepListViolations(plan, ["SMOKE"])).toEqual(["SMOKE"]);
+  });
+
+  it("is empty when no alliance delete is present", () => {
+    const plan: CleanupOp[] = [{ kind: "delete", model: "Feedback", ids: ["f1"], reason: "" }];
+    expect(allianceKeepListViolations(plan, ["SMOKE"])).toEqual([]);
+  });
+});
+
+describe("validateSelectionOverlaps", () => {
+  const baseArgs: CleanupArgs = {
+    execute: false,
+    verify: false,
+    confirmProduction: false,
+    confirmPhrase: null,
+    manifestPath: "./m.json",
+    allianceIds: [],
+    userEmails: [],
+    keepAllianceIds: [],
+    keepUserEmails: [],
+    cutoffDays: 0,
+    stale: { betaInvitations: false, invitations: false, expiredResetTokens: false, consumedEmailChanges: false },
+    accessRequestIds: [],
+    feedbackIds: [],
+  };
+
+  it("flags an alliance selected for both deletion and keep", () => {
+    const problems = validateSelectionOverlaps({
+      ...baseArgs,
+      allianceIds: ["A1"],
+      keepAllianceIds: ["A1"],
+    });
+    expect(problems.length).toBe(1);
+    expect(problems[0]).toMatch(/alliance-id and --keep-alliance-id overlap/);
+  });
+
+  it("flags a user selected for both deletion and keep", () => {
+    const problems = validateSelectionOverlaps({
+      ...baseArgs,
+      userEmails: ["a@example.com"],
+      keepUserEmails: ["a@example.com"],
+    });
+    expect(problems.length).toBe(1);
+    expect(problems[0]).toMatch(/user-email and --keep-user-email overlap/);
+  });
+
+  it("is empty for disjoint selections", () => {
+    const problems = validateSelectionOverlaps({
+      ...baseArgs,
+      allianceIds: ["A1"],
+      keepAllianceIds: ["A2"],
+      userEmails: ["a@example.com"],
+      keepUserEmails: ["b@example.com"],
+    });
+    expect(problems).toEqual([]);
+  });
+});
+
+describe("summarizeOpCounts / planOpKey", () => {
+  it("counts every op kind (not just deletes) keyed by kind:model:field", () => {
+    const plan: CleanupOp[] = [
+      { kind: "delete", model: "Feedback", ids: ["f1", "f2"], reason: "" },
+      { kind: "nullify", model: "AllianceMember", field: "userId", ids: ["am1"], reason: "" },
+      { kind: "revoke", model: "BetaInvitation", field: "revokedAt", ids: ["bi1", "bi2", "bi3"], reason: "" },
+    ];
+    expect(summarizeOpCounts(plan)).toEqual({
+      "delete:Feedback:": 2,
+      "nullify:AllianceMember:userId": 1,
+      "revoke:BetaInvitation:revokedAt": 3,
+    });
+    expect(planOpKey(plan[1])).toBe("nullify:AllianceMember:userId");
+  });
+});
+
+describe("resolveCutoffDate", () => {
+  it("computes now - cutoffDays when no frozen cutoff is given (dry run)", () => {
+    const now = new Date("2026-07-22T12:00:00.000Z");
+    const cutoff = resolveCutoffDate({ cutoffDays: 30, frozenCutoffIso: null, now });
+    expect(cutoff.toISOString()).toBe("2026-06-22T12:00:00.000Z");
+  });
+
+  it("reuses the frozen cutoff verbatim regardless of how much time has passed (execute)", () => {
+    const dryRunNow = new Date("2026-07-22T12:00:00.000Z");
+    const frozen = resolveCutoffDate({ cutoffDays: 30, frozenCutoffIso: null, now: dryRunNow }).toISOString();
+
+    // Simulate executing hours (or days) after the dry run — "now" moved on,
+    // but the resolved cutoff must be identical, or every execute would drift.
+    const executeNow = new Date("2026-07-23T18:30:00.000Z");
+    const atExecute = resolveCutoffDate({ cutoffDays: 30, frozenCutoffIso: frozen, now: executeNow });
+    expect(atExecute.toISOString()).toBe(frozen);
+    expect(atExecute.toISOString()).not.toBe(
+      resolveCutoffDate({ cutoffDays: 30, frozenCutoffIso: null, now: executeNow }).toISOString()
+    );
+  });
+
+  it("throws on a malformed frozen cutoff", () => {
+    expect(() =>
+      resolveCutoffDate({ cutoffDays: 30, frozenCutoffIso: "not-a-date", now: new Date() })
+    ).toThrow(/not a valid date/);
+  });
+});
+
+describe("manifest integrity + shape validation", () => {
+  const tenantPlan = mergePlans([assembleTenantPlan(tenant)]);
+  const args = {
+    cutoff: null,
+    dbIdentity: "ep-prod-000000",
+    keep: { userEmails: [], allianceIds: [] },
+    plan: tenantPlan,
+  };
+
+  it("verifyManifestIntegrity accepts a well-formed, untampered manifest", () => {
+    const manifest = buildManifest(args);
+    expect(verifyManifestIntegrity(manifest)).toEqual({ ok: true });
+  });
+
+  it("verifyManifestIntegrity rejects a manifest whose ops were edited after checksum", () => {
+    const manifest = buildManifest(args);
+    const tampered = {
+      ...manifest,
+      ops: manifest.ops.map((o) =>
+        o.model === "Alliance" ? { ...o, ids: [...o.ids, "sneaky-extra-id"] } : o
+      ),
+    };
+    const verdict = verifyManifestIntegrity(tampered);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toMatch(/does not match its own recorded contents/);
+  });
+
+  it("validateManifestShape throws on missing required fields", () => {
+    expect(() => validateManifestShape({})).toThrow(/Invalid manifest/);
+    expect(() => validateManifestShape(null)).toThrow(/Invalid manifest/);
+    expect(() => validateManifestShape({ version: 1 })).toThrow(/checksum/);
+  });
+
+  it("validateManifestShape accepts a real manifest and returns it typed", () => {
+    const manifest = buildManifest(args);
+    expect(validateManifestShape(manifest)).toEqual(manifest);
   });
 });
