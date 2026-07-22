@@ -21,6 +21,7 @@ export { SignOutButton } from "./SignOutButton";
 export { AccountNavLink } from "./AccountNavLink";
 export { FeedbackWidget } from "./FeedbackWidget";
 export { TourButton, type TourButtonProps } from "./TourButton";
+export { TourAutoStart } from "./tour/TourAutoStart";
 
 // Forms
 export {

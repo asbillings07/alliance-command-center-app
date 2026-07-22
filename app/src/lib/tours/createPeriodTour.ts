@@ -11,6 +11,8 @@ export const CREATE_PERIOD_TOUR_ID = "create-period";
  */
 export const createPeriodTour: TourDefinition = {
   id: CREATE_PERIOD_TOUR_ID,
+  completionMessage:
+    "Tour complete. You can create your first evaluation period below.",
   steps: [
     {
       element: '[data-tour="create-period"]',

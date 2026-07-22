@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { type PermissionSet } from "./auth/permissions";
+import { CREATE_PERIOD_TOUR_ID, IMPORT_MEMBERS_TOUR_ID } from "./tours";
 
 /**
  * Alliance setup represents the readiness of the alliance,
@@ -175,6 +176,20 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
     required: false,
   },
 ];
+
+/**
+ * Setup tasks that have a guided tour on their destination page.
+ *
+ * Keyed by task id (not every task has one). The value is a tour id resolvable
+ * via `TOURS_BY_ID`; `buildTourHref` turns it into a `?tour=...` deep link that
+ * auto-starts the tour on the destination page (the user stays there when it
+ * finishes). Keeping this map here (beside `SETUP_TASKS`) means adding a tour to
+ * a task is a one-line, data-only change.
+ */
+export const SETUP_TASK_TOURS: Partial<Record<SetupTaskId, string>> = {
+  period: CREATE_PERIOD_TOUR_ID,
+  members: IMPORT_MEMBERS_TOUR_ID,
+};
 
 /**
  * Get the setup status for an alliance.

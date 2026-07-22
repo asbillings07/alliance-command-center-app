@@ -2,8 +2,8 @@ import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { MetricPeriodCard } from "./metricPeriodCard";
-import { PageLayout, EmptyState } from "@/app/src/components";
-import { TourButton } from "@/app/src/components/client";
+import { PageLayout, EmptyState, BackToSetupLink } from "@/app/src/components";
+import { TourButton, TourAutoStart } from "@/app/src/components/client";
 import { createPeriodTour } from "@/app/src/lib/tours";
 
 type Params = {
@@ -43,9 +43,15 @@ export default async function PeriodsPage({ params }: Params) {
             ]}
             title="Evaluation Periods"
             description="Create and manage evaluation periods for tracking member performance"
-            action={<TourButton tour={createPeriodTour} />}
+            action={
+                <div className="flex items-center gap-4">
+                    <BackToSetupLink allianceId={allianceId} />
+                    <TourButton tour={createPeriodTour} />
+                </div>
+            }
             maxWidth="3xl"
         >
+            <TourAutoStart />
             <div className="flex flex-col gap-4">
                 <MetricPeriodCard allianceId={allianceId} mode="create" />
                 {periods.length === 0 ? (
