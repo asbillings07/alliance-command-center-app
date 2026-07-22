@@ -35,9 +35,9 @@
  *   - EVERY explicit target/keep id or email that doesn't resolve to an
  *     existing row (typo, already deleted, etc.) fails closed — the run
  *     aborts rather than silently proceeding with a smaller plan than the
- *     operator asked for. This applies uniformly to --user-email,
- *     --keep-user-email, --keep-alliance-id, --access-request-ids, and
- *     --feedback-ids.
+ *     operator asked for. This applies uniformly to --alliance-id,
+ *     --user-email, --keep-alliance-id, --keep-user-email,
+ *     --access-request-ids, and --feedback-ids.
  *   - The target database identity is resolved with the SAME resolver the app
  *     uses (app/src/lib/productionDb), so the tool and the app can never
  *     disagree about which database is production.

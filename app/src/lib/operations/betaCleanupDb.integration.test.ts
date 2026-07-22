@@ -125,6 +125,16 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
     }
   });
 
+  it("integration: buildPlan() flags a typo'd/nonexistent --alliance-id rather than silently building a phantom delete", async () => {
+    const args = parseArgs(["--alliance-id", "does-not-exist-12345"]);
+    const fresh = await buildPlan(prisma, args, { now: new Date(), frozenCutoff: null });
+
+    expect(fresh.unknownAllianceIds).toEqual(["does-not-exist-12345"]);
+    // No phantom "delete Alliance <id>" op for an id that was never found —
+    // it must never surface as an always-affects-0-rows entry in the plan.
+    expect(fresh.plan.some((op) => op.model === "Alliance")).toBe(false);
+  });
+
   it("integration: execute() commits exactly the reviewed rows inside one transaction", async () => {
     const a = await makeAccessRequest();
     const b = await makeAccessRequest();

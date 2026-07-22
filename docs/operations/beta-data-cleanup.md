@@ -53,9 +53,11 @@ integration tests in `betaCleanupDb.integration.test.ts`).
   deletes an account. Naming the same id/email in both a target flag and its
   `--keep-*` counterpart aborts immediately (before any query runs). A
   keep-listed user may still lose data from a deleted tenant, but their account
-  is never deleted — the plan aborts if it would. An unresolved
-  `--keep-user-email` (a typo) **fails closed**: the run aborts rather than
-  silently treating it as "nothing to keep."
+  is never deleted — the plan aborts if it would. Any explicit id/email that
+  doesn't resolve to an existing row — `--alliance-id`, `--user-email`,
+  `--keep-alliance-id`, `--keep-user-email`, `--access-request-ids`, or
+  `--feedback-ids` — **fails closed**: the run aborts rather than silently
+  treating a typo (or an already-deleted row) as "nothing to do here."
 - **Conservative stale cleanup.** `Feedback` and `AccessRequest` are removed
   only by **explicit id**, never by age — these categories need a human
   decision about what's genuinely test data, not an age heuristic, so this is

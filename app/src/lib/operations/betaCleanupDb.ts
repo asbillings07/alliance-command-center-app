@@ -301,6 +301,8 @@ export interface BuiltPlan {
   plan: CleanupOp[];
   cutoff: string | null;
   keepUserIds: string[];
+  /** Target alliance ids that don't resolve to an alliance. Must fail closed — a typo must never silently no-op. */
+  unknownAllianceIds: string[];
   /** Target emails that don't resolve to an account. Must fail closed — a typo must never silently no-op. */
   unknownUserEmails: string[];
   /** Keep-listed emails that don't resolve to an account. Must fail closed. */
@@ -323,9 +325,17 @@ export async function buildPlan(
   args: CleanupArgs,
   opts: { now: Date; frozenCutoff: string | null }
 ): Promise<BuiltPlan> {
-  // Sequential, not parallel: see the note on resolveTenant/resolveUser.
+  const existingAllianceIds = await idsToExistingSet(db, "alliance", args.allianceIds);
+  const unknownAllianceIds = args.allianceIds.filter((id) => !existingAllianceIds.has(id));
+
+  // Sequential, not parallel: see the note on resolveTenant/resolveUser. Skip
+  // unresolved ids rather than resolving them into a plan anyway — a typo'd
+  // alliance id must never produce a phantom "delete Alliance <id>" op (which
+  // would always affect 0 rows at execute time); assertSafeSelection aborts
+  // the whole run on unknownAllianceIds before this would matter regardless.
   const tenantPlans: CleanupOp[][] = [];
   for (const id of args.allianceIds) {
+    if (!existingAllianceIds.has(id)) continue;
     tenantPlans.push(assembleTenantPlan(await resolveTenant(db, id)));
   }
 
@@ -358,6 +368,7 @@ export async function buildPlan(
     plan,
     cutoff: stale.cutoff,
     keepUserIds: Array.from(keepMap.values()),
+    unknownAllianceIds,
     unknownUserEmails,
     unknownKeepUserEmails,
     unknownKeepAllianceIds,
@@ -381,6 +392,11 @@ export function assertSafeSelection(args: CleanupArgs, fresh: BuiltPlan): void {
   if (fresh.unknownKeepAllianceIds.length > 0) {
     throw new Error(
       `Refusing to continue: --keep-alliance-id does not match any alliance (fail closed, fix the typo or remove it): ${fresh.unknownKeepAllianceIds.join(", ")}`
+    );
+  }
+  if (fresh.unknownAllianceIds.length > 0) {
+    throw new Error(
+      `Refusing to continue: --alliance-id does not match any alliance (fail closed — remove it if already deleted, or fix the typo): ${fresh.unknownAllianceIds.join(", ")}`
     );
   }
   if (fresh.unknownUserEmails.length > 0) {
