@@ -76,7 +76,22 @@ Notes:
   - **password-only** → `SMOKE_PASSWORD_EMAIL` / `SMOKE_PASSWORD_CURRENT`
   - **Google-only** → `SMOKE_GOOGLE_EMAIL`
   - **dual-auth** → `SMOKE_DUAL_EMAIL` / `SMOKE_DUAL_PASSWORD`, with Google linked
-- Generate a fresh beta invitation for the onboarding checkpoint.
+
+### 2d. Generate the beta invitation (per run)
+
+Beta invitations are per-database, so the invite MUST be created in the
+**production** database — an invite from a local or preview run points at the
+wrong origin and won't redeem in prod.
+
+- **Production (use this):** sign in as a platform admin at
+  `https://alliancehqapp.com/platform/beta` and issue the invitation from the
+  UI. This needs no database credentials, sends the email via Resend, and
+  produces a redeem URL on the canonical origin. (Route: `app/platform/beta`,
+  admin-gated by `requirePlatformAdmin()`.)
+- **Local rehearsal only:** `npm run beta:invite <email>` targets whatever
+  `DATABASE_URL` points at (your local dev DB by default) and prints a
+  `localhost` redeem URL — fine for practicing the onboarding flow with
+  `npm run dev`, never for the production checkpoint.
 
 ---
 
