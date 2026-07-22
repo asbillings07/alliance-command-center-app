@@ -5,12 +5,14 @@ import type {
   EmailResult,
   EmailService,
   FeedbackNotificationEmailInput,
+  PasswordResetEmailInput,
 } from "./types";
 import { deliverEmail } from "./deliverEmail";
 import { renderBetaInvitationEmail } from "./templates/betaInvitationEmail";
 import { renderAccessRequestConfirmationEmail } from "./templates/accessRequestConfirmationEmail";
 import { renderFeedbackNotificationEmail } from "./templates/feedbackNotificationEmail";
 import { renderEmailChangeVerificationEmail } from "./templates/emailChangeVerificationEmail";
+import { renderPasswordResetEmail } from "./templates/passwordResetEmail";
 
 const BETA_INVITATION_SUBJECT =
   "You're invited to the Alliance Command Center beta";
@@ -20,6 +22,8 @@ const ACCESS_REQUEST_CONFIRMATION_SUBJECT =
 
 const EMAIL_CHANGE_VERIFICATION_SUBJECT =
   "Confirm your new Alliance Command Center email";
+
+const PASSWORD_RESET_SUBJECT = "Reset your Alliance Command Center password";
 
 /**
  * Application-facing email service. Each method expresses a business email,
@@ -77,6 +81,19 @@ export const emailService: EmailService = {
       to,
       subject: EMAIL_CHANGE_VERIFICATION_SUBJECT,
       content: renderEmailChangeVerificationEmail(verification),
+      metadata: userId ? { userId } : undefined,
+    });
+  },
+
+  async sendPasswordReset({
+    to,
+    reset,
+    userId,
+  }: PasswordResetEmailInput): Promise<EmailResult> {
+    return deliverEmail({
+      to,
+      subject: PASSWORD_RESET_SUBJECT,
+      content: renderPasswordResetEmail(reset),
       metadata: userId ? { userId } : undefined,
     });
   },

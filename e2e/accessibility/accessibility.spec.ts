@@ -32,6 +32,26 @@ test.describe("Accessibility - Auth Pages", () => {
 
     await checkA11yLevelAA(page);
   });
+
+  test("@a11y Forgot password page meets accessibility standards", async ({
+    page,
+  }) => {
+    await page.goto("/forgot-password");
+    await page.waitForLoadState("networkidle");
+
+    await checkA11yLevelAA(page);
+  });
+
+  test("@a11y Reset password invalid-token page meets accessibility standards", async ({
+    page,
+  }) => {
+    // The set-a-new-password form requires a live token; the invalid-token
+    // state is the reachable static surface and still exercises AuthLayout.
+    await page.goto("/reset-password/not-a-real-token");
+    await page.waitForLoadState("networkidle");
+
+    await checkA11yLevelAA(page);
+  });
 });
 
 test.describe("Accessibility - Public Pages", () => {

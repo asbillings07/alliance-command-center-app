@@ -95,6 +95,28 @@ Action -> Outbox Table -> Background Worker -> Email
 
 This would add durability and retries without changing callers (they still call `emailService`). We intentionally do **not** build this before beta.
 
+### Password reset notifications (follow-on)
+
+Password reset (the request + set-new-password flow) is implemented on top of
+this infrastructure via `emailService.sendPasswordReset`. On a successful reset
+the domain service also increments the user's `sessionVersion`, so every
+previously issued session is revoked (session-version revocation, issue #132) —
+a reset immediately logs out any attacker or stale device.
+
+Some related protections are intentionally deferred:
+
+- **Post-reset confirmation email.** After a successful password change, send a
+  "your password was changed — if this wasn't you, contact support" notice. This
+  is a valuable account-takeover signal and a natural next `emailService`
+  method. Tracked as a follow-on issue; not required for beta.
+- **Rate limiting + response-timing normalization** for `/forgot-password` and
+  `/reset-password`. Bodies are already identical (anti-enumeration), but timing
+  can still leak account state, and the endpoints are unauthenticated. A correct
+  fix needs shared/edge infrastructure (a per-IP/per-email limiter) and careful
+  constant-time handling, best proven with dedicated integration/security tests
+  against a disposable Postgres rather than production load tests. Tracked in
+  issue #160.
+
 ## Configuration
 
 | Variable | Purpose |

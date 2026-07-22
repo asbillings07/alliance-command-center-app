@@ -118,6 +118,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # Opt real-Postgres integration tests IN here only. The "Unit Tests" job has
+    # no database and runs every app/src test, so these must stay gated off there.
+    env:
+      INTEGRATION_DB: "true"
     services:
       postgres:
         image: postgres:15

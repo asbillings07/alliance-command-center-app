@@ -1,0 +1,300 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import bcrypt from "bcrypt";
+import { Prisma } from "@/app/generated/prisma/client";
+import {
+  createPasswordResetToken,
+  resetPassword,
+  isValidPasswordResetToken,
+} from "./passwordReset";
+
+vi.mock("./prisma", () => ({
+  prisma: {
+    passwordResetToken: {
+      updateMany: vi.fn(),
+      create: vi.fn(),
+      findUnique: vi.fn(),
+    },
+    user: {
+      update: vi.fn(),
+    },
+    $transaction: vi.fn(),
+  },
+}));
+
+import { prisma } from "./prisma";
+
+const mockPrisma = prisma as unknown as {
+  passwordResetToken: {
+    updateMany: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
+  };
+  user: { update: ReturnType<typeof vi.fn> };
+  $transaction: ReturnType<typeof vi.fn>;
+};
+
+// Length-only policy (main's password.ts): ≥8 chars, no complexity rules.
+const VALID_PASSWORD = "correct horse";
+const EIGHT_CHARS = "abcdefgh";
+// 20 four-byte emoji = 80 UTF-8 bytes > the 72-byte bcrypt cap, though only 40
+// JS characters — must be rejected by the byte-length rule, not slip through.
+const TOO_MANY_BYTES = "😀".repeat(20);
+
+// A SHA-256 hex digest: 64 lowercase hex chars.
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+// A structurally-valid raw reset token: 32 bytes hex-encoded (64 hex chars).
+// Must match RAW_TOKEN_PATTERN so it survives the cheap shape guard.
+const VALID_TOKEN = "a".repeat(64);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  // A successful conditional claim affects exactly one row.
+  mockPrisma.passwordResetToken.updateMany.mockResolvedValue({ count: 1 });
+  mockPrisma.passwordResetToken.create.mockResolvedValue({});
+  mockPrisma.user.update.mockResolvedValue({});
+  // Support both call styles: array (createPasswordResetToken) and interactive
+  // callback (resetPassword). tx delegates to the same mocked client.
+  mockPrisma.$transaction.mockImplementation(async (arg: unknown) =>
+    typeof arg === "function"
+      ? (arg as (tx: typeof mockPrisma) => unknown)(mockPrisma)
+      : Promise.all(arg as Promise<unknown>[])
+  );
+});
+
+describe("createPasswordResetToken", () => {
+  it("returns a raw token + expiry and persists only the hash", async () => {
+    const before = Date.now();
+    const result = await createPasswordResetToken("user-1");
+
+    if (!result.created) {
+      throw new Error("expected a token to be created");
+    }
+    const { rawToken, expiresAt } = result;
+
+    // 32 random bytes hex-encoded.
+    expect(rawToken).toMatch(/^[0-9a-f]{64}$/);
+    // ~1 hour in the future.
+    expect(expiresAt.getTime()).toBeGreaterThan(before + 59 * 60 * 1000);
+
+    // Prior outstanding tokens are invalidated first.
+    expect(mockPrisma.passwordResetToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", usedAt: null },
+      data: { usedAt: expect.any(Date) },
+    });
+
+    // Only the hash is stored, never the raw token. Assert the SHA-256 shape
+    // and that it differs from the raw token rather than recomputing the hash
+    // of the returned token here — doing that would make a static analyzer read
+    // the high-entropy reset token as a "password hashed with SHA-256".
+    const createArg = mockPrisma.passwordResetToken.create.mock.calls[0][0];
+    expect(createArg.data.userId).toBe("user-1");
+    expect(createArg.data.tokenHash).toMatch(SHA256_HEX);
+    expect(createArg.data.tokenHash).not.toBe(rawToken);
+  });
+
+  it("reports created:false when the active-token index rejects a concurrent insert", async () => {
+    // The partial unique index (one active token per user) rejects the losing
+    // request in a race; the whole transaction rolls back.
+    mockPrisma.$transaction.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+        code: "P2002",
+        clientVersion: "test",
+        meta: { target: "PasswordResetToken_userId_active_key" },
+      })
+    );
+
+    const result = await createPasswordResetToken("user-1");
+
+    expect(result.created).toBe(false);
+  });
+
+  it("rethrows a P2002 that isn't the active-token race (e.g. a tokenHash collision)", async () => {
+    // A uniqueness failure on any OTHER constraint is a real invariant
+    // violation and must not be masquerade as the benign concurrency race.
+    mockPrisma.$transaction.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+        code: "P2002",
+        clientVersion: "test",
+        meta: { target: "PasswordResetToken_tokenHash_key" },
+      })
+    );
+
+    await expect(createPasswordResetToken("user-1")).rejects.toThrow();
+  });
+});
+
+describe("resetPassword", () => {
+  it("rejects a password that fails the policy before touching the token", async () => {
+    const result = await resetPassword(VALID_TOKEN, "short");
+
+    expect(result.status).toBe("invalid_password");
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(mockPrisma.passwordResetToken.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("accepts an 8-character password with no complexity (length-only policy)", async () => {
+    mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+      id: "t1",
+      userId: "user-9",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const result = await resetPassword(VALID_TOKEN, EIGHT_CHARS);
+
+    expect(result.status).toBe("success");
+  });
+
+  it("rejects a multibyte password exceeding 72 UTF-8 bytes", async () => {
+    const result = await resetPassword(VALID_TOKEN, TOO_MANY_BYTES);
+
+    expect(result.status).toBe("invalid_password");
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed token cheaply, before hashing or a transaction", async () => {
+    // The shape guard runs after policy validation but before any hash/DB work,
+    // so a structurally-invalid token never reaches bcrypt or Postgres.
+    const result = await resetPassword("not-a-valid-token", VALID_PASSWORD);
+
+    expect(result.status).toBe("invalid_token");
+    expect(mockPrisma.passwordResetToken.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("sets the new password, bumps sessionVersion, and invalidates tokens", async () => {
+    mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+      id: "t1",
+      userId: "user-9",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const result = await resetPassword(VALID_TOKEN, VALID_PASSWORD);
+
+    expect(result.status).toBe("success");
+
+    // Guarded single-use claim: unused AND unexpired, by token id.
+    expect(mockPrisma.passwordResetToken.updateMany).toHaveBeenCalledWith({
+      where: { id: "t1", usedAt: null, expiresAt: { gt: expect.any(Date) } },
+      data: { usedAt: expect.any(Date) },
+    });
+
+    // Password replaced AND every existing session revoked in one write.
+    const updateArg = mockPrisma.user.update.mock.calls[0][0];
+    expect(updateArg.where).toEqual({ id: "user-9" });
+    expect(updateArg.data.sessionVersion).toEqual({ increment: 1 });
+    expect(await bcrypt.compare(VALID_PASSWORD, updateArg.data.passwordHash)).toBe(
+      true
+    );
+
+    // Sibling tokens for the user are invalidated too.
+    expect(mockPrisma.passwordResetToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: "user-9", usedAt: null },
+      data: { usedAt: expect.any(Date) },
+    });
+  });
+
+  it("returns invalid_token when the token does not exist", async () => {
+    mockPrisma.passwordResetToken.findUnique.mockResolvedValue(null);
+
+    const result = await resetPassword(VALID_TOKEN, VALID_PASSWORD);
+
+    expect(result.status).toBe("invalid_token");
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing/expired token cheaply, before hashing or a transaction (DoS guard)", async () => {
+    // Unauthenticated endpoint: an obviously-invalid token must not trigger the
+    // expensive bcrypt hash or open a transaction.
+    mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+      usedAt: null,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+
+    const result = await resetPassword(VALID_TOKEN, VALID_PASSWORD);
+
+    expect(result.status).toBe("invalid_token");
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("returns invalid_token when the guarded claim affects no rows (expired/used/raced)", async () => {
+    mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+      id: "t1",
+      userId: "user-9",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    // The conditional claim finds nothing to update: the token was already used
+    // or has expired — including the concurrent double-use race, where a second
+    // request loses the claim.
+    mockPrisma.passwordResetToken.updateMany.mockResolvedValue({ count: 0 });
+
+    const result = await resetPassword(VALID_TOKEN, VALID_PASSWORD);
+
+    expect(result.status).toBe("invalid_token");
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("cannot be consumed twice concurrently: only the first claim wins", async () => {
+    mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+      id: "t1",
+      userId: "user-9",
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    // First claim succeeds (count 1); every subsequent claim sees count 0.
+    mockPrisma.passwordResetToken.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // winner's claim
+      .mockResolvedValue({ count: 0 }); // winner's sibling sweep + loser's claim
+
+    const [first, second] = await Promise.all([
+      resetPassword(VALID_TOKEN, VALID_PASSWORD),
+      resetPassword(VALID_TOKEN, VALID_PASSWORD),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual(["invalid_token", "success"]);
+    // Exactly one password write happened.
+    expect(mockPrisma.user.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("isValidPasswordResetToken", () => {
+  it("is true for an unused, unexpired token", async () => {
+    mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    expect(await isValidPasswordResetToken(VALID_TOKEN)).toBe(true);
+    // Looked up by the token's SHA-256 hash, never the raw token.
+    const findArg = mockPrisma.passwordResetToken.findUnique.mock.calls[0][0];
+    expect(findArg.where.tokenHash).toMatch(SHA256_HEX);
+    expect(findArg.where.tokenHash).not.toBe(VALID_TOKEN);
+  });
+
+  it("is false for a missing, used, or expired token", async () => {
+    mockPrisma.passwordResetToken.findUnique.mockResolvedValue(null);
+    expect(await isValidPasswordResetToken(VALID_TOKEN)).toBe(false);
+
+    mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+      usedAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    expect(await isValidPasswordResetToken(VALID_TOKEN)).toBe(false);
+
+    mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+      usedAt: null,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    expect(await isValidPasswordResetToken(VALID_TOKEN)).toBe(false);
+  });
+
+  it("is false for a malformed token without querying the database", async () => {
+    expect(await isValidPasswordResetToken("not-a-valid-token")).toBe(false);
+    expect(mockPrisma.passwordResetToken.findUnique).not.toHaveBeenCalled();
+  });
+});

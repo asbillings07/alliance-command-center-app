@@ -26,6 +26,7 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/app";
   const oauthError = oauthErrorMessage(searchParams.get("error"));
+  const resetSuccess = searchParams.get("reset") === "success";
   const [state, formAction, isPending] = useActionState(login, initialState);
 
   return (
@@ -50,6 +51,14 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
       }
     >
       <AuthError>{state.error || oauthError}</AuthError>
+
+      {resetSuccess && !state.error && !oauthError && (
+        <div className="mb-4 p-3 bg-success/10 border border-success/20 rounded-lg">
+          <p className="text-sm text-success">
+            Your password has been reset. Please sign in with your new password.
+          </p>
+        </div>
+      )}
 
       {googleEnabled && (
         <div className="space-y-4">
@@ -80,15 +89,25 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
           />
         </div>
 
-        <PasswordField
-          id="password"
-          name="password"
-          label="Password"
-          required
-          disabled={isPending}
-          autoComplete="current-password"
-          placeholder="••••••••"
-        />
+        <div>
+          <PasswordField
+            id="password"
+            name="password"
+            label="Password"
+            required
+            disabled={isPending}
+            autoComplete="current-password"
+            placeholder="••••••••"
+          />
+          <div className="mt-2 text-right">
+            <Link
+              href="/forgot-password"
+              className="text-sm text-primary hover:text-primary-hover underline"
+            >
+              Forgot your password?
+            </Link>
+          </div>
+        </div>
 
         <Button
           type="submit"

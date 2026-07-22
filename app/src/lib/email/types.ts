@@ -70,7 +70,23 @@ export interface EmailService {
   sendEmailChangeVerification(
     input: EmailChangeVerificationEmailInput
   ): Promise<EmailResult>;
+  sendPasswordReset(input: PasswordResetEmailInput): Promise<EmailResult>;
 }
+
+/** View model for the password reset email. */
+export type PasswordResetView = {
+  /** Absolute URL to the reset page carrying the single-use raw token. */
+  resetUrl: string;
+  /** When the link stops working, for a clear deadline in the body. */
+  expiresAt: Date;
+};
+
+export type PasswordResetEmailInput = {
+  to: string;
+  reset: PasswordResetView;
+  /** Optional user id for log correlation (never rendered in the email). */
+  userId?: string;
+};
 
 /** View model for the verified email-change verification email. */
 export type EmailChangeVerificationView = {

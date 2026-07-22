@@ -134,9 +134,35 @@ model User {
   betaInvitationsAccepted BetaInvitation[] @relation("BetaInvitationsAccepted")
   feedback Feedback[]
   emailChangeRequests EmailChangeRequest[]
+  passwordResetTokens PasswordResetToken[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// Single-use, hashed password reset tokens.
+//
+// The raw token lives only in the emailed link; we persist a SHA-256 hash so a
+// database leak can't be replayed to reset passwords. `usedAt` enforces
+// one-time use and `expiresAt` bounds the window. Deleted with the user
+// (Cascade).
+//
+// INVARIANT (not expressible in Prisma schema): at most one ACTIVE (unused)
+// token per user. Enforced by a partial unique index —
+// `PasswordResetToken_userId_active_key ON ("userId") WHERE "usedAt" IS NULL` —
+// created in migration 20260722010000_password_reset_one_active_per_user.
+// Prisma can't model partial/filtered indexes, so it isn't declared here; do
+// NOT "fix" a migrate-dev drift prompt by dropping that index.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 // A pending, verified email change (ADR-015). Email is the canonical identity
