@@ -6,6 +6,7 @@
  */
 
 import { resolveAppOrigin } from "./appUrl";
+import { checkDbIdentity } from "./productionDb";
 
 const requiredVars = ["DATABASE_URL", "AUTH_SECRET"] as const;
 
@@ -19,6 +20,9 @@ const requiredVars = ["DATABASE_URL", "AUTH_SECRET"] as const;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const optionalVars = [
   "NEXTAUTH_URL",
+  "DIRECT_URL",
+  "PRODUCTION_DB_HOSTS",
+  "PREVIEW_EMAIL_ALLOWLIST",
   "PLATFORM_ADMIN_EMAILS",
   "PLATFORM_BOOTSTRAP_SECRET",
   "AUTH_GOOGLE_ID",
@@ -74,6 +78,14 @@ export function validateEnv(): void {
     });
   } catch (error) {
     problems.push(error instanceof Error ? error.message : String(error));
+  }
+
+  // Fail-closed database isolation (ADR-016): on Vercel, prove that Production
+  // uses a production database and — critically — that Preview never does. A
+  // shared production DB would let a preview build (possibly running unmerged
+  // code) read or mutate real alliance data.
+  for (const problem of checkDbIdentity()) {
+    problems.push(problem);
   }
 
   if (problems.length > 0) {
