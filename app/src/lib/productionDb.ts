@@ -14,7 +14,15 @@
  * and direct forms, and compare that against an allowlist of production
  * endpoint identities. Non-Neon hosts fall back to their exact hostname, so the
  * guard still works (just with host-level, not endpoint-level, granularity).
+ *
+ * Endpoint-id extraction is scoped to VERIFIED Neon hosts (`*.neon.tech`) only.
+ * A host is never trusted just because its first label happens to start with
+ * `ep-` — e.g. `ep-prod-123.example.com` must NOT collapse to the same
+ * identity as the real `ep-prod-123.us-east-2.aws.neon.tech`. Any host outside
+ * `.neon.tech` keeps its full, exact hostname as its identity.
  */
+
+const NEON_DOMAIN_SUFFIX = ".neon.tech";
 
 /** Reduce a Postgres connection string to a stable database identity. */
 export function connectionIdentity(connectionString: string): string {
@@ -24,11 +32,9 @@ export function connectionIdentity(connectionString: string): string {
   } catch {
     throw new Error("Connection string is not a valid URL");
   }
+  if (!host.endsWith(NEON_DOMAIN_SUFFIX)) return host;
   const label = host.split(".")[0]; // e.g. ep-cool-name-123456-pooler
-  const endpoint = label.replace(/-pooler$/, ""); // e.g. ep-cool-name-123456
-  // Neon endpoint ids start with `ep-`; anything else keeps its full host so
-  // non-Neon providers still get a deterministic identity.
-  return endpoint.startsWith("ep-") ? endpoint : host;
+  return label.replace(/-pooler$/, ""); // e.g. ep-cool-name-123456
 }
 
 /**
@@ -44,12 +50,18 @@ export function productionIdentities(raw: string | undefined): string[] {
     .map((s) => s.trim())
     .filter(Boolean)
     .map((entry) => {
-      // A bare Neon endpoint id has no host separator or scheme; a full host
-      // (even one starting with `ep-`) must be reduced via connectionIdentity.
+      const lower = entry.toLowerCase();
+      // A bare Neon endpoint id has no host separator, port, scheme, or path —
+      // anything else (a full host, `host:port`, or a URL) must be reduced via
+      // connectionIdentity so it is normalized the same way as a live
+      // connection string.
       const isBareEndpoint =
-        entry.startsWith("ep-") && !entry.includes(".") && !entry.includes("://");
-      if (isBareEndpoint) return entry.replace(/-pooler$/, "");
-      const asUrl = entry.includes("://") ? entry : `postgres://${entry}`;
+        lower.startsWith("ep-") &&
+        !lower.includes(".") &&
+        !lower.includes(":") &&
+        !lower.includes("/");
+      if (isBareEndpoint) return lower.replace(/-pooler$/, "");
+      const asUrl = lower.includes("://") ? lower : `postgres://${lower}`;
       return connectionIdentity(asUrl);
     });
 }

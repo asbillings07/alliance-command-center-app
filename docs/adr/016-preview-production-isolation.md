@@ -25,7 +25,7 @@ Two application-level, fail-closed guards, backed by operator configuration.
 
 ### 1. Database identity guard
 
-A shared resolver ([`app/src/lib/productionDb.ts`](../../app/src/lib/productionDb.ts)) reduces any connection string to a stable **Neon endpoint identity** — the `ep-...` label with the `-pooler` suffix stripped — so pooled and direct forms collapse to the same value. Non-Neon hosts fall back to their exact hostname.
+A shared resolver ([`app/src/lib/productionDb.ts`](../../app/src/lib/productionDb.ts)) reduces any connection string to a stable **Neon endpoint identity** — the `ep-...` label with the `-pooler` suffix stripped — so pooled and direct forms collapse to the same value. This extraction is scoped to verified `*.neon.tech` hosts only; any other host (including a lookalike such as `ep-prod-123.example.com`) keeps its exact hostname as its identity, so it can never collide with a real Neon endpoint id.
 
 `PRODUCTION_DB_HOSTS` is an explicit allowlist of production identities and is **required on Vercel**. At startup (`validateEnv()` via `instrumentation.ts`) every DB connection string that can touch data (`DATABASE_URL`, and `DIRECT_URL` when present) is checked:
 

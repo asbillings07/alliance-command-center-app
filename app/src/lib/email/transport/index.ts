@@ -29,7 +29,16 @@ export function createEmailTransport(): EmailTransport {
   if (process.env.VERCEL_ENV === "preview") {
     if (!isEmailEnabled()) return new LoggingTransport();
     const allow = parseAllowlist(process.env.PREVIEW_EMAIL_ALLOWLIST);
-    if (allow.length === 0) return new LoggingTransport();
+    if (allow.length === 0) {
+      // Distinguish this from "email not configured": Resend IS configured,
+      // but Preview intentionally refuses to send without an explicit
+      // allowlist. LoggingTransport's own log line would otherwise read as a
+      // missing-credentials misconfiguration.
+      console.warn(
+        "[email] Preview: Resend is configured but PREVIEW_EMAIL_ALLOWLIST is empty — all mail will be logged, not sent. Set PREVIEW_EMAIL_ALLOWLIST to send to approved testers."
+      );
+      return new LoggingTransport();
+    }
     return new AllowlistTransport(
       new ResendTransport(
         process.env.RESEND_API_KEY as string,

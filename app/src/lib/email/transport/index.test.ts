@@ -23,12 +23,15 @@ describe("createEmailTransport", () => {
     expect(createEmailTransport()).toBeInstanceOf(LoggingTransport);
   });
 
-  it("on Preview, refuses to send even with a Resend key when no allowlist is set", () => {
+  it("on Preview, refuses to send even with a Resend key when no allowlist is set, and warns distinctly from missing credentials", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv("VERCEL_ENV", "preview");
     vi.stubEnv("RESEND_API_KEY", "re_test");
     vi.stubEnv("EMAIL_FROM", "noreply@example.com");
     vi.stubEnv("PREVIEW_EMAIL_ALLOWLIST", "");
     expect(createEmailTransport()).toBeInstanceOf(LoggingTransport);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/PREVIEW_EMAIL_ALLOWLIST is empty/));
+    warn.mockRestore();
   });
 
   it("on Preview with an allowlist, wraps Resend in the allowlist gate", () => {

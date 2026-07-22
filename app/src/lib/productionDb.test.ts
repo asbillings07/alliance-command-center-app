@@ -29,6 +29,20 @@ describe("connectionIdentity", () => {
   it("throws on a malformed connection string", () => {
     expect(() => connectionIdentity("not-a-url")).toThrow();
   });
+
+  // Regression: a host is never trusted as a Neon endpoint just because its
+  // first label starts with `ep-`. Only *.neon.tech is scoped for endpoint-id
+  // extraction; anything else keeps its exact hostname, so a lookalike host
+  // can never collide with a real Neon identity.
+  it("does not collapse a non-Neon lookalike host into the Neon endpoint id", () => {
+    const lookalike = connectionIdentity("postgresql://u:p@ep-prod-123.example.com/db");
+    const realNeon = connectionIdentity(
+      "postgresql://u:p@ep-prod-123.us-east-2.aws.neon.tech/db"
+    );
+    expect(lookalike).toBe("ep-prod-123.example.com");
+    expect(realNeon).toBe("ep-prod-123");
+    expect(lookalike).not.toBe(realNeon);
+  });
 });
 
 describe("productionIdentities", () => {
@@ -42,6 +56,19 @@ describe("productionIdentities", () => {
   it("is empty for undefined/blank", () => {
     expect(productionIdentities(undefined)).toEqual([]);
     expect(productionIdentities("   ")).toEqual([]);
+  });
+
+  it("normalizes bare endpoint id casing so PRODUCTION_DB_HOSTS is not case-sensitive", () => {
+    expect(productionIdentities("EP-COOL-NAME-123456")).toEqual(["ep-cool-name-123456"]);
+    expect(productionIdentities("EP-COOL-NAME-123456-POOLER")).toEqual([
+      "ep-cool-name-123456",
+    ]);
+  });
+
+  it("treats a bare id with a port as a host, not a bare endpoint id", () => {
+    // A bare endpoint id has no port; `ep-x-123:5432` must be parsed as a host
+    // via connectionIdentity (a non-Neon host keeps its exact identity).
+    expect(productionIdentities("ep-x-123:5432")).toEqual(["ep-x-123"]);
   });
 });
 
