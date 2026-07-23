@@ -11,6 +11,10 @@ describe("validateEnv (application origin policy)", () => {
     // The always-required vars, so tests isolate origin behavior.
     vi.stubEnv("DATABASE_URL", "postgresql://user:pass@localhost:5432/db");
     vi.stubEnv("AUTH_SECRET", "test-secret");
+    // Provide the production DB allowlist so the ADR-016 isolation guard is
+    // satisfied for the origin-focused cases below (localhost is not a prod
+    // identity, so preview/production origin behavior stays isolated here).
+    vi.stubEnv("PRODUCTION_DB_HOSTS", "ep-prod-000000");
   });
 
   afterEach(() => {
@@ -71,5 +75,38 @@ describe("validateEnv (application origin policy)", () => {
     vi.stubEnv("NEXTAUTH_URL", "");
     vi.stubEnv("VERCEL_URL", "");
     expect(() => validateEnv()).not.toThrow();
+  });
+
+  // ADR-016 database isolation, wired through validateEnv.
+  it("fails on Preview when the DATABASE_URL points at the production database", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_URL", "feature-123.vercel.app");
+    vi.stubEnv("NEXTAUTH_URL", "");
+    vi.stubEnv(
+      "DATABASE_URL",
+      "postgresql://u:p@ep-prod-000000-pooler.us-east-2.aws.neon.tech/db"
+    );
+    expect(() => validateEnv()).toThrow(/production/i);
+  });
+
+  it("passes in Production when the DATABASE_URL matches PRODUCTION_DB_HOSTS", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("NEXTAUTH_URL", "https://alliancehqapp.com");
+    vi.stubEnv(
+      "DATABASE_URL",
+      "postgresql://u:p@ep-prod-000000.us-east-2.aws.neon.tech/db"
+    );
+    expect(() => validateEnv()).not.toThrow();
+  });
+
+  it("fails on Vercel when PRODUCTION_DB_HOSTS is not configured", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_URL", "feature-123.vercel.app");
+    vi.stubEnv("NEXTAUTH_URL", "");
+    vi.stubEnv("PRODUCTION_DB_HOSTS", "");
+    expect(() => validateEnv()).toThrow(/PRODUCTION_DB_HOSTS/);
   });
 });
