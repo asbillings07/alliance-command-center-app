@@ -30,6 +30,7 @@ const runDb = process.env.INTEGRATION_DB === "true";
 describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
   const createdAccessRequestIds: string[] = [];
   const createdBetaInvitationIds: string[] = [];
+  const createdAllianceIds: string[] = [];
   const createdUserIds: string[] = [];
   const manifestPaths: string[] = [];
 
@@ -91,6 +92,117 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
     return { user, invitation };
   }
 
+  async function makeFullTenantAndUser() {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const user = await prisma.user.create({
+      data: {
+        email: `tenant-user-${suffix}@example.test`,
+        displayName: "Tenant User Integration",
+        passwordHash: "placeholder-hash-not-a-real-password",
+        sessionVersion: 0,
+      },
+    });
+    createdUserIds.push(user.id);
+
+    const alliance = await prisma.alliance.create({
+      data: {
+        name: `Alliance Integration ${suffix}`,
+        server: `Server-${suffix}`,
+      },
+    });
+    createdAllianceIds.push(alliance.id);
+
+    await prisma.allianceMembership.create({
+      data: {
+        allianceId: alliance.id,
+        userId: user.id,
+        role: "OWNER",
+      },
+    });
+
+    const member = await prisma.allianceMember.create({
+      data: {
+        allianceId: alliance.id,
+        playerName: `Member ${suffix}`,
+        userId: user.id,
+      },
+    });
+
+    const metric = await prisma.metric.create({
+      data: {
+        allianceId: alliance.id,
+        name: `Metric ${suffix}`,
+        type: "NUMERIC",
+      },
+    });
+
+    const period = await prisma.metricPeriod.create({
+      data: {
+        allianceId: alliance.id,
+        name: `Period ${suffix}`,
+      },
+    });
+
+    await prisma.metricPeriodMetric.create({
+      data: {
+        periodId: period.id,
+        metricId: metric.id,
+        weight: 1,
+        required: true,
+      },
+    });
+
+    await prisma.memberMetricEntry.create({
+      data: {
+        allianceMemberId: member.id,
+        periodId: period.id,
+        metricId: metric.id,
+        value: 10,
+      },
+    });
+
+    await prisma.leadershipNote.create({
+      data: {
+        allianceMemberId: member.id,
+        authorId: user.id,
+        noteType: "POSITIVE",
+        visibility: "LEADERSHIP",
+        content: "Integration note content",
+      },
+    });
+
+    await prisma.invitation.create({
+      data: {
+        allianceId: alliance.id,
+        invitedById: user.id,
+        playerNameSnapshot: "Invited Player",
+        email: `invited-${suffix}@example.test`,
+        membershipRole: "VIEWER",
+        token: `inv-token-${suffix}`,
+        expiresAt: new Date(Date.now() + 3600_000),
+      },
+    });
+
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: `reset-token-${suffix}`,
+        expiresAt: new Date(Date.now() + 3600_000),
+      },
+    });
+
+    await prisma.feedback.create({
+      data: {
+        userId: user.id,
+        category: "BUG",
+        message: "Integration test feedback",
+        url: "https://example.test",
+      },
+    });
+
+    return { user, alliance, member, metric, period };
+  }
+
   async function manifestForAccessRequests(ids: string[]) {
     const args = parseArgs(["--access-request-ids", ids.join(",")]);
     const fresh = await buildPlan(prisma, args, { now: new Date(), frozenCutoff: null });
@@ -112,9 +224,30 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
       await prisma.betaInvitation.deleteMany({ where: { id: { in: createdBetaInvitationIds } } });
       createdBetaInvitationIds.length = 0;
     }
+    if (createdAllianceIds.length > 0) {
+      const allianceIds = [...createdAllianceIds];
+      createdAllianceIds.length = 0;
+      await prisma.memberMetricEntry.deleteMany({ where: { allianceMember: { allianceId: { in: allianceIds } } } });
+      await prisma.leadershipNote.deleteMany({ where: { allianceMember: { allianceId: { in: allianceIds } } } });
+      await prisma.invitation.deleteMany({ where: { allianceId: { in: allianceIds } } });
+      await prisma.metricPeriodMetric.deleteMany({ where: { period: { allianceId: { in: allianceIds } } } });
+      await prisma.metricPeriod.deleteMany({ where: { allianceId: { in: allianceIds } } });
+      await prisma.metric.deleteMany({ where: { allianceId: { in: allianceIds } } });
+      await prisma.allianceMember.deleteMany({ where: { allianceId: { in: allianceIds } } });
+      await prisma.allianceMembership.deleteMany({ where: { allianceId: { in: allianceIds } } });
+      await prisma.betaInvitation.deleteMany({ where: { allianceId: { in: allianceIds } } });
+      await prisma.alliance.deleteMany({ where: { id: { in: allianceIds } } });
+    }
     if (createdUserIds.length > 0) {
-      await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
+      const userIds = [...createdUserIds];
       createdUserIds.length = 0;
+      await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.emailChangeRequest.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.feedback.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.leadershipNote.deleteMany({ where: { authorId: { in: userIds } } });
+      await prisma.invitation.deleteMany({ where: { invitedById: { in: userIds } } });
+      await prisma.allianceMembership.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     }
     for (const p of manifestPaths.splice(0)) {
       try {
@@ -266,5 +399,74 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
     const result = await runVerify(manifestPath);
     expect(result.ok).toBe(false);
     expect(result.lines.some((l) => l.includes("MISSING (unexpectedly deleted)"))).toBe(true);
+  });
+
+  it("integration: execute() cleans up a representative tenant and user across all dependent models in PostgreSQL", async () => {
+    const { user, alliance } = await makeFullTenantAndUser();
+    const args = parseArgs(["--alliance-id", alliance.id, "--user-email", user.email]);
+    const fresh = await buildPlan(prisma, args, { now: new Date(), frozenCutoff: null });
+    const manifest = buildManifest({
+      cutoff: fresh.cutoff,
+      dbIdentity: identity,
+      keep: { userEmails: [], allianceIds: [] },
+      plan: fresh.plan,
+    });
+
+    const deleteCounts = await execute(args, manifest, identity);
+
+    expect(deleteCounts.Alliance).toBe(1);
+    expect(deleteCounts.User).toBe(1);
+    expect(deleteCounts.AllianceMember).toBe(1);
+    expect(deleteCounts.AllianceMembership).toBe(1);
+    expect(deleteCounts.Metric).toBe(1);
+    expect(deleteCounts.MetricPeriod).toBe(1);
+    expect(deleteCounts.MemberMetricEntry).toBe(1);
+    expect(deleteCounts.LeadershipNote).toBe(1);
+    expect(deleteCounts.Invitation).toBe(1);
+    expect(deleteCounts.PasswordResetToken).toBe(1);
+    expect(deleteCounts.Feedback).toBe(1);
+
+    // Verify database state directly in PostgreSQL: all tenant and user records are deleted
+    expect(await prisma.alliance.findUnique({ where: { id: alliance.id } })).toBeNull();
+    expect(await prisma.user.findUnique({ where: { id: user.id } })).toBeNull();
+    expect(await prisma.allianceMember.count({ where: { allianceId: alliance.id } })).toBe(0);
+    expect(await prisma.allianceMembership.count({ where: { allianceId: alliance.id } })).toBe(0);
+    expect(await prisma.metric.count({ where: { allianceId: alliance.id } })).toBe(0);
+    expect(await prisma.metricPeriod.count({ where: { allianceId: alliance.id } })).toBe(0);
+    expect(await prisma.leadershipNote.count({ where: { authorId: user.id } })).toBe(0);
+    expect(await prisma.passwordResetToken.count({ where: { userId: user.id } })).toBe(0);
+    expect(await prisma.feedback.count({ where: { userId: user.id } })).toBe(0);
+  });
+
+  it("integration: execute() rolls back earlier successful mutations in PostgreSQL when a later operation fails", async () => {
+    // Step 1 target: an AccessRequest (will be deleted first in the transaction)
+    const ar = await makeAccessRequest();
+
+    // Step 2 target: a User (will be deleted second in the transaction)
+    const { user } = await makeAcceptedBetaInvitation();
+
+    const args = parseArgs(["--access-request-ids", ar.id, "--user-email", user.email]);
+    const fresh = await buildPlan(prisma, args, { now: new Date(), frozenCutoff: null });
+    const manifest = buildManifest({
+      cutoff: fresh.cutoff,
+      dbIdentity: identity,
+      keep: { userEmails: [], allianceIds: [] },
+      plan: fresh.plan,
+    });
+
+    // Right as execute() begins, delete the target user outside the transaction so that
+    // when execute()'s transaction progresses past Step 1 (deleting AccessRequest ar.id)
+    // to Step 2 (deleting User user.id / BetaInvitation nullify), the transaction fails
+    // (due to a write conflict or affected-count mismatch) and rolls back.
+    const executePromise = execute(args, manifest, identity);
+    await prisma.user.delete({ where: { id: user.id } });
+    createdUserIds.length = 0; // already deleted outside execute()
+
+    await expect(executePromise).rejects.toThrow();
+
+    // Verify in PostgreSQL that Step 1 (delete AccessRequest) was fully rolled back!
+    const arAfter = await prisma.accessRequest.findUnique({ where: { id: ar.id } });
+    expect(arAfter).not.toBeNull();
+    expect(arAfter?.id).toBe(ar.id);
   });
 });
