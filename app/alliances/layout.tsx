@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { auth } from "@/app/src/lib/auth";
 import {
   AccountNavLink,
@@ -44,8 +45,15 @@ export default async function AlliancesLayout({
         <div className="flex items-center justify-between px-4 py-3 lg:px-6">
           <Link
             href="/app"
-            className="text-sm font-semibold text-text-primary transition-colors hover:text-primary"
+            className="flex items-center gap-2.5 text-sm font-semibold text-text-primary transition-colors hover:text-primary"
           >
+            <Image
+              src="/icon.png"
+              alt=""
+              width={24}
+              height={24}
+              className="w-6 h-6 rounded-md object-cover"
+            />
             Alliance Command Center
           </Link>
           {session?.user && (

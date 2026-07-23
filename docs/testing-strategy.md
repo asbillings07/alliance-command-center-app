@@ -330,6 +330,52 @@ Examples:
 
 Unexpected visual changes require review before merging.
 
+### Updating Visual Regression Baselines
+
+When an intentional UI change alters screenshot snapshots, CI will fail because screenshots rendered on Linux (`*-application-linux.png`) differ from saved baselines. Playwright maintains separate snapshot baselines for **macOS (`*-darwin.png`)** and **Linux (`*-linux.png`)** due to font-rendering and subpixel antialiasing differences across operating systems.
+
+To update visual baselines when UI changes are intentional:
+
+#### 1. Local macOS Baseline Update
+To update local macOS snapshots (`*-darwin.png`):
+
+```bash
+# Update local macOS visual baselines
+npm run test:visual -- --update-snapshots
+```
+
+#### 2. Linux CI Baseline Update (The Runbook)
+GitHub Actions CI runs on Linux (`ubuntu-latest`) and compares against `*-application-linux.png` snapshots. Never manually edit or forge Linux PNG files locally.
+
+1. **Push your UI changes** to your feature branch:
+   ```bash
+   git push origin <your-branch>
+   ```
+
+2. **Trigger the Linux baselines workflow** via GitHub CLI or the GitHub Actions tab:
+   ```bash
+   gh workflow run visual-baselines.yml --ref <your-branch>
+   ```
+
+3. **Download the generated Linux baselines** once the workflow completes:
+   ```bash
+   # Find the run ID (e.g. gh run list --workflow=visual-baselines.yml)
+   gh run download <run-id>
+   ```
+
+4. **Copy the updated Linux snapshots** into the snapshot directory:
+   ```bash
+   cp -r visual-baselines-linux/e2e/design-system/visual-regression.spec.ts-snapshots/* e2e/design-system/visual-regression.spec.ts-snapshots/
+   rm -rf visual-baselines-linux
+   ```
+
+5. **Commit and push** the updated `*-application-linux.png` baseline files to your PR branch:
+   ```bash
+   git add e2e/design-system/visual-regression.spec.ts-snapshots/*-application-linux.png
+   git commit -m "test(visual): update Linux visual regression baselines"
+   git push origin <your-branch>
+   ```
+
 ---
 
 # Quality Gates
