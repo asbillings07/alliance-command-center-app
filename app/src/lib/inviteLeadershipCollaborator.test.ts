@@ -9,25 +9,35 @@ import {
 } from "./inviteLeadershipCollaborator";
 
 // Mock Prisma
-vi.mock("./prisma", () => ({
-  prisma: {
-    invitation: {
-      findFirst: vi.fn(),
-      findUnique: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
+vi.mock("./prisma", () => {
+  const mockMember = {
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    findMany: vi.fn(),
+    create: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
+  };
+  const mockTx = {
+    allianceMember: mockMember,
+    $executeRaw: vi.fn().mockResolvedValue(1),
+  };
+  return {
+    prisma: {
+      invitation: {
+        findFirst: vi.fn(),
+        findUnique: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      allianceMembership: {
+        findFirst: vi.fn(),
+      },
+      allianceMember: mockMember,
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      $transaction: vi.fn((cb) => cb(mockTx)),
     },
-    allianceMembership: {
-      findFirst: vi.fn(),
-    },
-    allianceMember: {
-      findFirst: vi.fn(),
-      findUnique: vi.fn(),
-      findMany: vi.fn(),
-      create: vi.fn(),
-    },
-  },
-}));
+  };
+});
 
 describe("inviteLeadershipCollaborator", () => {
   beforeEach(() => {

@@ -101,11 +101,60 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
         ])
     );
 
+    const reclassifyMembers = (members: ParsedMember[]): ParsedMember[] => {
+        const seenNamesInFile = new Set<string>();
+        return members.map((m) => {
+            const playerName = m.playerName.trim();
+            if (!playerName) {
+                return {
+                    ...m,
+                    isExisting: false,
+                    isArchived: false,
+                    isDuplicateInFile: false,
+                    selected: false,
+                };
+            }
+
+            const normalized = normalizeName(playerName);
+            let isDuplicateInFile = false;
+            let isExisting = false;
+            let isArchived = false;
+
+            if (seenNamesInFile.has(normalized)) {
+                isDuplicateInFile = true;
+            } else {
+                seenNamesInFile.add(normalized);
+                const existingInfo = existingMembersMap.get(normalized);
+                if (existingInfo) {
+                    if (existingInfo.isArchived) {
+                        isArchived = true;
+                    } else {
+                        isExisting = true;
+                    }
+                }
+            }
+
+            return {
+                ...m,
+                isExisting,
+                isArchived,
+                isDuplicateInFile,
+                selected: (isExisting || isDuplicateInFile) ? false : true,
+            };
+        });
+    };
+
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         setError(null);
+
+        // File size guard (5 MB)
+        if (file.size > 5 * 1024 * 1024) {
+            setError("File size exceeds maximum limit of 5 MB");
+            return;
+        }
 
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -148,54 +197,45 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
             return;
         }
 
-        const seenNamesInFile = new Set<string>();
-        const members: ParsedMember[] = [];
+        const rawMembers: ParsedMember[] = [];
 
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
 
             const values = parseCSVLine(line);
-            const playerName = values[playerCol.index]?.trim();
-
-            if (!playerName) continue;
+            const playerName = values[playerCol.index]?.trim() || "";
 
             const thpRaw = thpCol ? values[thpCol.index]?.trim() || "" : "";
             const roleValue = roleCol ? values[roleCol.index]?.trim() || "" : "";
 
-            const normalized = normalizeName(playerName);
-            const existingInfo = existingMembersMap.get(normalized);
-            const isArchived = existingInfo?.isArchived ?? false;
-            const isExistingActive = existingInfo ? !existingInfo.isArchived : false;
-            const isDuplicateInFile = seenNamesInFile.has(normalized);
-
-            seenNamesInFile.add(normalized);
-
-            members.push({
+            rawMembers.push({
                 id: `row-${i}`,
                 playerName,
                 thp: thpRaw,
                 role: roleValue,
-                isExisting: isExistingActive,
-                isArchived,
-                isDuplicateInFile,
-                selected: !isExistingActive && !isDuplicateInFile,
+                isExisting: false,
+                isArchived: false,
+                isDuplicateInFile: false,
+                selected: true,
             });
         }
 
-        if (members.length === 0) {
+        if (rawMembers.length === 0) {
             setError("No valid members found in the CSV");
             return;
         }
 
-        setParsedMembers(members);
+        const reconciledMembers = reclassifyMembers(rawMembers);
+        setParsedMembers(reconciledMembers);
         setStep("preview");
     };
 
     const updateMember = (id: string, field: keyof ParsedMember, value: string | boolean) => {
-        setParsedMembers((prev) =>
-            prev.map((m) => (m.id === id ? { ...m, [field]: value } : m))
-        );
+        setParsedMembers((prev) => {
+            const updated = prev.map((m) => (m.id === id ? { ...m, [field]: value } : m));
+            return field === "playerName" ? reclassifyMembers(updated) : updated;
+        });
     };
 
     const toggleSelectAll = (selected: boolean) => {
@@ -219,14 +259,11 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     const overflowCount = (activeRosterCount + uniqueSelectedCount) - 100;
 
     const handleImport = () => {
-        const candidateMembers = parsedMembers.filter((m) => !m.isExisting);
-
-        if (candidateMembers.length === 0) {
-            const existingActiveCount = parsedMembers.filter((m) => m.isExisting).length;
+        if (parsedMembers.length === 0) {
             setImportResult({ 
                 created: 0, 
                 restored: 0,
-                skippedExisting: existingActiveCount, 
+                skippedExisting: 0, 
                 skippedDuplicates: 0, 
                 skippedEmptyNames: 0,
                 skippedUnselected: 0,
@@ -236,7 +273,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
             return;
         }
 
-        const entries: RosterEntry[] = candidateMembers.map((m) => ({
+        const entries: RosterEntry[] = parsedMembers.map((m) => ({
             playerName: m.playerName.trim(),
             thp: parseNumber(m.thp),
             role: m.role.trim() || undefined,
@@ -557,7 +594,14 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
                                                         Active
                                                     </span>
-                                                    {member.playerName}
+                                                    <input
+                                                        type="text"
+                                                        value={member.playerName}
+                                                        onChange={(e) =>
+                                                            updateMember(member.id, "playerName", e.target.value)
+                                                        }
+                                                        className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-700 bg-white"
+                                                    />
                                                 </li>
                                             ))}
                                     </ul>

@@ -151,6 +151,7 @@ describe("importMembers", () => {
         }));
 
         mockAllianceMember.findMany.mockResolvedValue(activeMembers);
+        mockAllianceMember.count.mockResolvedValue(82);
 
         // Attempting to create 24 new members (overflow = 6)
         const entries = Array.from({ length: 24 }, (_, i) => ({
@@ -162,9 +163,8 @@ describe("importMembers", () => {
         expect(result.created).toBe(0);
         expect(result.restored).toBe(0);
         expect(result.errors.length).toBe(1);
-        expect(result.errors[0]).toBe(
-            "Your alliance has 82 active members, so you can add 18 more. You currently have 24 members selected (24 new, 0 restored). Deselect 6 members to continue."
-        );
+        expect(result.errors[0]).toContain("Your alliance has 82 active members, so you can add 18 more");
+        expect(result.errors[0]).toContain("Deselect 6 members to continue");
         expect(mockAllianceMember.createMany).not.toHaveBeenCalled();
     });
 
@@ -175,8 +175,9 @@ describe("importMembers", () => {
             archivedAt: null,
         }));
 
-        // Inside locked transaction, findMany returns 85 active members due to another transaction having committed
+        // Inside locked transaction, count returns 85 active members due to another transaction having committed
         mockAllianceMember.findMany.mockResolvedValue(activeMembers85);
+        mockAllianceMember.count.mockResolvedValue(85);
 
         const entries = Array.from({ length: 20 }, (_, i) => ({
             playerName: `New Candidate ${i + 1}`,

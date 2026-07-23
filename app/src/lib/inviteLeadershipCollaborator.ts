@@ -1,5 +1,6 @@
 import { randomUUID, randomBytes } from "node:crypto";
 import { prisma } from "./prisma";
+import { withAllianceMemberCapacityLock } from "./allianceMemberLock";
 import { getInviteUrl } from "./appUrl";
 import type { AllianceRole, Invitation, AllianceMember } from "@/app/generated/prisma/client";
 
@@ -159,14 +160,20 @@ export async function inviteLeadershipCollaborator(
     }
     member = found;
   } else {
-    member = await prisma.allianceMember.create({
-      data: {
-        allianceId,
-        playerName,
-        thp,
-        squadPower,
-      },
-    });
+    member = await withAllianceMemberCapacityLock(
+      allianceId,
+      1,
+      async (tx) => {
+        return await tx.allianceMember.create({
+          data: {
+            allianceId,
+            playerName,
+            thp,
+            squadPower,
+          },
+        });
+      }
+    );
     memberCreated = true;
   }
 

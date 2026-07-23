@@ -47,12 +47,14 @@ function setupMockFileReader(fileContent: string) {
     window.FileReader = MockFileReader as unknown as typeof FileReader;
 }
 
-function fireFileUpload(fileContent: string) {
+function fireFileUpload(fileContent: string, fileSize?: number) {
     setupMockFileReader(fileContent);
     const fileInput = container.querySelector("#roster-file") as HTMLInputElement;
     expect(fileInput).not.toBeNull();
 
+    const size = fileSize ?? fileContent.length;
     const file = new File([fileContent], "roster.csv", { type: "text/csv" });
+    Object.defineProperty(file, "size", { value: size });
 
     Object.defineProperty(fileInput, "files", {
         value: [file],
@@ -71,12 +73,22 @@ describe("RosterImportForm [component]", () => {
         { id: "m2", playerName: "Existing Archived One", archivedAt: "2026-01-01T00:00:00.000Z" },
     ];
 
-    it("parses CSV, highlights duplicate rows, and deselects duplicates by default", async () => {
+    it("parses CSV, highlights duplicate rows, deselects duplicates by default, and sends submitted payload with selected: false for duplicates", async () => {
+        (importMembers as ReturnType<typeof vi.fn>).mockResolvedValue({
+            created: 2,
+            restored: 0,
+            skippedExisting: 0,
+            skippedDuplicates: 1,
+            skippedEmptyNames: 0,
+            skippedUnselected: 0,
+            errors: [],
+        });
+
         await act(async () => {
             root.render(
                 createElement(RosterImportForm, {
                     allianceId,
-                    existingMembers,
+                    existingMembers: [],
                 })
             );
         });
@@ -109,12 +121,80 @@ New Player B,60000,R3`;
             selectAllCheckbox.click();
         });
 
-        // Verify import button shows unique count
         const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
             b.textContent?.includes("Import")
-        );
-        expect(importBtn).not.toBeUndefined();
-        expect(importBtn?.textContent).toContain("Import 2 Unique Members");
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            importBtn.click();
+        });
+
+        expect(importMembers).toHaveBeenCalledTimes(1);
+        const submittedEntries = (importMembers as ReturnType<typeof vi.fn>).mock.calls[0][1];
+
+        // First row "New Player A" is selected: true
+        expect(submittedEntries[0]).toMatchObject({ playerName: "New Player A", selected: true });
+        // Second row "New Player A" (duplicate in file) MUST have selected: false
+        expect(submittedEntries[1]).toMatchObject({ playerName: "New Player A", selected: false });
+        // Third row "New Player B" is selected: true
+        expect(submittedEntries[2]).toMatchObject({ playerName: "New Player B", selected: true });
+    });
+
+    it("enforces 5 MB file size limit on upload", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers,
+                })
+            );
+        });
+
+        const hugeSize = 5 * 1024 * 1024 + 1; // 5 MB + 1 byte
+        await act(async () => {
+            fireFileUpload("Player\nCandidate A", hugeSize);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("File size exceeds maximum limit of 5 MB");
+    });
+
+    it("reclassifies player name dynamically when edited in the preview table", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers, // Existing Active One, Existing Archived One
+                })
+            );
+        });
+
+        // Upload CSV with "Existing Active One" and "Candidate B"
+        await act(async () => {
+            fireFileUpload("Player\nExisting Active One\nCandidate B");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Import 1 Unique Member");
+
+        // Find inputs across table and collapsed lists
+        const nameInputs = container.querySelectorAll<HTMLInputElement>('input[type="text"]');
+        expect(nameInputs.length).toBeGreaterThan(0);
+
+        const activeOneInput = Array.from(nameInputs).find((i) => i.value === "Existing Active One");
+        expect(activeOneInput).not.toBeUndefined();
+
+        await act(async () => {
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype,
+                "value"
+            )?.set;
+            nativeInputValueSetter?.call(activeOneInput, "Brand New Player Name");
+            activeOneInput!.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+
+        // Reclassified dynamically so now 2 unique new members can be imported!
+        expect(container.textContent).toContain("Import 2 Unique Members");
     });
 
     it("displays over-capacity warning when active count plus unique selections exceeds 100", async () => {

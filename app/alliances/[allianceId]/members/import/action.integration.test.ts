@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
 import type * as ImportAction from "./action";
+import type * as NewMemberAction from "../new/action";
 
 const runDb = process.env.INTEGRATION_DB === "true";
 
 describe.skipIf(!runDb)("importMembers [integration]", () => {
     let prisma: PrismaClient;
     let importMembers: typeof ImportAction.importMembers;
+    let restoreMember: typeof NewMemberAction.restoreMember;
     const createdAllianceIds: string[] = [];
 
     beforeAll(async () => {
@@ -14,6 +16,7 @@ describe.skipIf(!runDb)("importMembers [integration]", () => {
             prisma: PrismaClient;
         });
         ({ importMembers } = await import("./action"));
+        ({ restoreMember } = await import("../new/action"));
     });
 
     afterEach(async () => {
@@ -85,5 +88,44 @@ describe.skipIf(!runDb)("importMembers [integration]", () => {
         });
 
         expect(finalActiveCount).toBe(100);
+    });
+
+    it("integration: serializes manual restore vs roster import using shared Alliance row lock", async () => {
+        // Alliance currently has 99 active members + 1 archived member
+        const alliance = await makeAllianceWithActiveMembers(99);
+        const archivedMember = await prisma.allianceMember.create({
+            data: {
+                allianceId: alliance.id,
+                playerName: "Archived Hero",
+                archivedAt: new Date(),
+            },
+        });
+
+        // Batch tries to import 1 new member
+        const entries = [{ playerName: "New Candidate Player" }];
+
+        // FormData for manual restore
+        const formData = new FormData();
+        formData.append("allianceId", alliance.id);
+        formData.append("memberId", archivedMember.id);
+
+        // Run manual restore and import concurrently
+        const [restoreRes, importRes] = await Promise.all([
+            restoreMember(formData),
+            importMembers(alliance.id, entries),
+        ]);
+
+        // Exactly one can succeed because capacity is 1
+        const restoreSuccess = restoreRes.success;
+        const importSuccess = importRes.created === 1;
+
+        expect(restoreSuccess !== importSuccess).toBe(true); // One succeeded, one failed
+
+        // Final count in DB must be exactly 100 (never 101)
+        const finalCount = await prisma.allianceMember.count({
+            where: { allianceId: alliance.id, archivedAt: null },
+        });
+
+        expect(finalCount).toBe(100);
     });
 });
