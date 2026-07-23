@@ -120,6 +120,8 @@ export function checkDbIdentity(env: Env = process.env): string[] {
     return problems;
   }
 
+  const identities: Partial<Record<(typeof DB_CONNECTION_VARS)[number], string>> = {};
+
   for (const name of DB_CONNECTION_VARS) {
     const conn = env[name];
     if (!conn) continue;
@@ -130,6 +132,7 @@ export function checkDbIdentity(env: Env = process.env): string[] {
       problems.push(`${name} is not a valid connection string.`);
       continue;
     }
+    identities[name] = identity;
     const pointsAtProduction = allow.includes(identity);
     if (kind === "production" && !pointsAtProduction) {
       problems.push(
@@ -141,6 +144,22 @@ export function checkDbIdentity(env: Env = process.env): string[] {
         `${name} resolves to a PRODUCTION database identity; a Preview deployment must never connect to production data.`
       );
     }
+  }
+
+  // Each connection var passing its OWN "is this production/is this not
+  // production" check isn't enough: if PRODUCTION_DB_HOSTS ever names more
+  // than one production identity (e.g. mid-migration), DATABASE_URL and
+  // DIRECT_URL could each independently satisfy that check while still
+  // pointing the app's runtime and its migrations at two different
+  // production databases. Require them to agree with EACH OTHER too.
+  if (
+    identities.DATABASE_URL &&
+    identities.DIRECT_URL &&
+    identities.DATABASE_URL !== identities.DIRECT_URL
+  ) {
+    problems.push(
+      "DATABASE_URL and DIRECT_URL resolve to different database identities; the runtime connection and the migration/direct connection must point at the same database."
+    );
   }
 
   return problems;

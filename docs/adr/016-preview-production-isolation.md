@@ -32,6 +32,7 @@ A shared resolver ([`app/src/lib/productionDb.ts`](../../app/src/lib/productionD
 - **Vercel Production**: every connection MUST resolve to a listed production identity.
 - **Vercel Preview**: NO connection may — a preview pointing at production aborts startup.
 - **Local / CI / test** (`VERCEL_ENV` unset): unconstrained.
+- **`DATABASE_URL` and `DIRECT_URL` must agree with each other**, not just each independently pass the allowlist check — otherwise a `PRODUCTION_DB_HOSTS` naming more than one production identity (e.g. mid-migration) could let the runtime connection and the migration connection silently point at two different production databases.
 
 The same resolver is reused by the beta cleanup tooling (ADR follow-up) so the app and the operator scripts can never disagree about "which database is production."
 

@@ -12,6 +12,8 @@ const PROD_DIRECT =
   "postgresql://u:p@ep-cool-name-123456.us-east-2.aws.neon.tech/db?sslmode=require";
 const PREVIEW_POOLED =
   "postgresql://u:p@ep-preview-999999-pooler.us-east-2.aws.neon.tech/db?sslmode=require";
+const SECOND_PROD_DIRECT =
+  "postgresql://u:p@ep-second-prod-777777.us-east-2.aws.neon.tech/db?sslmode=require";
 
 describe("connectionIdentity", () => {
   it("collapses pooled and direct Neon hosts to the same endpoint id", () => {
@@ -165,5 +167,31 @@ describe("checkDbIdentity", () => {
       DATABASE_URL: PREVIEW_POOLED,
     });
     expect(problems.join("\n")).toMatch(/production must use a production database/);
+  });
+
+  it("fails when DATABASE_URL and DIRECT_URL each pass the allowlist but point at DIFFERENT production databases", () => {
+    // A single-identity allowlist check on each var independently isn't
+    // enough once PRODUCTION_DB_HOSTS names more than one production
+    // identity (e.g. mid-migration): both could be "a" production database
+    // while runtime and migrations silently point at two different ones.
+    const problems = checkDbIdentity({
+      VERCEL_ENV: "production",
+      PRODUCTION_DB_HOSTS: "ep-cool-name-123456,ep-second-prod-777777",
+      DATABASE_URL: PROD_POOLED,
+      DIRECT_URL: SECOND_PROD_DIRECT,
+    });
+    expect(problems.join("\n")).toMatch(
+      /DATABASE_URL and DIRECT_URL resolve to different database identities/
+    );
+  });
+
+  it("passes when DATABASE_URL and DIRECT_URL are the same production database, even with a multi-identity allowlist", () => {
+    const problems = checkDbIdentity({
+      VERCEL_ENV: "production",
+      PRODUCTION_DB_HOSTS: "ep-cool-name-123456,ep-second-prod-777777",
+      DATABASE_URL: PROD_POOLED,
+      DIRECT_URL: PROD_DIRECT,
+    });
+    expect(problems).toEqual([]);
   });
 });
