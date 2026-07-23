@@ -5,7 +5,7 @@ import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/app/generated/prisma/client";
 
-export class ArchivedMemberError extends Error {
+class ArchivedMemberError extends Error {
     constructor(
         public readonly memberId: string,
         public readonly playerName: string,
