@@ -2,7 +2,7 @@
 
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { prisma } from "@/app/src/lib/prisma";
-import { withAllianceMemberCapacityLock } from "@/app/src/lib/allianceMemberLock";
+import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/app/generated/prisma/client";
 
@@ -83,10 +83,9 @@ export async function restoreMember(
     }
 
     try {
-        await withAllianceMemberCapacityLock(
+        await withAllianceMemberLock(
             allianceId,
-            1,
-            async (tx) => {
+            async (tx, activeMembersCount) => {
                 const targetMember = await tx.allianceMember.findFirst({
                     where: { id: memberId, allianceId },
                 });
@@ -97,6 +96,10 @@ export async function restoreMember(
 
                 if (!targetMember.archivedAt) {
                     throw new Error("Member is not archived");
+                }
+
+                if (activeMembersCount + 1 > 100) {
+                    throw new Error("Your alliance has 100 active members, so you can add 0 more.");
                 }
 
                 await tx.allianceMember.update({

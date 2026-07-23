@@ -1,9 +1,20 @@
 "use server";
 
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
-import { withAllianceMemberCapacityLock } from "@/app/src/lib/allianceMemberLock";
+import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/app/generated/prisma/client";
+
+export class ArchivedMemberError extends Error {
+    constructor(
+        public readonly memberId: string,
+        public readonly playerName: string,
+        public readonly archivedAtIso: string
+    ) {
+        super("Archived member found");
+        this.name = "ArchivedMemberError";
+    }
+}
 
 export type AddMemberResult =
     | { success: true; memberId: string }
@@ -43,10 +54,9 @@ export async function addMember(formData: FormData): Promise<AddMemberResult> {
     const squadPower = parseIntOrNull(squadPowerRaw);
 
     try {
-        const member = await withAllianceMemberCapacityLock(
+        const member = await withAllianceMemberLock(
             allianceId,
-            1,
-            async (tx) => {
+            async (tx, activeMembersCount) => {
                 const existingInTx = await tx.allianceMember.findFirst({
                     where: {
                         allianceId,
@@ -59,10 +69,18 @@ export async function addMember(formData: FormData): Promise<AddMemberResult> {
 
                 if (existingInTx) {
                     if (existingInTx.archivedAt) {
-                        throw new Error(`ARCHIVED_MEMBER::${existingInTx.id}::${existingInTx.playerName}::${existingInTx.archivedAt.toISOString()}`);
+                        throw new ArchivedMemberError(
+                            existingInTx.id,
+                            existingInTx.playerName,
+                            existingInTx.archivedAt.toISOString()
+                        );
                     } else {
                         throw new Error(`A member named "${existingInTx.playerName}" already exists in this alliance`);
                     }
+                }
+
+                if (activeMembersCount + 1 > 100) {
+                    throw new Error("Your alliance has 100 active members, so you can add 0 more.");
                 }
 
                 return await tx.allianceMember.create({
@@ -81,14 +99,13 @@ export async function addMember(formData: FormData): Promise<AddMemberResult> {
         revalidatePath(`/alliances/${allianceId}/members`);
         return { success: true, memberId: member.id };
     } catch (error) {
-        if (error instanceof Error && error.message.startsWith("ARCHIVED_MEMBER::")) {
-            const [, id, pName, archivedAtISO] = error.message.split("::");
+        if (error instanceof ArchivedMemberError) {
             return {
                 success: false,
                 archivedMember: {
-                    id,
-                    playerName: pName,
-                    archivedAt: archivedAtISO,
+                    id: error.memberId,
+                    playerName: error.playerName,
+                    archivedAt: error.archivedAtIso,
                 },
             };
         }
@@ -122,10 +139,9 @@ export async function restoreMember(formData: FormData): Promise<AddMemberResult
     }
 
     try {
-        const member = await withAllianceMemberCapacityLock(
+        const member = await withAllianceMemberLock(
             allianceId,
-            1,
-            async (tx) => {
+            async (tx, activeMembersCount) => {
                 const targetMember = await tx.allianceMember.findFirst({
                     where: { id: memberId, allianceId },
                 });
@@ -136,6 +152,10 @@ export async function restoreMember(formData: FormData): Promise<AddMemberResult
 
                 if (!targetMember.archivedAt) {
                     throw new Error("Member is not archived");
+                }
+
+                if (activeMembersCount + 1 > 100) {
+                    throw new Error("Your alliance has 100 active members, so you can add 0 more.");
                 }
 
                 return await tx.allianceMember.update({

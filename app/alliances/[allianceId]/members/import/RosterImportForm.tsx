@@ -101,7 +101,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
         ])
     );
 
-    const reclassifyMembers = (members: ParsedMember[]): ParsedMember[] => {
+    const reclassifyMembers = (members: ParsedMember[], editedId?: string): ParsedMember[] => {
         const seenNamesInFile = new Set<string>();
         return members.map((m) => {
             const playerName = m.playerName.trim();
@@ -134,12 +134,24 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                 }
             }
 
+            const isIneligible = isExisting || isDuplicateInFile;
+            const wasIneligible = m.isExisting || m.isDuplicateInFile;
+
+            let newSelected = m.selected;
+            if (isIneligible) {
+                newSelected = false;
+            } else if (wasIneligible || m.id === editedId) {
+                newSelected = true;
+            } else {
+                newSelected = m.selected;
+            }
+
             return {
                 ...m,
                 isExisting,
                 isArchived,
                 isDuplicateInFile,
-                selected: (isExisting || isDuplicateInFile) ? false : true,
+                selected: newSelected,
             };
         });
     };
@@ -234,7 +246,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     const updateMember = (id: string, field: keyof ParsedMember, value: string | boolean) => {
         setParsedMembers((prev) => {
             const updated = prev.map((m) => (m.id === id ? { ...m, [field]: value } : m));
-            return field === "playerName" ? reclassifyMembers(updated) : updated;
+            return field === "playerName" ? reclassifyMembers(updated, id) : updated;
         });
     };
 

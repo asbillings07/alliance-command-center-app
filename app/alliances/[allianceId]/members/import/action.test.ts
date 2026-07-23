@@ -223,4 +223,24 @@ describe("importMembers", () => {
         ]);
         expect(mockAllianceMember.findMany).not.toHaveBeenCalled();
     });
+
+    it("correctly classifies repeated active members in CSV as 1 existing and subsequent occurrences as duplicates", async () => {
+        mockAllianceMember.findMany.mockResolvedValue([
+            { id: "active-1", playerName: "Existing Active One", archivedAt: null },
+        ]);
+        mockAllianceMember.createMany.mockResolvedValue({ count: 1 });
+
+        const entries = [
+            { playerName: "Existing Active One" },
+            { playerName: "Existing Active One" }, // Duplicate in CSV of active member
+            { playerName: "Brand New Player" },
+        ];
+
+        const result = await importMembers(allianceId, entries);
+
+        expect(result.errors).toEqual([]);
+        expect(result.created).toBe(1);
+        expect(result.skippedExisting).toBe(1);
+        expect(result.skippedDuplicates).toBe(1);
+    });
 });

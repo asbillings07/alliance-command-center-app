@@ -162,8 +162,10 @@ export async function inviteLeadershipCollaborator(
   } else {
     member = await withAllianceMemberCapacityLock(
       allianceId,
-      1,
-      async (tx) => {
+      async (tx, activeMembersCount) => {
+        if (activeMembersCount + 1 > 100) {
+          throw new Error("Your alliance has 100 active members, so you can add 0 more.");
+        }
         return await tx.allianceMember.create({
           data: {
             allianceId,

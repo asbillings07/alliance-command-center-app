@@ -197,6 +197,54 @@ New Player B,60000,R3`;
         expect(container.textContent).toContain("Import 2 Unique Members");
     });
 
+    it("preserves operator deselection on unrelated rows when a name is edited", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        const csvContent = `Player
+New Candidate 1
+New Candidate 2`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Initially both are selected -> Import 2 Unique Members
+        expect(container.textContent).toContain("Import 2 Unique Members");
+
+        // Manually deselect New Candidate 2
+        const checkboxes = container.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]');
+        expect(checkboxes.length).toBe(2);
+
+        await act(async () => {
+            checkboxes[1].click();
+        });
+
+        // Now 1 selected
+        expect(container.textContent).toContain("Import 1 Unique Member");
+
+        // Edit New Candidate 1's name
+        const nameInputs = container.querySelectorAll<HTMLInputElement>('tbody input[type="text"]');
+        await act(async () => {
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype,
+                "value"
+            )?.set;
+            nativeInputValueSetter?.call(nameInputs[0], "Renamed Candidate 1");
+            nameInputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+        });
+
+        // Candidate 2 remains deselected -> button still says Import 1 Unique Member!
+        expect(container.textContent).toContain("Import 1 Unique Member");
+    });
+
     it("displays over-capacity warning when active count plus unique selections exceeds 100", async () => {
         const active99 = Array.from({ length: 99 }, (_, i) => ({
             id: `active-${i}`,
