@@ -200,7 +200,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
 
     const toggleSelectAll = (selected: boolean) => {
         setParsedMembers((prev) =>
-            prev.map((m) => (m.isExisting ? m : { ...m, selected }))
+            prev.map((m) => (m.isExisting || m.isDuplicateInFile ? m : { ...m, selected }))
         );
     };
 
@@ -219,9 +219,9 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     const overflowCount = (activeRosterCount + uniqueSelectedCount) - 100;
 
     const handleImport = () => {
-        const selectedMembers = parsedMembers.filter((m) => m.selected && (!m.isExisting || m.isArchived));
+        const candidateMembers = parsedMembers.filter((m) => !m.isExisting);
 
-        if (selectedMembers.length === 0) {
+        if (candidateMembers.length === 0) {
             const existingActiveCount = parsedMembers.filter((m) => m.isExisting).length;
             setImportResult({ 
                 created: 0, 
@@ -229,17 +229,19 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                 skippedExisting: existingActiveCount, 
                 skippedDuplicates: 0, 
                 skippedEmptyNames: 0,
+                skippedUnselected: 0,
                 errors: [] 
             });
             setStep("complete");
             return;
         }
 
-        const entries: RosterEntry[] = selectedMembers.map((m) => ({
+        const entries: RosterEntry[] = candidateMembers.map((m) => ({
             playerName: m.playerName.trim(),
             thp: parseNumber(m.thp),
             role: m.role.trim() || undefined,
             restore: m.isArchived,
+            selected: m.selected,
         }));
 
         startTransition(async () => {
@@ -637,6 +639,12 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                         <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
                             <p className="text-3xl font-bold text-yellow-600">{importResult.skippedEmptyNames}</p>
                             <p className="text-sm text-gray-600">Empty names skipped</p>
+                        </div>
+                    )}
+                    {importResult.skippedUnselected > 0 && (
+                        <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
+                            <p className="text-3xl font-bold text-slate-500">{importResult.skippedUnselected}</p>
+                            <p className="text-sm text-gray-600">Unselected</p>
                         </div>
                     )}
                 </div>

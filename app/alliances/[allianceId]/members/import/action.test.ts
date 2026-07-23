@@ -19,10 +19,16 @@ vi.mock("@/app/src/lib/prisma", () => {
         update: vi.fn(),
     };
 
+    const mockTx = {
+        allianceMember: mockAllianceMember,
+        $executeRaw: vi.fn().mockResolvedValue(1),
+    };
+
     return {
         prisma: {
             allianceMember: mockAllianceMember,
-            $transaction: vi.fn((callback) => callback({ allianceMember: mockAllianceMember })),
+            $executeRaw: vi.fn().mockResolvedValue(1),
+            $transaction: vi.fn((callback) => callback(mockTx)),
         },
     };
 });
@@ -163,17 +169,14 @@ describe("importMembers", () => {
     });
 
     it("enforces transactional capacity and produces zero writes if count changes concurrently", async () => {
-        const activeMembers = Array.from({ length: 80 }, (_, i) => ({
+        const activeMembers85 = Array.from({ length: 85 }, (_, i) => ({
             id: `active-${i}`,
             playerName: `Active Member ${i + 1}`,
             archivedAt: null,
         }));
 
-        mockAllianceMember.findMany.mockResolvedValue(activeMembers);
-
-        // Initial check sees 80 members (capacity = 20), user tries to add 20 new
-        // But inside transaction count returns 85 due to race condition
-        mockAllianceMember.count.mockResolvedValue(85);
+        // Inside locked transaction, findMany returns 85 active members due to another transaction having committed
+        mockAllianceMember.findMany.mockResolvedValue(activeMembers85);
 
         const entries = Array.from({ length: 20 }, (_, i) => ({
             playerName: `New Candidate ${i + 1}`,
@@ -186,6 +189,24 @@ describe("importMembers", () => {
         expect(result.errors.length).toBe(1);
         expect(result.errors[0]).toContain("Your alliance has 85 active members");
         expect(mockAllianceMember.createMany).not.toHaveBeenCalled();
+    });
+
+    it("accurately tracks unselected members and skips them during import", async () => {
+        mockAllianceMember.findMany.mockResolvedValue([]);
+        mockAllianceMember.createMany.mockResolvedValue({ count: 2 });
+
+        const entries = [
+            { playerName: "Selected Member 1", selected: true },
+            { playerName: "Selected Member 2", selected: true },
+            { playerName: "Unselected Member 1", selected: false },
+            { playerName: "Unselected Member 2", selected: false },
+        ];
+
+        const result = await importMembers(allianceId, entries);
+
+        expect(result.errors).toEqual([]);
+        expect(result.created).toBe(2);
+        expect(result.skippedUnselected).toBe(2);
     });
 
     it("enforces technical row count ceiling of 2,000 entries", async () => {
