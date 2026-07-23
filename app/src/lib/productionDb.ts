@@ -23,6 +23,8 @@
  */
 
 const NEON_DOMAIN_SUFFIX = ".neon.tech";
+/** Postgres's own default port — explicitly specifying it is equivalent to omitting it. */
+const DEFAULT_POSTGRES_PORT = "5432";
 
 /** Reduce a Postgres connection string to a stable database identity. */
 export function connectionIdentity(connectionString: string): string {
@@ -37,8 +39,12 @@ export function connectionIdentity(connectionString: string): string {
     // Neon endpoint ids are stable regardless of port, but a non-Neon host is
     // identified by hostname alone unless we also keep the port — otherwise
     // two distinct instances sharing a hostname on different ports would
-    // collapse to the same identity, weakening the isolation guard.
-    return url.port ? `${host}:${url.port}` : host;
+    // collapse to the same identity, weakening the isolation guard. The
+    // Postgres DEFAULT port is the exception: ":5432" and no port at all mean
+    // the same database, so normalize it away rather than force every
+    // PRODUCTION_DB_HOSTS entry to exactly mirror whether it's spelled out.
+    const port = url.port && url.port !== DEFAULT_POSTGRES_PORT ? url.port : "";
+    return port ? `${host}:${port}` : host;
   }
   const label = host.split(".")[0]; // e.g. ep-cool-name-123456-pooler
   return label.replace(/-pooler$/, ""); // e.g. ep-cool-name-123456

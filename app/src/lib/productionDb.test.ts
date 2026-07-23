@@ -22,9 +22,9 @@ describe("connectionIdentity", () => {
     expect(connectionIdentity(PROD_POOLED)).toBe(connectionIdentity(PROD_DIRECT));
   });
 
-  it("falls back to the full host (with port, if present) for non-Neon providers", () => {
-    expect(connectionIdentity("postgresql://u:p@db.internal.example.com:5432/x")).toBe(
-      "db.internal.example.com:5432"
+  it("falls back to the full host for non-Neon providers, with a non-default port preserved", () => {
+    expect(connectionIdentity("postgresql://u:p@db.internal.example.com:5433/x")).toBe(
+      "db.internal.example.com:5433"
     );
   });
 
@@ -67,26 +67,36 @@ describe("productionIdentities", () => {
     ]);
   });
 
-  it("treats a bare id with a port as a host, not a bare endpoint id", () => {
-    // A bare endpoint id has no port; `ep-x-123:5432` must be parsed as a host
+  it("treats a bare id with a non-default port as a host, not a bare endpoint id", () => {
+    // A bare endpoint id has no port; `ep-x-123:5433` must be parsed as a host
     // via connectionIdentity (a non-Neon host keeps its exact identity,
-    // including the port — see the port-preservation test below).
-    expect(productionIdentities("ep-x-123:5432")).toEqual(["ep-x-123:5432"]);
+    // including a non-default port — see the port-preservation test below).
+    expect(productionIdentities("ep-x-123:5433")).toEqual(["ep-x-123:5433"]);
   });
 });
 
 describe("connectionIdentity port handling", () => {
-  it("keeps the port for a non-Neon host, so two instances on one hostname stay distinct", () => {
-    const a = connectionIdentity("postgresql://u:p@db.example.com:5432/foo");
-    const b = connectionIdentity("postgresql://u:p@db.example.com:5433/bar");
-    expect(a).toBe("db.example.com:5432");
-    expect(b).toBe("db.example.com:5433");
+  it("keeps a NON-default port for a non-Neon host, so two instances on one hostname stay distinct", () => {
+    const a = connectionIdentity("postgresql://u:p@db.example.com:5433/foo");
+    const b = connectionIdentity("postgresql://u:p@db.example.com:5434/bar");
+    expect(a).toBe("db.example.com:5433");
+    expect(b).toBe("db.example.com:5434");
     expect(a).not.toBe(b);
+  });
+
+  it("normalizes the DEFAULT Postgres port (5432) away, since specifying it is equivalent to omitting it", () => {
+    const explicit = connectionIdentity("postgresql://u:p@db.example.com:5432/foo");
+    const omitted = connectionIdentity("postgresql://u:p@db.example.com/foo");
+    expect(explicit).toBe("db.example.com");
+    expect(explicit).toBe(omitted);
   });
 
   it("ignores the port for a Neon host (endpoint id is already port-independent)", () => {
     expect(
       connectionIdentity("postgresql://u:p@ep-cool-name-123456.us-east-2.aws.neon.tech:5432/db")
+    ).toBe("ep-cool-name-123456");
+    expect(
+      connectionIdentity("postgresql://u:p@ep-cool-name-123456.us-east-2.aws.neon.tech:5433/db")
     ).toBe("ep-cool-name-123456");
   });
 
