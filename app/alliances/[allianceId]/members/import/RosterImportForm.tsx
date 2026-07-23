@@ -28,6 +28,7 @@ type ParsedMember = {
     role: string;
     isExisting: boolean;
     isArchived: boolean;
+    isDuplicateInFile: boolean;
     selected: boolean;
 };
 
@@ -100,11 +101,72 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
         ])
     );
 
+    const reclassifyMembers = (members: ParsedMember[], editedId?: string): ParsedMember[] => {
+        const seenNamesInFile = new Set<string>();
+        return members.map((m) => {
+            const playerName = m.playerName.trim();
+            if (!playerName) {
+                return {
+                    ...m,
+                    isExisting: false,
+                    isArchived: false,
+                    isDuplicateInFile: false,
+                    selected: false,
+                };
+            }
+
+            const normalized = normalizeName(playerName);
+            let isDuplicateInFile = false;
+            let isExisting = false;
+            let isArchived = false;
+
+            if (seenNamesInFile.has(normalized)) {
+                isDuplicateInFile = true;
+            } else {
+                seenNamesInFile.add(normalized);
+                const existingInfo = existingMembersMap.get(normalized);
+                if (existingInfo) {
+                    if (existingInfo.isArchived) {
+                        isArchived = true;
+                    } else {
+                        isExisting = true;
+                    }
+                }
+            }
+
+            const isIneligible = isExisting || isDuplicateInFile;
+            const wasIneligible = m.isExisting || m.isDuplicateInFile;
+
+            let newSelected = m.selected;
+            if (isIneligible) {
+                newSelected = false;
+            } else if (wasIneligible || m.id === editedId) {
+                newSelected = true;
+            } else {
+                newSelected = m.selected;
+            }
+
+            return {
+                ...m,
+                isExisting,
+                isArchived,
+                isDuplicateInFile,
+                selected: newSelected,
+            };
+        });
+    };
+
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         setError(null);
+
+        // File size guard (5 MB)
+        if (file.size > 5 * 1024 * 1024) {
+            setError("File size exceeds maximum limit of 5 MB");
+            return;
+        }
 
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -135,91 +197,129 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
         }
 
         // Detect optional columns
-        // Note: Don't filter by isNumeric for THP - values may contain commas (e.g. "52,000,000")
-        // which analyzeCSV marks as non-numeric. parseNumber handles commas correctly.
         const thpCol = detectColumn(result.columns, THP_COLUMN_NAMES);
         const roleCol = detectColumn(result.columns, ROLE_COLUMN_NAMES);
 
         // Parse the CSV manually to extract values
         const lines = content.trim().split(/\r?\n/);
-        const members: ParsedMember[] = [];
+        
+        // Abuse protection ceiling for row count
+        if (lines.length > 2001) {
+            setError("CSV file contains too many rows (maximum 2,000 data rows allowed)");
+            return;
+        }
+
+        const rawMembers: ParsedMember[] = [];
 
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
 
             const values = parseCSVLine(line);
-            const playerName = values[playerCol.index]?.trim();
-
-            if (!playerName) continue;
+            const playerName = values[playerCol.index]?.trim() || "";
 
             const thpRaw = thpCol ? values[thpCol.index]?.trim() || "" : "";
             const roleValue = roleCol ? values[roleCol.index]?.trim() || "" : "";
 
-            const normalized = normalizeName(playerName);
-            const existingInfo = existingMembersMap.get(normalized);
-            const isExisting = !!existingInfo;
-            const isArchived = existingInfo?.isArchived ?? false;
-
-            members.push({
+            rawMembers.push({
                 id: `row-${i}`,
                 playerName,
                 thp: thpRaw,
                 role: roleValue,
-                isExisting,
-                isArchived,
-                selected: !isExisting,
+                isExisting: false,
+                isArchived: false,
+                isDuplicateInFile: false,
+                selected: true,
             });
         }
 
-        if (members.length === 0) {
+        if (rawMembers.length === 0) {
             setError("No valid members found in the CSV");
             return;
         }
 
-        setParsedMembers(members);
+        const reconciledMembers = reclassifyMembers(rawMembers);
+        setParsedMembers(reconciledMembers);
         setStep("preview");
     };
 
     const updateMember = (id: string, field: keyof ParsedMember, value: string | boolean) => {
-        setParsedMembers((prev) =>
-            prev.map((m) => (m.id === id ? { ...m, [field]: value } : m))
-        );
+        setParsedMembers((prev) => {
+            const updated = prev.map((m) => {
+                if (m.id === id) {
+                    if (field === "selected" && value === true && !m.playerName.trim()) {
+                        return { ...m, selected: false };
+                    }
+                    return { ...m, [field]: value };
+                }
+                return m;
+            });
+            return field === "playerName" ? reclassifyMembers(updated, id) : updated;
+        });
     };
 
     const toggleSelectAll = (selected: boolean) => {
         setParsedMembers((prev) =>
-            prev.map((m) => (m.isExisting ? m : { ...m, selected }))
+            prev.map((m) =>
+                m.isExisting || m.isDuplicateInFile || !m.playerName.trim()
+                    ? { ...m, selected: false }
+                    : { ...m, selected }
+            )
         );
     };
 
-    const handleImport = () => {
-        const selectedMembers = parsedMembers.filter((m) => m.selected && !m.isExisting);
+    const activeRosterCount = existingMembers.filter((m) => !m.archivedAt).length;
+    const capacityRemaining = Math.max(0, 100 - activeRosterCount);
 
-        if (selectedMembers.length === 0) {
-            const existingCount = parsedMembers.filter((m) => m.isExisting).length;
+    const selectedCandidates = parsedMembers.filter(
+        (m) => m.selected && (!m.isExisting || m.isArchived) && m.playerName.trim() !== ""
+    );
+    const uniqueSelectedNames = new Set(selectedCandidates.map((m) => normalizeName(m.playerName)));
+    const uniqueSelectedCount = uniqueSelectedNames.size;
+
+    const selectedNewMembers = parsedMembers.filter(
+        (m) => m.selected && !m.isExisting && !m.isArchived && m.playerName.trim() !== ""
+    );
+    const selectedRestoreMembers = parsedMembers.filter(
+        (m) => m.selected && m.isArchived && m.playerName.trim() !== ""
+    );
+    const duplicateInFileRows = parsedMembers.filter((m) => m.isDuplicateInFile);
+
+    const isOverCapacity = (activeRosterCount + uniqueSelectedCount) > 100;
+    const overflowCount = (activeRosterCount + uniqueSelectedCount) - 100;
+
+    const handleImport = () => {
+        if (parsedMembers.length === 0) {
             setImportResult({ 
                 created: 0, 
-                skippedExisting: existingCount, 
+                restored: 0,
+                skippedExisting: 0, 
                 skippedDuplicates: 0, 
                 skippedEmptyNames: 0,
+                skippedUnselected: 0,
                 errors: [] 
             });
             setStep("complete");
             return;
         }
 
-        // Send all selected members - server will filter empty names and report in result
-        const entries: RosterEntry[] = selectedMembers.map((m) => ({
+        const entries: RosterEntry[] = parsedMembers.map((m) => ({
             playerName: m.playerName.trim(),
             thp: parseNumber(m.thp),
             role: m.role.trim() || undefined,
+            restore: m.isArchived,
+            selected: m.selected,
         }));
 
         startTransition(async () => {
             const result = await importMembers(allianceId, entries);
             setImportResult(result);
-            setStep("complete");
+            if (result.errors.length > 0 && result.created === 0 && result.restored === 0) {
+                setError(result.errors.join("; "));
+            } else {
+                setError(null);
+                setStep("complete");
+            }
         });
     };
 
@@ -229,10 +329,6 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
         setParsedMembers([]);
         setImportResult(null);
     };
-
-    const newMembers = parsedMembers.filter((m) => !m.isExisting);
-    const selectedCount = parsedMembers.filter((m) => m.selected && !m.isExisting).length;
-    const existingMembersCount = parsedMembers.filter((m) => m.isExisting).length;
 
     // Upload step
     if (step === "upload") {
@@ -312,7 +408,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
 
                 {existingMembers.length > 0 && (
                     <p className="text-sm text-gray-500">
-                        You currently have {existingMembers.length} members. Existing members will be skipped during import.
+                        You currently have {activeRosterCount} active members and {existingMembers.length - activeRosterCount} archived members.
                     </p>
                 )}
             </div>
@@ -321,40 +417,75 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
 
     // Preview step
     if (step === "preview") {
-        const allExisting = newMembers.length === 0;
-        const allNewSelected = newMembers.every((m) => m.selected);
-        const someNewSelected = newMembers.some((m) => m.selected);
+        const selectableMembers = parsedMembers.filter(
+            (m) => !m.isExisting && !m.isDuplicateInFile && m.playerName.trim() !== ""
+        );
+        const allSelectableSelected = selectableMembers.length > 0 && selectableMembers.every((m) => m.selected);
+        const someSelectableSelected = selectableMembers.some((m) => m.selected);
+        const allExistingActive = selectableMembers.length === 0;
 
         return (
             <div className="flex flex-col gap-6">
+                {/* Capacity warning banner */}
+                {isOverCapacity && (
+                    <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 flex flex-col gap-1">
+                        <p className="font-semibold text-amber-900">Roster Capacity Exceeded</p>
+                        <p className="text-sm text-amber-800">
+                            Your alliance has {activeRosterCount} active member{activeRosterCount === 1 ? "" : "s"}, so you can add {capacityRemaining} more unique member{capacityRemaining === 1 ? "" : "s"}. You currently have {uniqueSelectedCount} unique member{uniqueSelectedCount === 1 ? "" : "s"} selected ({selectedNewMembers.length} new, {selectedRestoreMembers.length} restored). Deselect {overflowCount} member{overflowCount === 1 ? "" : "s"} to continue.
+                        </p>
+                    </div>
+                )}
+
+                {/* Duplicates in CSV banner */}
+                {duplicateInFileRows.length > 0 && (
+                    <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg text-purple-900 flex flex-col gap-1">
+                        <p className="font-semibold text-purple-900">
+                            {duplicateInFileRows.length} Duplicate Row{duplicateInFileRows.length === 1 ? "" : "s"} Highlighted in CSV
+                        </p>
+                        <p className="text-sm text-purple-800">
+                            {duplicateInFileRows.length} row{duplicateInFileRows.length === 1 ? "" : "s"} repeat a player name that appeared earlier in your file. These duplicate rows are unselected by default to prevent adding duplicates.
+                        </p>
+                    </div>
+                )}
+
+                {error && (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-red-800 font-medium">{error}</p>
+                    </div>
+                )}
+
                 {/* Summary */}
                 <div className="flex gap-4">
                     <div className="flex-1 bg-green-50 border border-green-200 rounded-lg p-4">
-                        <p className="text-2xl font-bold text-green-900">{selectedCount}</p>
+                        <p className="text-2xl font-bold text-green-900">{uniqueSelectedCount}</p>
                         <p className="text-sm text-green-700">
-                            Selected to create {newMembers.length > selectedCount && (
-                                <span className="text-green-600">({newMembers.length} available)</span>
-                            )}
+                            Selected unique members ({selectedNewMembers.length} new, {selectedRestoreMembers.length} restored)
                         </p>
                     </div>
+                    <div className="flex-1 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p className="text-2xl font-bold text-blue-900">{capacityRemaining}</p>
+                        <p className="text-sm text-blue-700">Available roster capacity ({activeRosterCount}/100 active)</p>
+                    </div>
                     <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg p-4">
-                        <p className="text-2xl font-bold text-gray-700">{existingMembersCount}</p>
-                        <p className="text-sm text-gray-500">Already exist (will skip)</p>
+                        <p className="text-2xl font-bold text-gray-700">
+                            {parsedMembers.filter((m) => m.isExisting).length + duplicateInFileRows.length}
+                        </p>
+                        <p className="text-sm text-gray-500">Already active or duplicate CSV rows (skipped)</p>
                     </div>
                 </div>
 
-                {allExisting ? (
+                {allExistingActive ? (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
                         <p className="text-blue-900 font-medium">Your roster is already up to date.</p>
-                        <p className="text-sm text-blue-700 mt-1">All members in this file already exist in your alliance.</p>
+                        <p className="text-sm text-blue-700 mt-1">All members in this file already exist as active members in your alliance.</p>
                     </div>
                 ) : (
                     <>
-                        {/* Editable New Members Table */}
+                        {/* Editable Selectable Members Table */}
                         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                             <div className="px-4 py-3 bg-green-50 border-b border-green-200 flex items-center justify-between">
-                                <h3 className="font-semibold text-green-900">Review & Edit Members</h3>
-                                <p className="text-sm text-green-700">Edit any field before importing</p>
+                                <h3 className="font-semibold text-green-900">Review & Select Members</h3>
+                                <p className="text-sm text-green-700">Select members to add or restore</p>
                             </div>
                             <div className="max-h-96 overflow-y-auto">
                                 <table className="w-full text-sm">
@@ -363,9 +494,9 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                                             <th className="w-12 px-4 py-2">
                                                 <input
                                                     type="checkbox"
-                                                    checked={allNewSelected}
+                                                    checked={allSelectableSelected}
                                                     ref={(el) => {
-                                                        if (el) el.indeterminate = someNewSelected && !allNewSelected;
+                                                        if (el) el.indeterminate = someSelectableSelected && !allSelectableSelected;
                                                     }}
                                                     onChange={(e) => toggleSelectAll(e.target.checked)}
                                                     className="w-4 h-4 rounded border-gray-300"
@@ -377,7 +508,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {newMembers.map((member) => (
+                                        {selectableMembers.map((member) => (
                                             <tr
                                                 key={member.id}
                                                 className={`border-t border-gray-100 ${
@@ -396,9 +527,15 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                                                 </td>
                                                 <td className="px-4 py-2">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                                            New
-                                                        </span>
+                                                        {member.isArchived ? (
+                                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                                                Restore
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                                New
+                                                            </span>
+                                                        )}
                                                         <input
                                                             type="text"
                                                             value={member.playerName}
@@ -453,11 +590,32 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                             </div>
                         </div>
 
-                        {/* Existing Members (collapsed) */}
-                        {existingMembersCount > 0 && (
+                        {/* Duplicate Rows in CSV (collapsed) */}
+                        {duplicateInFileRows.length > 0 && (
+                            <details className="bg-white border border-purple-200 rounded-lg overflow-hidden">
+                                <summary className="px-4 py-3 bg-purple-50 cursor-pointer text-purple-900 font-medium">
+                                    {duplicateInFileRows.length} duplicate CSV row{duplicateInFileRows.length === 1 ? "" : "s"} (will skip)
+                                </summary>
+                                <div className="max-h-48 overflow-y-auto">
+                                    <ul className="divide-y divide-gray-100">
+                                        {duplicateInFileRows.map((member) => (
+                                            <li key={member.id} className="px-4 py-2 text-sm text-gray-500 flex items-center gap-2">
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                                    Duplicate in CSV
+                                                </span>
+                                                {member.playerName}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </details>
+                        )}
+
+                        {/* Existing Active Members (collapsed) */}
+                        {parsedMembers.filter((m) => m.isExisting).length > 0 && (
                             <details className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                                 <summary className="px-4 py-3 bg-gray-50 cursor-pointer text-gray-700 font-medium">
-                                    {existingMembersCount} existing members (will skip)
+                                    {parsedMembers.filter((m) => m.isExisting).length} existing active members (will skip)
                                 </summary>
                                 <div className="max-h-48 overflow-y-auto">
                                     <ul className="divide-y divide-gray-100">
@@ -465,14 +623,17 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                                             .filter((m) => m.isExisting)
                                             .map((member) => (
                                                 <li key={member.id} className="px-4 py-2 text-sm text-gray-500 flex items-center gap-2">
-                                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
-                                                        member.isArchived
-                                                            ? "bg-amber-100 text-amber-700"
-                                                            : "bg-gray-100 text-gray-600"
-                                                    }`}>
-                                                        {member.isArchived ? "Archived" : "Exists"}
+                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                                                        Active
                                                     </span>
-                                                    {member.playerName}
+                                                    <input
+                                                        type="text"
+                                                        value={member.playerName}
+                                                        onChange={(e) =>
+                                                            updateMember(member.id, "playerName", e.target.value)
+                                                        }
+                                                        className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-700 bg-white"
+                                                    />
                                                 </li>
                                             ))}
                                     </ul>
@@ -490,13 +651,15 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                     >
                         Cancel
                     </button>
-                    {!allExisting && (
+                    {!allExistingActive && (
                         <button
                             onClick={handleImport}
-                            disabled={isPending || selectedCount === 0}
+                            disabled={isPending || uniqueSelectedCount === 0 || isOverCapacity}
                             className="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            {isPending ? "Creating..." : `Create ${selectedCount} Members`}
+                            {isPending
+                                ? "Importing..."
+                                : `Import ${uniqueSelectedCount} Unique Member${uniqueSelectedCount === 1 ? "" : "s"}`}
                         </button>
                     )}
                 </div>
@@ -530,10 +693,16 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                         <p className="text-3xl font-bold text-green-600">{importResult.created}</p>
                         <p className="text-sm text-gray-600">Members created</p>
                     </div>
+                    {importResult.restored > 0 && (
+                        <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
+                            <p className="text-3xl font-bold text-amber-600">{importResult.restored}</p>
+                            <p className="text-sm text-gray-600">Members restored</p>
+                        </div>
+                    )}
                     {importResult.skippedExisting > 0 && (
                         <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
                             <p className="text-3xl font-bold text-gray-500">{importResult.skippedExisting}</p>
-                            <p className="text-sm text-gray-600">Already existed</p>
+                            <p className="text-sm text-gray-600">Already active</p>
                         </div>
                     )}
                     {importResult.skippedDuplicates > 0 && (
@@ -546,6 +715,12 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                         <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
                             <p className="text-3xl font-bold text-yellow-600">{importResult.skippedEmptyNames}</p>
                             <p className="text-sm text-gray-600">Empty names skipped</p>
+                        </div>
+                    )}
+                    {importResult.skippedUnselected > 0 && (
+                        <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
+                            <p className="text-3xl font-bold text-slate-500">{importResult.skippedUnselected}</p>
+                            <p className="text-sm text-gray-600">Unselected</p>
                         </div>
                     )}
                 </div>

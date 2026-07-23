@@ -1,0 +1,362 @@
+/** @vitest-environment jsdom */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { RosterImportForm } from "./RosterImportForm";
+
+vi.mock("@/app/src/components/client", () => ({
+    TourButton: () => createElement("button", null, "Tour"),
+}));
+
+vi.mock("./action", () => ({
+    importMembers: vi.fn(),
+}));
+
+import { importMembers } from "./action";
+
+(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+let container: HTMLDivElement;
+let root: Root;
+
+beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    vi.clearAllMocks();
+});
+
+afterEach(async () => {
+    await act(async () => {
+        root.unmount();
+    });
+    container.remove();
+});
+
+function setupMockFileReader(fileContent: string) {
+    class MockFileReader {
+        onload: ((e: { target: { result: string } }) => void) | null = null;
+        readAsText() {
+            setTimeout(() => {
+                if (this.onload) {
+                    this.onload({ target: { result: fileContent } });
+                }
+            }, 0);
+        }
+    }
+    window.FileReader = MockFileReader as unknown as typeof FileReader;
+}
+
+function fireFileUpload(fileContent: string, fileSize?: number) {
+    setupMockFileReader(fileContent);
+    const fileInput = container.querySelector("#roster-file") as HTMLInputElement;
+    expect(fileInput).not.toBeNull();
+
+    const size = fileSize ?? fileContent.length;
+    const file = new File([fileContent], "roster.csv", { type: "text/csv" });
+    Object.defineProperty(file, "size", { value: size });
+
+    Object.defineProperty(fileInput, "files", {
+        value: [file],
+        writable: true,
+        configurable: true,
+    });
+
+    const event = new Event("change", { bubbles: true });
+    fileInput.dispatchEvent(event);
+}
+
+describe("RosterImportForm [component]", () => {
+    const allianceId = "alliance-1";
+    const existingMembers = [
+        { id: "m1", playerName: "Existing Active One", archivedAt: null },
+        { id: "m2", playerName: "Existing Archived One", archivedAt: "2026-01-01T00:00:00.000Z" },
+    ];
+
+    it("parses CSV, highlights duplicate rows, deselects duplicates by default, and sends submitted payload with selected: false for duplicates", async () => {
+        (importMembers as ReturnType<typeof vi.fn>).mockResolvedValue({
+            created: 2,
+            restored: 0,
+            skippedExisting: 0,
+            skippedDuplicates: 1,
+            skippedEmptyNames: 0,
+            skippedUnselected: 0,
+            errors: [],
+        });
+
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        const csvContent = `Player,THP,Role
+New Player A,50000,R4
+New Player A,50000,R4
+New Player B,60000,R3`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Check duplicate CSV banner is displayed
+        expect(container.textContent).toContain("1 Duplicate Row Highlighted in CSV");
+        expect(container.textContent).toContain("Duplicate in CSV");
+
+        // Verify "Select All" checkbox behavior: toggling select all does NOT select the duplicate CSV row
+        const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+        const selectAllCheckbox = checkboxes[0]; // Header checkbox
+
+        // Uncheck all
+        await act(async () => {
+            selectAllCheckbox.click();
+        });
+
+        // Re-check all
+        await act(async () => {
+            selectAllCheckbox.click();
+        });
+
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            importBtn.click();
+        });
+
+        expect(importMembers).toHaveBeenCalledTimes(1);
+        const submittedEntries = (importMembers as ReturnType<typeof vi.fn>).mock.calls[0][1];
+
+        // First row "New Player A" is selected: true
+        expect(submittedEntries[0]).toMatchObject({ playerName: "New Player A", selected: true });
+        // Second row "New Player A" (duplicate in file) MUST have selected: false
+        expect(submittedEntries[1]).toMatchObject({ playerName: "New Player A", selected: false });
+        // Third row "New Player B" is selected: true
+        expect(submittedEntries[2]).toMatchObject({ playerName: "New Player B", selected: true });
+    });
+
+    it("enforces 5 MB file size limit on upload", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers,
+                })
+            );
+        });
+
+        const hugeSize = 5 * 1024 * 1024 + 1; // 5 MB + 1 byte
+        await act(async () => {
+            fireFileUpload("Player\nCandidate A", hugeSize);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("File size exceeds maximum limit of 5 MB");
+    });
+
+    it("reclassifies player name dynamically when edited in the preview table", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers, // Existing Active One, Existing Archived One
+                })
+            );
+        });
+
+        // Upload CSV with "Existing Active One" and "Candidate B"
+        await act(async () => {
+            fireFileUpload("Player\nExisting Active One\nCandidate B");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Import 1 Unique Member");
+
+        // Find inputs across table and collapsed lists
+        const nameInputs = container.querySelectorAll<HTMLInputElement>('input[type="text"]');
+        expect(nameInputs.length).toBeGreaterThan(0);
+
+        const activeOneInput = Array.from(nameInputs).find((i) => i.value === "Existing Active One");
+        expect(activeOneInput).not.toBeUndefined();
+
+        await act(async () => {
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype,
+                "value"
+            )?.set;
+            nativeInputValueSetter?.call(activeOneInput, "Brand New Player Name");
+            activeOneInput!.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+
+        // Reclassified dynamically so now 2 unique new members can be imported!
+        expect(container.textContent).toContain("Import 2 Unique Members");
+    });
+
+    it("preserves operator deselection on unrelated rows when a name is edited", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        const csvContent = `Player
+New Candidate 1
+New Candidate 2`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Initially both are selected -> Import 2 Unique Members
+        expect(container.textContent).toContain("Import 2 Unique Members");
+
+        // Manually deselect New Candidate 2
+        const checkboxes = container.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]');
+        expect(checkboxes.length).toBe(2);
+
+        await act(async () => {
+            checkboxes[1].click();
+        });
+
+        // Now 1 selected
+        expect(container.textContent).toContain("Import 1 Unique Member");
+
+        // Edit New Candidate 1's name
+        const nameInputs = container.querySelectorAll<HTMLInputElement>('tbody input[type="text"]');
+        await act(async () => {
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype,
+                "value"
+            )?.set;
+            nativeInputValueSetter?.call(nameInputs[0], "Renamed Candidate 1");
+            nameInputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+        });
+
+        // Candidate 2 remains deselected -> button still says Import 1 Unique Member!
+        expect(container.textContent).toContain("Import 1 Unique Member");
+    });
+
+    it("excludes blank-name CSV rows from Select All and UI capacity consumption", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        const csvContent = `Player
+New Candidate 1
+   
+New Candidate 2`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // 2 unique valid candidate members selectable (blank row excluded)
+        expect(container.textContent).toContain("Import 2 Unique Members");
+
+        // Toggle Select All off, then on
+        const selectAllCheckbox = container.querySelector<HTMLInputElement>('thead input[type="checkbox"]');
+        expect(selectAllCheckbox).not.toBeNull();
+
+        await act(async () => {
+            selectAllCheckbox!.click(); // Off
+        });
+        expect(container.textContent).toContain("Import 0 Unique Members");
+
+        await act(async () => {
+            selectAllCheckbox!.click(); // On
+        });
+
+        // Blank row must not be selected or consume UI capacity!
+        expect(container.textContent).toContain("Import 2 Unique Members");
+    });
+
+    it("displays over-capacity warning when active count plus unique selections exceeds 100", async () => {
+        const active99 = Array.from({ length: 99 }, (_, i) => ({
+            id: `active-${i}`,
+            playerName: `Active Member ${i + 1}`,
+            archivedAt: null,
+        }));
+
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: active99,
+                })
+            );
+        });
+
+        const csvContent = `Player
+New Candidate 1
+New Candidate 2
+New Candidate 3`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Roster Capacity Exceeded");
+        expect(container.textContent).toContain("Your alliance has 99 active members, so you can add 1 more unique member");
+        expect(container.textContent).toContain("Deselect 2 members to continue");
+
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import")
+        ) as HTMLButtonElement;
+
+        expect(importBtn?.disabled).toBe(true);
+    });
+
+    it("stays on preview screen when server import action returns an error", async () => {
+        (importMembers as ReturnType<typeof vi.fn>).mockResolvedValue({
+            created: 0,
+            restored: 0,
+            skippedExisting: 0,
+            skippedDuplicates: 0,
+            skippedEmptyNames: 0,
+            skippedUnselected: 0,
+            errors: ["Your alliance has 100 active members"],
+        });
+
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        await act(async () => {
+            fireFileUpload(`Player\nCandidate A`);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            importBtn.click();
+        });
+
+        // Error message displayed and form stays in preview mode (does not show "Import Complete")
+        expect(container.textContent).toContain("Your alliance has 100 active members");
+        expect(container.textContent).not.toContain("Import Complete");
+    });
+});

@@ -1,21 +1,25 @@
 "use server";
 
-import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { normalizeName } from "@/app/src/lib/memberMatcher";
+import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
 import { revalidatePath } from "next/cache";
 
 export type RosterEntry = {
     playerName: string;
     thp?: number;
     role?: string;
+    restore?: boolean;
+    selected?: boolean;
 };
 
 export type ImportResult = {
     created: number;
+    restored: number;
     skippedExisting: number;
     skippedDuplicates: number;
     skippedEmptyNames: number;
+    skippedUnselected: number;
     errors: string[];
 };
 
@@ -26,113 +30,193 @@ export async function importMembers(
     const auth = await requireAllianceAccess({ allianceId });
 
     if (!auth.permissions.canImportMembers) {
-        return { created: 0, skippedExisting: 0, skippedDuplicates: 0, skippedEmptyNames: 0, errors: ["You don't have permission to import members"] };
+        return {
+            created: 0,
+            restored: 0,
+            skippedExisting: 0,
+            skippedDuplicates: 0,
+            skippedEmptyNames: 0,
+            skippedUnselected: 0,
+            errors: ["You don't have permission to import members"],
+        };
     }
 
     if (entries.length === 0) {
-        return { created: 0, skippedExisting: 0, skippedDuplicates: 0, skippedEmptyNames: 0, errors: ["No entries to import"] };
+        return {
+            created: 0,
+            restored: 0,
+            skippedExisting: 0,
+            skippedDuplicates: 0,
+            skippedEmptyNames: 0,
+            skippedUnselected: 0,
+            errors: ["No entries to import"],
+        };
     }
 
-    if (entries.length > 100) {
-        return { created: 0, skippedExisting: 0, skippedDuplicates: 0, skippedEmptyNames: 0, errors: ["Cannot import more than 100 members at once"] };
+    // Abuse protection ceiling for row count (separate from the 100-active-member domain capacity)
+    if (entries.length > 2000) {
+        return {
+            created: 0,
+            restored: 0,
+            skippedExisting: 0,
+            skippedDuplicates: 0,
+            skippedEmptyNames: 0,
+            skippedUnselected: 0,
+            errors: ["File exceeds maximum technical ceiling of 2,000 entries"],
+        };
     }
 
     // Validate player names - filter out empty/whitespace-only entries
     let skippedEmptyNames = 0;
-    const validatedEntries = entries.filter((entry) => {
+    const validatedEntries: RosterEntry[] = [];
+    for (const entry of entries) {
         const trimmedName = entry.playerName.trim();
         if (!trimmedName) {
             skippedEmptyNames++;
-            return false;
+        } else {
+            validatedEntries.push({ ...entry, playerName: trimmedName });
         }
-        return true;
-    });
+    }
 
     if (validatedEntries.length === 0) {
-        return { 
-            created: 0, 
-            skippedExisting: 0, 
-            skippedDuplicates: 0, 
-            skippedEmptyNames,
-            errors: skippedEmptyNames > 0 
-                ? ["All entries have empty player names"] 
-                : ["No valid entries to import"] 
-        };
-    }
-
-    // Get existing alliance members
-    const existingMembers = await prisma.allianceMember.findMany({
-        where: { allianceId },
-        select: { playerName: true },
-    });
-
-    // Build a set of normalized existing names for fast lookup
-    const existingNamesNormalized = new Set(
-        existingMembers.map((m) => normalizeName(m.playerName))
-    );
-
-    // Separate new entries from existing, tracking all skip reasons
-    const newEntries: RosterEntry[] = [];
-    const seenInImport = new Set<string>();
-    let skippedExisting = 0;
-    let skippedDuplicates = 0;
-
-    for (const entry of validatedEntries) {
-        const normalized = normalizeName(entry.playerName);
-        
-        if (existingNamesNormalized.has(normalized)) {
-            skippedExisting++;
-        } else if (seenInImport.has(normalized)) {
-            skippedDuplicates++;
-        } else {
-            seenInImport.add(normalized);
-            newEntries.push(entry);
-        }
-    }
-
-    if (newEntries.length === 0) {
         return {
             created: 0,
-            skippedExisting,
-            skippedDuplicates,
+            restored: 0,
+            skippedExisting: 0,
+            skippedDuplicates: 0,
             skippedEmptyNames,
-            errors: [],
+            skippedUnselected: 0,
+            errors: skippedEmptyNames > 0
+                ? ["All entries have empty player names"]
+                : ["No valid entries to import"],
         };
     }
 
-    // Create all new alliance members in a single batch query
-    // skipDuplicates handles race conditions where another request inserts between our read and write
-    const errors: string[] = [];
-
     try {
-        const result = await prisma.allianceMember.createMany({
-            data: newEntries.map((entry) => ({
-                allianceId,
-                playerName: entry.playerName.trim(),
-                thp: entry.thp ?? null,
-                role: entry.role?.trim() ?? null,
-            })),
-            skipDuplicates: true,
-        });
+        const result = await withAllianceMemberLock(
+            allianceId,
+            async (tx, activeMembersCount) => {
+                // Fetch existing alliance members inside locked transaction
+                const existingInTx = await tx.allianceMember.findMany({
+                    where: { allianceId },
+                    select: { id: true, playerName: true, archivedAt: true },
+                });
+
+                const activeInTx = new Set<string>();
+                const archivedInTx = new Map<string, { id: string; playerName: string }>();
+
+                for (const m of existingInTx) {
+                    const norm = normalizeName(m.playerName);
+                    if (m.archivedAt) {
+                        archivedInTx.set(norm, { id: m.id, playerName: m.playerName });
+                    } else {
+                        activeInTx.add(norm);
+                    }
+                }
+
+                const toCreate: RosterEntry[] = [];
+                const toRestore: { id: string; entry: RosterEntry }[] = [];
+                const seenInTx = new Set<string>();
+                let skippedExisting = 0;
+                let skippedDuplicates = 0;
+                let skippedUnselected = 0;
+
+                for (const entry of validatedEntries) {
+                    const normalized = normalizeName(entry.playerName);
+
+                    // Track first occurrence before database classification so later normalized occurrences are always duplicates
+                    if (seenInTx.has(normalized)) {
+                        skippedDuplicates++;
+                    } else {
+                        seenInTx.add(normalized);
+                        if (activeInTx.has(normalized)) {
+                            skippedExisting++;
+                        } else if (archivedInTx.has(normalized)) {
+                            const archivedInfo = archivedInTx.get(normalized)!;
+                            if (entry.selected === false) {
+                                skippedUnselected++;
+                            } else if (entry.restore) {
+                                toRestore.push({ id: archivedInfo.id, entry });
+                            } else {
+                                skippedExisting++;
+                            }
+                        } else {
+                            if (entry.selected === false) {
+                                skippedUnselected++;
+                            } else {
+                                toCreate.push(entry);
+                            }
+                        }
+                    }
+                }
+
+                const finalMembersToAdd = toCreate.length + toRestore.length;
+
+                // Domain active roster capacity check (<= 100)
+                if (activeMembersCount + finalMembersToAdd > 100) {
+                    const available = Math.max(0, 100 - activeMembersCount);
+                    const overflow = (activeMembersCount + finalMembersToAdd) - 100;
+                    throw new Error(
+                        `Your alliance has ${activeMembersCount} active members, so you can add ${available} more. You currently have ${finalMembersToAdd} members selected (${toCreate.length} new, ${toRestore.length} restored). Deselect ${overflow} member${overflow === 1 ? "" : "s"} to continue.`
+                    );
+                }
+
+                let createdCount = 0;
+                if (toCreate.length > 0) {
+                    const res = await tx.allianceMember.createMany({
+                        data: toCreate.map((e) => ({
+                            allianceId,
+                            playerName: e.playerName.trim(),
+                            thp: e.thp ?? null,
+                            role: e.role?.trim() ?? null,
+                        })),
+                        skipDuplicates: true,
+                    });
+                    createdCount = res.count;
+                }
+
+                let restoredCount = 0;
+                for (const item of toRestore) {
+                    await tx.allianceMember.update({
+                        where: { id: item.id },
+                        data: {
+                            archivedAt: null,
+                            thp: item.entry.thp ?? undefined,
+                            role: item.entry.role?.trim() ?? undefined,
+                        },
+                    });
+                    restoredCount++;
+                }
+
+                return {
+                    created: createdCount,
+                    restored: restoredCount,
+                    skippedExisting,
+                    skippedDuplicates,
+                    skippedEmptyNames,
+                    skippedUnselected,
+                    errors: [],
+                };
+            }
+        );
 
         revalidatePath(`/alliances/${allianceId}/members`);
 
-        return {
-            created: result.count,
-            skippedExisting,
-            skippedDuplicates,
-            skippedEmptyNames,
-            errors,
-        };
+        return result;
     } catch (error) {
         console.error("Error importing alliance members:", error);
-        errors.push("Failed to create members. Please try again.");
+        const errorMessage =
+            error instanceof Error && (error.message.includes("Your alliance has") || error.message.includes("active members"))
+                ? error.message
+                : "Failed to create members. Please try again.";
         return {
             created: 0,
-            skippedExisting,
-            skippedDuplicates,
+            restored: 0,
+            skippedExisting: 0,
+            skippedDuplicates: 0,
             skippedEmptyNames,
-            errors,
+            skippedUnselected: 0,
+            errors: [errorMessage],
         };
     }
 }
