@@ -56,6 +56,7 @@ export const emailService: EmailService = {
       to,
       subject: ACCESS_REQUEST_CONFIRMATION_SUBJECT,
       content: renderAccessRequestConfirmationEmail(request),
+      replyTo: DEFAULT_REPLY_TO,
       metadata: accessRequestId ? { accessRequestId } : undefined,
     });
   },
@@ -71,6 +72,7 @@ export const emailService: EmailService = {
       // follow-up ("I sent feedback yesterday") map to a row and this email.
       subject: `[AllianceHQ Feedback #${feedback.referenceId}]`,
       content: renderFeedbackNotificationEmail(feedback),
+      replyTo: feedback.submitterEmail || DEFAULT_REPLY_TO,
       metadata: feedbackId ? { feedbackId } : undefined,
     });
   },
@@ -84,6 +86,7 @@ export const emailService: EmailService = {
       to,
       subject: EMAIL_CHANGE_VERIFICATION_SUBJECT,
       content: renderEmailChangeVerificationEmail(verification),
+      replyTo: DEFAULT_REPLY_TO,
       metadata: userId ? { userId } : undefined,
     });
   },
@@ -97,6 +100,7 @@ export const emailService: EmailService = {
       to,
       subject: PASSWORD_RESET_SUBJECT,
       content: renderPasswordResetEmail(reset),
+      replyTo: DEFAULT_REPLY_TO,
       metadata: userId ? { userId } : undefined,
     });
   },
