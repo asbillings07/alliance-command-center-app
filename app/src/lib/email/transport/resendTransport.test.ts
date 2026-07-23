@@ -38,6 +38,22 @@ describe("ResendTransport", () => {
     );
   });
 
+  it("passes replyTo header to Resend send method", async () => {
+    sendMock.mockResolvedValue({ data: { id: "msg_123" }, error: null });
+
+    const transport = new ResendTransport("re_test", "noreply@example.com");
+    await transport.deliver({ ...request, replyTo: "support@alliancehq.app" });
+
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: "noreply@example.com",
+        to: request.to,
+        subject: request.subject,
+        replyTo: "support@alliancehq.app",
+      })
+    );
+  });
+
   it("returns failed when the provider reports an error", async () => {
     sendMock.mockResolvedValue({
       data: null,

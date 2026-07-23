@@ -42,6 +42,7 @@ export type DeliverEmailRequest = {
   subject: string;
   html: string;
   text: string;
+  replyTo?: string | string[];
   metadata?: EmailMetadata;
 };
 

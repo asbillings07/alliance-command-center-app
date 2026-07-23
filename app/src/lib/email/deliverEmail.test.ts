@@ -38,6 +38,18 @@ describe("deliverEmail", () => {
     expect(request.text).toBe(content.text);
   });
 
+  it("forwards replyTo option to the transport", async () => {
+    await deliverEmail({
+      to: "user@example.com",
+      subject: "Hi",
+      content,
+      replyTo: "support@alliancehq.app",
+    });
+
+    expect(deliverMock).toHaveBeenCalledTimes(1);
+    expect(deliverMock.mock.calls[0][0].replyTo).toBe("support@alliancehq.app");
+  });
+
   it("propagates a skipped status from the transport", async () => {
     deliverMock.mockResolvedValue({ status: "skipped" });
 

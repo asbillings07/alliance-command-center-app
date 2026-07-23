@@ -25,6 +25,7 @@ export class ResendTransport implements EmailTransport {
         subject: request.subject,
         html: request.html,
         text: request.text,
+        replyTo: request.replyTo,
       });
 
       if (error) {
