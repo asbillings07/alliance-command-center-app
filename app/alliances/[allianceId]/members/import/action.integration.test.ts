@@ -1,7 +1,17 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
 import type * as ImportAction from "./action";
 import type * as NewMemberAction from "../new/action";
+
+vi.mock("@/app/src/lib/auth/requireAllianceAccess", () => ({
+    requireAllianceAccess: vi.fn().mockResolvedValue({
+        userId: "integration-test-user",
+        permissions: {
+            canManageMembers: true,
+            canImportMembers: true,
+        },
+    }),
+}));
 
 const runDb = process.env.INTEGRATION_DB === "true";
 
