@@ -3,6 +3,10 @@ import type { PrismaClient } from "@/app/generated/prisma/client";
 import type * as ImportAction from "./action";
 import type * as NewMemberAction from "../new/action";
 
+vi.mock("next/cache", () => ({
+    revalidatePath: vi.fn(),
+}));
+
 vi.mock("@/app/src/lib/auth/requireAllianceAccess", () => ({
     requireAllianceAccess: vi.fn().mockResolvedValue({
         userId: "integration-test-user",
