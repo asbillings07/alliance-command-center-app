@@ -5,6 +5,7 @@ export type DeliverEmailInput = {
   to: string;
   subject: string;
   content: EmailContent;
+  replyTo?: string | string[];
   metadata?: EmailMetadata;
 };
 
@@ -22,6 +23,7 @@ export async function deliverEmail({
   to,
   subject,
   content,
+  replyTo,
   metadata,
 }: DeliverEmailInput): Promise<EmailResult> {
   try {
@@ -30,6 +32,7 @@ export async function deliverEmail({
       subject,
       html: content.html,
       text: content.text,
+      replyTo,
       metadata,
     });
   } catch (err) {

@@ -14,6 +14,8 @@ import { renderFeedbackNotificationEmail } from "./templates/feedbackNotificatio
 import { renderEmailChangeVerificationEmail } from "./templates/emailChangeVerificationEmail";
 import { renderPasswordResetEmail } from "./templates/passwordResetEmail";
 
+const DEFAULT_REPLY_TO = "support@alliancehq.app";
+
 const BETA_INVITATION_SUBJECT =
   "You're invited to the Alliance Command Center beta";
 
@@ -40,6 +42,7 @@ export const emailService: EmailService = {
       to,
       subject: BETA_INVITATION_SUBJECT,
       content: renderBetaInvitationEmail(invitation),
+      replyTo: DEFAULT_REPLY_TO,
       metadata: { invitationId: invitation.id },
     });
   },
