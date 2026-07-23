@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import Image from "next/image";
 import { Card } from "./Card";
 
 /**
@@ -46,9 +47,20 @@ export function AuthLayout({
         <Card>
           {/* Header */}
           <div className="text-center mb-6">
-            {icon && (
+            {icon ? (
               <div className="w-16 h-16 mx-auto mb-4 bg-primary/20 rounded-full flex items-center justify-center text-primary">
                 {icon}
+              </div>
+            ) : (
+              <div className="mx-auto mb-4 flex items-center justify-center">
+                <Image
+                  src="/icon.png"
+                  alt="Alliance Command Center Logo"
+                  width={64}
+                  height={64}
+                  priority
+                  className="w-16 h-16 rounded-2xl shadow-md object-cover"
+                />
               </div>
             )}
             <h1 className="text-2xl font-bold text-text-primary">{title}</h1>
