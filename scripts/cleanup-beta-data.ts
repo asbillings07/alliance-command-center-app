@@ -177,7 +177,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Dry run (default): read-only. Inventory + plan + manifest for review.
+  // Dry run (default): read-only. Cheap overlap check first — same as
+  // --execute — so an obviously contradictory selection (e.g. the same id in
+  // both a target and its --keep-* counterpart) is rejected before any
+  // inventory/plan query runs, not only later inside assertSafeSelection.
+  const overlaps = validateSelectionOverlaps(args);
+  if (overlaps.length > 0) {
+    throw new Error(`Refusing to continue: ${overlaps.join("; ")}`);
+  }
+
   printInventory("Inventory (before):", await inventory(prisma));
 
   const fresh = await buildPlan(prisma, args, { now: new Date(), frozenCutoff: null });
