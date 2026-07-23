@@ -245,26 +245,44 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
 
     const updateMember = (id: string, field: keyof ParsedMember, value: string | boolean) => {
         setParsedMembers((prev) => {
-            const updated = prev.map((m) => (m.id === id ? { ...m, [field]: value } : m));
+            const updated = prev.map((m) => {
+                if (m.id === id) {
+                    if (field === "selected" && value === true && !m.playerName.trim()) {
+                        return { ...m, selected: false };
+                    }
+                    return { ...m, [field]: value };
+                }
+                return m;
+            });
             return field === "playerName" ? reclassifyMembers(updated, id) : updated;
         });
     };
 
     const toggleSelectAll = (selected: boolean) => {
         setParsedMembers((prev) =>
-            prev.map((m) => (m.isExisting || m.isDuplicateInFile ? m : { ...m, selected }))
+            prev.map((m) =>
+                m.isExisting || m.isDuplicateInFile || !m.playerName.trim()
+                    ? { ...m, selected: false }
+                    : { ...m, selected }
+            )
         );
     };
 
     const activeRosterCount = existingMembers.filter((m) => !m.archivedAt).length;
     const capacityRemaining = Math.max(0, 100 - activeRosterCount);
 
-    const selectedCandidates = parsedMembers.filter((m) => m.selected && (!m.isExisting || m.isArchived));
+    const selectedCandidates = parsedMembers.filter(
+        (m) => m.selected && (!m.isExisting || m.isArchived) && m.playerName.trim() !== ""
+    );
     const uniqueSelectedNames = new Set(selectedCandidates.map((m) => normalizeName(m.playerName)));
     const uniqueSelectedCount = uniqueSelectedNames.size;
 
-    const selectedNewMembers = parsedMembers.filter((m) => m.selected && !m.isExisting && !m.isArchived);
-    const selectedRestoreMembers = parsedMembers.filter((m) => m.selected && m.isArchived);
+    const selectedNewMembers = parsedMembers.filter(
+        (m) => m.selected && !m.isExisting && !m.isArchived && m.playerName.trim() !== ""
+    );
+    const selectedRestoreMembers = parsedMembers.filter(
+        (m) => m.selected && m.isArchived && m.playerName.trim() !== ""
+    );
     const duplicateInFileRows = parsedMembers.filter((m) => m.isDuplicateInFile);
 
     const isOverCapacity = (activeRosterCount + uniqueSelectedCount) > 100;
@@ -399,7 +417,9 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
 
     // Preview step
     if (step === "preview") {
-        const selectableMembers = parsedMembers.filter((m) => !m.isExisting && !m.isDuplicateInFile);
+        const selectableMembers = parsedMembers.filter(
+            (m) => !m.isExisting && !m.isDuplicateInFile && m.playerName.trim() !== ""
+        );
         const allSelectableSelected = selectableMembers.length > 0 && selectableMembers.every((m) => m.selected);
         const someSelectableSelected = selectableMembers.some((m) => m.selected);
         const allExistingActive = selectableMembers.length === 0;

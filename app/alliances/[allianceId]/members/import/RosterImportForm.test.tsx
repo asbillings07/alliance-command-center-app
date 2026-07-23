@@ -245,6 +245,46 @@ New Candidate 2`;
         expect(container.textContent).toContain("Import 1 Unique Member");
     });
 
+    it("excludes blank-name CSV rows from Select All and UI capacity consumption", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        const csvContent = `Player
+New Candidate 1
+   
+New Candidate 2`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // 2 unique valid candidate members selectable (blank row excluded)
+        expect(container.textContent).toContain("Import 2 Unique Members");
+
+        // Toggle Select All off, then on
+        const selectAllCheckbox = container.querySelector<HTMLInputElement>('thead input[type="checkbox"]');
+        expect(selectAllCheckbox).not.toBeNull();
+
+        await act(async () => {
+            selectAllCheckbox!.click(); // Off
+        });
+        expect(container.textContent).toContain("Import 0 Unique Members");
+
+        await act(async () => {
+            selectAllCheckbox!.click(); // On
+        });
+
+        // Blank row must not be selected or consume UI capacity!
+        expect(container.textContent).toContain("Import 2 Unique Members");
+    });
+
     it("displays over-capacity warning when active count plus unique selections exceeds 100", async () => {
         const active99 = Array.from({ length: 99 }, (_, i) => ({
             id: `active-${i}`,
