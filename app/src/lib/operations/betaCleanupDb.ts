@@ -453,9 +453,15 @@ export async function execute(
 ): Promise<Record<string, number>> {
   return prisma.$transaction(
     async (tx: Db) => {
-      // Serialize concurrent cleanup runs; released automatically at the end
-      // of this transaction. Combined with Serializable isolation, this also
-      // protects against interleaving with ordinary application writes.
+      // Serializes concurrent cleanup runs specifically (a lock only blocks
+      // another session that takes the SAME lock; it does nothing for
+      // ordinary application writes). Released automatically at the end of
+      // this transaction. Serializable isolation is the separate guard
+      // against interleaving with application writes: it doesn't prevent
+      // them from happening, but it detects read/write conflicts with this
+      // transaction's snapshot and aborts (with a serialization-failure
+      // error) rather than letting this transaction commit against
+      // now-stale data.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_KEY})`;
 
       const now = new Date();

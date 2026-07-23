@@ -20,8 +20,12 @@
  *     checksum matches the manifest's — so a hand-edited manifest file cannot
  *     smuggle in an extra id; only the live database determines what runs.
  *   - Re-resolution, verification, and execution all happen inside ONE
- *     Serializable transaction holding a PostgreSQL advisory lock, so no
- *     concurrent cleanup run or application write can interleave.
+ *     Serializable transaction holding a PostgreSQL advisory lock: the lock
+ *     serializes concurrent cleanup runs against each other, and Serializable
+ *     isolation guards this transaction against interleaving with ordinary
+ *     application writes — not by preventing them, but by aborting this
+ *     transaction with a serialization failure if a conflicting write is
+ *     detected, rather than committing against stale data.
  *   - Every operation's affected row count (delete AND nullify/revoke) is
  *     checked against the reviewed plan INSIDE the transaction; any mismatch
  *     throws and rolls back before anything commits.
