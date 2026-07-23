@@ -446,10 +446,16 @@ export async function executeOp(tx: Db, op: CleanupOp, now: Date): Promise<numbe
   return count;
 }
 
+export interface ExecuteOptions {
+  /** Optional callback invoked inside the transaction right after each op executes. Useful for testing rollback seams. */
+  onOpExecuted?: (op: CleanupOp, affected: number, tx: Db) => Promise<void> | void;
+}
+
 export async function execute(
   args: CleanupArgs,
   manifest: CleanupManifest,
-  identity: string
+  identity: string,
+  opts?: ExecuteOptions
 ): Promise<Record<string, number>> {
   return prisma.$transaction(
     async (tx: Db) => {
@@ -495,6 +501,9 @@ export async function execute(
         }
         if (op.kind === "delete") {
           deleteCounts[op.model] = (deleteCounts[op.model] ?? 0) + affected;
+        }
+        if (opts?.onOpExecuted) {
+          await opts.onOpExecuted(op, affected, tx);
         }
       }
 

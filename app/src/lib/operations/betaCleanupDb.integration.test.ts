@@ -439,11 +439,11 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
   });
 
   it("integration: execute() rolls back earlier successful mutations in PostgreSQL when a later operation fails", async () => {
-    // Step 1 target: an AccessRequest (will be deleted first in the transaction)
-    const ar = await makeAccessRequest();
-
-    // Step 2 target: a User (will be deleted second in the transaction)
+    // Op 1 & 2 in plan: User cleanup (will run first in mergePlans)
     const { user } = await makeAcceptedBetaInvitation();
+
+    // Op 3 in plan: AccessRequest cleanup (will run after User cleanup in mergePlans)
+    const ar = await makeAccessRequest();
 
     const args = parseArgs(["--access-request-ids", ar.id, "--user-email", user.email]);
     const fresh = await buildPlan(prisma, args, { now: new Date(), frozenCutoff: null });
@@ -454,19 +454,30 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
       plan: fresh.plan,
     });
 
-    // Right as execute() begins, delete the target user outside the transaction so that
-    // when execute()'s transaction progresses past Step 1 (deleting AccessRequest ar.id)
-    // to Step 2 (deleting User user.id / BetaInvitation nullify), the transaction fails
-    // (due to a write conflict or affected-count mismatch) and rolls back.
-    const executePromise = execute(args, manifest, identity);
-    await prisma.user.delete({ where: { id: user.id } });
-    createdUserIds.length = 0; // already deleted outside execute()
+    let userOpExecuted = false;
 
-    await expect(executePromise).rejects.toThrow();
+    // Use the test seam (opts.onOpExecuted) so that AFTER the User mutation
+    // completes successfully inside the transaction, we delete the AccessRequest target inside
+    // tx. When the transaction proceeds to the AccessRequest op, affected row count is 0
+    // instead of expected 1, forcing a count-mismatch refusal and rolling back the User mutation.
+    await expect(
+      execute(args, manifest, identity, {
+        onOpExecuted: async (op, affected, tx) => {
+          if (op.model === "User") {
+            userOpExecuted = true;
+            expect(affected).toBe(1);
+            // Delete the subsequent op's target inside tx before that op runs, causing it to affect 0 rows
+            await tx.accessRequest.delete({ where: { id: ar.id } });
+          }
+        },
+      })
+    ).rejects.toThrow(/Refusing to commit: delete:AccessRequest: affected 0 row\(s\), expected 1/);
 
-    // Verify in PostgreSQL that Step 1 (delete AccessRequest) was fully rolled back!
-    const arAfter = await prisma.accessRequest.findUnique({ where: { id: ar.id } });
-    expect(arAfter).not.toBeNull();
-    expect(arAfter?.id).toBe(ar.id);
+    expect(userOpExecuted).toBe(true);
+
+    // Verify in PostgreSQL that the earlier User deletion was fully rolled back!
+    const userAfter = await prisma.user.findUnique({ where: { id: user.id } });
+    expect(userAfter).not.toBeNull();
+    expect(userAfter?.id).toBe(user.id);
   });
 });
