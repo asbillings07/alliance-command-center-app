@@ -14,7 +14,11 @@ import { CREATE_PERIOD_TOUR_ID, IMPORT_MEMBERS_TOUR_ID } from "./tours";
  * seeing what's left to do.
  */
 
-export type TypicalRole = "Owner" | "Admin" | "Leader";
+/**
+ * Describes which ACC role typically completes a setup task.
+ * These are ACC roles (OWNER, ADMIN, LEADER), NOT in-game Last War ranks.
+ */
+export type TypicalRole = "Founding Operator" | "Admin" | "Leader";
 
 export type SetupTaskId = "metrics" | "period" | "team" | "members" | "data";
 
@@ -133,7 +137,7 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
     id: "metrics",
     label: "Configure Metrics",
     description: "Define what your alliance evaluates (e.g., VS Points, Donations)",
-    typicallyCompletedBy: "Owner",
+    typicallyCompletedBy: "Founding Operator",
     href: (id) => `/alliances/${id}/metrics`,
     requiredPermission: "canConfigureMetrics",
     required: true,
@@ -142,7 +146,7 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
     id: "period",
     label: "Create Evaluation Period",
     description: "Set up a time-boxed period to track member performance",
-    typicallyCompletedBy: "Owner",
+    typicallyCompletedBy: "Founding Operator",
     href: (id) => `/alliances/${id}/periods`,
     requiredPermission: "canConfigurePeriods",
     required: true,
@@ -151,7 +155,7 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
     id: "team",
     label: "Invite Leadership Team",
     description: "Send invitations to your admins and leaders (completes when sent)",
-    typicallyCompletedBy: "Owner",
+    typicallyCompletedBy: "Founding Operator",
     href: (id) => `/alliances/${id}/settings/invitations`,
     requiredPermission: "canInviteCollaborators",
     required: true,
