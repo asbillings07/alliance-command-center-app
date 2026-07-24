@@ -134,9 +134,18 @@ export default async function MemberPage({ params, searchParams }: Params) {
         />
     ) : undefined;
 
+    const isAutoFallbackToLatestInactive =
+        !requestedPeriodId &&
+        !allPeriods.some((p) => p.active) &&
+        selectedPeriodHeader?.id === allPeriods[0]?.id;
+
     const periodStatusLabel = selectedPeriod && !selectedPeriod.active
-        ? "Latest Period · Not active"
+        ? isAutoFallbackToLatestInactive
+            ? "Latest Period · Not active"
+            : "Inactive Period"
         : undefined;
+
+    const membersBreadcrumbHref = `/alliances/${allianceId}/members${selectedPeriod ? `?periodId=${selectedPeriod.id}` : ""}`;
 
     const performanceProps: MemberPerformanceProps =
         !selectedPeriod
@@ -193,7 +202,7 @@ export default async function MemberPage({ params, searchParams }: Params) {
         <PageLayout
             breadcrumb={[
                 { label: "Dashboard", href: `/alliances/${allianceId}` },
-                { label: "Members", href: `/alliances/${allianceId}/members` },
+                { label: "Members", href: membersBreadcrumbHref },
                 { label: allianceMember.playerName },
             ]}
             title={allianceMember.playerName}

@@ -37,7 +37,24 @@ describe("getPeriodResultsSummary", () => {
     ).rejects.toThrow("Period not found");
   });
 
-  it("calculates distinct member counts and separates active vs archived participants", async () => {
+  it("returns zero counts and skips entry query when period has no active metrics", async () => {
+    vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue({
+      id: "p1",
+      periodMetrics: [],
+    } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findFirst>>);
+
+    vi.mocked(prisma.allianceMember.count).mockResolvedValue(50);
+
+    const summary = await getPeriodResultsSummary({ allianceId: "a1", periodId: "p1" });
+
+    expect(summary.currentActiveMemberCount).toBe(50);
+    expect(summary.participatingMemberCount).toBe(0);
+    expect(summary.participatingActiveMemberCount).toBe(0);
+    expect(summary.metrics).toEqual([]);
+    expect(prisma.memberMetricEntry.findMany).not.toHaveBeenCalled();
+  });
+
+  it("filters query by active metric IDs and uses database-side distinct aggregation", async () => {
     vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue({
       id: "p1",
       periodMetrics: [
@@ -49,15 +66,30 @@ describe("getPeriodResultsSummary", () => {
     vi.mocked(prisma.allianceMember.count).mockResolvedValue(100);
 
     vi.mocked(prisma.memberMetricEntry.findMany).mockResolvedValue([
-      // Member 1 (active): 2 entries for m1, 1 for m2
-      { allianceMemberId: "mem1", metricId: "m1", allianceMember: { archivedAt: null } },
+      // DB distinct results: 1 per (member, metric)
       { allianceMemberId: "mem1", metricId: "m1", allianceMember: { archivedAt: null } },
       { allianceMemberId: "mem1", metricId: "m2", allianceMember: { archivedAt: null } },
-      // Member 2 (archived): 1 entry for m1
       { allianceMemberId: "mem2", metricId: "m1", allianceMember: { archivedAt: new Date() } },
     ] as unknown as Awaited<ReturnType<typeof prisma.memberMetricEntry.findMany>>);
 
     const summary = await getPeriodResultsSummary({ allianceId: "a1", periodId: "p1" });
+
+    // Verify DB query parameters: filtering by active metrics and applying distinct
+    expect(prisma.memberMetricEntry.findMany).toHaveBeenCalledWith({
+      where: {
+        periodId: "p1",
+        metricId: { in: ["m1", "m2"] },
+        allianceMember: { allianceId: "a1" },
+      },
+      distinct: ["allianceMemberId", "metricId"],
+      select: {
+        allianceMemberId: true,
+        metricId: true,
+        allianceMember: {
+          select: { archivedAt: true },
+        },
+      },
+    });
 
     expect(summary.currentActiveMemberCount).toBe(100);
     expect(summary.participatingMemberCount).toBe(2); // mem1, mem2

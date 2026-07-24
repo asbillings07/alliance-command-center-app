@@ -51,11 +51,24 @@ export async function getPeriodResultsSummary(params: {
     where: { allianceId, archivedAt: null },
   });
 
-  const entries = await prisma.memberMetricEntry.findMany({
+  const activeMetricIds = period.periodMetrics.map((pm) => pm.metric.id);
+
+  if (activeMetricIds.length === 0) {
+    return {
+      participatingMemberCount: 0,
+      currentActiveMemberCount,
+      participatingActiveMemberCount: 0,
+      metrics: [],
+    };
+  }
+
+  const distinctEntries = await prisma.memberMetricEntry.findMany({
     where: {
       periodId,
+      metricId: { in: activeMetricIds },
       allianceMember: { allianceId },
     },
+    distinct: ["allianceMemberId", "metricId"],
     select: {
       allianceMemberId: true,
       metricId: true,
@@ -73,7 +86,7 @@ export async function getPeriodResultsSummary(params: {
     { memberIds: Set<string>; activeMemberIds: Set<string> }
   >();
 
-  for (const entry of entries) {
+  for (const entry of distinctEntries) {
     participatingMemberIds.add(entry.allianceMemberId);
     const isMemberActive = entry.allianceMember.archivedAt === null;
 

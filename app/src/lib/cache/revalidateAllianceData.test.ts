@@ -31,13 +31,14 @@ describe("revalidateAllianceData", () => {
     ).toThrow("periodId is required when invalidating evaluation results");
   });
 
-  it("revalidating members uses layout invalidation on /members", () => {
+  it("revalidating members invalidates list page and member detail route pattern", () => {
     revalidateAllianceData({
       allianceId: "all_123",
       domains: ["members"],
     });
 
-    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/members", "layout");
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/members");
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/[allianceId]/members/[memberId]", "page");
   });
 
   it("revalidating evaluation-results invalidates period pages", () => {
@@ -47,21 +48,22 @@ describe("revalidateAllianceData", () => {
       domains: ["evaluation-results"],
     });
 
-    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods/per_456", "page");
-    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods/per_456/record", "page");
-    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods/per_456/import", "page");
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods/per_456");
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods/per_456/record");
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods/per_456/import");
   });
 
-  it("deduplicates paths across multiple domains", () => {
+  it("handles multiple domains cleanly", () => {
     revalidateAllianceData({
       allianceId: "all_123",
       periodId: "per_456",
       domains: ["members", "dashboard", "setup", "evaluation-results"],
     });
 
-    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/members", "layout");
-    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123", "page");
-    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/setup", "page");
-    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods/per_456", "page");
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/members");
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/[allianceId]/members/[memberId]", "page");
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123");
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/setup");
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods/per_456");
   });
 });

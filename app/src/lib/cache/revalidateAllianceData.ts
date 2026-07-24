@@ -20,8 +20,8 @@ export type RevalidateAllianceDataParams = {
   * every current user-facing URL across the application.
   *
   * Domain Mappings:
-  * - "members": Layout invalidation for the members subtree (/alliances/[id]/members), including list and detail pages
-  * - "evaluation-results": Period detail (/alliances/[id]/periods/[periodId]) and record page (/alliances/[id]/periods/[periodId]/record)
+  * - "members": Exact list page (/alliances/[id]/members) + member detail route pattern (/alliances/[allianceId]/members/[memberId])
+  * - "evaluation-results": Period detail (/alliances/[id]/periods/[periodId]), record page, and import page
   * - "setup": Alliance onboarding setup checklist (/alliances/[id]/setup)
   * - "dashboard": Alliance overview dashboard (/alliances/[id])
   */
@@ -36,30 +36,24 @@ export function revalidateAllianceData(params: RevalidateAllianceDataParams): vo
     throw new Error("periodId is required when invalidating evaluation results");
   }
 
-  const pathsToRevalidate = new Map<string, "page" | "layout">();
+  const domainsSet = new Set(domains);
 
-  for (const domain of domains) {
-    switch (domain) {
-      case "members":
-        pathsToRevalidate.set(`/alliances/${allianceId}/members`, "layout");
-        break;
-      case "evaluation-results":
-        if (periodId) {
-          pathsToRevalidate.set(`/alliances/${allianceId}/periods/${periodId}`, "page");
-          pathsToRevalidate.set(`/alliances/${allianceId}/periods/${periodId}/record`, "page");
-          pathsToRevalidate.set(`/alliances/${allianceId}/periods/${periodId}/import`, "page");
-        }
-        break;
-      case "setup":
-        pathsToRevalidate.set(`/alliances/${allianceId}/setup`, "page");
-        break;
-      case "dashboard":
-        pathsToRevalidate.set(`/alliances/${allianceId}`, "page");
-        break;
-    }
+  if (domainsSet.has("members")) {
+    revalidatePath(`/alliances/${allianceId}/members`);
+    revalidatePath("/alliances/[allianceId]/members/[memberId]", "page");
   }
 
-  for (const [path, type] of pathsToRevalidate.entries()) {
-    revalidatePath(path, type);
+  if (domainsSet.has("evaluation-results") && periodId) {
+    revalidatePath(`/alliances/${allianceId}/periods/${periodId}`);
+    revalidatePath(`/alliances/${allianceId}/periods/${periodId}/record`);
+    revalidatePath(`/alliances/${allianceId}/periods/${periodId}/import`);
+  }
+
+  if (domainsSet.has("setup")) {
+    revalidatePath(`/alliances/${allianceId}/setup`);
+  }
+
+  if (domainsSet.has("dashboard")) {
+    revalidatePath(`/alliances/${allianceId}`);
   }
 }
