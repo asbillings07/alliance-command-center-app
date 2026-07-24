@@ -89,7 +89,7 @@ test.describe("Rank Independence", () => {
 
     // 1. Navigate to setup page and verify "Configure Metrics" is incomplete
     await page.goto(`/alliances/${allianceId}/setup`);
-    await expect(page.getByRole("heading", { name: /setup/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Alliance Setup" })).toBeVisible();
 
     // The task should be visible (ADMIN has canConfigureMetrics)
     const configureMetricsTask = page.locator("text=Configure Metrics").first();
@@ -99,16 +99,17 @@ test.describe("Rank Independence", () => {
     await page.goto(`/alliances/${allianceId}/metrics`);
     await expect(page.getByRole("heading", { name: /metrics library/i })).toBeVisible();
 
-    // Click "+ Create Metric" button
-    await page.getByRole("button", { name: /^\+ create metric$/i }).click();
+    // Click "+ Create Metric" button and wait for form
+    await page.getByRole("button", { name: /create metric/i }).first().click();
+    await page.waitForSelector('input[name="name"]', { state: 'visible' });
 
     // Fill in the metric form
     const metricName = `E2E Admin Metric ${Date.now()}`;
-    await page.getByLabel(/^name$/i).fill(metricName);
-    await page.getByLabel(/^description/i).fill("Metric created by ADMIN to verify setup progression");
+    await page.fill('input[name="name"]', metricName);
+    await page.fill('textarea[name="description"]', "Metric created by ADMIN to verify setup progression");
 
     // Submit
-    await page.getByRole("button", { name: /^create metric$/i }).click();
+    await page.getByRole("button", { name: /create/i }).last().click();
 
     // Verify the metric was created
     await expect(page.getByText(metricName)).toBeVisible();
@@ -146,7 +147,7 @@ test.describe("Rank Independence", () => {
 
     // 1. Navigate to setup page and verify "Create Evaluation Period" is incomplete
     await page.goto(`/alliances/${allianceId}/setup`);
-    await expect(page.getByRole("heading", { name: /setup/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Alliance Setup" })).toBeVisible();
 
     // The task should be visible (LEADER has canConfigurePeriods)
     const createPeriodTask = page.locator("text=Create Evaluation Period").first();
@@ -154,18 +155,19 @@ test.describe("Rank Independence", () => {
 
     // 2. Navigate to periods page and create a period
     await page.goto(`/alliances/${allianceId}/periods`);
-    await expect(page.getByRole("heading", { name: /evaluation periods/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Evaluation Periods", exact: true })).toBeVisible();
 
-    // Click "+ Create Period" button
-    await page.getByRole("button", { name: /^\+ create period$/i }).click();
+    // Click "+ Create Period" button and wait for form
+    await page.getByRole("button", { name: /create period/i }).first().click();
+    await page.waitForSelector('input[name="name"]', { state: 'visible' });
 
     // Fill in the period form
     const periodName = `E2E Leader Period ${Date.now()}`;
-    await page.getByLabel(/^name$/i).fill(periodName);
+    await page.fill('input[name="name"]', periodName);
 
     // Dates are optional - leave empty
     // Submit
-    await page.getByRole("button", { name: /^create period$/i }).click();
+    await page.getByRole("button", { name: /create/i }).last().click();
 
     // Verify the period was created
     await expect(page.getByText(periodName)).toBeVisible();
