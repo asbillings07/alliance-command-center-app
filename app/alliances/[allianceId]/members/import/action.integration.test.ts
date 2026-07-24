@@ -186,7 +186,7 @@ describe.skipIf(!runDb)("importMembers [integration]", () => {
         expect(createdMember?.thp).toBe(450000000);
     });
 
-    it("integration: performs zero database writes when raw THP is malformed (450.5), out-of-range, or negative (-100)", async () => {
+    it("integration: performs zero database writes when raw THP is malformed (450.5), out-of-range (2147483648), or negative (-100)", async () => {
         const alliance = await makeAllianceWithActiveMembers(0);
 
         const res1 = await importMembers(alliance.id, [
@@ -200,6 +200,12 @@ describe.skipIf(!runDb)("importMembers [integration]", () => {
         ]);
         expect(res2.created).toBe(0);
         expect(res2.errors.length).toBeGreaterThan(0);
+
+        const res3 = await importMembers(alliance.id, [
+            { playerName: "Overflow THP Player", thp: "2147483648" },
+        ]);
+        expect(res3.created).toBe(0);
+        expect(res3.errors.length).toBeGreaterThan(0);
 
         const count = await prisma.allianceMember.count({
             where: { allianceId: alliance.id },

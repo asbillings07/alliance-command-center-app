@@ -9,6 +9,14 @@ import { revalidatePath } from "next/cache";
 export type RosterEntry = {
     playerName: string;
     thp?: string;
+    role?: string;
+    restore?: boolean;
+    selected?: boolean;
+};
+
+type ValidatedRosterEntry = {
+    playerName: string;
+    thp?: string;
     parsedThp?: number;
     role?: string;
     restore?: boolean;
@@ -70,13 +78,19 @@ export async function importMembers(
 
     // Validate player names - filter out empty/whitespace-only entries
     let skippedEmptyNames = 0;
-    const validatedEntries: RosterEntry[] = [];
+    const validatedEntries: ValidatedRosterEntry[] = [];
     for (const entry of entries) {
         const trimmedName = entry.playerName.trim();
         if (!trimmedName) {
             skippedEmptyNames++;
         } else {
-            validatedEntries.push({ ...entry, playerName: trimmedName });
+            validatedEntries.push({
+                playerName: trimmedName,
+                thp: entry.thp,
+                role: entry.role,
+                restore: entry.restore,
+                selected: entry.selected,
+            });
         }
     }
 
@@ -147,8 +161,8 @@ export async function importMembers(
                     }
                 }
 
-                const toCreate: RosterEntry[] = [];
-                const toRestore: { id: string; entry: RosterEntry }[] = [];
+                const toCreate: ValidatedRosterEntry[] = [];
+                const toRestore: { id: string; entry: ValidatedRosterEntry }[] = [];
                 const seenInTx = new Set<string>();
                 let skippedExisting = 0;
                 let skippedDuplicates = 0;

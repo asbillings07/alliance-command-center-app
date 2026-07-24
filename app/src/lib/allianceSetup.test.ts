@@ -11,9 +11,6 @@ vi.mock("./prisma", () => ({
     metric: {
       count: vi.fn(),
     },
-    metricPeriodMetric: {
-      count: vi.fn(),
-    },
     metricPeriod: {
       count: vi.fn(),
     },
@@ -36,7 +33,6 @@ import { prisma } from "./prisma";
 
 const mockPrisma = prisma as unknown as {
   metric: { count: ReturnType<typeof vi.fn> };
-  metricPeriodMetric: { count: ReturnType<typeof vi.fn> };
   metricPeriod: { count: ReturnType<typeof vi.fn> };
   allianceMembership: { count: ReturnType<typeof vi.fn> };
   invitation: { count: ReturnType<typeof vi.fn> };
@@ -46,64 +42,57 @@ const mockPrisma = prisma as unknown as {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockPrisma.metric.count.mockResolvedValue(0);
-  mockPrisma.metricPeriodMetric.count.mockResolvedValue(0);
-  mockPrisma.metricPeriod.count.mockResolvedValue(0);
-  mockPrisma.allianceMembership.count.mockResolvedValue(1);
-  mockPrisma.invitation.count.mockResolvedValue(0);
-  mockPrisma.allianceMember.count.mockResolvedValue(0);
-  mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 });
 
 describe("SETUP_TASKS", () => {
   it("has 5 tasks in the correct order", () => {
     expect(SETUP_TASKS).toHaveLength(5);
     expect(SETUP_TASKS.map((t) => t.id)).toEqual([
-      "period",
       "metrics",
+      "period",
+      "team",
       "members",
       "data",
-      "team",
     ]);
   });
 
-  it("has founding operator tasks before admin/leader tasks for required setup", () => {
-    const requiredFoundingOperatorTasks = SETUP_TASKS.filter(
-      (t) => t.typicallyCompletedBy === "Founding Operator" && t.required
+  it("has founding operator tasks before admin/leader tasks", () => {
+    const foundingOperatorTasks = SETUP_TASKS.filter(
+      (t) => t.typicallyCompletedBy === "Founding Operator"
     );
     const nonFoundingOperatorTasks = SETUP_TASKS.filter(
       (t) => t.typicallyCompletedBy !== "Founding Operator"
     );
 
-    expect(requiredFoundingOperatorTasks).toHaveLength(2);
+    expect(foundingOperatorTasks).toHaveLength(3);
     expect(nonFoundingOperatorTasks).toHaveLength(2);
 
-    const lastRequiredFoundingOperatorIndex = SETUP_TASKS.findLastIndex(
-      (t) => t.typicallyCompletedBy === "Founding Operator" && t.required
+    const lastFoundingOperatorIndex = SETUP_TASKS.findLastIndex(
+      (t) => t.typicallyCompletedBy === "Founding Operator"
     );
     const firstNonFoundingOperatorIndex = SETUP_TASKS.findIndex(
       (t) => t.typicallyCompletedBy !== "Founding Operator"
     );
 
-    expect(lastRequiredFoundingOperatorIndex).toBeLessThan(firstNonFoundingOperatorIndex);
+    expect(lastFoundingOperatorIndex).toBeLessThan(firstNonFoundingOperatorIndex);
   });
 
   it("has required permissions for each task", () => {
-    expect(SETUP_TASKS[0].requiredPermission).toBe("canConfigurePeriods");
+    expect(SETUP_TASKS[0].requiredPermission).toBe("canConfigureMetrics");
     expect(SETUP_TASKS[1].requiredPermission).toBe("canConfigurePeriods");
-    expect(SETUP_TASKS[2].requiredPermission).toBe("canImportMembers");
-    expect(SETUP_TASKS[3].requiredPermission).toBe("canImportMetrics");
-    expect(SETUP_TASKS[4].requiredPermission).toBe("canInviteCollaborators");
+    expect(SETUP_TASKS[2].requiredPermission).toBe("canInviteCollaborators");
+    expect(SETUP_TASKS[3].requiredPermission).toBe("canImportMembers");
+    expect(SETUP_TASKS[4].requiredPermission).toBe("canImportMetrics");
   });
 
   it("generates correct hrefs", () => {
     const allianceId = "test-alliance-id";
     
-    expect(SETUP_TASKS[0].href(allianceId)).toBe(`/alliances/${allianceId}/periods`);
+    expect(SETUP_TASKS[0].href(allianceId)).toBe(`/alliances/${allianceId}/metrics`);
     expect(SETUP_TASKS[1].href(allianceId)).toBe(`/alliances/${allianceId}/periods`);
-    expect(SETUP_TASKS[2].href(allianceId)).toBe(`/alliances/${allianceId}/members`);
-    expect(SETUP_TASKS[3].href(allianceId)).toBe(`/alliances/${allianceId}/periods`);
-    expect(SETUP_TASKS[4].href(allianceId)).toBe(`/alliances/${allianceId}/settings/invitations`);
+    expect(SETUP_TASKS[2].href(allianceId)).toBe(`/alliances/${allianceId}/settings/invitations`);
+    expect(SETUP_TASKS[3].href(allianceId)).toBe(`/alliances/${allianceId}/members/import`);
+    expect(SETUP_TASKS[4].href(allianceId)).toBe(`/alliances/${allianceId}/periods`);
   });
 });
 
@@ -144,7 +133,6 @@ describe("getAllianceSetupStatus", () => {
 
   it("returns all tasks complete for fully setup alliance", async () => {
     mockPrisma.metric.count.mockResolvedValue(3);
-    mockPrisma.metricPeriodMetric.count.mockResolvedValue(2);
     mockPrisma.metricPeriod.count.mockResolvedValue(1);
     mockPrisma.allianceMembership.count.mockResolvedValue(4);
     mockPrisma.invitation.count.mockResolvedValue(2);
@@ -161,7 +149,6 @@ describe("getAllianceSetupStatus", () => {
 
   it("returns partial completion correctly", async () => {
     mockPrisma.metric.count.mockResolvedValue(2);
-    mockPrisma.metricPeriodMetric.count.mockResolvedValue(1);
     mockPrisma.metricPeriod.count.mockResolvedValue(1);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
@@ -215,7 +202,6 @@ describe("getAllianceSetupStatus", () => {
 
   it("includes correct task metadata", async () => {
     mockPrisma.metric.count.mockResolvedValue(1);
-    mockPrisma.metricPeriodMetric.count.mockResolvedValue(1);
     mockPrisma.metricPeriod.count.mockResolvedValue(0);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
@@ -227,10 +213,10 @@ describe("getAllianceSetupStatus", () => {
     const metricsTask = status.tasks.find((t) => t.id === "metrics");
     expect(metricsTask).toEqual({
       id: "metrics",
-      label: "Choose Period Metrics",
-      description: "Attach existing metrics—or create new ones when permitted—to an evaluation period.",
+      label: "Configure Metrics",
+      description: "Define what your alliance evaluates (e.g., VS Points, Donations)",
       completed: true,
-      href: "/alliances/alliance-1/periods",
+      href: "/alliances/alliance-1/metrics",
       typicallyCompletedBy: "Founding Operator",
       required: true,
     });
@@ -269,13 +255,12 @@ describe("getAllianceSetupStatus", () => {
     
     // But isComplete reflects the alliance-wide status (all required tasks incomplete)
     expect(status.isComplete).toBe(false);
-    expect(status.requiredTotal).toBe(4); // period, metrics, members, data are required
+    expect(status.requiredTotal).toBe(3); // metrics, period, team are required
     expect(status.requiredComplete).toBe(0);
   });
 
   it("returns all tasks when no permissions provided", async () => {
     mockPrisma.metric.count.mockResolvedValue(0);
-    mockPrisma.metricPeriodMetric.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.count.mockResolvedValue(0);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
@@ -290,23 +275,7 @@ describe("getAllianceSetupStatus", () => {
 
   it("recommends the first incomplete task in order for a new alliance", async () => {
     mockPrisma.metric.count.mockResolvedValue(0);
-    mockPrisma.metricPeriodMetric.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.count.mockResolvedValue(0);
-    mockPrisma.allianceMembership.count.mockResolvedValue(1);
-    mockPrisma.invitation.count.mockResolvedValue(0);
-    mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
-
-    const status = await getAllianceSetupStatus("alliance-1");
-
-    expect(status.recommendedTask?.id).toBe("period");
-  });
-
-  it("advances the recommendation as earlier tasks complete", async () => {
-    // period done -> next recommended is metrics
-    mockPrisma.metric.count.mockResolvedValue(2);
-    mockPrisma.metricPeriodMetric.count.mockResolvedValue(0);
-    mockPrisma.metricPeriod.count.mockResolvedValue(1);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
@@ -317,9 +286,22 @@ describe("getAllianceSetupStatus", () => {
     expect(status.recommendedTask?.id).toBe("metrics");
   });
 
+  it("advances the recommendation as earlier tasks complete", async () => {
+    // metrics + period done -> next recommended is team
+    mockPrisma.metric.count.mockResolvedValue(2);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(0);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    const status = await getAllianceSetupStatus("alliance-1");
+
+    expect(status.recommendedTask?.id).toBe("team");
+  });
+
   it("returns null recommendation when all applicable tasks are complete", async () => {
     mockPrisma.metric.count.mockResolvedValue(3);
-    mockPrisma.metricPeriodMetric.count.mockResolvedValue(2);
     mockPrisma.metricPeriod.count.mockResolvedValue(1);
     mockPrisma.allianceMembership.count.mockResolvedValue(4);
     mockPrisma.invitation.count.mockResolvedValue(2);
@@ -389,14 +371,13 @@ describe("getAllianceSetupStatus", () => {
   });
 
   it("isComplete reflects alliance-wide status even when tasks are filtered", async () => {
-    // All required tasks complete: period, metrics, members, data
+    // All required tasks complete: metrics, period, team
     mockPrisma.metric.count.mockResolvedValue(1);
-    mockPrisma.metricPeriodMetric.count.mockResolvedValue(1);
     mockPrisma.metricPeriod.count.mockResolvedValue(1);
     mockPrisma.allianceMembership.count.mockResolvedValue(2);
     mockPrisma.invitation.count.mockResolvedValue(1);
-    mockPrisma.allianceMember.count.mockResolvedValue(10);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(50);
+    mockPrisma.allianceMember.count.mockResolvedValue(0);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
     // Viewer permissions: can't see any setup tasks
     const viewerPermissions = {
@@ -421,9 +402,9 @@ describe("getAllianceSetupStatus", () => {
     expect(status.totalCount).toBe(0);
     
     // But isComplete correctly reflects alliance-wide status
-    // Required tasks (period, metrics, members, data) are all complete
+    // Required tasks (metrics, period, team) are all complete
     expect(status.isComplete).toBe(true);
-    expect(status.requiredTotal).toBe(4);
-    expect(status.requiredComplete).toBe(4);
+    expect(status.requiredTotal).toBe(3);
+    expect(status.requiredComplete).toBe(3);
   });
 });

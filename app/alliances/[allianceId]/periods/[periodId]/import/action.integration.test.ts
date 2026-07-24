@@ -398,7 +398,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
         expect(entry?.value).toBe(450000000);
     });
 
-    it("integration: performs zero database writes when raw submitted evaluation value is invalid (450.5) or out-of-range", async () => {
+    it("integration: performs zero database writes when raw submitted evaluation value is invalid (450.5) or out-of-range (2147483648)", async () => {
         const { alliance, member, periodA, attachedMetric } = await makeTestSetup();
 
         await expect(
@@ -413,6 +413,19 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 ],
             })
         ).rejects.toThrow(/Invalid integer value "450.5"/i);
+
+        await expect(
+            importMemberMetrics({
+                periodId: periodA.id,
+                allianceId: alliance.id,
+                mappings: [
+                    {
+                        target: { kind: "existing", metricId: attachedMetric.id },
+                        entries: [{ memberId: member.id, rawValue: "2147483648" }],
+                    },
+                ],
+            })
+        ).rejects.toThrow(/out of signed 32-bit integer range/i);
 
         const entriesCount = await prisma.memberMetricEntry.count({
             where: { periodId: periodA.id },

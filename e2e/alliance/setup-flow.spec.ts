@@ -50,9 +50,9 @@ test.describe("Alliance Setup Flow", () => {
     await page.goto(`/alliances/${testAllianceId}/setup`);
 
     // Check for setup tasks
-    await expect(page.getByText(/choose.*metrics/i)).toBeVisible();
+    await expect(page.getByText(/configure metrics/i)).toBeVisible();
     await expect(page.getByText(/create.*period/i)).toBeVisible();
-    await expect(page.getByText(/set up roster/i)).toBeVisible();
+    await expect(page.getByText(/import roster/i)).toBeVisible();
   });
 
   test("completed tasks show checkmarks", async ({ page }) => {
@@ -125,11 +125,11 @@ test.describe("Alliance Setup Flow", () => {
 
     await page.goto(`/alliances/${testAllianceId}/setup`);
 
-    // Click on Choose Period Metrics task
-    const metricsLink = page.getByRole("link", { name: /choose period metrics/i });
+    // Click on Configure Metrics task
+    const metricsLink = page.getByRole("link", { name: /configure metrics/i });
     if (await metricsLink.isVisible()) {
       await metricsLink.click();
-      await expect(page).toHaveURL(/\/periods/);
+      await expect(page).toHaveURL(/\/metrics/);
     }
   });
 
