@@ -62,21 +62,32 @@ export async function getPeriodResultsSummary(params: {
     };
   }
 
-  const distinctEntries = await prisma.memberMetricEntry.findMany({
+  const distinctMemberMetricPairs = await prisma.memberMetricEntry.groupBy({
+    by: ["allianceMemberId", "metricId"],
     where: {
       periodId,
       metricId: { in: activeMetricIds },
       allianceMember: { allianceId },
     },
-    distinct: ["allianceMemberId", "metricId"],
-    select: {
-      allianceMemberId: true,
-      metricId: true,
-      allianceMember: {
-        select: { archivedAt: true },
-      },
-    },
   });
+
+  const participatingMemberIdsList = Array.from(
+    new Set(distinctMemberMetricPairs.map((p) => p.allianceMemberId))
+  );
+
+  const activeMembers =
+    participatingMemberIdsList.length > 0
+      ? await prisma.allianceMember.findMany({
+          where: {
+            id: { in: participatingMemberIdsList },
+            allianceId,
+            archivedAt: null,
+          },
+          select: { id: true },
+        })
+      : [];
+
+  const activeMemberIdSet = new Set(activeMembers.map((m) => m.id));
 
   const participatingMemberIds = new Set<string>();
   const participatingActiveMemberIds = new Set<string>();
@@ -86,23 +97,23 @@ export async function getPeriodResultsSummary(params: {
     { memberIds: Set<string>; activeMemberIds: Set<string> }
   >();
 
-  for (const entry of distinctEntries) {
-    participatingMemberIds.add(entry.allianceMemberId);
-    const isMemberActive = entry.allianceMember.archivedAt === null;
+  for (const pair of distinctMemberMetricPairs) {
+    participatingMemberIds.add(pair.allianceMemberId);
+    const isMemberActive = activeMemberIdSet.has(pair.allianceMemberId);
 
     if (isMemberActive) {
-      participatingActiveMemberIds.add(entry.allianceMemberId);
+      participatingActiveMemberIds.add(pair.allianceMemberId);
     }
 
-    let metricBuckets = entriesByMetric.get(entry.metricId);
+    let metricBuckets = entriesByMetric.get(pair.metricId);
     if (!metricBuckets) {
       metricBuckets = { memberIds: new Set(), activeMemberIds: new Set() };
-      entriesByMetric.set(entry.metricId, metricBuckets);
+      entriesByMetric.set(pair.metricId, metricBuckets);
     }
 
-    metricBuckets.memberIds.add(entry.allianceMemberId);
+    metricBuckets.memberIds.add(pair.allianceMemberId);
     if (isMemberActive) {
-      metricBuckets.activeMemberIds.add(entry.allianceMemberId);
+      metricBuckets.activeMemberIds.add(pair.allianceMemberId);
     }
   }
 

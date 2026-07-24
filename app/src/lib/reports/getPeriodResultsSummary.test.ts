@@ -8,9 +8,10 @@ vi.mock("@/app/src/lib/prisma", () => ({
     },
     allianceMember: {
       count: vi.fn(),
+      findMany: vi.fn(),
     },
     memberMetricEntry: {
-      findMany: vi.fn(),
+      groupBy: vi.fn(),
     },
   },
 }));
@@ -51,10 +52,10 @@ describe("getPeriodResultsSummary", () => {
     expect(summary.participatingMemberCount).toBe(0);
     expect(summary.participatingActiveMemberCount).toBe(0);
     expect(summary.metrics).toEqual([]);
-    expect(prisma.memberMetricEntry.findMany).not.toHaveBeenCalled();
+    expect(prisma.memberMetricEntry.groupBy).not.toHaveBeenCalled();
   });
 
-  it("filters query by active metric IDs and uses database-side distinct aggregation", async () => {
+  it("filters query by active metric IDs and uses database-side groupBy aggregation", async () => {
     vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue({
       id: "p1",
       periodMetrics: [
@@ -65,30 +66,36 @@ describe("getPeriodResultsSummary", () => {
 
     vi.mocked(prisma.allianceMember.count).mockResolvedValue(100);
 
-    vi.mocked(prisma.memberMetricEntry.findMany).mockResolvedValue([
-      // DB distinct results: 1 per (member, metric)
-      { allianceMemberId: "mem1", metricId: "m1", allianceMember: { archivedAt: null } },
-      { allianceMemberId: "mem1", metricId: "m2", allianceMember: { archivedAt: null } },
-      { allianceMemberId: "mem2", metricId: "m1", allianceMember: { archivedAt: new Date() } },
-    ] as unknown as Awaited<ReturnType<typeof prisma.memberMetricEntry.findMany>>);
+    vi.mocked(prisma.memberMetricEntry.groupBy).mockResolvedValue([
+      // DB groupBy distinct results: 1 per (member, metric)
+      { allianceMemberId: "mem1", metricId: "m1" },
+      { allianceMemberId: "mem1", metricId: "m2" },
+      { allianceMemberId: "mem2", metricId: "m1" },
+    ] as unknown as Awaited<ReturnType<typeof prisma.memberMetricEntry.groupBy>>);
+
+    vi.mocked(prisma.allianceMember.findMany).mockResolvedValue([
+      { id: "mem1" },
+    ] as unknown as Awaited<ReturnType<typeof prisma.allianceMember.findMany>>);
 
     const summary = await getPeriodResultsSummary({ allianceId: "a1", periodId: "p1" });
 
-    // Verify DB query parameters: filtering by active metrics and applying distinct
-    expect(prisma.memberMetricEntry.findMany).toHaveBeenCalledWith({
+    // Verify DB groupBy parameters: filtering by active metrics
+    expect(prisma.memberMetricEntry.groupBy).toHaveBeenCalledWith({
+      by: ["allianceMemberId", "metricId"],
       where: {
         periodId: "p1",
         metricId: { in: ["m1", "m2"] },
         allianceMember: { allianceId: "a1" },
       },
-      distinct: ["allianceMemberId", "metricId"],
-      select: {
-        allianceMemberId: true,
-        metricId: true,
-        allianceMember: {
-          select: { archivedAt: true },
-        },
+    });
+
+    expect(prisma.allianceMember.findMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ["mem1", "mem2"] },
+        allianceId: "a1",
+        archivedAt: null,
       },
+      select: { id: true },
     });
 
     expect(summary.currentActiveMemberCount).toBe(100);
