@@ -448,7 +448,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       return preview.summary.results.some(
         (r, index) =>
           selectedIndices.has(index) &&
-          r.sourceRow === issue.rowIndex &&
+          (r.sourceRow === issue.rowIndex + 1 || r.sourceRow === issue.rowIndex) &&
           r.status === "matched" &&
           Boolean(r.memberId) &&
           Boolean(r.rawValue)
