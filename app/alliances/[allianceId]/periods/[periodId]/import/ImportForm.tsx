@@ -448,7 +448,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       return preview.summary.results.some(
         (r, index) =>
           selectedIndices.has(index) &&
-          (r.sourceRow === issue.rowIndex + 1 || r.sourceRow === issue.rowIndex) &&
+          r.sourceRow === issue.rowIndex + 1 &&
           r.status === "matched" &&
           Boolean(r.memberId) &&
           Boolean(r.rawValue)
@@ -685,7 +685,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary">
           <p className="font-medium text-text-primary">Evaluation Results Import Scope</p>
           <p className="mt-0.5 text-text-secondary">
-            Importing results for destination period &apos;{periodName}&apos;. This matches existing roster members; unmatched names are skipped. During mapping, authorized users may attach an existing metric or create a new one. This workflow does not create roster members.
+            Importing results for destination period &apos;{periodName}&apos;. This matches existing active members in your member list; unmatched names are skipped. During mapping, authorized users may attach an existing metric or create a new one. This workflow does not create members.
           </p>
         </div>
         <div className="flex items-center justify-between">
@@ -1008,7 +1008,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary">
         <p className="font-medium text-text-primary">Evaluation Results Import Scope</p>
         <p className="mt-0.5 text-text-secondary">
-          Importing results for destination period &apos;{periodName}&apos;. This matches existing roster members; unmatched names are skipped. During mapping, authorized users may attach an existing metric or create a new one. This workflow does not create roster members.
+          Importing results for destination period &apos;{periodName}&apos;. This matches existing active members in your member list; unmatched names are skipped. During mapping, authorized users may attach an existing metric or create a new one. This workflow does not create members.
         </p>
       </div>
 

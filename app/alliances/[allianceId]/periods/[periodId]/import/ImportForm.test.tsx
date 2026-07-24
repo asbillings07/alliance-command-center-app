@@ -122,7 +122,7 @@ describe("ImportForm [component]", () => {
 
         // Scope notice check
         expect(container.textContent).toContain("Evaluation Results Import Scope");
-        expect(container.textContent).toContain("This workflow does not create roster members.");
+        expect(container.textContent).toContain("This workflow does not create members.");
 
         // Accessible input check
         const fileInput = container.querySelector<HTMLInputElement>("#csv-upload");
