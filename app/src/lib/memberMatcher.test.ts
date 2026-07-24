@@ -109,6 +109,20 @@ Val,2000`;
   });
 });
 
+describe('analyzeCSV', () => {
+  it('should classify columns with period-grouped integers like 450.000.000 as numeric', () => {
+    const csv = `Player,Kill Points,Power
+Dragon,450.000.000,12.500.000
+Val,"450,000,000",15,000,000`;
+    const result = analyzeCSV(csv);
+
+    expect(result.columns).toHaveLength(3);
+    expect(result.columns[0].isNumeric).toBe(false);
+    expect(result.columns[1].isNumeric).toBe(true);
+    expect(result.columns[2].isNumeric).toBe(true);
+  });
+});
+
 describe('parseCSV', () => {
   it('should parse a valid 2-column CSV with header', () => {
     const csv = `name,Kill Points
@@ -118,8 +132,20 @@ Val,2000`;
     
     expect(result.detectedMetricName).toBe('Kill Points');
     expect(result.entries).toHaveLength(2);
-    expect(result.entries[0]).toEqual({ name: 'Dragon', value: 1500 });
-    expect(result.entries[1]).toEqual({ name: 'Val', value: 2000 });
+    expect(result.entries[0]).toEqual({ name: 'Dragon', value: 1500, rawValue: '1500', sourceRow: 2 });
+    expect(result.entries[1]).toEqual({ name: 'Val', value: 2000, rawValue: '2000', sourceRow: 3 });
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('should parse localized thousands separators strictly (450.000.000 and 450,000,000)', () => {
+    const csv = `name,Kill Points
+Dragon,450.000.000
+Val,"450,000,000"`;
+    const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
+
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries[0]).toEqual({ name: 'Dragon', value: 450000000, rawValue: '450.000.000', sourceRow: 2 });
+    expect(result.entries[1]).toEqual({ name: 'Val', value: 450000000, rawValue: '450,000,000', sourceRow: 3 });
     expect(result.errors).toHaveLength(0);
   });
 
@@ -157,8 +183,8 @@ Val,2000`;
     
     expect(result.detectedMetricName).toBe('S5 Kills');
     expect(result.entries).toHaveLength(2);
-    expect(result.entries[0]).toEqual({ name: 'Dragon', value: 1500 });
-    expect(result.entries[1]).toEqual({ name: 'Val', value: 2000 });
+    expect(result.entries[0]).toEqual({ name: 'Dragon', value: 1500, rawValue: '1500', sourceRow: 2 });
+    expect(result.entries[1]).toEqual({ name: 'Val', value: 2000, rawValue: '2000', sourceRow: 3 });
   });
 
   it('should allow selecting different value columns', () => {
@@ -168,28 +194,32 @@ Val,2000,600`;
     const result = parseCSV(csv, { nameColumn: 0, valueColumn: 2 });
     
     expect(result.detectedMetricName).toBe('Captures');
-    expect(result.entries[0]).toEqual({ name: 'Dragon', value: 800 });
-    expect(result.entries[1]).toEqual({ name: 'Val', value: 600 });
+    expect(result.entries[0]).toEqual({ name: 'Dragon', value: 800, rawValue: '800', sourceRow: 2 });
+    expect(result.entries[1]).toEqual({ name: 'Val', value: 600, rawValue: '600', sourceRow: 3 });
   });
 
-  it('should report error for rows with missing values', () => {
+  it('should report error for rows with missing values and preserve entry with error', () => {
     const csv = `name,Score
 Dragon,1500
 Val,`;
     const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
     
-    expect(result.entries).toHaveLength(1);
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries[0]).toEqual({ name: 'Dragon', value: 1500, rawValue: '1500', sourceRow: 2 });
+    expect(result.entries[1].error).toBeDefined();
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('Invalid or missing value');
   });
 
-  it('should report error for non-integer values', () => {
+  it('should report error for non-integer values and preserve row entries with error', () => {
     const csv = `name,Score
 Dragon,1500.5
 Val,abc`;
     const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
     
-    expect(result.entries).toHaveLength(0);
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries[0].error).toBeDefined();
+    expect(result.entries[1].error).toBeDefined();
     expect(result.errors).toHaveLength(2);
   });
 
@@ -240,8 +270,8 @@ describe('matchEntriesToMembers', () => {
 
   it('should match exact names', () => {
     const entries = [
-      { name: 'Dragon', value: 1500 },
-      { name: 'Val', value: 2000 },
+      { name: 'Dragon', value: 1500, rawValue: '1500', sourceRow: 1 },
+      { name: 'Val', value: 2000, rawValue: '2000', sourceRow: 2 },
     ];
     const result = matchEntriesToMembers(entries, members);
     
@@ -254,8 +284,8 @@ describe('matchEntriesToMembers', () => {
 
   it('should match names after normalization', () => {
     const entries = [
-      { name: '  DRAGON  ', value: 1500 },
-      { name: 'val', value: 2000 },
+      { name: '  DRAGON  ', value: 1500, rawValue: '1500', sourceRow: 1 },
+      { name: 'val', value: 2000, rawValue: '2000', sourceRow: 2 },
     ];
     const result = matchEntriesToMembers(entries, members);
     
@@ -266,7 +296,7 @@ describe('matchEntriesToMembers', () => {
 
   it('should fuzzy match similar names', () => {
     const entries = [
-      { name: 'Dragn', value: 1500 }, // missing 'o'
+      { name: 'Dragn', value: 1500, rawValue: '1500', sourceRow: 1 }, // missing 'o'
     ];
     const result = matchEntriesToMembers(entries, members);
     
@@ -278,7 +308,7 @@ describe('matchEntriesToMembers', () => {
 
   it('should mark unmatched entries', () => {
     const entries = [
-      { name: 'Unknown Player', value: 1500 },
+      { name: 'Unknown Player', value: 1500, rawValue: '1500', sourceRow: 1 },
     ];
     const result = matchEntriesToMembers(entries, members);
     
@@ -289,8 +319,8 @@ describe('matchEntriesToMembers', () => {
 
   it('should mark duplicate entries for same member', () => {
     const entries = [
-      { name: 'Dragon', value: 1500 },
-      { name: 'Dragon', value: 9999 },
+      { name: 'Dragon', value: 1500, rawValue: '1500', sourceRow: 1 },
+      { name: 'Dragon', value: 9999, rawValue: '9999', sourceRow: 2 },
     ];
     const result = matchEntriesToMembers(entries, members);
     
@@ -302,9 +332,9 @@ describe('matchEntriesToMembers', () => {
 
   it('should mark fuzzy duplicates correctly', () => {
     const entries = [
-      { name: 'Dragon', value: 1500 },
-      { name: 'DRAGON', value: 2000 },
-      { name: 'dragon', value: 3000 },
+      { name: 'Dragon', value: 1500, rawValue: '1500', sourceRow: 1 },
+      { name: 'DRAGON', value: 2000, rawValue: '2000', sourceRow: 2 },
+      { name: 'dragon', value: 3000, rawValue: '3000', sourceRow: 3 },
     ];
     const result = matchEntriesToMembers(entries, members);
     
@@ -314,9 +344,9 @@ describe('matchEntriesToMembers', () => {
 
   it('should preserve row order in results', () => {
     const entries = [
-      { name: 'Val', value: 2000 },
-      { name: 'Dragon', value: 1500 },
-      { name: 'Mando', value: 3000 },
+      { name: 'Val', value: 2000, rawValue: '2000', sourceRow: 1 },
+      { name: 'Dragon', value: 1500, rawValue: '1500', sourceRow: 2 },
+      { name: 'Mando', value: 3000, rawValue: '3000', sourceRow: 3 },
     ];
     const result = matchEntriesToMembers(entries, members);
     
@@ -327,7 +357,7 @@ describe('matchEntriesToMembers', () => {
 
   it('should respect custom threshold', () => {
     const entries = [
-      { name: 'Dragn', value: 1500 }, // ~83% match
+      { name: 'Dragn', value: 1500, rawValue: '1500', sourceRow: 1 }, // ~83% match
     ];
     
     // With default 70% threshold - should match

@@ -124,7 +124,7 @@ describe("importMembers", () => {
         mockAllianceMember.update.mockResolvedValue({});
 
         const entries = [
-            { playerName: "Archived Hero", thp: 50000, role: "R4", restore: true },
+            { playerName: "Archived Hero", thp: "50000", role: "R4", restore: true },
         ];
 
         const result = await importMembers(allianceId, entries);

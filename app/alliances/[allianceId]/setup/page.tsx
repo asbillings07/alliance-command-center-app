@@ -7,6 +7,7 @@ import {
   SETUP_TASK_TOURS,
   type SetupTask,
 } from "@/app/src/lib/allianceSetup";
+import { type PermissionSet } from "@/app/src/lib/auth/permissions";
 import { buildTourHref } from "@/app/src/lib/tours";
 import { PageLayout } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
@@ -41,71 +42,232 @@ function CircleIcon() {
   );
 }
 
-function ChevronIcon() {
+function OperatingHierarchyCard() {
   return (
-    <svg
-      className="w-5 h-5 text-text-disabled"
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M9 5l7 7-7 7"
-      />
-    </svg>
+    <div className="p-4 bg-surface-secondary border border-border rounded-lg mb-6 text-sm space-y-3">
+      <h3 className="font-semibold text-text-primary text-base">
+        How Alliance Command Center Works
+      </h3>
+      <p className="text-text-muted">
+        ACC organizes leadership decision-making into four core steps:
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+        <div className="p-3 bg-surface border border-border rounded-lg">
+          <span className="font-semibold text-text-primary block">
+            1. Evaluation Period (When)
+          </span>
+          <p className="text-xs text-text-muted mt-1">
+            Time-boxed container for tracking performance (e.g. Season 7).
+          </p>
+        </div>
+        <div className="p-3 bg-surface border border-border rounded-lg">
+          <span className="font-semibold text-text-primary block">
+            2. Metrics (What)
+          </span>
+          <p className="text-xs text-text-muted mt-1">
+            Key performance indicators tracked during a period (e.g. VS Points).
+          </p>
+        </div>
+        <div className="p-3 bg-surface border border-border rounded-lg">
+          <span className="font-semibold text-text-primary block">
+            3. Roster Members (Who)
+          </span>
+          <p className="text-xs text-text-muted mt-1">
+            The active alliance players evaluated in your workspace.
+          </p>
+        </div>
+        <div className="p-3 bg-surface border border-border rounded-lg">
+          <span className="font-semibold text-text-primary block">
+            4. Evaluation Results (Values)
+          </span>
+          <p className="text-xs text-text-muted mt-1">
+            Recorded metric values for each roster member in a period.
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
-function SetupTaskCard({ task }: { task: SetupTask }) {
-  // Offer the guided tour whenever the task has one. A tour is educational even
-  // after the task is done (revisiting the feature, onboarding a teammate), so
-  // it is not gated on completion.
+function SpreadsheetEntryBanner({
+  allianceId,
+  permissions,
+}: {
+  allianceId: string;
+  permissions: PermissionSet;
+}) {
+  if (!permissions.canImportMembers && !permissions.canConfigurePeriods) {
+    return null;
+  }
+
+  return (
+    <div className="p-5 bg-primary/5 border border-primary/20 rounded-lg mb-6 space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-text-primary">
+          Choose How to Get Started
+        </h2>
+        <p className="text-sm text-text-muted mt-1">
+          Start with a roster spreadsheet or follow our guided step-by-step setup flow.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {permissions.canImportMembers && (
+          <div className="p-4 bg-surface border border-border rounded-lg flex flex-col justify-between space-y-3">
+            <div>
+              <div className="font-semibold text-text-primary">
+                Start from a roster spreadsheet
+              </div>
+              <p className="text-xs text-text-muted mt-1">
+                Import names, THP, and roles from a CSV spreadsheet. You’ll configure a period and import evaluation results afterward.
+              </p>
+            </div>
+            <div>
+              <Button
+                variant="primary"
+                size="sm"
+                href={`/alliances/${allianceId}/members/import`}
+              >
+                Import Roster →
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="p-4 bg-surface border border-border rounded-lg flex flex-col justify-between space-y-3">
+          <div>
+            <div className="font-semibold text-text-primary">
+              Set up manually step-by-step
+            </div>
+            <p className="text-xs text-text-muted mt-1">
+              Period-first guided flow: create an evaluation period, attach metrics, add members, and record evaluation results.
+            </p>
+          </div>
+          <div>
+            <Button variant="secondary" size="sm" href="#manual-setup-tasks">
+              Follow Guided Steps ↓
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SetupTaskCard({
+  task,
+  allianceId,
+  permissions,
+}: {
+  task: SetupTask;
+  allianceId: string;
+  permissions: PermissionSet;
+}) {
   const tourId = SETUP_TASK_TOURS[task.id];
 
   return (
     <div
-      className={`rounded-lg border transition-colors ${
+      className={`rounded-lg border p-4 transition-colors ${
         task.completed
           ? "bg-surface-secondary border-border"
           : "bg-surface-secondary border-border hover:border-primary"
       }`}
     >
-      <Link href={task.href} className="block p-4">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5">
-            {task.completed ? <CheckIcon /> : <CircleIcon />}
-          </div>
-          <div className="flex-1">
-            <div
-              className={`font-medium ${
-                task.completed ? "text-text-muted" : "text-text-primary"
-              }`}
-            >
-              {task.label}
-            </div>
-            <div className="text-sm text-text-muted mt-1">
-              {task.description}
-            </div>
-          </div>
-          {!task.completed && <ChevronIcon />}
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5">
+          {task.completed ? <CheckIcon /> : <CircleIcon />}
         </div>
-      </Link>
-      {tourId && (
-        <div className="px-4 pb-3 pl-11">
-          <Link
-            href={buildTourHref({
-              destination: task.href,
-              tourId,
-            })}
-            className="inline-flex items-center gap-1 text-sm font-medium text-primary-light hover:text-primary hover:underline"
+        <div className="flex-1">
+          <div
+            className={`font-medium ${
+              task.completed ? "text-text-muted" : "text-text-primary"
+            }`}
           >
-            {task.completed ? "Review guided tour" : "Start guided tour"}
-          </Link>
+            {task.label}
+          </div>
+          <div className="text-sm text-text-muted mt-1">
+            {task.description}
+          </div>
+
+          {/* Action Links */}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {task.id === "period" && permissions.canConfigurePeriods && (
+              <Button
+                variant="secondary"
+                size="sm"
+                href={`/alliances/${allianceId}/periods`}
+              >
+                Create Evaluation Period
+              </Button>
+            )}
+
+            {task.id === "metrics" && permissions.canConfigurePeriods && (
+              <Button
+                variant="secondary"
+                size="sm"
+                href={`/alliances/${allianceId}/periods`}
+              >
+                Choose Period Metrics
+              </Button>
+            )}
+
+            {task.id === "members" && (
+              <>
+                {permissions.canManageMembers && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    href={`/alliances/${allianceId}/members`}
+                  >
+                    Add Member Manually
+                  </Button>
+                )}
+                {permissions.canImportMembers && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    href={`/alliances/${allianceId}/members/import`}
+                  >
+                    Import Roster
+                  </Button>
+                )}
+              </>
+            )}
+
+            {task.id === "data" && permissions.canImportMetrics && (
+              <Button
+                variant="secondary"
+                size="sm"
+                href={`/alliances/${allianceId}/periods`}
+              >
+                Select Period to Record or Import Results
+              </Button>
+            )}
+
+            {task.id === "team" && permissions.canInviteCollaborators && (
+              <Button
+                variant="secondary"
+                size="sm"
+                href={`/alliances/${allianceId}/settings/invitations`}
+              >
+                Invite Leadership Team
+              </Button>
+            )}
+
+            {tourId && (
+              <Link
+                href={buildTourHref({
+                  destination: task.href,
+                  tourId,
+                })}
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary-light hover:text-primary hover:underline"
+              >
+                {task.completed ? "Review guided tour" : "Start guided tour"}
+              </Link>
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -159,9 +321,7 @@ export default async function AllianceSetupPage({ params }: Params) {
 
   const requiredTasks = status.tasks.filter((t) => t.required);
   const optionalTasks = status.tasks.filter((t) => !t.required);
-  // Use status.isComplete which is computed against ALL required tasks,
-  // not just those visible to the current user. This prevents roles that
-  // can't see any required tasks from incorrectly seeing "complete".
+  // Setup is complete when all required data hierarchy tasks are completed
   const allRequiredComplete = status.isComplete;
 
   return (
@@ -170,6 +330,15 @@ export default async function AllianceSetupPage({ params }: Params) {
       description={`Get ${alliance.name} ready for your leadership team.`}
       maxWidth="2xl"
     >
+      <OperatingHierarchyCard />
+
+      {!allRequiredComplete && (
+        <SpreadsheetEntryBanner
+          allianceId={allianceId}
+          permissions={auth.permissions}
+        />
+      )}
+
       {!allRequiredComplete && (
         <ProgressBar
           completed={status.requiredComplete}
@@ -177,29 +346,39 @@ export default async function AllianceSetupPage({ params }: Params) {
         />
       )}
 
-      {/* Required Tasks */}
+      {/* Required Data Setup Tasks */}
       {requiredTasks.length > 0 && (
-        <div className="mb-8">
+        <div id="manual-setup-tasks" className="mb-8">
           <h2 className="text-sm font-medium text-text-muted uppercase tracking-wide mb-3">
-            Required Setup
+            Data Setup Sequence
           </h2>
           <div className="space-y-3">
             {requiredTasks.map((task) => (
-              <SetupTaskCard key={task.id} task={task} />
+              <SetupTaskCard
+                key={task.id}
+                task={task}
+                allianceId={allianceId}
+                permissions={auth.permissions}
+              />
             ))}
           </div>
         </div>
       )}
 
-      {/* Optional Tasks */}
+      {/* Optional Collaboration Tasks */}
       {optionalTasks.length > 0 && (
         <div className="mb-8">
           <h2 className="text-sm font-medium text-text-muted uppercase tracking-wide mb-3">
-            Next Steps
+            Collaboration & Next Steps
           </h2>
           <div className="space-y-3">
             {optionalTasks.map((task) => (
-              <SetupTaskCard key={task.id} task={task} />
+              <SetupTaskCard
+                key={task.id}
+                task={task}
+                allianceId={allianceId}
+                permissions={auth.permissions}
+              />
             ))}
           </div>
         </div>

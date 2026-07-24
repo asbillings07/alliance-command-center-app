@@ -112,14 +112,14 @@ function toWireTarget(target: ColumnTarget): WireMapping["target"] {
 function getPreviewEntries(
     preview: MetricImportPreview,
     selections: Record<string, number> | undefined,
-): { memberId: string; value: number }[] {
+): { memberId: string; rawValue: string }[] {
     const selectedIndices = new Set(Object.values(selections ?? {}));
     return preview.summary.results
-        .filter((result, index): result is typeof result & { memberId: string } => {
-            if (!result.memberId) return false;
+        .filter((result, index): result is typeof result & { memberId: string; rawValue: string } => {
+            if (!result.memberId || result.status === "invalid_value" || !result.rawValue) return false;
             return selectedIndices.has(index);
         })
-        .map((r) => ({ memberId: r.memberId, value: r.value }));
+        .map((r) => ({ memberId: r.memberId, rawValue: r.rawValue }));
 }
 
 export function ImportForm({ periodId, periodName, allianceId, members, metrics, libraryMetrics, canCreateMetrics, canAttachMetrics }: ImportFormProps) {
@@ -564,6 +564,10 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
     // Preview step
     if (step === "preview" && previews.length > 0) {
+        const hasBlockingParseErrors = previews.some((preview) =>
+            preview.summary.results.some((r) => r.status === "invalid_value" || !!r.error)
+        );
+
         return (
             <div className="w-full max-w-2xl flex flex-col gap-5">
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 font-medium">
@@ -576,9 +580,18 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                     </button>
                 </div>
 
+                {hasBlockingParseErrors && (
+                    <div className="p-4 rounded-md bg-red-100 border-2 border-red-400 text-red-900">
+                        <p className="font-semibold text-red-900">Invalid Numeric Values Detected in Mapped Columns</p>
+                        <p className="text-sm text-red-800 mt-1">
+                            Please fix or remove rows with invalid numeric values in mapped columns before continuing. Whole numbers in plain (450000000), period-grouped (450.000.000), or comma-grouped (&quot;450,000,000&quot;) formats are accepted.
+                        </p>
+                    </div>
+                )}
+
                 {parseErrors.length > 0 && (
                     <div className="p-4 rounded-md bg-orange-100 border border-orange-300">
-                        <h4 className="font-semibold text-orange-900 mb-2">Parse Warnings ({parseErrors.length})</h4>
+                        <h4 className="font-semibold text-orange-900 mb-2 font-medium">Parse Feedback ({parseErrors.length})</h4>
                         <ul className="text-sm text-orange-800 list-disc list-inside max-h-24 overflow-y-auto">
                             {parseErrors.map((err, i) => (<li key={i}>{err}</li>))}
                         </ul>
@@ -604,7 +617,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                     </button>
                     <button
                         onClick={handleImport}
-                        disabled={isPending || totalToImport === 0}
+                        disabled={isPending || totalToImport === 0 || hasBlockingParseErrors}
                         className="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isPending
@@ -653,7 +666,10 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                     </li>
                     <li className="flex items-start gap-2">
                         <span className="text-green-600 mt-0.5">✓</span>
-                        <span>One or more numeric columns - map each to a metric on the next step</span>
+                        <div>
+                            <span>One or more numeric columns - map each to a metric on the next step</span>
+                            <p className="text-xs text-gray-500 mt-0.5">Accepted format examples: 450000000, 450.000.000, &quot;450,000,000&quot;</p>
+                        </div>
                     </li>
                 </ul>
             </div>
@@ -755,7 +771,8 @@ function MetricPreviewSection({
                                 <tr
                                     key={i}
                                     className={
-                                        result.status === "unmatched" ? "bg-red-100 text-red-900" :
+                                        result.status === "invalid_value" ? "bg-red-100 text-red-900 font-semibold" :
+                                        result.status === "unmatched" ? "bg-red-50 text-red-900" :
                                         !isSelected ? "bg-gray-100 text-gray-500" :
                                         "bg-green-50 text-green-900"
                                     }
@@ -769,9 +786,17 @@ function MetricPreviewSection({
                                             </span>
                                         )}
                                     </td>
-                                    <td className="px-3 py-2 border-t text-right font-mono font-medium">{result.value}</td>
+                                    <td className="px-3 py-2 border-t text-right font-mono font-medium">
+                                        {result.status === "invalid_value" ? (
+                                            <span className="text-red-700 font-bold">{result.rawValue} ({result.error})</span>
+                                        ) : (
+                                            result.value?.toLocaleString()
+                                        )}
+                                    </td>
                                     <td className="px-3 py-2 border-t text-center">
-                                        {result.status === "unmatched" ? (
+                                        {result.status === "invalid_value" ? (
+                                            <span className="px-2 py-0.5 rounded text-xs bg-red-200 text-red-900 font-bold">Invalid Value</span>
+                                        ) : result.status === "unmatched" ? (
                                             <span className="px-2 py-0.5 rounded text-xs bg-red-200 text-red-800">No Match</span>
                                         ) : memberHasDuplicates ? (
                                             <button

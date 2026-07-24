@@ -144,7 +144,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 mappings: [
                     {
                         target: { kind: "existing", metricId: attachedMetric.id },
-                        entries: [{ memberId: member.id, value: 100 }],
+                        entries: [{ memberId: member.id, rawValue: "100" }],
                     },
                 ],
             })
@@ -167,7 +167,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 mappings: [
                     {
                         target: { kind: "existing", metricId: libraryMetric.id },
-                        entries: [{ memberId: member.id, value: 100 }],
+                        entries: [{ memberId: member.id, rawValue: "100" }],
                     },
                 ],
             })
@@ -204,7 +204,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             mappings: [
                 {
                     target: { kind: "existing", metricId: libraryMetric.id },
-                    entries: [{ memberId: member.id, value: 100 }],
+                    entries: [{ memberId: member.id, rawValue: "100" }],
                 },
             ],
         });
@@ -239,7 +239,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 mappings: [
                     {
                         target: { kind: "create", name: "Brand New Metric" },
-                        entries: [{ memberId: member.id, value: 200 }],
+                        entries: [{ memberId: member.id, rawValue: "200" }],
                     },
                 ],
             })
@@ -276,7 +276,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             mappings: [
                 {
                     target: { kind: "create", name: "Brand New Metric" },
-                    entries: [{ memberId: member.id, value: 200 }],
+                    entries: [{ memberId: member.id, rawValue: "200" }],
                 },
             ],
         });
@@ -303,7 +303,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 mappings: [
                     {
                         target: { kind: "existing", metricId: setup2.attachedMetric.id },
-                        entries: [{ memberId: setup2.member.id, value: 100 }],
+                        entries: [{ memberId: setup2.member.id, rawValue: "100" }],
                     },
                 ],
             })
@@ -321,7 +321,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 mappings: [
                     {
                         target: { kind: "existing", metricId: setup1.attachedMetric.id },
-                        entries: [{ memberId: setup2.member.id, value: 100 }], // member from setup2
+                        entries: [{ memberId: setup2.member.id, rawValue: "100" }], // member from setup2
                     },
                 ],
             })
@@ -339,7 +339,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 mappings: [
                     {
                         target: { kind: "existing", metricId: setup2.attachedMetric.id }, // metric from setup2
-                        entries: [{ memberId: setup1.member.id, value: 100 }],
+                        entries: [{ memberId: setup1.member.id, rawValue: "100" }],
                     },
                 ],
             })
@@ -355,7 +355,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             mappings: [
                 {
                     target: { kind: "existing", metricId: attachedMetric.id },
-                    entries: [{ memberId: member.id, value: 500 }],
+                        entries: [{ memberId: member.id, rawValue: "500" }],
                 },
             ],
         });
@@ -372,5 +372,51 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             where: { periodId: periodB.id },
         });
         expect(periodBEntries).toHaveLength(0);
+    });
+
+    it("integration: persists localized evaluation result string strictly into PostgreSQL (450.000.000 -> 450000000)", async () => {
+        const { alliance, member, periodA, attachedMetric } = await makeTestSetup();
+
+        const result = await importMemberMetrics({
+            periodId: periodA.id,
+            allianceId: alliance.id,
+            mappings: [
+                {
+                    target: { kind: "existing", metricId: attachedMetric.id },
+                    entries: [{ memberId: member.id, rawValue: "450.000.000" }],
+                },
+            ],
+        });
+
+        expect(result.success).toBe(true);
+
+        const entry = await prisma.memberMetricEntry.findFirst({
+            where: { periodId: periodA.id, allianceMemberId: member.id },
+        });
+
+        expect(entry).not.toBeNull();
+        expect(entry?.value).toBe(450000000);
+    });
+
+    it("integration: performs zero database writes when raw submitted evaluation value is invalid (450.5) or out-of-range", async () => {
+        const { alliance, member, periodA, attachedMetric } = await makeTestSetup();
+
+        await expect(
+            importMemberMetrics({
+                periodId: periodA.id,
+                allianceId: alliance.id,
+                mappings: [
+                    {
+                        target: { kind: "existing", metricId: attachedMetric.id },
+                        entries: [{ memberId: member.id, rawValue: "450.5" }],
+                    },
+                ],
+            })
+        ).rejects.toThrow(/Invalid integer value "450.5"/i);
+
+        const entriesCount = await prisma.memberMetricEntry.count({
+            where: { periodId: periodA.id },
+        });
+        expect(entriesCount).toBe(0);
     });
 });

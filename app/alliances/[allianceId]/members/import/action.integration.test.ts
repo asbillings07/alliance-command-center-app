@@ -167,4 +167,43 @@ describe.skipIf(!runDb)("importMembers [integration]", () => {
         });
         expect(memberCount).toBe(0);
     });
+
+    it("integration: persists localized THP string strictly into PostgreSQL (450.000.000 -> 450000000)", async () => {
+        const alliance = await makeAllianceWithActiveMembers(0);
+
+        const res = await importMembers(alliance.id, [
+            { playerName: "Localized THP Player", thp: "450.000.000" },
+        ]);
+
+        expect(res.created).toBe(1);
+        expect(res.errors).toHaveLength(0);
+
+        const createdMember = await prisma.allianceMember.findFirst({
+            where: { allianceId: alliance.id, playerName: "Localized THP Player" },
+        });
+
+        expect(createdMember).not.toBeNull();
+        expect(createdMember?.thp).toBe(450000000);
+    });
+
+    it("integration: performs zero database writes when raw THP is malformed (450.5), out-of-range, or negative (-100)", async () => {
+        const alliance = await makeAllianceWithActiveMembers(0);
+
+        const res1 = await importMembers(alliance.id, [
+            { playerName: "Malformed THP Player", thp: "450.5" },
+        ]);
+        expect(res1.created).toBe(0);
+        expect(res1.errors.length).toBeGreaterThan(0);
+
+        const res2 = await importMembers(alliance.id, [
+            { playerName: "Negative THP Player", thp: "-100" },
+        ]);
+        expect(res2.created).toBe(0);
+        expect(res2.errors.length).toBeGreaterThan(0);
+
+        const count = await prisma.allianceMember.count({
+            where: { allianceId: alliance.id },
+        });
+        expect(count).toBe(0);
+    });
 });

@@ -2,12 +2,14 @@
 
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { normalizeName } from "@/app/src/lib/memberMatcher";
+import { parseStrictInteger } from "@/app/src/lib/numberParser";
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
 import { revalidatePath } from "next/cache";
 
 export type RosterEntry = {
     playerName: string;
-    thp?: number;
+    thp?: string;
+    parsedThp?: number;
     role?: string;
     restore?: boolean;
     selected?: boolean;
@@ -92,6 +94,37 @@ export async function importMembers(
         };
     }
 
+    // Validate selected THP values with parseStrictInteger and THP domain rule (non-negative)
+    for (const entry of validatedEntries) {
+        if (entry.selected !== false && entry.thp !== undefined && entry.thp !== null && String(entry.thp).trim() !== "") {
+            const rawThpStr = String(entry.thp);
+            const parsed = parseStrictInteger(rawThpStr);
+            if (!parsed.success) {
+                return {
+                    created: 0,
+                    restored: 0,
+                    skippedExisting: 0,
+                    skippedDuplicates: 0,
+                    skippedEmptyNames,
+                    skippedUnselected: 0,
+                    errors: [`Invalid THP value "${rawThpStr}" for player "${entry.playerName}": ${parsed.error}`],
+                };
+            }
+            if (parsed.value < 0) {
+                return {
+                    created: 0,
+                    restored: 0,
+                    skippedExisting: 0,
+                    skippedDuplicates: 0,
+                    skippedEmptyNames,
+                    skippedUnselected: 0,
+                    errors: [`Total Hero Power cannot be negative for player "${entry.playerName}" (${parsed.value})`],
+                };
+            }
+            entry.parsedThp = parsed.value;
+        }
+    }
+
     try {
         const result = await withAllianceMemberLock(
             allianceId,
@@ -167,7 +200,7 @@ export async function importMembers(
                         data: toCreate.map((e) => ({
                             allianceId,
                             playerName: e.playerName.trim(),
-                            thp: e.thp ?? null,
+                            thp: e.parsedThp ?? null,
                             role: e.role?.trim() ?? null,
                         })),
                         skipDuplicates: true,
@@ -181,7 +214,7 @@ export async function importMembers(
                         where: { id: item.id },
                         data: {
                             archivedAt: null,
-                            thp: item.entry.thp ?? undefined,
+                            thp: item.entry.parsedThp ?? undefined,
                             role: item.entry.role?.trim() ?? undefined,
                         },
                     });

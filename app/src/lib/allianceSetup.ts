@@ -66,6 +66,7 @@ export type AllianceSetupStatus = {
 
 type SetupCounts = {
   metrics: number;
+  periodMetrics: number;
   periods: number;
   memberships: number;
   invitations: number;
@@ -78,9 +79,12 @@ type SetupCounts = {
  * This avoids N+1 queries when checking setup status.
  */
 async function getSetupCounts(allianceId: string): Promise<SetupCounts> {
-  const [metrics, periods, memberships, invitations, members, metricEntries] =
+  const [metrics, periodMetrics, periods, memberships, invitations, members, metricEntries] =
     await Promise.all([
       prisma.metric.count({ where: { allianceId } }),
+      prisma.metricPeriodMetric.count({
+        where: { period: { allianceId }, active: true },
+      }),
       prisma.metricPeriod.count({ where: { allianceId } }),
       prisma.allianceMembership.count({ where: { allianceId } }),
       // Only count pending invitations: not cancelled, not expired, not yet accepted
@@ -98,7 +102,7 @@ async function getSetupCounts(allianceId: string): Promise<SetupCounts> {
       }),
     ]);
 
-  return { metrics, periods, memberships, invitations, members, metricEntries };
+  return { metrics, periodMetrics, periods, memberships, invitations, members, metricEntries };
 }
 
 function evaluateTaskCompletion(
@@ -107,7 +111,8 @@ function evaluateTaskCompletion(
 ): boolean {
   switch (taskId) {
     case "metrics":
-      return counts.metrics > 0;
+      // Proves at least one active metric is attached to an evaluation period
+      return counts.periodMetrics > 0;
     case "period":
       return counts.periods > 0;
     case "team":
@@ -125,35 +130,50 @@ function evaluateTaskCompletion(
 /**
  * Declarative setup task definitions.
  *
- * Tasks are ordered: required owner tasks first, then optional next steps.
+ * Tasks follow the core data hierarchy required for a populated workspace:
+ * Period (When) -> Metrics (What) -> Roster (Who) -> Evaluation Results (Values).
  *
- * Required tasks (metrics, period, team) must be completed before the
- * owner can access the dashboard. Optional tasks (members, data) are
- * "next steps" that don't block usage.
- *
- * Adding future tasks (Discord bot, billing, API keys) requires adding
- * to this array and updating evaluateTaskCompletion().
+ * "Invite Leadership Team" is an optional collaboration task.
  */
 export const SETUP_TASKS: SetupTaskDefinition[] = [
-  // Required: Core setup that must be done before using the app
-  {
-    id: "metrics",
-    label: "Configure Metrics",
-    description: "Define what your alliance evaluates (e.g., VS Points, Donations)",
-    typicallyCompletedBy: "Founding Operator",
-    href: (id) => `/alliances/${id}/metrics`,
-    requiredPermission: "canConfigureMetrics",
-    required: true,
-  },
+  // Required data hierarchy tasks (must all be done for setup to be complete)
   {
     id: "period",
     label: "Create Evaluation Period",
-    description: "Set up a time-boxed period to track member performance",
+    description: "Set up a time-boxed evaluation period (e.g. Season 7) to contain metric tracking",
     typicallyCompletedBy: "Founding Operator",
     href: (id) => `/alliances/${id}/periods`,
     requiredPermission: "canConfigurePeriods",
     required: true,
   },
+  {
+    id: "metrics",
+    label: "Choose Period Metrics",
+    description: "Attach existing metrics—or create new ones when permitted—to an evaluation period.",
+    typicallyCompletedBy: "Founding Operator",
+    href: (id) => `/alliances/${id}/periods`,
+    requiredPermission: "canConfigurePeriods",
+    required: true,
+  },
+  {
+    id: "members",
+    label: "Set Up Roster",
+    description: "Add members manually or import a roster spreadsheet to track",
+    typicallyCompletedBy: "Admin",
+    href: (id) => `/alliances/${id}/members`,
+    requiredPermission: "canImportMembers",
+    required: true,
+  },
+  {
+    id: "data",
+    label: "Record Evaluation Results",
+    description: "Enter metric results manually or import evaluation results for your period",
+    typicallyCompletedBy: "Leader",
+    href: (id) => `/alliances/${id}/periods`,
+    requiredPermission: "canImportMetrics",
+    required: true,
+  },
+  // Optional collaboration task
   {
     id: "team",
     label: "Invite Leadership Team",
@@ -161,25 +181,6 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
     typicallyCompletedBy: "Founding Operator",
     href: (id) => `/alliances/${id}/settings/invitations`,
     requiredPermission: "canInviteCollaborators",
-    required: true,
-  },
-  // Optional: Next steps that enhance the alliance
-  {
-    id: "members",
-    label: "Import Roster",
-    description: "Upload a spreadsheet to add or restore roster members",
-    typicallyCompletedBy: "Admin",
-    href: (id) => `/alliances/${id}/members/import`,
-    requiredPermission: "canImportMembers",
-    required: false,
-  },
-  {
-    id: "data",
-    label: "Import Evaluation Results",
-    description: "Add member values for metrics in a specific evaluation period",
-    typicallyCompletedBy: "Leader",
-    href: (id) => `/alliances/${id}/periods`,
-    requiredPermission: "canImportMetrics",
     required: false,
   },
 ];

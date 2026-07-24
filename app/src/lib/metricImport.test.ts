@@ -102,9 +102,9 @@ describe("validateColumnTargets", () => {
       {
         target: { kind: "existing", metricId: "m-kp" },
         entries: [
-          { memberId: "m1", value: 100 },
-          { memberId: "m1", value: 999 },
-          { memberId: "m2", value: 200 },
+          { memberId: "m1", rawValue: "100" },
+          { memberId: "m1", rawValue: "999" },
+          { memberId: "m2", rawValue: "200" },
         ],
       },
     ];
@@ -118,32 +118,54 @@ describe("validateColumnTargets", () => {
 
   it("rejects the same existing metric mapped to two columns", () => {
     const mappings: ColumnTargetMapping[] = [
-      { target: { kind: "existing", metricId: "m-kp" }, entries: [{ memberId: "m1", value: 1 }] },
-      { target: { kind: "existing", metricId: "m-kp" }, entries: [{ memberId: "m2", value: 2 }] },
+      { target: { kind: "existing", metricId: "m-kp" }, entries: [{ memberId: "m1", rawValue: "1" }] },
+      { target: { kind: "existing", metricId: "m-kp" }, entries: [{ memberId: "m2", rawValue: "2" }] },
     ];
     expect(() => validateColumnTargets(mappings)).toThrow(/only be mapped once/i);
   });
 
   it("rejects two create targets with the same name ignoring case/space", () => {
     const mappings: ColumnTargetMapping[] = [
-      { target: { kind: "create", name: "VS Score" }, entries: [{ memberId: "m1", value: 1 }] },
-      { target: { kind: "create", name: "  vs   score " }, entries: [{ memberId: "m2", value: 2 }] },
+      { target: { kind: "create", name: "VS Score" }, entries: [{ memberId: "m1", rawValue: "1" }] },
+      { target: { kind: "create", name: "  vs   score " }, entries: [{ memberId: "m2", rawValue: "2" }] },
     ];
     expect(() => validateColumnTargets(mappings)).toThrow(/new metric may only be mapped once/i);
   });
 
   it("rejects a create target with a blank name", () => {
     const mappings: ColumnTargetMapping[] = [
-      { target: { kind: "create", name: "   " }, entries: [{ memberId: "m1", value: 1 }] },
+      { target: { kind: "create", name: "   " }, entries: [{ memberId: "m1", rawValue: "1" }] },
     ];
     expect(() => validateColumnTargets(mappings)).toThrow(/requires a name/i);
   });
 
-  it("rejects non-integer values", () => {
+  it("parses raw strings with localized thousands separators strictly", () => {
     const mappings: ColumnTargetMapping[] = [
-      { target: { kind: "existing", metricId: "m-kp" }, entries: [{ memberId: "m1", value: 1.5 }] },
+      {
+        target: { kind: "existing", metricId: "m-kp" },
+        entries: [
+          { memberId: "m1", rawValue: "450.000.000" },
+          { memberId: "m2", rawValue: "450,000,000" },
+          { memberId: "m3", rawValue: "-450.000.000" },
+        ],
+      },
     ];
-    expect(() => validateColumnTargets(mappings)).toThrow(/must be integers/i);
+    const [result] = validateColumnTargets(mappings);
+    expect(result.entries).toEqual([
+      { memberId: "m1", value: 450000000 },
+      { memberId: "m2", value: 450000000 },
+      { memberId: "m3", value: -450000000 },
+    ]);
+  });
+
+  it("rejects malformed raw string values", () => {
+    const mappings: ColumnTargetMapping[] = [
+      {
+        target: { kind: "existing", metricId: "m-kp" },
+        entries: [{ memberId: "m1", rawValue: "450.5" }],
+      },
+    ];
+    expect(() => validateColumnTargets(mappings)).toThrow(/Invalid integer value "450.5"/i);
   });
 
   it("rejects an empty mapping list", () => {
