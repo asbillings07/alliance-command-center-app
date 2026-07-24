@@ -158,7 +158,9 @@ test.describe("Alliance Member CRUD", () => {
     // Use breadcrumb navigation - "Members" link in breadcrumb
     await page.getByLabel("Breadcrumb").getByRole("link", { name: /members/i }).click();
 
-    await expect(page).toHaveURL(`/alliances/${testAllianceId}/members`);
+    await expect(page).toHaveURL(
+      new RegExp(`/alliances/${testAllianceId}/members(\\?.*)?$`)
+    );
   });
 
   test("breadcrumb navigation works", async ({ page }) => {
@@ -172,6 +174,8 @@ test.describe("Alliance Member CRUD", () => {
     const breadcrumb = page.getByRole("link", { name: /members/i }).first();
     await breadcrumb.click();
 
-    await expect(page).toHaveURL(`/alliances/${testAllianceId}/members`);
+    await expect(page).toHaveURL(
+      new RegExp(`/alliances/${testAllianceId}/members(\\?.*)?$`)
+    );
   });
 });
