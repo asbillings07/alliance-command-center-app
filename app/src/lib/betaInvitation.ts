@@ -2,6 +2,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 import { prisma } from "./prisma";
 import { getRedeemUrl } from "./appUrl";
 import type { BetaInvitation } from "@/app/generated/prisma/client";
+import { normalizeEmail } from "./email/normalize";
 
 function generateBetaCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -76,7 +77,7 @@ function pendingInvitationWhere(normalizedEmail: string, now: Date) {
 export async function getPendingInvitation(
   email: string
 ): Promise<BetaInvitation | null> {
-  const normalizedEmail = email.toLowerCase().trim();
+  const normalizedEmail = normalizeEmail(email);
 
   return prisma.betaInvitation.findFirst({
     where: pendingInvitationWhere(normalizedEmail, new Date()),
@@ -106,7 +107,7 @@ export async function issueBetaInvitation(
   email: string,
   options?: IssueBetaInvitationOptions
 ): Promise<IssueBetaInvitationResult> {
-  const normalizedEmail = email.toLowerCase().trim();
+  const normalizedEmail = normalizeEmail(email);
 
   const now = new Date();
   const token = randomUUID();

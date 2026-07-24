@@ -1,6 +1,7 @@
 import { prisma } from "@/app/src/lib/prisma";
 import { Prisma } from "@/app/generated/prisma/client";
 import type { User } from "@/app/generated/prisma/client";
+import { normalizeEmail } from "@/app/src/lib/email/normalize";
 
 /**
  * Provision a user from a Google sign-in.
@@ -25,7 +26,7 @@ export async function provisionOAuthUser({
   displayName,
   googleSubject,
 }: ProvisionOAuthUserInput): Promise<User> {
-  const normalizedEmail = email.toLowerCase().trim();
+  const normalizedEmail = normalizeEmail(email);
 
   const existing = await prisma.user.findUnique({
     where: { email: normalizedEmail },
