@@ -111,7 +111,7 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
   },
   {
     feature: "members.import_link",
-    description: "Import Members link visible",
+    description: "Import Roster link visible",
     verification: {
       type: "link_visible",
       selector: 'a:has-text("Import")',
@@ -176,11 +176,11 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
   },
 
   // ============================================================
-  // Record Metrics (Import Data)
+  // Record Results (Import Evaluation Results)
   // ============================================================
   {
     feature: "record.access",
-    description: "Can access record metrics page",
+    description: "Can access record results page",
     verification: {
       type: "page_accessible",
       path: "/alliances/{allianceId}/periods/{periodId}/record",
@@ -189,7 +189,7 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
   },
   {
     feature: "import.access",
-    description: "Can access import metrics page",
+    description: "Can access import evaluation results page",
     verification: {
       type: "page_accessible",
       path: "/alliances/{allianceId}/periods/{periodId}/import",

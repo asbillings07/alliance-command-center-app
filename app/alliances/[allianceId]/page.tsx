@@ -90,7 +90,7 @@ export default async function AlliancePage({ params }: Params) {
             {permissions.canImportMetrics && activePeriod && activePeriod.periodMetrics.length > 0 && (
               <Card>
                 <Card.Body>
-                  <h3 className="font-medium text-primary mb-2">Record Metrics</h3>
+                  <h3 className="font-medium text-primary mb-2">Evaluation Results</h3>
                   <p className="text-sm text-text-secondary mb-4">
                     Record or import performance data for <strong>{activePeriod.name}</strong>.
                   </p>
@@ -99,7 +99,7 @@ export default async function AlliancePage({ params }: Params) {
                       Record Now
                     </Button>
                     <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`} variant="secondary" size="sm">
-                      Import
+                      Import Results
                     </Button>
                   </div>
                 </Card.Body>

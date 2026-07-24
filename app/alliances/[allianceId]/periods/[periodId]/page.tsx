@@ -107,13 +107,13 @@ export default async function PeriodPage({ params }: Params) {
                                 href={`/alliances/${allianceId}/periods/${periodId}/record`}
                                 variant="primary"
                             >
-                                Record Metrics
+                                Record Results
                             </Button>
                             <Button
                                 href={`/alliances/${allianceId}/periods/${periodId}/import`}
                                 variant="secondary"
                             >
-                                Import from Spreadsheet
+                                Import Evaluation Results
                             </Button>
                         </div>
                     </Card.Body>

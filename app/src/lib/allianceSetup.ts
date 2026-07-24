@@ -166,8 +166,8 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
   // Optional: Next steps that enhance the alliance
   {
     id: "members",
-    label: "Import Members",
-    description: "Upload your alliance roster from a spreadsheet",
+    label: "Import Roster",
+    description: "Upload or update your alliance roster from a spreadsheet",
     typicallyCompletedBy: "Admin",
     href: (id) => `/alliances/${id}/members/import`,
     requiredPermission: "canImportMembers",
@@ -175,8 +175,8 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
   },
   {
     id: "data",
-    label: "Import First Dataset",
-    description: "Record or import metric data for your members",
+    label: "Import Evaluation Results",
+    description: "Add member values for metrics in a specific evaluation period",
     typicallyCompletedBy: "Leader",
     href: (id) => `/alliances/${id}/periods`,
     requiredPermission: "canImportMetrics",

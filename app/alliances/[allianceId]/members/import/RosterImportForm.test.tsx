@@ -73,6 +73,57 @@ describe("RosterImportForm [component]", () => {
         { id: "m2", playerName: "Existing Archived One", archivedAt: "2026-01-01T00:00:00.000Z" },
     ];
 
+    it("displays scope notice, sr-only accessible file input, and correct completion copy", async () => {
+        (importMembers as ReturnType<typeof vi.fn>).mockResolvedValue({
+            created: 1,
+            restored: 0,
+            skippedExisting: 0,
+            skippedDuplicates: 0,
+            skippedEmptyNames: 0,
+            skippedUnselected: 0,
+            errors: [],
+        });
+
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        // Scope notice check
+        expect(container.textContent).toContain("Roster Import Scope");
+        expect(container.textContent).toContain("This page imports roster details: Name, Total Hero Power (THP), and Role. It does not import evaluation results.");
+
+        // Accessible file input check
+        const fileInput = container.querySelector<HTMLInputElement>("#roster-file");
+        expect(fileInput).not.toBeNull();
+        expect(fileInput?.className).toContain("sr-only");
+        expect(fileInput?.className).not.toContain("hidden");
+        expect(fileInput?.getAttribute("aria-label")).toContain("Import roster from CSV spreadsheet (.csv)");
+
+        // File upload
+        await act(async () => {
+            fireFileUpload(`Player\nCandidate A`);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Click import button
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            importBtn.click();
+        });
+
+        // Check completion copy
+        expect(container.textContent).toContain("Roster Import Complete");
+        expect(container.textContent).toContain("Import Another Roster");
+    });
+
     it("parses CSV, highlights duplicate rows, deselects duplicates by default, and sends submitted payload with selected: false for duplicates", async () => {
         (importMembers as ReturnType<typeof vi.fn>).mockResolvedValue({
             created: 2,

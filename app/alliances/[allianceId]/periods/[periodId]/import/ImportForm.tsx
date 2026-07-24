@@ -17,6 +17,7 @@ type MetricOption = {
 
 type ImportFormProps = {
     periodId: string;
+    periodName: string;
     allianceId: string;
     members: MemberOption[];
     // Metrics already attached to this period.
@@ -121,7 +122,7 @@ function getPreviewEntries(
         .map((r) => ({ memberId: r.memberId, value: r.value }));
 }
 
-export function ImportForm({ periodId, allianceId, members, metrics, libraryMetrics, canCreateMetrics, canAttachMetrics }: ImportFormProps) {
+export function ImportForm({ periodId, periodName, allianceId, members, metrics, libraryMetrics, canCreateMetrics, canAttachMetrics }: ImportFormProps) {
     const [step, setStep] = useState<ImportStep>("upload");
     const [csvContent, setCsvContent] = useState<string>("");
     const [rowCount, setRowCount] = useState(0);
@@ -345,8 +346,14 @@ export function ImportForm({ periodId, allianceId, members, metrics, libraryMetr
     if (step === "complete" && importResult) {
         return (
             <div className="w-full max-w-2xl flex flex-col gap-4 items-center">
+                <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 font-medium text-center">
+                    Destination Period: {periodName}
+                </div>
                 <div className="w-full p-6 rounded-lg bg-green-50 border border-green-200">
-                    <h3 className="text-lg font-semibold text-green-800 text-center">Import Complete</h3>
+                    <h3 className="text-lg font-semibold text-green-800 text-center">Evaluation Results Imported</h3>
+                    <p className="text-sm text-green-700 text-center mt-1">
+                        Evaluation results have been recorded into destination period &apos;{periodName}&apos;.
+                    </p>
                     <ul className="mt-4 divide-y divide-green-200">
                         {importResult.perMetric.map((m) => (
                             <li key={m.metricId} className="flex items-center justify-between py-2 text-green-900">
@@ -381,7 +388,7 @@ export function ImportForm({ periodId, allianceId, members, metrics, libraryMetr
                     onClick={handleReset}
                     className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
                 >
-                    Import Another File
+                    Import More Results
                 </button>
             </div>
         );
@@ -393,6 +400,15 @@ export function ImportForm({ periodId, allianceId, members, metrics, libraryMetr
 
         return (
             <div className="w-full max-w-2xl flex flex-col gap-5">
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 font-medium">
+                    Destination Period: {periodName}
+                </div>
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900">
+                    <p className="font-medium">Evaluation Results Import Scope</p>
+                    <p className="mt-0.5 text-blue-800">
+                        Importing results for destination period &apos;{periodName}&apos;. This matches existing roster members; unmatched names are skipped. During mapping, authorized users may attach an existing metric or create a new one. This workflow does not create roster members.
+                    </p>
+                </div>
                 <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-gray-900">Map Columns to Metrics</h3>
                     <button onClick={handleBack} className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
@@ -550,6 +566,9 @@ export function ImportForm({ periodId, allianceId, members, metrics, libraryMetr
     if (step === "preview" && previews.length > 0) {
         return (
             <div className="w-full max-w-2xl flex flex-col gap-5">
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 font-medium">
+                    Destination Period: {periodName}
+                </div>
                 <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-gray-900">Review &amp; Confirm Import</h3>
                     <button onClick={handleBack} className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
@@ -600,16 +619,23 @@ export function ImportForm({ periodId, allianceId, members, metrics, libraryMetr
     // Upload step
     return (
         <div className="w-full max-w-2xl flex flex-col gap-5">
-            <div className="flex justify-end">
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 font-medium flex items-center justify-between">
+                <span>Destination Period: {periodName}</span>
                 <TourButton tour={smartImportTour} />
             </div>
-            <div data-tour="metric-upload" className="border-2 border-dashed border-blue-300 rounded-lg p-8 text-center bg-blue-50 hover:bg-blue-100 transition-colors">
-                <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" />
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900">
+                <p className="font-medium">Evaluation Results Import Scope</p>
+                <p className="mt-0.5 text-blue-800">
+                    Importing results for destination period &apos;{periodName}&apos;. This matches existing roster members; unmatched names are skipped. During mapping, authorized users may attach an existing metric or create a new one. This workflow does not create roster members.
+                </p>
+            </div>
+            <div data-tour="metric-upload" className="border-2 border-dashed border-blue-300 rounded-lg p-8 text-center bg-blue-50 hover:bg-blue-100 transition-colors focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2">
+                <input type="file" accept=".csv" onChange={handleFileUpload} className="sr-only" id="csv-upload" aria-label="Upload CSV spreadsheet (.csv)" />
                 <label htmlFor="csv-upload" className="cursor-pointer flex flex-col items-center gap-3">
                     <svg className="w-12 h-12 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
-                    <span className="text-lg font-medium text-blue-900">Click to upload CSV file</span>
+                    <span className="text-lg font-medium text-blue-900">Click to upload CSV spreadsheet (.csv)</span>
                     <span className="text-sm text-blue-700">Import several metrics from one spreadsheet</span>
                 </label>
             </div>

@@ -79,11 +79,11 @@ export default async function ImportPage({ params }: Params) {
         { label: "Dashboard", href: `/alliances/${allianceId}` },
         { label: "Periods", href: `/alliances/${allianceId}/periods` },
         { label: period.name, href: `/alliances/${allianceId}/periods/${periodId}` },
-        { label: "Import" },
+        { label: "Import Evaluation Results" },
       ]
     : [
         { label: "Dashboard", href: `/alliances/${allianceId}` },
-        { label: "Import Metrics" },
+        { label: "Import Evaluation Results" },
       ];
 
   const hasNoMembers = !alliance || alliance.allianceMembers.length === 0;
@@ -95,14 +95,17 @@ export default async function ImportPage({ params }: Params) {
     return (
       <PageLayout
         breadcrumb={breadcrumb}
-        title={period.name}
-        description="Import from Spreadsheet"
+        title="Import Evaluation Results"
+        description={`Upload a CSV spreadsheet (.csv) to record metric evaluation results for ${period.name}.`}
         maxWidth="md"
       >
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 mb-6 font-medium">
+          Destination Period: {period.name}
+        </div>
         {hasNoMetrics ? (
           <EmptyState
             title="No metrics configured"
-            description="Add metrics to this evaluation period before importing data."
+            description="Add metrics to this evaluation period before importing evaluation results."
             action={
               auth.permissions.canConfigurePeriods
                 ? <Button variant="primary" href={`/alliances/${allianceId}/periods/${periodId}`}>Configure Metrics</Button>
@@ -112,10 +115,10 @@ export default async function ImportPage({ params }: Params) {
         ) : (
           <EmptyState
             title="No active members"
-            description="Import your alliance roster before importing metrics."
+            description="Import your alliance roster before importing evaluation results."
             action={
               auth.permissions.canImportMembers
-                ? <Button variant="primary" href={`/alliances/${allianceId}/members/import`}>Import Members</Button>
+                ? <Button variant="primary" href={`/alliances/${allianceId}/members/import`}>Import Roster</Button>
                 : undefined
             }
           />
@@ -127,8 +130,8 @@ export default async function ImportPage({ params }: Params) {
   return (
     <PageLayout
       breadcrumb={breadcrumb}
-      title={period.name}
-      description="Upload any CSV with player data. You choose which columns to import."
+      title="Import Evaluation Results"
+      description={`Upload a CSV spreadsheet (.csv) to record metric evaluation results for ${period.name}.`}
       action={
         <Button
           href={`/alliances/${allianceId}/periods/${periodId}/record`}
@@ -144,6 +147,7 @@ export default async function ImportPage({ params }: Params) {
         <Card.Body>
           <ImportForm
             periodId={periodId}
+            periodName={period.name}
             allianceId={allianceId}
             members={alliance.allianceMembers}
             metrics={metrics}

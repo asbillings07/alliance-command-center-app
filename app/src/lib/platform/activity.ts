@@ -176,7 +176,7 @@ export async function getRecentActivity(
         type: "members_imported",
         allianceId: data.alliance.id,
         allianceName: data.alliance.name,
-        description: `Imported ${data.count} member${data.count === 1 ? "" : "s"}`,
+        description: `Imported roster (${data.count} member${data.count === 1 ? "" : "s"})`,
         timestamp: data.timestamp,
         href: `/platform/support/alliance/${data.alliance.id}`,
       });
@@ -230,7 +230,7 @@ export async function getRecentActivity(
         type: "data_imported",
         allianceId: data.alliance.id,
         allianceName: data.alliance.name,
-        description: `Imported ${data.count} metric entr${data.count === 1 ? "y" : "ies"}`,
+        description: `Recorded ${data.count} evaluation result${data.count === 1 ? "" : "s"}`,
         timestamp: data.timestamp,
         href: `/platform/support/alliance/${data.alliance.id}`,
       });

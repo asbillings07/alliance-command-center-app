@@ -1,20 +1,16 @@
-import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, beforeEach, vi } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
 import type * as ImportAction from "./action";
 import type * as NewMemberAction from "../new/action";
+
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 
 vi.mock("next/cache", () => ({
     revalidatePath: vi.fn(),
 }));
 
 vi.mock("@/app/src/lib/auth/requireAllianceAccess", () => ({
-    requireAllianceAccess: vi.fn().mockResolvedValue({
-        userId: "integration-test-user",
-        permissions: {
-            canManageMembers: true,
-            canImportMembers: true,
-        },
-    }),
+    requireAllianceAccess: vi.fn(),
 }));
 
 const runDb = process.env.INTEGRATION_DB === "true";
@@ -31,6 +27,17 @@ describe.skipIf(!runDb)("importMembers [integration]", () => {
         });
         ({ importMembers } = await import("./action"));
         ({ restoreMember } = await import("../new/action"));
+    });
+
+    beforeEach(() => {
+        vi.mocked(requireAllianceAccess).mockResolvedValue({
+            user: { id: "integration-test-user", email: "test@local" },
+            permissions: {
+                canManageMembers: true,
+                canImportMembers: true,
+            } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["permissions"],
+            membership: { role: "ADMIN" } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["membership"],
+        });
     });
 
     afterEach(async () => {
@@ -141,5 +148,23 @@ describe.skipIf(!runDb)("importMembers [integration]", () => {
         });
 
         expect(finalCount).toBe(100);
+    });
+
+    it("integration: rejects import and creates 0 members when user lacks canImportMembers permission", async () => {
+        const alliance = await makeAllianceWithActiveMembers(0);
+
+        vi.mocked(requireAllianceAccess).mockRejectedValueOnce(
+            new Error("Forbidden: Missing required permission canImportMembers")
+        );
+
+        const entries = [{ playerName: "Unauthorized Candidate" }];
+        await expect(importMembers(alliance.id, entries)).rejects.toThrow(
+            "Forbidden: Missing required permission canImportMembers"
+        );
+
+        const memberCount = await prisma.allianceMember.count({
+            where: { allianceId: alliance.id },
+        });
+        expect(memberCount).toBe(0);
     });
 });

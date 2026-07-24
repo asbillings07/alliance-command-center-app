@@ -342,16 +342,24 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                         <TourButton tour={importMembersTour} />
                     </div>
 
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900 mb-4">
+                        <p className="font-medium">Roster Import Scope</p>
+                        <p className="mt-0.5 text-blue-800">
+                            This page imports roster details: Name, Total Hero Power (THP), and Role. It does not import evaluation results. Existing active members are identified and skipped.
+                        </p>
+                    </div>
+
                     <div
                         data-tour="roster-upload"
-                        className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center"
+                        className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2"
                     >
                         <input
                             type="file"
                             accept=".csv"
                             onChange={handleFileUpload}
-                            className="hidden"
+                            className="sr-only"
                             id="roster-file"
+                            aria-label="Import roster from CSV spreadsheet (.csv)"
                         />
                         <label
                             htmlFor="roster-file"
@@ -371,7 +379,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                                 />
                             </svg>
                             <span className="text-gray-700 font-medium">
-                                Click to upload CSV
+                                Click to upload CSV spreadsheet (.csv)
                             </span>
                         </label>
                     </div>
@@ -685,7 +693,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                             d="M5 13l4 4L19 7"
                         />
                     </svg>
-                    <h2 className="text-xl font-bold text-green-900">Import Complete</h2>
+                    <h2 className="text-xl font-bold text-green-900">Roster Import Complete</h2>
                 </div>
 
                 <div className="flex gap-4">
@@ -741,7 +749,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                         onClick={handleReset}
                         className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer"
                     >
-                        Import Another File
+                        Import Another Roster
                     </button>
                     <a
                         href={`/alliances/${allianceId}/members`}
