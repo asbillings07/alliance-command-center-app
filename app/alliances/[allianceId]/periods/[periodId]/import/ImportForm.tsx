@@ -68,6 +68,11 @@ type DuplicateSelections = Record<number, Record<string, number>>;
 type WireMapping = Parameters<typeof importMemberMetrics>[0]["mappings"][number];
 type ImportResult = Awaited<ReturnType<typeof importMemberMetrics>>;
 
+type ColumnValueIssue = {
+  columnName: string;
+  error: string;
+};
+
 const PLAYER_COLUMN_NAMES = new Set([
   'player', 'player name', 'playername', 'member', 'member name',
   'membername', 'alliance member', 'alliancemember', 'name', 'ign',
@@ -122,6 +127,93 @@ function getPreviewEntries(
       return selectedIndices.has(index);
     })
     .map((r) => ({ memberId: r.memberId, rawValue: r.rawValue }));
+}
+
+function formatCellCount(count: number): string {
+  return `${count} spreadsheet ${count === 1 ? "cell" : "cells"}`;
+}
+
+function summarizeColumns(columnNames: string[]): string {
+  const uniqueColumns = [...new Set(columnNames)];
+  const visibleColumns = uniqueColumns.slice(0, 3).join(", ");
+  const remainingCount = uniqueColumns.length - 3;
+  const suffix = remainingCount > 0 ? `, +${remainingCount} more` : "";
+  return `${uniqueColumns.length === 1 ? "Column" : "Columns"}: ${visibleColumns}${suffix}`;
+}
+
+function WorkbookIssueNotice({
+  issues,
+  tone,
+  columnNameForIssue,
+}: {
+  issues: WorkbookIssue[];
+  tone: "blocking" | "warning";
+  columnNameForIssue: (columnIndex: number) => string;
+}) {
+  if (issues.length === 0) return null;
+
+  const isBlocking = tone === "blocking";
+  const styles = isBlocking
+    ? "bg-red-50 border-red-300 text-red-900"
+    : "bg-amber-50 border-amber-300 text-amber-900";
+  const secondaryText = isBlocking ? "text-red-800" : "text-amber-800";
+
+  return (
+    <div className={`p-4 border rounded-lg flex flex-col gap-2 ${styles}`}>
+      <div>
+        <p className="font-semibold">
+          {isBlocking
+            ? `Fix ${formatCellCount(issues.length)} before importing`
+            : `${formatCellCount(issues.length)} will use saved formula values`}
+        </p>
+        <p className={`text-sm mt-1 ${secondaryText}`}>
+          {summarizeColumns(issues.map((issue) => columnNameForIssue(issue.columnIndex)))}
+        </p>
+      </div>
+      <details className={`text-sm ${secondaryText}`}>
+        <summary className="cursor-pointer font-medium">View cell details</summary>
+        <ul className="list-disc list-inside text-xs mt-2 max-h-32 overflow-y-auto space-y-0.5">
+          {issues.map((issue, idx) => (
+            <li key={idx}>
+              <strong>{columnNameForIssue(issue.columnIndex)}</strong>
+              {issue.address ? ` (${issue.address})` : ""}: {issue.message}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  );
+}
+
+function ValueIssueNotice({
+  issues,
+  phase,
+}: {
+  issues: ColumnValueIssue[];
+  phase: "preview" | "import";
+}) {
+  if (issues.length === 0) return null;
+
+  return (
+    <div className="p-4 rounded-md bg-red-50 border border-red-300 text-red-900 flex flex-col gap-2">
+      <div>
+        <p className="font-semibold">Fix {formatCellCount(issues.length)} before {phase === "preview" ? "previewing" : "importing"}</p>
+        <p className="text-sm text-red-800 mt-1">
+          {summarizeColumns(issues.map((issue) => issue.columnName))}. Values need to be whole numbers.
+        </p>
+      </div>
+      <details className="text-sm text-red-800">
+        <summary className="cursor-pointer font-medium">View cell details</summary>
+        <ul className="text-xs list-disc list-inside mt-2 max-h-32 overflow-y-auto space-y-0.5">
+          {issues.map((issue, i) => (
+            <li key={i}>
+              <strong>{issue.columnName}</strong>: {issue.error}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  );
 }
 
 export function ImportForm({ periodId, periodName, allianceId, members, metrics, libraryMetrics, canCreateMetrics, canAttachMetrics }: ImportFormProps) {
@@ -369,7 +461,31 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     }
   }
 
+  const columnNameByIndex = new Map<number, string>();
+  currentSheet?.rows[0]?.forEach((header, index) => {
+    columnNameByIndex.set(index, header.trim() || `Column ${index + 1}`);
+  });
+  numericColumns.forEach((column) => columnNameByIndex.set(column.index, column.name));
+  columnMappings.forEach((mapping) => columnNameByIndex.set(mapping.columnIndex, mapping.columnName));
+  if (autoDetectedPlayerColumn) {
+    columnNameByIndex.set(autoDetectedPlayerColumn.index, autoDetectedPlayerColumn.name);
+  }
+  const columnNameForIssue = (columnIndex: number) => columnNameByIndex.get(columnIndex) ?? `Column ${columnIndex + 1}`;
+
+  const valueIssuesBeforePreview: ColumnValueIssue[] = [];
+  if (currentSheet && autoDetectedPlayerColumn) {
+    for (const mapping of mappedColumns) {
+      const { errors } = parseMetricRows(currentSheet.rows, {
+        nameColumn: autoDetectedPlayerColumn.index,
+        valueColumn: mapping.columnIndex,
+        hasHeader: true,
+      });
+      errors.forEach((err) => valueIssuesBeforePreview.push({ columnName: mapping.columnName, error: err }));
+    }
+  }
+
   const hasBlockingDiagnostics = blockingCellIssues.length > 0;
+  const hasValueIssuesBeforePreview = valueIssuesBeforePreview.length > 0;
 
   const handleImport = () => {
     const mappings: WireMapping[] = previews
@@ -614,21 +730,15 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         </div>
 
         {hasBlockingParseErrors && (
-          <div className="p-4 rounded-md bg-red-100 border-2 border-red-400 text-red-900">
-            <p className="font-semibold text-red-900">Invalid Numeric Values Detected in Mapped Columns</p>
-            <p className="text-sm text-red-800 mt-1">
-              Please fix or remove the listed cells before continuing. Whole numbers in plain (450000000), period-grouped (450.000.000), or comma-grouped (&quot;450,000,000&quot;) formats are accepted.
-            </p>
-          </div>
-        )}
-
-        {parseErrors.length > 0 && (
-          <div className="p-4 rounded-md bg-orange-100 border border-orange-300">
-            <h4 className="font-semibold text-orange-900 mb-2 font-medium">Parse Feedback ({parseErrors.length})</h4>
-            <ul className="text-sm text-orange-800 list-disc list-inside max-h-24 overflow-y-auto">
-              {parseErrors.map((err, i) => (<li key={i}>{err}</li>))}
-            </ul>
-          </div>
+          <ValueIssueNotice
+            issues={parseErrors.map((err) => {
+              const separatorIndex = err.indexOf(": ");
+              return separatorIndex > 0
+                ? { columnName: err.slice(0, separatorIndex), error: err.slice(separatorIndex + 2) }
+                : { columnName: "Spreadsheet", error: err };
+            })}
+            phase="import"
+          />
         )}
 
         {previews.map((preview) => (
@@ -669,7 +779,8 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       numericColumns.length > 0 &&
       !noSelectableMetrics &&
       mappedColumns.length > 0 &&
-      !hasBlockingDiagnostics;
+      !hasBlockingDiagnostics &&
+      !hasValueIssuesBeforePreview;
 
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
@@ -698,43 +809,17 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           </button>
         </div>
 
-        {/* Blocking Workbook Cell Diagnostic Banner */}
-        {hasBlockingDiagnostics && (
-          <div className="p-4 bg-red-50 border border-red-300 rounded-lg text-red-900 flex flex-col gap-1">
-            <p className="font-semibold text-red-900">
-              Workbook Cell Issues Detected in Mapped Columns ({blockingCellIssues.length})
-            </p>
-            <p className="text-sm text-red-800">
-              Mapped columns contain uncalculated formulas or error cells. Please re-save your workbook before importing:
-            </p>
-            <ul className="list-disc list-inside text-xs text-red-800 mt-1 max-h-32 overflow-y-auto space-y-0.5">
-              {blockingCellIssues.map((issue, idx) => (
-                <li key={idx}>
-                  Cell <strong>{issue.address}</strong>: {issue.message}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Warning Workbook Cell Diagnostic Banner */}
-        {warningCellIssues.length > 0 && (
-          <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 flex flex-col gap-1">
-            <p className="font-semibold text-amber-900">
-              Formula Cached Values Used ({warningCellIssues.length})
-            </p>
-            <p className="text-sm text-amber-800">
-              Formula cells with pre-calculated values will import using their cached text:
-            </p>
-            <ul className="list-disc list-inside text-xs text-amber-800 mt-1 max-h-24 overflow-y-auto space-y-0.5">
-              {warningCellIssues.map((issue, idx) => (
-                <li key={idx}>
-                  Cell <strong>{issue.address}</strong>: {issue.message}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <WorkbookIssueNotice
+          issues={blockingCellIssues}
+          tone="blocking"
+          columnNameForIssue={columnNameForIssue}
+        />
+        <WorkbookIssueNotice
+          issues={warningCellIssues}
+          tone="warning"
+          columnNameForIssue={columnNameForIssue}
+        />
+        <ValueIssueNotice issues={valueIssuesBeforePreview} phase="preview" />
 
         {/* Player Column Status */}
         {autoDetectedPlayerColumn ? (
@@ -910,60 +995,28 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           </button>
         </div>
 
-        {/* Blocking Workbook Cell Diagnostic Banner */}
-        {hasBlockingDiagnostics && (
-          <div className="p-4 bg-red-50 border border-red-300 rounded-lg text-red-900 flex flex-col gap-1">
-            <p className="font-semibold text-red-900">
-              Workbook Cell Issues Detected in Mapped Columns ({blockingCellIssues.length})
-            </p>
-            <p className="text-sm text-red-800">
-              Mapped columns contain uncalculated formulas or error cells. Please re-save your workbook before importing:
-            </p>
-            <ul className="list-disc list-inside text-xs text-red-800 mt-1 max-h-32 overflow-y-auto space-y-0.5">
-              {blockingCellIssues.map((issue, idx) => (
-                <li key={idx}>
-                  Cell <strong>{issue.address}</strong>: {issue.message}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Warning Workbook Cell Diagnostic Banner */}
-        {warningCellIssues.length > 0 && (
-          <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 flex flex-col gap-1">
-            <p className="font-semibold text-amber-900">
-              Formula Cached Values Used ({warningCellIssues.length})
-            </p>
-            <p className="text-sm text-amber-800">
-              Formula cells with pre-calculated values will import using their cached text:
-            </p>
-            <ul className="list-disc list-inside text-xs text-amber-800 mt-1 max-h-24 overflow-y-auto space-y-0.5">
-              {warningCellIssues.map((issue, idx) => (
-                <li key={idx}>
-                  Cell <strong>{issue.address}</strong>: {issue.message}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <WorkbookIssueNotice
+          issues={blockingCellIssues}
+          tone="blocking"
+          columnNameForIssue={columnNameForIssue}
+        />
+        <WorkbookIssueNotice
+          issues={warningCellIssues}
+          tone="warning"
+          columnNameForIssue={columnNameForIssue}
+        />
+        <ValueIssueNotice issues={valueIssuesBeforePreview} phase="preview" />
 
         {hasBlockingParseErrors && (
-          <div className="p-4 rounded-md bg-red-100 border-2 border-red-400 text-red-900">
-            <p className="font-semibold text-red-900">Invalid Numeric Values Detected in Mapped Columns</p>
-            <p className="text-sm text-red-800 mt-1">
-              Please fix or remove the listed cells before continuing. Whole numbers in plain (450000000), period-grouped (450.000.000), or comma-grouped (&quot;450,000,000&quot;) formats are accepted.
-            </p>
-          </div>
-        )}
-
-        {parseErrors.length > 0 && (
-          <div className="p-4 rounded-md bg-orange-100 border border-orange-300">
-            <h4 className="font-semibold text-orange-900 mb-2 font-medium">Parse Feedback ({parseErrors.length})</h4>
-            <ul className="text-sm text-orange-800 list-disc list-inside max-h-24 overflow-y-auto">
-              {parseErrors.map((err, i) => (<li key={i}>{err}</li>))}
-            </ul>
-          </div>
+          <ValueIssueNotice
+            issues={parseErrors.map((err) => {
+              const separatorIndex = err.indexOf(": ");
+              return separatorIndex > 0
+                ? { columnName: err.slice(0, separatorIndex), error: err.slice(separatorIndex + 2) }
+                : { columnName: "Spreadsheet", error: err };
+            })}
+            phase="import"
+          />
         )}
 
         {previews.map((preview) => (

@@ -283,25 +283,18 @@ describe("ImportForm [component]", () => {
             await new Promise((r) => setTimeout(r, 50));
         });
 
+        expect(container.textContent).toContain("Fix 1 spreadsheet cell before previewing");
+        expect(container.textContent).toContain("Column: Kill Points");
+        expect(container.textContent).toContain('Kill Points: Cell B3');
+        expect(container.textContent).toContain('Invalid or missing value "450.5" for "Phoenix"');
+        expect(container.textContent).not.toContain("Parse Feedback");
+
         const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
             b.textContent?.includes("Preview Import")
         ) as HTMLButtonElement;
 
-        await act(async () => {
-            previewBtn.click();
-            await new Promise((r) => setTimeout(r, 50));
-        });
-
-        expect(container.textContent).toContain("Invalid Numeric Values Detected in Mapped Columns");
-        expect(container.textContent).toContain('Kill Points: Cell B3');
-        expect(container.textContent).toContain('Invalid or missing value "450.5" for "Phoenix"');
-
-        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
-            b.textContent?.includes("Import All")
-        ) as HTMLButtonElement;
-
-        expect(importBtn).not.toBeNull();
-        expect(importBtn.disabled).toBe(true);
+        expect(previewBtn).not.toBeNull();
+        expect(previewBtn.disabled).toBe(true);
     });
 
     it("displays sheet selector for multi-sheet XLSX workbooks and switches sheets before previewing", async () => {
@@ -391,8 +384,10 @@ describe("ImportForm [component]", () => {
         });
 
         // Verify blocking diagnostic banner is displayed directly on the mapping step for cell A2
-        expect(container.textContent).toContain("Workbook Cell Issues Detected in Mapped Columns");
-        expect(container.textContent).toContain("Cell A2");
+        expect(container.textContent).toContain("Fix 1 spreadsheet cell before importing");
+        expect(container.textContent).toContain("Column: Player");
+        expect(container.textContent).toContain("Player (A2)");
+        expect(container.textContent).not.toContain("Workbook Cell Issues Detected");
 
         const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
             b.textContent?.includes("Preview Import")
