@@ -160,4 +160,81 @@ describe("ImportForm [component]", () => {
         expect(container.textContent).toContain("Evaluation results have been recorded into destination period 'Week 28 Evaluation'.");
         expect(container.textContent).toContain("Import More Results");
     });
+
+    it("previews localized thousands separators correctly (450.000.000 -> 450,000,000)", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: false,
+                    canAttachMetrics: false,
+                })
+            );
+        });
+
+        const csvContent = `Player,Kill Points\nDragon,450.000.000\nPhoenix,"450,000,000"`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            previewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("450,000,000");
+    });
+
+    it("displays blocking error banner and disables Import button when invalid numeric cells exist in mapped column", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: false,
+                    canAttachMetrics: false,
+                })
+            );
+        });
+
+        const csvContent = `Player,Kill Points\nDragon,1500\nPhoenix,450.5`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            previewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Invalid Numeric Values Detected in Mapped Columns");
+
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import All")
+        ) as HTMLButtonElement;
+
+        expect(importBtn).not.toBeNull();
+        expect(importBtn.disabled).toBe(true);
+    });
 });

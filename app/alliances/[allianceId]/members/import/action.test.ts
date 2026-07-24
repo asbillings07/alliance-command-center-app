@@ -68,7 +68,7 @@ describe("importMembers", () => {
         // - 50 empty/whitespace names (skippedEmptyNames = 50)
         const entries = [
             ...activeMembers.map((m) => ({ playerName: m.playerName })),
-            ...Array.from({ length: 30 }, (_, i) => ({ playerName: `New Member ${i + 1}`, thp: 10000 })),
+            ...Array.from({ length: 30 }, (_, i) => ({ playerName: `New Member ${i + 1}`, thp: "10000" })),
             ...Array.from({ length: 20 }, () => ({ playerName: "New Member 1" })),
             ...Array.from({ length: 50 }, () => ({ playerName: "   " })),
         ];
@@ -124,7 +124,7 @@ describe("importMembers", () => {
         mockAllianceMember.update.mockResolvedValue({});
 
         const entries = [
-            { playerName: "Archived Hero", thp: 50000, role: "R4", restore: true },
+            { playerName: "Archived Hero", thp: "50000", role: "R4", restore: true },
         ];
 
         const result = await importMembers(allianceId, entries);
@@ -242,5 +242,19 @@ describe("importMembers", () => {
         expect(result.created).toBe(1);
         expect(result.skippedExisting).toBe(1);
         expect(result.skippedDuplicates).toBe(1);
+    });
+
+    it("rejects non-string THP provided at runtime to enforce raw-string boundary", async () => {
+        mockAllianceMember.findMany.mockResolvedValue([]);
+
+        const entries = [
+            { playerName: "Bypassing Player", thp: 10000 as unknown as string },
+        ];
+
+        const result = await importMembers(allianceId, entries);
+
+        expect(result.created).toBe(0);
+        expect(result.errors.length).toBe(1);
+        expect(result.errors[0]).toContain("THP must be provided as a raw string");
     });
 });

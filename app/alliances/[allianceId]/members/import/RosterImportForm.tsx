@@ -3,6 +3,7 @@
 import React, { useState, useTransition } from "react";
 import { analyzeCSV, normalizeName, parseCSVLine } from "@/app/src/lib/memberMatcher";
 import type { ColumnInfo } from "@/app/src/lib/memberMatcher";
+import { parseStrictInteger } from "@/app/src/lib/numberParser";
 import { TourButton } from "@/app/src/components/client";
 import { importMembersTour } from "@/app/src/lib/tours";
 import { importMembers } from "./action";
@@ -23,14 +24,32 @@ type ImportStep = "upload" | "preview" | "complete";
 
 type ParsedMember = {
     id: string;
+    sourceRow: number;
     playerName: string;
     thp: string;
+    parsedThp?: number;
+    thpError?: string;
     role: string;
     isExisting: boolean;
     isArchived: boolean;
     isDuplicateInFile: boolean;
     selected: boolean;
 };
+
+function validateMemberThp(rawThp: string): { parsedThp?: number; thpError?: string } {
+    const trimmed = rawThp.trim();
+    if (!trimmed) {
+        return { parsedThp: undefined, thpError: undefined };
+    }
+    const parsed = parseStrictInteger(trimmed);
+    if (!parsed.success) {
+        return { parsedThp: undefined, thpError: parsed.error };
+    }
+    if (parsed.value < 0) {
+        return { parsedThp: undefined, thpError: "Total Hero Power cannot be negative" };
+    }
+    return { parsedThp: parsed.value, thpError: undefined };
+}
 
 const PLAYER_COLUMN_NAMES = new Set([
     "player",
@@ -78,12 +97,6 @@ function detectColumn(columns: ColumnInfo[], knownNames: Set<string>): ColumnInf
         }
     }
     return null;
-}
-
-function parseNumber(value: string): number | undefined {
-    const cleaned = value.replace(/[,\s]/g, "");
-    const num = parseInt(cleaned, 10);
-    return isNaN(num) ? undefined : num;
 }
 
 export function RosterImportForm({ allianceId, existingMembers }: RosterImportFormProps) {
@@ -221,10 +234,14 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
             const thpRaw = thpCol ? values[thpCol.index]?.trim() || "" : "";
             const roleValue = roleCol ? values[roleCol.index]?.trim() || "" : "";
 
+            const thpValidation = validateMemberThp(thpRaw);
             rawMembers.push({
                 id: `row-${i}`,
+                sourceRow: i + 1,
                 playerName,
                 thp: thpRaw,
+                parsedThp: thpValidation.parsedThp,
+                thpError: thpValidation.thpError,
                 role: roleValue,
                 isExisting: false,
                 isArchived: false,
@@ -249,6 +266,10 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                 if (m.id === id) {
                     if (field === "selected" && value === true && !m.playerName.trim()) {
                         return { ...m, selected: false };
+                    }
+                    if (field === "thp" && typeof value === "string") {
+                        const { parsedThp, thpError } = validateMemberThp(value);
+                        return { ...m, thp: value, parsedThp, thpError };
                     }
                     return { ...m, [field]: value };
                 }
@@ -305,7 +326,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
 
         const entries: RosterEntry[] = parsedMembers.map((m) => ({
             playerName: m.playerName.trim(),
-            thp: parseNumber(m.thp),
+            thp: m.thp.trim() ? m.thp.trim() : undefined,
             role: m.role.trim() || undefined,
             restore: m.isArchived,
             selected: m.selected,
@@ -425,6 +446,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
 
     // Preview step
     if (step === "preview") {
+        const hasBlockingThpError = parsedMembers.some((m) => m.selected && !!m.thpError);
         const selectableMembers = parsedMembers.filter(
             (m) => !m.isExisting && !m.isDuplicateInFile && m.playerName.trim() !== ""
         );
@@ -452,6 +474,16 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                         </p>
                         <p className="text-sm text-purple-800">
                             {duplicateInFileRows.length} row{duplicateInFileRows.length === 1 ? "" : "s"} repeat a player name that appeared earlier in your file. These duplicate rows are unselected by default to prevent adding duplicates.
+                        </p>
+                    </div>
+                )}
+
+                {/* THP blocking error banner */}
+                {hasBlockingThpError && (
+                    <div className="p-4 bg-red-50 border border-red-300 rounded-lg text-red-900 flex flex-col gap-1">
+                        <p className="font-semibold text-red-900">Invalid THP Values Detected</p>
+                        <p className="text-sm text-red-800">
+                            Please fix invalid Total Hero Power (THP) values in selected rows before continuing. Accepted formats include: 450000000, 450.000.000, or &quot;450,000,000&quot;.
                         </p>
                     </div>
                 )}
@@ -560,20 +592,32 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-2">
-                                                    <input
-                                                        type="text"
-                                                        value={member.thp}
-                                                        onChange={(e) =>
-                                                            updateMember(member.id, "thp", e.target.value)
-                                                        }
-                                                        disabled={!member.selected}
-                                                        placeholder="e.g. 52000000"
-                                                        className={`w-full px-2 py-1 border rounded text-sm ${
-                                                            member.selected
-                                                                ? "border-gray-300 bg-white text-gray-900"
-                                                                : "border-gray-200 bg-gray-100 text-gray-500"
-                                                        }`}
-                                                    />
+                                                    <div className="flex flex-col">
+                                                        <input
+                                                            type="text"
+                                                            value={member.thp}
+                                                            onChange={(e) =>
+                                                                updateMember(member.id, "thp", e.target.value)
+                                                            }
+                                                            disabled={!member.selected}
+                                                            placeholder="e.g. 450.000.000"
+                                                            className={`w-full px-2 py-1 border rounded text-sm ${
+                                                                member.selected && member.thpError
+                                                                    ? "border-red-500 bg-red-50 text-red-900"
+                                                                    : member.selected
+                                                                    ? "border-gray-300 bg-white text-gray-900"
+                                                                    : "border-gray-200 bg-gray-100 text-gray-500"
+                                                            }`}
+                                                        />
+                                                        {member.selected && member.thpError && (
+                                                            <span className="text-xs text-red-600 mt-0.5">{member.thpError}</span>
+                                                        )}
+                                                        {member.selected && !member.thpError && member.parsedThp !== undefined && (
+                                                            <span className="text-xs text-gray-500 mt-0.5 font-mono">
+                                                                Interpreted: {member.parsedThp.toLocaleString()}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-2">
                                                     <input
@@ -662,7 +706,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                     {!allExistingActive && (
                         <button
                             onClick={handleImport}
-                            disabled={isPending || uniqueSelectedCount === 0 || isOverCapacity}
+                            disabled={isPending || uniqueSelectedCount === 0 || isOverCapacity || hasBlockingThpError}
                             className="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isPending

@@ -9,6 +9,7 @@
 
 import { normalizeName } from "@/app/src/lib/memberMatcher";
 import type { ImportMetricTarget } from "@/app/src/lib/metricResolution";
+import { parseStrictInteger } from "@/app/src/lib/numberParser";
 
 export type MetricImportEntry = {
   /** allianceMemberId */
@@ -16,8 +17,19 @@ export type MetricImportEntry = {
   value: number;
 };
 
-/** A spreadsheet column's chosen import target plus its parsed rows. */
+export type MetricEntrySubmission = {
+  memberId: string;
+  rawValue: string;
+};
+
+/** A spreadsheet column's chosen import target plus its submitted or parsed rows. */
 export type ColumnTargetMapping = {
+  target: ImportMetricTarget;
+  entries: MetricEntrySubmission[];
+};
+
+/** A validated column mapping with parsed numeric values. */
+export type ValidatedColumnTargetMapping = {
   target: ImportMetricTarget;
   entries: MetricImportEntry[];
 };
@@ -118,14 +130,14 @@ export function buildMetricImportPlan(
  */
 export function validateColumnTargets(
   mappings: ColumnTargetMapping[],
-): ColumnTargetMapping[] {
+): ValidatedColumnTargetMapping[] {
   if (!Array.isArray(mappings) || mappings.length === 0) {
     throw new Error("At least one column mapping is required");
   }
 
   const seenExistingMetricIds = new Set<string>();
   const seenCreateNames = new Set<string>();
-  const result: ColumnTargetMapping[] = [];
+  const result: ValidatedColumnTargetMapping[] = [];
 
   for (const mapping of mappings) {
     const { target, entries } = mapping;
@@ -160,14 +172,21 @@ export function validateColumnTargets(
       if (typeof entry.memberId !== "string" || !entry.memberId) {
         throw new Error("Invalid member ID");
       }
-      if (typeof entry.value !== "number" || !Number.isInteger(entry.value)) {
-        throw new Error("All values must be integers");
+
+      if (typeof entry.rawValue !== "string" || !entry.rawValue.trim()) {
+        throw new Error("Raw value string is required for every entry");
       }
+      const parsed = parseStrictInteger(entry.rawValue);
+      if (!parsed.success) {
+        throw new Error(`Invalid integer value "${entry.rawValue}": ${parsed.error}`);
+      }
+      const parsedNum = parsed.value;
+
       if (seenMemberIds.has(entry.memberId)) {
         continue;
       }
       seenMemberIds.add(entry.memberId);
-      dedupedEntries.push({ memberId: entry.memberId, value: entry.value });
+      dedupedEntries.push({ memberId: entry.memberId, value: parsedNum });
     }
 
     result.push({ target, entries: dedupedEntries });

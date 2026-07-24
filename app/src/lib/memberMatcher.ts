@@ -3,6 +3,8 @@
  * Decoupled from data source to allow reuse across different import methods.
  */
 
+import { parseStrictInteger, isValidIntegerString } from "./numberParser";
+
 type MemberRecord = {
   id: string;
   playerName: string;
@@ -10,13 +12,19 @@ type MemberRecord = {
 
 type RawEntry = {
   name: string;
-  value: number;
+  value?: number;
+  rawValue: string;
+  sourceRow: number;
+  error?: string;
 };
 
 export type MatchResult = {
   rawName: string;
-  value: number;
-  status: "matched" | "unmatched" | "duplicate";
+  value?: number;
+  rawValue: string;
+  sourceRow: number;
+  error?: string;
+  status: "matched" | "unmatched" | "duplicate" | "invalid_value";
   memberId?: string;
   matchedName?: string;
   confidence: number;
@@ -130,12 +138,26 @@ export function matchEntriesToMembers(
   const usedMemberIds = new Set<string>();
 
   for (const entry of entries) {
+    if (entry.error || entry.value === undefined) {
+      results.push({
+        rawName: entry.name,
+        rawValue: entry.rawValue,
+        sourceRow: entry.sourceRow,
+        error: entry.error ?? "Invalid value",
+        status: "invalid_value",
+        confidence: 0,
+      });
+      continue;
+    }
+
     const match = findBestMatch(entry.name, members, threshold);
 
     if (!match) {
       results.push({
         rawName: entry.name,
         value: entry.value,
+        rawValue: entry.rawValue,
+        sourceRow: entry.sourceRow,
         status: "unmatched",
         confidence: 0,
       });
@@ -146,6 +168,8 @@ export function matchEntriesToMembers(
       results.push({
         rawName: entry.name,
         value: entry.value,
+        rawValue: entry.rawValue,
+        sourceRow: entry.sourceRow,
         status: "duplicate",
         memberId: match.member.id,
         matchedName: match.member.playerName,
@@ -158,6 +182,8 @@ export function matchEntriesToMembers(
     results.push({
       rawName: entry.name,
       value: entry.value,
+      rawValue: entry.rawValue,
+      sourceRow: entry.sourceRow,
       status: "matched",
       memberId: match.member.id,
       matchedName: match.member.playerName,
@@ -221,6 +247,11 @@ export function analyzeCSV(content: string): CSVAnalysisResult {
     sampleValues: [],
   }));
 
+  const columnStats = headerColumns.map(() => ({
+    validIntegerCount: 0,
+    totalNonEmptyCount: 0,
+  }));
+
   // Sample up to 10 data rows to determine column types
   const sampleSize = Math.min(10, lines.length - 1);
   for (let i = 1; i <= sampleSize; i++) {
@@ -232,11 +263,20 @@ export function analyzeCSV(content: string): CSVAnalysisResult {
       const value = values[j]?.trim() || "";
       columns[j].sampleValues.push(value);
 
-      // Check if value is numeric (integer)
-      if (value && !/^-?\d+$/.test(value)) {
-        columns[j].isNumeric = false;
+      if (value) {
+        columnStats[j].totalNonEmptyCount++;
+        if (isValidIntegerString(value)) {
+          columnStats[j].validIntegerCount++;
+        }
       }
     }
+  }
+
+  for (let j = 0; j < columns.length; j++) {
+    const stats = columnStats[j];
+    columns[j].isNumeric =
+      stats.validIntegerCount > 0 &&
+      stats.validIntegerCount >= stats.totalNonEmptyCount / 2;
   }
 
   // Count actual data rows (excluding header and empty lines)
@@ -299,15 +339,26 @@ export function parseCSV(
       continue;
     }
 
-    const value = parseInt(rawValue, 10);
-    if (isNaN(value) || !/^-?\d+$/.test(rawValue)) {
+    const parsed = parseStrictInteger(rawValue);
+    if (!parsed.success) {
       errors.push(
-        `Row ${i + 1}: Invalid or missing value "${rawValue}" for "${name}"`,
+        `Row ${i + 1}: Invalid or missing value "${rawValue}" for "${name}": ${parsed.error}`,
       );
+      entries.push({
+        name,
+        rawValue,
+        sourceRow: i + 1,
+        error: parsed.error,
+      });
       continue;
     }
 
-    entries.push({ name, value });
+    entries.push({
+      name,
+      value: parsed.value,
+      rawValue,
+      sourceRow: i + 1,
+    });
   }
 
   return { entries, errors, detectedMetricName };

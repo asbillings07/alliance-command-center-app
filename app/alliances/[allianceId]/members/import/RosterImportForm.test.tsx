@@ -410,4 +410,37 @@ New Candidate 3`;
         expect(container.textContent).toContain("Your alliance has 100 active members");
         expect(container.textContent).not.toContain("Import Complete");
     });
+
+    it("parses period-grouped THP like 450.000.000 and renders interpreted value, and blocks import when THP is invalid or negative", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        const csvContent = `Player,THP
+Candidate A,450.000.000
+Candidate B,-10`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Candidate A shows "Interpreted: 450,000,000"
+        expect(container.textContent).toContain("Interpreted: 450,000,000");
+
+        // Candidate B has negative THP -> blocking error "Total Hero Power cannot be negative"
+        expect(container.textContent).toContain("Total Hero Power cannot be negative");
+        expect(container.textContent).toContain("Invalid THP Values Detected");
+
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import")
+        ) as HTMLButtonElement;
+
+        expect(importBtn?.disabled).toBe(true);
+    });
 });
