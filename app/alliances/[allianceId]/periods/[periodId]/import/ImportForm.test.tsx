@@ -4,11 +4,13 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ImportForm } from "./ImportForm";
 
+const mockRefresh = vi.fn();
+
 vi.mock("next/navigation", () => ({
     useRouter: () => ({
         push: vi.fn(),
         replace: vi.fn(),
-        refresh: vi.fn(),
+        refresh: mockRefresh,
     }),
 }));
 
@@ -181,6 +183,7 @@ describe("ImportForm [component]", () => {
         });
 
         // Assert completion copy
+        expect(mockRefresh).toHaveBeenCalledTimes(1);
         expect(container.textContent).toContain("Evaluation Results Imported");
         expect(container.textContent).toContain("Evaluation results have been recorded into destination period 'Week 28 Evaluation'.");
         expect(container.textContent).toContain("Import More Results");

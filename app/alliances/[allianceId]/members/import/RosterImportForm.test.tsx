@@ -4,11 +4,13 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { RosterImportForm } from "./RosterImportForm";
 
+const mockRefresh = vi.fn();
+
 vi.mock("next/navigation", () => ({
     useRouter: () => ({
         push: vi.fn(),
         replace: vi.fn(),
-        refresh: vi.fn(),
+        refresh: mockRefresh,
     }),
 }));
 
@@ -144,6 +146,7 @@ describe("RosterImportForm [component]", () => {
         });
 
         // Check completion copy
+        expect(mockRefresh).toHaveBeenCalledTimes(1);
         expect(container.textContent).toContain("Members Imported");
         expect(container.textContent).toContain("Import More Members");
     });
@@ -431,6 +434,7 @@ New Candidate 3`;
         });
 
         // Error message displayed and form stays in preview mode (does not show "Import Complete")
+        expect(mockRefresh).not.toHaveBeenCalled();
         expect(container.textContent).toContain("Your alliance has 100 active members");
         expect(container.textContent).not.toContain("Import Complete");
     });

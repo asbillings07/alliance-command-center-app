@@ -2,6 +2,7 @@
 
 import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { analyzeRows, normalizeName } from "@/app/src/lib/memberMatcher";
 import type { ColumnInfo } from "@/app/src/lib/memberMatcher";
 import { parseStrictInteger } from "@/app/src/lib/numberParser";
@@ -400,14 +401,18 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     }));
 
     startTransition(async () => {
-      const result = await importMembers(allianceId, entries);
-      setImportResult(result);
-      if (result.errors.length > 0 && result.created === 0 && result.restored === 0) {
-        setError(result.errors.join("; "));
-      } else {
-        setError(null);
-        router.refresh();
-        setStep("complete");
+      try {
+        const result = await importMembers(allianceId, entries);
+        setImportResult(result);
+        if (result.errors.length > 0 && result.created === 0 && result.restored === 0) {
+          setError(result.errors.join("; "));
+        } else {
+          setError(null);
+          router.refresh();
+          setStep("complete");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to create members. Please try again.");
       }
     });
   };
@@ -882,7 +887,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
               <ul className="text-sm text-slate-700 space-y-1 list-disc list-inside">
                 {importResult.skippedExisting > 0 && (
                   <li>
-                    <strong>{importResult.skippedExisting}</strong> existing active members were already in your roster (identified as unchanged)
+                    <strong>{importResult.skippedExisting}</strong> existing active members were already active in your member list (identified as unchanged)
                   </li>
                 )}
                 {importResult.skippedDuplicates > 0 && (
@@ -923,12 +928,12 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
           >
             Import More Members
           </button>
-          <a
+          <Link
             href={`/alliances/${allianceId}/members`}
-            className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+            className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 inline-block text-center font-medium"
           >
             View Members
-          </a>
+          </Link>
         </div>
       </div>
     );

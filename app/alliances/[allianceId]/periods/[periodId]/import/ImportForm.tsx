@@ -1,6 +1,7 @@
 'use client'
 import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { analyzeRows, parseMetricRows, matchEntriesToMembers, matchMetricName, type MatchSummary, type ColumnInfo } from "@/app/src/lib/memberMatcher";
 import { TourButton } from "@/app/src/components/client";
 import { smartImportTour } from "@/app/src/lib/tours";
@@ -420,13 +421,32 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
   // Complete step
   if (step === "complete" && importResult) {
-    const distinctUnmatchedCount = new Set(
+    const unmatchedRawNamesMap = new Map<string, { rawName: string; rows: number[] }>();
+    for (const preview of previews) {
+      for (const res of preview.summary.results) {
+        if (res.status === "unmatched" && res.rawName) {
+          const key = res.rawName.trim().toLowerCase();
+          const existing = unmatchedRawNamesMap.get(key) || { rawName: res.rawName.trim(), rows: [] };
+          if (!existing.rows.includes(res.sourceRow)) {
+            existing.rows.push(res.sourceRow);
+          }
+          unmatchedRawNamesMap.set(key, existing);
+        }
+      }
+    }
+    const unmatchedMembersList = Array.from(unmatchedRawNamesMap.values());
+
+    const committedSourceRows = new Set(
       previews.flatMap((p) =>
         p.summary.results
-          .filter((r) => r.status === "unmatched" && r.rawName)
-          .map((r) => `${r.sourceRow}:${r.rawName.trim().toLowerCase()}`)
+          .filter((r) => r.status === "matched" && r.memberId)
+          .map((r) => r.sourceRow)
       )
-    ).size;
+    );
+
+    const committedFormulaWarnings = warningCellIssues.filter(
+      (issue) => issue.rowIndex === undefined || committedSourceRows.has(issue.rowIndex)
+    );
 
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
@@ -485,19 +505,59 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           )}
         </div>
 
-        {(distinctUnmatchedCount > 0 || warningCellIssues.length > 0) && (
-          <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg flex flex-col gap-2">
+        {(unmatchedMembersList.length > 0 || committedFormulaWarnings.length > 0) && (
+          <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg flex flex-col gap-3">
             <h4 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">Not Imported / Excluded Input</h4>
-            {distinctUnmatchedCount > 0 && (
+            {unmatchedMembersList.length > 0 && (
               <p className="text-sm text-slate-700">
-                <strong>{distinctUnmatchedCount} unmatched player {distinctUnmatchedCount === 1 ? "row was" : "rows were"} skipped</strong> (names not found in roster). To import results for these members, first add them to your roster via <strong>Import Members</strong>.
+                <strong>{unmatchedMembersList.length} unmatched player {unmatchedMembersList.length === 1 ? "name was" : "names were"} skipped</strong> (names not found in member list). To import results for these members, first add them via <strong>Import Members</strong>.
               </p>
             )}
-            {warningCellIssues.length > 0 && (
+            {committedFormulaWarnings.length > 0 && (
               <p className="text-sm text-slate-700">
-                <strong>{warningCellIssues.length} formula {warningCellIssues.length === 1 ? "cell used" : "cells used"} pre-calculated cached values</strong> from spreadsheet.
+                <strong>{committedFormulaWarnings.length} formula {committedFormulaWarnings.length === 1 ? "cell used" : "cells used"} pre-calculated cached values</strong> from spreadsheet for committed entries.
               </p>
             )}
+
+            <details className="mt-1 bg-white border border-slate-200 rounded-lg p-3 text-sm text-slate-700">
+              <summary className="font-semibold text-slate-800 hover:text-slate-900 cursor-pointer select-none">
+                Review Warnings &amp; Unmatched Details ({unmatchedMembersList.length + committedFormulaWarnings.length})
+              </summary>
+              <div className="mt-3 space-y-3 pt-3 border-t border-slate-200">
+                {unmatchedMembersList.length > 0 && (
+                  <div>
+                    <h5 className="font-semibold text-slate-800 text-xs uppercase tracking-wider mb-1">
+                      Unmatched Player Names ({unmatchedMembersList.length})
+                    </h5>
+                    <p className="text-xs text-slate-600 mb-2">
+                      Results for these player names were excluded because they do not exist in your member list.
+                    </p>
+                    <ul className="list-disc list-inside text-xs text-slate-700 space-y-0.5 max-h-36 overflow-y-auto font-mono">
+                      {unmatchedMembersList.map((item) => (
+                        <li key={item.rawName}>
+                          <strong className="text-slate-900">{item.rawName}</strong> (Row{item.rows.length === 1 ? "" : "s"} {item.rows.join(", ")})
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {committedFormulaWarnings.length > 0 && (
+                  <div>
+                    <h5 className="font-semibold text-slate-800 text-xs uppercase tracking-wider mb-1">
+                      Formula Cached Values Used ({committedFormulaWarnings.length})
+                    </h5>
+                    <ul className="list-disc list-inside text-xs text-slate-700 space-y-0.5 max-h-36 overflow-y-auto">
+                      {committedFormulaWarnings.map((issue, idx) => (
+                        <li key={idx}>
+                          Cell {issue.address ?? `R${issue.rowIndex}C${issue.columnIndex}`}: {issue.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </details>
           </div>
         )}
 
@@ -508,18 +568,18 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           >
             Import More Results
           </button>
-          <a
+          <Link
             href={`/alliances/${allianceId}/members?periodId=${periodId}`}
-            className="px-4 py-2 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 text-sm font-medium"
+            className="px-4 py-2 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 text-sm font-medium inline-block text-center"
           >
             View Member Results
-          </a>
-          <a
+          </Link>
+          <Link
             href={`/alliances/${allianceId}/periods/${periodId}`}
-            className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium"
+            className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium inline-block text-center"
           >
             View Evaluation Period
-          </a>
+          </Link>
         </div>
       </div>
     );
