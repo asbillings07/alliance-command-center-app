@@ -4,6 +4,8 @@ import {
   calculateSimilarity,
   analyzeCSV,
   parseCSV,
+  analyzeRows,
+  parseMetricRows,
   matchEntriesToMembers,
   matchMetricName,
 } from './memberMatcher';
@@ -417,5 +419,36 @@ describe('matchMetricName', () => {
     const result = matchMetricName('', metrics);
     
     expect(result.status).toBe('unmatched');
+  });
+});
+
+describe('analyzeRows and parseMetricRows matrix grid functions', () => {
+  it('analyzeRows classifies columns from string matrix grid', () => {
+    const rows = [
+      ['Player', 'THP', 'Role'],
+      ['Alice', '1.000.000', 'Leader'],
+      ['Bob', '500.000', 'Officer'],
+    ];
+
+    const result = analyzeRows(rows);
+    expect(result.error).toBeNull();
+    expect(result.rowCount).toBe(2);
+    expect(result.columns[0].isNumeric).toBe(false);
+    expect(result.columns[1].isNumeric).toBe(true);
+    expect(result.columns[2].isNumeric).toBe(false);
+  });
+
+  it('parseMetricRows extracts entries from string matrix grid', () => {
+    const rows = [
+      ['Player', 'THP', 'Role'],
+      ['Alice', '1.000.000', 'Leader'],
+      ['Bob', '500.000', 'Officer'],
+    ];
+
+    const result = parseMetricRows(rows, { nameColumn: 0, valueColumn: 1 });
+    expect(result.detectedMetricName).toBe('THP');
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries[0]).toEqual({ name: 'Alice', value: 1000000, rawValue: '1.000.000', sourceRow: 2 });
+    expect(result.entries[1]).toEqual({ name: 'Bob', value: 500000, rawValue: '500.000', sourceRow: 3 });
   });
 });

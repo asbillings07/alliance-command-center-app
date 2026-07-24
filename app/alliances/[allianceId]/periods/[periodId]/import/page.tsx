@@ -114,11 +114,11 @@ export default async function ImportPage({ params }: Params) {
           />
         ) : (
           <EmptyState
-            title="No active members"
-            description="Import your alliance roster before importing evaluation results."
+            title="Members required before importing results"
+            description="You must have active members in your alliance before you can import evaluation results for this period."
             action={
               auth.permissions.canImportMembers
-                ? <Button variant="primary" href={`/alliances/${allianceId}/members/import`}>Import Roster</Button>
+                ? <Button variant="primary" href={`/alliances/${allianceId}/members/import`}>Import Members First</Button>
                 : undefined
             }
           />
@@ -131,7 +131,7 @@ export default async function ImportPage({ params }: Params) {
     <PageLayout
       breadcrumb={breadcrumb}
       title="Import Evaluation Results"
-      description={`Upload a CSV spreadsheet (.csv) to record metric evaluation results for ${period.name}.`}
+      description={`Upload a spreadsheet (.xlsx, .xls, .csv, .numbers) to record metric evaluation results for ${period.name}.`}
       action={
         <Button
           href={`/alliances/${allianceId}/periods/${periodId}/record`}

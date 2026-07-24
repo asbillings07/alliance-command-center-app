@@ -33,13 +33,27 @@ afterEach(async () => {
     container.remove();
 });
 
-function setupMockFileReader(fileContent: string) {
+import * as XLSX from "xlsx";
+
+function setupMockFileReader(fileContent: string | ArrayBuffer) {
     class MockFileReader {
-        onload: ((e: { target: { result: string } }) => void) | null = null;
+        result: string | ArrayBuffer | null = null;
+        onload: ((e: { target: { result: string | ArrayBuffer } }) => void) | null = null;
         readAsText() {
             setTimeout(() => {
+                const str = typeof fileContent === "string" ? fileContent : new TextDecoder().decode(fileContent);
+                this.result = str;
                 if (this.onload) {
-                    this.onload({ target: { result: fileContent } });
+                    this.onload({ target: { result: str } });
+                }
+            }, 0);
+        }
+        readAsArrayBuffer() {
+            setTimeout(() => {
+                const buf = typeof fileContent === "string" ? new TextEncoder().encode(fileContent).buffer : fileContent;
+                this.result = buf;
+                if (this.onload) {
+                    this.onload({ target: { result: buf } });
                 }
             }, 0);
         }
@@ -47,13 +61,15 @@ function setupMockFileReader(fileContent: string) {
     window.FileReader = MockFileReader as unknown as typeof FileReader;
 }
 
-function fireFileUpload(fileContent: string, fileSize?: number) {
+function fireFileUpload(fileContent: string | ArrayBuffer, fileSize?: number, fileName = "roster.csv") {
     setupMockFileReader(fileContent);
     const fileInput = container.querySelector("#roster-file") as HTMLInputElement;
     expect(fileInput).not.toBeNull();
 
-    const size = fileSize ?? fileContent.length;
-    const file = new File([fileContent], "roster.csv", { type: "text/csv" });
+    const size = fileSize ?? (typeof fileContent === "string" ? fileContent.length : fileContent.byteLength);
+    const file = new File([fileContent], fileName, {
+        type: fileName.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv",
+    });
     Object.defineProperty(file, "size", { value: size });
 
     Object.defineProperty(fileInput, "files", {
@@ -94,15 +110,15 @@ describe("RosterImportForm [component]", () => {
         });
 
         // Scope notice check
-        expect(container.textContent).toContain("Roster Import Scope");
-        expect(container.textContent).toContain("This page imports roster details: Name, Total Hero Power (THP), and Role. It does not import evaluation results.");
+        expect(container.textContent).toContain("Member Import Scope");
+        expect(container.textContent).toContain("This page imports member details: Name, Total Hero Power (THP), and Role. It does not import evaluation results.");
 
         // Accessible file input check
         const fileInput = container.querySelector<HTMLInputElement>("#roster-file");
         expect(fileInput).not.toBeNull();
         expect(fileInput?.className).toContain("sr-only");
         expect(fileInput?.className).not.toContain("hidden");
-        expect(fileInput?.getAttribute("aria-label")).toContain("Import roster from CSV spreadsheet (.csv)");
+        expect(fileInput?.getAttribute("aria-label")).toContain("Import member spreadsheet (.csv, .xlsx, .xls)");
 
         // File upload
         await act(async () => {
@@ -120,8 +136,8 @@ describe("RosterImportForm [component]", () => {
         });
 
         // Check completion copy
-        expect(container.textContent).toContain("Roster Import Complete");
-        expect(container.textContent).toContain("Import Another Roster");
+        expect(container.textContent).toContain("Members Imported");
+        expect(container.textContent).toContain("Import More Members");
     });
 
     it("parses CSV, highlights duplicate rows, deselects duplicates by default, and sends submitted payload with selected: false for duplicates", async () => {
@@ -155,8 +171,8 @@ New Player B,60000,R3`;
         });
 
         // Check duplicate CSV banner is displayed
-        expect(container.textContent).toContain("1 Duplicate Row Highlighted in CSV");
-        expect(container.textContent).toContain("Duplicate in CSV");
+        expect(container.textContent).toContain("1 Duplicate Row Highlighted in File");
+        expect(container.textContent).toContain("Duplicate in File");
 
         // Verify "Select All" checkbox behavior: toggling select all does NOT select the duplicate CSV row
         const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
@@ -207,7 +223,7 @@ New Player B,60000,R3`;
             await new Promise((r) => setTimeout(r, 50));
         });
 
-        expect(container.textContent).toContain("File size exceeds maximum limit of 5 MB");
+        expect(container.textContent).toContain("exceeds the maximum limit of 5.0 MB");
     });
 
     it("reclassifies player name dynamically when edited in the preview table", async () => {
@@ -362,7 +378,7 @@ New Candidate 3`;
             await new Promise((r) => setTimeout(r, 50));
         });
 
-        expect(container.textContent).toContain("Roster Capacity Exceeded");
+        expect(container.textContent).toContain("Member Capacity Exceeded");
         expect(container.textContent).toContain("Your alliance has 99 active members, so you can add 1 more unique member");
         expect(container.textContent).toContain("Deselect 2 members to continue");
 
@@ -442,5 +458,103 @@ Candidate B,-10`;
         ) as HTMLButtonElement;
 
         expect(importBtn?.disabled).toBe(true);
+    });
+
+    it("displays sheet selector for multi-sheet workbooks and switches sheets cleanly", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        // Create multi-sheet XLSX workbook
+        const wb = XLSX.utils.book_new();
+        const ws1 = XLSX.utils.aoa_to_sheet([["Player", "THP"], ["Alpha Member", "100000"]]);
+        const ws2 = XLSX.utils.aoa_to_sheet([["Player", "THP"], ["Beta Member", "200000"]]);
+        XLSX.utils.book_append_sheet(wb, ws1, "First Roster");
+        XLSX.utils.book_append_sheet(wb, ws2, "Second Roster");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, undefined, "multi_roster.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Verify sheet selector renders sheet names
+        expect(container.textContent).toContain("First Roster");
+        expect(container.textContent).toContain("Second Roster");
+
+        // First sheet is selected initially -> Alpha Member shown in input
+        const initialInputs = container.querySelectorAll<HTMLInputElement>('input[type="text"]');
+        const alphaInput = Array.from(initialInputs).find((i) => i.value === "Alpha Member");
+        expect(alphaInput).not.toBeUndefined();
+
+        // Click "Second Roster" sheet button
+        const secondSheetBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Second Roster")
+        ) as HTMLButtonElement;
+        expect(secondSheetBtn).not.toBeUndefined();
+
+        await act(async () => {
+            secondSheetBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Second sheet is now selected -> Beta Member shown in input
+        const switchedInputs = container.querySelectorAll<HTMLInputElement>('input[type="text"]');
+        const betaInput = Array.from(switchedInputs).find((i) => i.value === "Beta Member");
+        expect(betaInput).not.toBeUndefined();
+    });
+
+    it("clears parsed members and displays error when switching from a valid worksheet to an invalid worksheet", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        // Sheet 1 valid ("Player", "THP"), Sheet 2 invalid ("Notes", "Data" - no player column)
+        const wb = XLSX.utils.book_new();
+        const ws1 = XLSX.utils.aoa_to_sheet([["Player", "THP"], ["Valid Member", "100000"]]);
+        const ws2 = XLSX.utils.aoa_to_sheet([["Notes", "Data"], ["Some note", "123"]]);
+        XLSX.utils.book_append_sheet(wb, ws1, "Valid Sheet");
+        XLSX.utils.book_append_sheet(wb, ws2, "Invalid Sheet");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, undefined, "multi_roster.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Valid Sheet selected initially -> "Valid Member" visible in input
+        const initialInputs = container.querySelectorAll<HTMLInputElement>('input[type="text"]');
+        const validMemberInput = Array.from(initialInputs).find((i) => i.value === "Valid Member");
+        expect(validMemberInput).not.toBeUndefined();
+
+        // Click "Invalid Sheet"
+        const invalidSheetBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Invalid Sheet")
+        ) as HTMLButtonElement;
+        expect(invalidSheetBtn).not.toBeUndefined();
+
+        await act(async () => {
+            invalidSheetBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Error message displayed and stale "Valid Member" cleared
+        expect(container.textContent).toContain("No player column found");
+        expect(container.textContent).not.toContain("Valid Member");
+
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import")
+        ) as HTMLButtonElement;
+        expect(importBtn).toBeUndefined();
     });
 });

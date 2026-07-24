@@ -86,11 +86,11 @@ export default async function PeriodRecordPage({
           />
         ) : (
           <EmptyState
-            title="No active members"
-            description="Import your alliance roster before recording results."
+            title="Members required before recording results"
+            description="You must have active members in your alliance before you can record evaluation results for this period."
             action={
               auth.permissions.canImportMembers
-                ? <Button variant="primary" href={`/alliances/${allianceId}/members/import`}>Import Roster</Button>
+                ? <Button variant="primary" href={`/alliances/${allianceId}/members/import`}>Import Members First</Button>
                 : undefined
             }
           />

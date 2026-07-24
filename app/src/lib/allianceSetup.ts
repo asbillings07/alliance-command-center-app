@@ -166,8 +166,8 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
   // Optional: Next steps that enhance the alliance
   {
     id: "members",
-    label: "Import Roster",
-    description: "Upload a spreadsheet to add or restore roster members",
+    label: "Import Members",
+    description: "Upload a spreadsheet to add or restore members",
     typicallyCompletedBy: "Admin",
     href: (id) => `/alliances/${id}/members/import`,
     requiredPermission: "canImportMembers",
