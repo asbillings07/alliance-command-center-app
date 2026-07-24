@@ -39,8 +39,8 @@
  * - Removing dots from local part
  * - Removing +suffix addressing
  *
- * These rules would break non-Gmail addresses and make normalization
- * non-reversible from the displayed email, violating user expectations.
+ * These rules would break non-Gmail addresses and alter user-visible
+ * address features (like dots or plus aliases), violating user expectations.
  */
 export function normalizeEmail(raw: string): string {
   return raw.toLowerCase().trim();

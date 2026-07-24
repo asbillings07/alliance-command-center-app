@@ -105,7 +105,7 @@ export async function getPostLoginRedirect(
   if (user.email) {
     const allianceInvite = await prisma.invitation.findFirst({
       where: {
-        email: normalizeEmail(user.email),
+        email: { equals: normalizeEmail(user.email), mode: "insensitive" },
         acceptedAt: null,
         cancelledAt: null,
         expiresAt: { gt: new Date() },

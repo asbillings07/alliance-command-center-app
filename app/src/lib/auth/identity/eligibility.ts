@@ -22,7 +22,7 @@ export async function isInvitationEligible(email: string): Promise<boolean> {
 
   const pendingAllianceInvite = await prisma.invitation.findFirst({
     where: {
-      email: normalizedEmail,
+      email: { equals: normalizedEmail, mode: "insensitive" },
       acceptedAt: null,
       cancelledAt: null,
       expiresAt: { gt: new Date() },
