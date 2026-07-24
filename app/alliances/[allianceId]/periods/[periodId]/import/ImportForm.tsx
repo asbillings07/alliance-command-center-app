@@ -1,5 +1,6 @@
 'use client'
 import { useState, useTransition, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { analyzeRows, parseMetricRows, matchEntriesToMembers, matchMetricName, type MatchSummary, type ColumnInfo } from "@/app/src/lib/memberMatcher";
 import { TourButton } from "@/app/src/components/client";
 import { smartImportTour } from "@/app/src/lib/tours";
@@ -123,6 +124,7 @@ function getPreviewEntries(
 }
 
 export function ImportForm({ periodId, periodName, allianceId, members, metrics, libraryMetrics, canCreateMetrics, canAttachMetrics }: ImportFormProps) {
+  const router = useRouter();
   const [step, setStep] = useState<ImportStep>("upload");
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [showNumbersGuide, setShowNumbersGuide] = useState(false);
@@ -382,6 +384,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       try {
         const result = await importMemberMetrics({ periodId, allianceId, mappings });
         setImportResult(result);
+        router.refresh();
         setStep("complete");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Import failed");
@@ -417,52 +420,107 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
   // Complete step
   if (step === "complete" && importResult) {
+    const distinctUnmatchedCount = new Set(
+      previews.flatMap((p) =>
+        p.summary.results
+          .filter((r) => r.status === "unmatched" && r.rawName)
+          .map((r) => `${r.sourceRow}:${r.rawName.trim().toLowerCase()}`)
+      )
+    ).size;
+
     return (
-      <div className="w-full max-w-2xl flex flex-col gap-4 items-center">
+      <div className="w-full max-w-2xl flex flex-col gap-5">
         <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 font-medium text-center">
           Destination Period: {periodName}
         </div>
-        <div className="w-full p-6 rounded-lg bg-green-50 border border-green-200">
-          <h3 className="text-lg font-semibold text-green-800 text-center">Evaluation Results Imported</h3>
-          <p className="text-sm text-green-700 text-center mt-1">
-            Evaluation results have been recorded into destination period &apos;{periodName}&apos;.
-          </p>
-          <ul className="mt-4 divide-y divide-green-200">
-            {importResult.perMetric.map((m) => (
-              <li key={m.metricId} className="flex items-center justify-between py-2 text-green-900">
-                <span>{m.name}</span>
-                <span className="font-mono font-medium">{m.count}</span>
-              </li>
-            ))}
-            <li className="flex items-center justify-between py-2 font-semibold text-green-900 border-t-2 border-green-300">
-              <span>Total</span>
-              <span className="font-mono">{importResult.totalCount}</span>
-            </li>
-          </ul>
-          {(importResult.created.length > 0 || importResult.attached.length > 0) && (
-            <p className="mt-3 text-sm text-green-800">
-              {importResult.created.length > 0 && (
-                <>
-                  Created {importResult.created.length}{" "}
-                  {importResult.created.length === 1 ? "metric" : "metrics"} (
-                  {importResult.created.map((m) => m.name).join(", ")}).{" "}
-                </>
-              )}
-              {importResult.attached.length > 0 && (
-                <>
-                  Added {importResult.attached.length} to this period (
-                  {importResult.attached.map((m) => m.name).join(", ")}).
-                </>
-              )}
+
+        <div className="w-full p-6 rounded-lg bg-green-50 border border-green-200 flex flex-col gap-4">
+          <div className="text-center">
+            <h3 className="text-lg font-bold text-green-900">Evaluation Results Imported</h3>
+            <p className="text-sm text-green-800 mt-1">
+              Evaluation results have been recorded into destination period &apos;{periodName}&apos;.
             </p>
+          </div>
+
+          <div className="bg-white border border-green-200 rounded-lg p-4">
+            <h4 className="text-xs font-semibold text-green-900 uppercase tracking-wider mb-2">Committed Values</h4>
+            <ul className="divide-y divide-gray-100 text-sm">
+              {importResult.perMetric.map((m) => (
+                <li key={m.metricId} className="flex items-center justify-between py-2 text-gray-900">
+                  <span>{m.name}</span>
+                  <span className="font-mono font-semibold">{m.count} values</span>
+                </li>
+              ))}
+              <li className="flex items-center justify-between pt-2.5 font-bold text-green-900 border-t-2 border-green-200">
+                <span>Total Recorded Values</span>
+                <span className="font-mono text-base">{importResult.totalCount}</span>
+              </li>
+            </ul>
+          </div>
+
+          {((importResult.created?.length ?? 0) > 0 ||
+            (importResult.attached?.length ?? 0) > 0 ||
+            (importResult.reused?.length ?? 0) > 0) && (
+            <div className="bg-white border border-green-200 rounded-lg p-4 text-sm text-gray-800 space-y-1">
+              <h4 className="text-xs font-semibold text-green-900 uppercase tracking-wider mb-2">Metric Configuration</h4>
+              {(importResult.created?.length ?? 0) > 0 && (
+                <p>
+                  <strong className="text-purple-800 font-semibold">Created {importResult.created.length} new {importResult.created.length === 1 ? "metric" : "metrics"}:</strong>{" "}
+                  {importResult.created.map((m) => m.name).join(", ")}
+                </p>
+              )}
+              {(importResult.attached?.length ?? 0) > 0 && (
+                <p>
+                  <strong className="text-blue-800 font-semibold">Added {importResult.attached.length} to period:</strong>{" "}
+                  {importResult.attached.map((m) => m.name).join(", ")}
+                </p>
+              )}
+              {(importResult.reused?.length ?? 0) > 0 && (
+                <p>
+                  <strong className="text-gray-700 font-semibold">Reused {importResult.reused.length} existing on period:</strong>{" "}
+                  {importResult.reused.map((m) => m.name).join(", ")}
+                </p>
+              )}
+            </div>
           )}
         </div>
-        <button
-          onClick={handleReset}
-          className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
-        >
-          Import More Results
-        </button>
+
+        {(distinctUnmatchedCount > 0 || warningCellIssues.length > 0) && (
+          <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg flex flex-col gap-2">
+            <h4 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">Not Imported / Excluded Input</h4>
+            {distinctUnmatchedCount > 0 && (
+              <p className="text-sm text-slate-700">
+                <strong>{distinctUnmatchedCount} unmatched player {distinctUnmatchedCount === 1 ? "row was" : "rows were"} skipped</strong> (names not found in roster). To import results for these members, first add them to your roster via <strong>Import Members</strong>.
+              </p>
+            )}
+            {warningCellIssues.length > 0 && (
+              <p className="text-sm text-slate-700">
+                <strong>{warningCellIssues.length} formula {warningCellIssues.length === 1 ? "cell used" : "cells used"} pre-calculated cached values</strong> from spreadsheet.
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-3 justify-end w-full">
+          <button
+            onClick={handleReset}
+            className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer text-sm font-medium"
+          >
+            Import More Results
+          </button>
+          <a
+            href={`/alliances/${allianceId}/members?periodId=${periodId}`}
+            className="px-4 py-2 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 text-sm font-medium"
+          >
+            View Member Results
+          </a>
+          <a
+            href={`/alliances/${allianceId}/periods/${periodId}`}
+            className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium"
+          >
+            View Evaluation Period
+          </a>
+        </div>
       </div>
     );
   }

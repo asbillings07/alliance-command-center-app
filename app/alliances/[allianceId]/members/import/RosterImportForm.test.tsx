@@ -4,6 +4,14 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { RosterImportForm } from "./RosterImportForm";
 
+vi.mock("next/navigation", () => ({
+    useRouter: () => ({
+        push: vi.fn(),
+        replace: vi.fn(),
+        refresh: vi.fn(),
+    }),
+}));
+
 vi.mock("@/app/src/components/client", () => ({
     TourButton: () => createElement("button", null, "Tour"),
 }));

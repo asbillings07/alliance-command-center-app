@@ -4,6 +4,14 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ImportForm } from "./ImportForm";
 
+vi.mock("next/navigation", () => ({
+    useRouter: () => ({
+        push: vi.fn(),
+        replace: vi.fn(),
+        refresh: vi.fn(),
+    }),
+}));
+
 vi.mock("@/app/src/components/client", () => ({
     TourButton: () => createElement("button", null, "Tour"),
 }));
@@ -128,6 +136,7 @@ describe("ImportForm [component]", () => {
             totalCount: 2,
             created: [],
             attached: [],
+            reused: [{ metricId: "met1", name: "Kill Points" }],
         });
 
         await act(async () => {
@@ -175,6 +184,8 @@ describe("ImportForm [component]", () => {
         expect(container.textContent).toContain("Evaluation Results Imported");
         expect(container.textContent).toContain("Evaluation results have been recorded into destination period 'Week 28 Evaluation'.");
         expect(container.textContent).toContain("Import More Results");
+        expect(container.textContent).toContain("View Member Results");
+        expect(container.textContent).toContain("View Evaluation Period");
     });
 
     it("previews localized thousands separators correctly (450.000.000 -> 450,000,000)", async () => {
