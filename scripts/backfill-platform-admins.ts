@@ -11,6 +11,7 @@
  */
 
 import { prisma } from "../app/src/lib/prisma";
+import { normalizeEmail } from "../app/src/lib/email/normalize";
 
 async function backfillPlatformAdmins() {
   const envEmails = process.env.PLATFORM_ADMIN_EMAILS;
@@ -23,7 +24,7 @@ async function backfillPlatformAdmins() {
 
   const emails = envEmails
     .split(",")
-    .map((e) => e.trim().toLowerCase())
+    .map((e) => normalizeEmail(e))
     .filter(Boolean);
 
   if (emails.length === 0) {

@@ -11,11 +11,14 @@
  * - Google OAuth first-link email matching
  * - Participant identity resolution (#174)
  * - Platform initialization and preview email allowlists
+ * - Alliance invitation creation and acceptance matching
+ * - CLI tooling and backfill scripts
  *
  * **Normalization policy:** lowercase + trim
  * - No Gmail-specific rules (no dot/plus-address collapsing)
- * - Simple, predictable, and reversible from displayed email
+ * - Simple, predictable, and preserves displayed email structure
  * - Preserves all address features (dots, plus-addressing, subdomains)
+ * - Lossy transformation (case information is discarded)
  *
  * Usage: Import this shared function instead of inlining `email.toLowerCase().trim()`
  */

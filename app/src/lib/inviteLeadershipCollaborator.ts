@@ -2,6 +2,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 import { prisma } from "./prisma";
 import { withAllianceMemberCapacityLock } from "./allianceMemberLock";
 import { getInviteUrl } from "./appUrl";
+import { normalizeEmail } from "./email/normalize";
 import type { AllianceRole, Invitation, AllianceMember } from "@/app/generated/prisma/client";
 
 export type InviteLeadershipInput = {
@@ -123,11 +124,14 @@ export async function inviteLeadershipCollaborator(
     invitedById,
     existingMemberId,
     playerName,
-    email,
+    email: rawEmail,
     membershipRole,
     thp,
     squadPower,
   } = input;
+
+  // Normalize email once at the domain boundary for all downstream operations
+  const email = normalizeEmail(rawEmail);
 
   const pending = await findPendingInvitation(allianceId, email);
   if (pending) {

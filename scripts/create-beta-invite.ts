@@ -12,6 +12,7 @@ import "dotenv/config";
 import { issueBetaInvitation } from "../app/src/lib/betaInvitation";
 import { getRedeemUrl } from "../app/src/lib/appUrl";
 import { prisma } from "../app/src/lib/prisma";
+import { normalizeEmail } from "../app/src/lib/email/normalize";
 
 function printInvitation(invitation: {
   email: string;
@@ -38,7 +39,7 @@ function printInvitation(invitation: {
 
 async function lookupInvitation(email: string) {
   const invitation = await prisma.betaInvitation.findFirst({
-    where: { email: email.toLowerCase().trim() },
+    where: { email: normalizeEmail(email) },
     orderBy: { issuedAt: "desc" },
   });
 
