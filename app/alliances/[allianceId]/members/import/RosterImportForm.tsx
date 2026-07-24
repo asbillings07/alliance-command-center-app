@@ -742,7 +742,6 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
                 </table>
               </div>
             </div>
-
             {/* Duplicate Rows in File */}
             {duplicateInFileRows.length > 0 && (
               <details className="bg-white border border-purple-200 rounded-lg overflow-hidden">

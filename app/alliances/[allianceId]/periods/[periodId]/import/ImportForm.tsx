@@ -467,6 +467,73 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     );
   }
 
+  // Preview step
+  if (step === "preview" && previews.length > 0) {
+    const hasBlockingParseErrors = previews.some((preview) =>
+      preview.summary.results.some((r) => r.status === "invalid_value" || !!r.error)
+    );
+
+    return (
+      <div className="w-full max-w-2xl flex flex-col gap-5">
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 font-medium">
+          Destination Period: {periodName}
+        </div>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">Review &amp; Confirm Import</h3>
+          <button onClick={handleBack} className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
+            ← Back
+          </button>
+        </div>
+
+        {hasBlockingParseErrors && (
+          <div className="p-4 rounded-md bg-red-100 border-2 border-red-400 text-red-900">
+            <p className="font-semibold text-red-900">Invalid Numeric Values Detected in Mapped Columns</p>
+            <p className="text-sm text-red-800 mt-1">
+              Please fix or remove rows with invalid numeric values in mapped columns before continuing. Whole numbers in plain (450000000), period-grouped (450.000.000), or comma-grouped (&quot;450,000,000&quot;) formats are accepted.
+            </p>
+          </div>
+        )}
+
+        {parseErrors.length > 0 && (
+          <div className="p-4 rounded-md bg-orange-100 border border-orange-300">
+            <h4 className="font-semibold text-orange-900 mb-2 font-medium">Parse Feedback ({parseErrors.length})</h4>
+            <ul className="text-sm text-orange-800 list-disc list-inside max-h-24 overflow-y-auto">
+              {parseErrors.map((err, i) => (<li key={i}>{err}</li>))}
+            </ul>
+          </div>
+        )}
+
+        {previews.map((preview) => (
+          <MetricPreviewSection
+            key={preview.columnIndex}
+            preview={preview}
+            selections={duplicateSelections[preview.columnIndex]}
+            onDuplicateSelection={handleDuplicateSelection}
+          />
+        ))}
+
+        {error && (
+          <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">{error}</div>
+        )}
+
+        <div className="flex gap-3 justify-end">
+          <button onClick={handleBack} className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer">
+            Back
+          </button>
+          <button
+            onClick={handleImport}
+            disabled={isPending || totalToImport === 0 || hasBlockingParseErrors}
+            className="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isPending
+              ? "Importing..."
+              : `Import All (${totalToImport} ${totalToImport === 1 ? "entry" : "entries"} across ${previews.length} ${previews.length === 1 ? "metric" : "metrics"})`}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Select step
   if (step === "select") {
     const canProceed =
