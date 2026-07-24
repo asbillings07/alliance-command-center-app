@@ -25,7 +25,6 @@ const runDb = process.env.INTEGRATION_DB === "true";
 describe.skipIf(!runDb)("Privilege Separation [integration]", () => {
   let prisma: PrismaClient;
   let requireAllianceAccess: typeof import("./requireAllianceAccess").requireAllianceAccess;
-  let requireAuth: any;
 
   let testUserId: string;
   let testAllianceId: string;
@@ -36,7 +35,6 @@ describe.skipIf(!runDb)("Privilege Separation [integration]", () => {
       prisma: PrismaClient;
     });
     ({ requireAllianceAccess } = await import("./requireAllianceAccess"));
-    ({ requireAuth } = await import("@/app/src/lib/auth/requireAuth"));
   });
 
   beforeEach(async () => {
@@ -70,7 +68,8 @@ describe.skipIf(!runDb)("Privilege Separation [integration]", () => {
     });
 
     // Mock requireAuth to return our test user
-    requireAuth.mockResolvedValue({ id: testUserId });
+    const { requireAuth } = await import("@/app/src/lib/auth/requireAuth");
+    vi.mocked(requireAuth).mockResolvedValue({ id: testUserId, email: user.email });
   });
 
   afterEach(async () => {
