@@ -9,6 +9,7 @@ interface MembersFilterProps {
     activeCount: number;
     archivedCount: number;
     allianceId: string;
+    periodId?: string;
 }
 
 export function MembersFilter({
@@ -16,6 +17,7 @@ export function MembersFilter({
     activeCount,
     archivedCount,
     allianceId,
+    periodId,
 }: MembersFilterProps) {
     const totalCount = activeCount + archivedCount;
 
@@ -29,10 +31,11 @@ export function MembersFilter({
         <div className="flex gap-1 p-1 bg-surface-secondary rounded-lg mb-6 w-fit">
             {filters.map((filter) => {
                 const isActive = currentFilter === filter.id;
+                const href = `/alliances/${allianceId}/members?filter=${filter.id}${periodId ? `&periodId=${encodeURIComponent(periodId)}` : ""}`;
                 return (
                     <Link
                         key={filter.id}
-                        href={`/alliances/${allianceId}/members?filter=${filter.id}`}
+                        href={href}
                         className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                             isActive
                                 ? "bg-surface text-primary-light shadow-sm"

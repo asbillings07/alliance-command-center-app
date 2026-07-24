@@ -14,7 +14,7 @@ import {
   findDuplicateResolvedMetricId,
   resolveMetricTargets,
 } from "@/app/src/lib/metricResolution";
-import { revalidatePath } from "next/cache";
+import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 
 type ImportMetricsInput = {
   periodId: string;
@@ -30,6 +30,7 @@ type ImportMetricsResult = {
   perMetric: (MetricSummary & { count: number })[];
   created: MetricSummary[];
   attached: MetricSummary[];
+  reused: MetricSummary[];
 };
 
 export async function importMemberMetrics(
@@ -166,8 +167,11 @@ export async function importMemberMetrics(
     return { plan, resolved };
   });
 
-  revalidatePath(`/alliances/${allianceId}/periods/${periodId}/import`);
-  revalidatePath(`/alliances/${allianceId}/periods/${periodId}/record`);
+  revalidateAllianceData({
+    allianceId,
+    periodId,
+    domains: ["evaluation-results", "members", "dashboard", "setup"],
+  });
 
   // Resolve metric names for the UI from the persisted rows, not the active
   // library snapshot: this covers metrics that were just created or that are
@@ -197,5 +201,6 @@ export async function importMemberMetrics(
     })),
     created: dedupeSummaries(resolved.filter((r) => r.created).map((r) => r.metricId)),
     attached: dedupeSummaries(resolved.filter((r) => r.attached).map((r) => r.metricId)),
+    reused: dedupeSummaries(resolved.filter((r) => !r.created && !r.attached).map((r) => r.metricId)),
   };
 }

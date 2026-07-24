@@ -14,6 +14,7 @@ type Params = {
     }>;
     searchParams: Promise<{
         filter?: string;
+        periodId?: string;
     }>;
 };
 
@@ -25,7 +26,7 @@ function isValidFilter(filter: string | undefined): filter is FilterType {
 
 export default async function MembersPage({ params, searchParams }: Params) {
     const { allianceId } = await params;
-    const { filter: filterParam } = await searchParams;
+    const { filter: filterParam, periodId } = await searchParams;
     
     const filter: FilterType = isValidFilter(filterParam) ? filterParam : "active";
 
@@ -108,6 +109,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 activeCount={activeCount}
                 archivedCount={archivedCount}
                 allianceId={allianceId}
+                periodId={periodId}
             />
 
             {allianceMembers.length === 0 ? (
@@ -162,7 +164,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                                     >
                                         <td className="px-4 py-3">
                                             <Link
-                                                href={`/alliances/${allianceId}/members/${member.id}`}
+                                                href={`/alliances/${allianceId}/members/${member.id}${periodId ? `?periodId=${encodeURIComponent(periodId)}` : ""}`}
                                                 className="font-medium text-primary-light hover:text-primary"
                                             >
                                                 {member.playerName}
