@@ -508,4 +508,53 @@ Candidate B,-10`;
         const betaInput = Array.from(switchedInputs).find((i) => i.value === "Beta Member");
         expect(betaInput).not.toBeUndefined();
     });
+
+    it("clears parsed members and displays error when switching from a valid worksheet to an invalid worksheet", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        // Sheet 1 valid ("Player", "THP"), Sheet 2 invalid ("Notes", "Data" - no player column)
+        const wb = XLSX.utils.book_new();
+        const ws1 = XLSX.utils.aoa_to_sheet([["Player", "THP"], ["Valid Member", "100000"]]);
+        const ws2 = XLSX.utils.aoa_to_sheet([["Notes", "Data"], ["Some note", "123"]]);
+        XLSX.utils.book_append_sheet(wb, ws1, "Valid Sheet");
+        XLSX.utils.book_append_sheet(wb, ws2, "Invalid Sheet");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, undefined, "multi_roster.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Valid Sheet selected initially -> "Valid Member" visible in input
+        const initialInputs = container.querySelectorAll<HTMLInputElement>('input[type="text"]');
+        const validMemberInput = Array.from(initialInputs).find((i) => i.value === "Valid Member");
+        expect(validMemberInput).not.toBeUndefined();
+
+        // Click "Invalid Sheet"
+        const invalidSheetBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Invalid Sheet")
+        ) as HTMLButtonElement;
+        expect(invalidSheetBtn).not.toBeUndefined();
+
+        await act(async () => {
+            invalidSheetBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Error message displayed and stale "Valid Member" cleared
+        expect(container.textContent).toContain("No player column found");
+        expect(container.textContent).not.toContain("Valid Member");
+
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import")
+        ) as HTMLButtonElement;
+        expect(importBtn).toBeUndefined();
+    });
 });

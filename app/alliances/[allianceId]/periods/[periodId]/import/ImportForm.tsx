@@ -185,16 +185,34 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   const analyzeWorkbookSheet = (workbook: ParsedWorkbook, sheetIndex: number) => {
     const sheet = workbook.sheets[sheetIndex];
     if (!sheet || sheet.rows.length === 0) {
+      setRowCount(0);
+      setAutoDetectedPlayerColumn(null);
+      setNumericColumns([]);
+      setColumnMappings([]);
+      setPreviews([]);
+      setParseErrors([]);
       setError("The selected worksheet is empty.");
       return;
     }
 
     const result = analyzeRows(sheet.rows);
     if (result.error) {
+      setRowCount(0);
+      setAutoDetectedPlayerColumn(null);
+      setNumericColumns([]);
+      setColumnMappings([]);
+      setPreviews([]);
+      setParseErrors([]);
       setError(result.error);
       return;
     }
     if (result.columns.length < 2) {
+      setRowCount(0);
+      setAutoDetectedPlayerColumn(null);
+      setNumericColumns([]);
+      setColumnMappings([]);
+      setPreviews([]);
+      setParseErrors([]);
       setError("Worksheet must have at least 2 columns");
       return;
     }
@@ -323,7 +341,12 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
   // Cell Diagnostic Blocking Check for Evaluation
   const currentSheet = parsedWorkbook?.sheets[selectedSheetIndex];
-  const mappedIndicesSet = new Set(mappedColumns.map((m) => m.columnIndex));
+  const mappedIndicesSet = new Set(
+    [
+      autoDetectedPlayerColumn?.index,
+      ...mappedColumns.map((m) => m.columnIndex),
+    ].filter((idx): idx is number => idx !== null && idx !== undefined)
+  );
 
   const blockingCellIssues: WorkbookIssue[] = [];
   const warningCellIssues: WorkbookIssue[] = [];
@@ -339,6 +362,8 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       }
     }
   }
+
+  const hasBlockingDiagnostics = blockingCellIssues.length > 0;
 
   const handleImport = () => {
     const mappings: WireMapping[] = previews
@@ -444,7 +469,12 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
   // Select step
   if (step === "select") {
-    const canProceed = Boolean(autoDetectedPlayerColumn) && numericColumns.length > 0 && !noSelectableMetrics && mappedColumns.length > 0;
+    const canProceed =
+      Boolean(autoDetectedPlayerColumn) &&
+      numericColumns.length > 0 &&
+      !noSelectableMetrics &&
+      mappedColumns.length > 0 &&
+      !hasBlockingDiagnostics;
 
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
@@ -472,6 +502,44 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             ← Start Over
           </button>
         </div>
+
+        {/* Blocking Workbook Cell Diagnostic Banner */}
+        {hasBlockingDiagnostics && (
+          <div className="p-4 bg-red-50 border border-red-300 rounded-lg text-red-900 flex flex-col gap-1">
+            <p className="font-semibold text-red-900">
+              Workbook Cell Issues Detected in Mapped Columns ({blockingCellIssues.length})
+            </p>
+            <p className="text-sm text-red-800">
+              Mapped columns contain uncalculated formulas or error cells. Please re-save your workbook before importing:
+            </p>
+            <ul className="list-disc list-inside text-xs text-red-800 mt-1 max-h-32 overflow-y-auto space-y-0.5">
+              {blockingCellIssues.map((issue, idx) => (
+                <li key={idx}>
+                  Cell <strong>{issue.address}</strong>: {issue.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Warning Workbook Cell Diagnostic Banner */}
+        {warningCellIssues.length > 0 && (
+          <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 flex flex-col gap-1">
+            <p className="font-semibold text-amber-900">
+              Formula Cached Values Used ({warningCellIssues.length})
+            </p>
+            <p className="text-sm text-amber-800">
+              Formula cells with pre-calculated values will import using their cached text:
+            </p>
+            <ul className="list-disc list-inside text-xs text-amber-800 mt-1 max-h-24 overflow-y-auto space-y-0.5">
+              {warningCellIssues.map((issue, idx) => (
+                <li key={idx}>
+                  Cell <strong>{issue.address}</strong>: {issue.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Player Column Status */}
         {autoDetectedPlayerColumn ? (

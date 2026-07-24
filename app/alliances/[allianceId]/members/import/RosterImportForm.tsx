@@ -221,18 +221,24 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
   const processSheetRows = (workbook: ParsedWorkbook, sheetIndex: number) => {
     const sheet = workbook.sheets[sheetIndex];
     if (!sheet || sheet.rows.length === 0) {
+      setParsedMembers([]);
+      setMappedColumnIndices({ playerColIndex: null, thpColIndex: null, roleColIndex: null });
       setError("The selected worksheet is empty.");
       return;
     }
 
     const analysis = analyzeRows(sheet.rows);
     if (analysis.error) {
+      setParsedMembers([]);
+      setMappedColumnIndices({ playerColIndex: null, thpColIndex: null, roleColIndex: null });
       setError(analysis.error);
       return;
     }
 
     const playerCol = detectColumn(analysis.columns, PLAYER_COLUMN_NAMES);
     if (!playerCol) {
+      setParsedMembers([]);
+      setMappedColumnIndices({ playerColIndex: null, thpColIndex: null, roleColIndex: null });
       setError("No player column found. Your spreadsheet must have a column named: Player, Member, Name, or IGN.");
       return;
     }
@@ -272,6 +278,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     }
 
     if (rawMembers.length === 0) {
+      setParsedMembers([]);
       setError("No valid members found in the worksheet.");
       return;
     }

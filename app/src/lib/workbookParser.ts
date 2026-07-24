@@ -115,6 +115,18 @@ export async function parseWorkbookBytes(
     return { kind: "numbers_export_required" };
   }
 
+  const lowerName = fileName.toLowerCase();
+  const supportedExtensions = [".csv", ".xlsx", ".xls", ".numbers"];
+  const hasSupportedExtension = supportedExtensions.some((ext) => lowerName.endsWith(ext));
+
+  if (!hasSupportedExtension) {
+    return {
+      kind: "error",
+      code: "unsupported_format",
+      message: "Unsupported file format. Supported spreadsheet formats are .xlsx, .xls, .csv, and .numbers.",
+    };
+  }
+
   let XLSX: typeof import("xlsx");
   try {
     XLSX = await import("xlsx");
@@ -369,7 +381,6 @@ export async function parseWorkbookBytes(
     };
   }
 
-  const lowerName = fileName.toLowerCase();
   let format: "xlsx" | "xls" | "csv" | "numbers" = "xlsx";
   if (lowerName.endsWith(".csv")) {
     format = "csv";

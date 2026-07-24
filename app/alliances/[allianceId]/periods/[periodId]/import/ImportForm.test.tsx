@@ -311,4 +311,43 @@ describe("ImportForm [component]", () => {
         // Should render 200 from Sheet B
         expect(container.textContent).toContain("200");
     });
+
+    it("displays blocking cell issues banner and disables import when error cell exists in player name column", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: false,
+                    canAttachMetrics: false,
+                })
+            );
+        });
+
+        // Create workbook with an error cell (#REF!) in cell A2 (Player Name column)
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([["Player", "Kill Points"], ["Dragon", "100"]]);
+        ws["A2"] = { t: "e", v: 0x17, w: "#REF!" };
+        XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "player_error.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Verify blocking diagnostic banner is displayed directly on the mapping step for cell A2
+        expect(container.textContent).toContain("Workbook Cell Issues Detected in Mapped Columns");
+        expect(container.textContent).toContain("Cell A2");
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+        expect(previewBtn).not.toBeUndefined();
+        expect(previewBtn.disabled).toBe(true);
+    });
 });

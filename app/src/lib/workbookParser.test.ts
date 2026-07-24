@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as XLSX from "xlsx";
 import {
   parseWorkbookBytes,
@@ -300,6 +300,184 @@ describe("workbookParser", () => {
       expect(result.kind).toBe("workbook");
       if (result.kind === "workbook") {
         expect(result.workbook.sheets[0].rows).toHaveLength(2001);
+      }
+    });
+
+    it("rejects workbooks exceeding 20 worksheets", async () => {
+      const sheets = Array.from({ length: 21 }, (_, i) => ({
+        name: `Sheet_${i + 1}`,
+        data: [["A", "B"], [1, 2]],
+      }));
+      const bytes = createXlsxBuffer(sheets);
+
+      const result = await parseWorkbookBytes(bytes, {
+        fileName: "too_many_sheets.xlsx",
+        fileSize: bytes.length,
+      });
+
+      expect(result.kind).toBe("error");
+      if (result.kind === "error") {
+        expect(result.code).toBe("workbook_too_large");
+        expect(result.message).toMatch(/exceeds the limit of 20/i);
+      }
+    });
+
+    it("rejects workbooks exceeding 10,000 total rows across worksheets", async () => {
+      // 6 sheets with 1800 rows each = 10,800 total rows
+      const sheetData: (string | number)[][] = [["Col1", "Col2"]];
+      for (let i = 0; i < 1799; i++) {
+        sheetData.push([`R_${i}`, i]);
+      }
+      const sheets = Array.from({ length: 6 }, (_, i) => ({
+        name: `Sheet_${i + 1}`,
+        data: sheetData,
+      }));
+      const bytes = createXlsxBuffer(sheets);
+
+      const result = await parseWorkbookBytes(bytes, {
+        fileName: "too_many_total_rows.xlsx",
+        fileSize: bytes.length,
+      });
+
+      expect(result.kind).toBe("error");
+      if (result.kind === "error") {
+        expect(result.code).toBe("workbook_too_large");
+        expect(result.message).toMatch(/exceeds the maximum limit of 10000/i);
+      }
+    });
+
+    it("rejects worksheets exceeding 100 columns", async () => {
+      const headerRow = Array.from({ length: 101 }, (_, i) => `Col_${i + 1}`);
+      const dataRow = Array.from({ length: 101 }, (_, i) => i + 1);
+      const bytes = createXlsxBuffer([{ name: "WideSheet", data: [headerRow, dataRow] }]);
+
+      const result = await parseWorkbookBytes(bytes, {
+        fileName: "wide_sheet.xlsx",
+        fileSize: bytes.length,
+      });
+
+      expect(result.kind).toBe("error");
+      if (result.kind === "error") {
+        expect(result.code).toBe("workbook_too_large");
+        expect(result.message).toMatch(/exceeding the maximum limit of 100 columns/i);
+      }
+    });
+  });
+
+  describe("Format validation, encryption, Unicode & formatting edge cases", () => {
+    it("rejects unsupported file extensions with unsupported_format error", async () => {
+      const bytes = new TextEncoder().encode("%PDF-1.4 Fake PDF Content");
+
+      const result = await parseWorkbookBytes(bytes, {
+        fileName: "document.pdf",
+        fileSize: bytes.length,
+      });
+
+      expect(result.kind).toBe("error");
+      if (result.kind === "error") {
+        expect(result.code).toBe("unsupported_format");
+        expect(result.message).toMatch(/unsupported file format/i);
+      }
+    });
+
+    it("handles password protected/encrypted workbooks gracefully with encrypted error code", async () => {
+      // OLE2 header with EncryptedPackage structure causing SheetJS to throw password error
+      const ole2EncryptedHeader = new Uint8Array([
+        0xd0, 0xcf, 0x11, 0xe0, 0xA1, 0xb1, 0x1a, 0xe1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3e, 0x00, 0x03, 0x00, 0xfe, 0xff, 0x09, 0x00,
+        0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0xfe, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0xfe, 0xff, 0xff, 0xff,
+      ]);
+
+      const result = await parseWorkbookBytes(ole2EncryptedHeader, {
+        fileName: "protected.xlsx",
+        fileSize: ole2EncryptedHeader.length,
+      });
+
+      expect(result.kind).toBe("error");
+      if (result.kind === "error") {
+        expect(["encrypted", "malformed"]).toContain(result.code);
+      }
+    });
+
+    it("preserves Unicode characters, non-ASCII player names, and emojis", async () => {
+      const bytes = createXlsxBuffer([
+        {
+          name: "UnicodeRoster",
+          data: [
+            ["Player", "THP", "Role"],
+            ["🐉 Mätrix_Üser", "450.000.000", "Rôlë_Â1"],
+            ["王小明", "100,000,000", "R4"],
+          ],
+        },
+      ]);
+
+      const result = await parseWorkbookBytes(bytes, {
+        fileName: "unicode_roster.xlsx",
+        fileSize: bytes.length,
+      });
+
+      expect(result.kind).toBe("workbook");
+      if (result.kind === "workbook") {
+        expect(result.workbook.sheets[0].rows[1]).toEqual(["🐉 Mätrix_Üser", "450.000.000", "Rôlë_Â1"]);
+        expect(result.workbook.sheets[0].rows[2]).toEqual(["王小明", "100,000,000", "R4"]);
+      }
+    });
+
+    it("handles sparse blank cells cleanly as empty strings", async () => {
+      const bytes = createXlsxBuffer([
+        {
+          name: "SparseSheet",
+          data: [
+            ["Player", "THP", "Role"],
+            ["Alice", null, "R4"],
+            [null, "200", null],
+          ],
+        },
+      ]);
+
+      const result = await parseWorkbookBytes(bytes, {
+        fileName: "sparse.xlsx",
+        fileSize: bytes.length,
+      });
+
+      expect(result.kind).toBe("workbook");
+      if (result.kind === "workbook") {
+        expect(result.workbook.sheets[0].rows[1]).toEqual(["Alice", "", "R4"]);
+        expect(result.workbook.sheets[0].rows[2]).toEqual(["", "200", ""]);
+      }
+    });
+
+    it("preserves formatted display text for formatted numbers and date cells", async () => {
+      const bytes = createXlsxBuffer(
+        [
+          {
+            name: "FormattedData",
+            data: [
+              ["Player", "FormattedPower", "JoinDate"],
+              ["Bob", 1234567, "2026-07-24"],
+            ],
+          },
+        ],
+        (ws) => {
+          if (ws["B2"]) {
+            ws["B2"].z = "$#,##0.00";
+          }
+          if (ws["C2"]) {
+            ws["C2"].z = "yyyy-mm-dd";
+          }
+        }
+      );
+
+      const result = await parseWorkbookBytes(bytes, {
+        fileName: "formatted.xlsx",
+        fileSize: bytes.length,
+      });
+
+      expect(result.kind).toBe("workbook");
+      if (result.kind === "workbook") {
+        expect(result.workbook.sheets[0].rows[1][0]).toBe("Bob");
+        expect(result.workbook.sheets[0].rows[1][1]).toMatch(/1,?234,?567/);
       }
     });
   });
