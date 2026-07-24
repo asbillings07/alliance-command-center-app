@@ -167,7 +167,7 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
   {
     id: "members",
     label: "Import Roster",
-    description: "Upload or update your alliance roster from a spreadsheet",
+    description: "Upload a spreadsheet to add or restore roster members",
     typicallyCompletedBy: "Admin",
     href: (id) => `/alliances/${id}/members/import`,
     requiredPermission: "canImportMembers",

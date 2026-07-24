@@ -80,7 +80,7 @@ export default async function PeriodRecordPage({
             description="Add metrics to this evaluation period before recording data."
             action={
               auth.permissions.canConfigurePeriods
-                ? <Button variant="primary" href={`/alliances/${allianceId}/periods/${periodId}`}>Configure Metrics</Button>
+                ? <Button variant="primary" href={`/alliances/${allianceId}/periods/${periodId}`}>Manage Period Metrics</Button>
                 : undefined
             }
           />

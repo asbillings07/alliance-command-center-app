@@ -144,7 +144,7 @@ export function MetricPeriodCard({
               size="sm"
               href={`/alliances/${allianceId}/periods/${period.id}`}
             >
-              Configure Metrics
+              Manage Period Metrics
             </Button>
           </div>
           <div className="flex items-center gap-2">

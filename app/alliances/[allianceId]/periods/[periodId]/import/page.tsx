@@ -108,7 +108,7 @@ export default async function ImportPage({ params }: Params) {
             description="Add metrics to this evaluation period before importing evaluation results."
             action={
               auth.permissions.canConfigurePeriods
-                ? <Button variant="primary" href={`/alliances/${allianceId}/periods/${periodId}`}>Configure Metrics</Button>
+                ? <Button variant="primary" href={`/alliances/${allianceId}/periods/${periodId}`}>Manage Period Metrics</Button>
                 : undefined
             }
           />
