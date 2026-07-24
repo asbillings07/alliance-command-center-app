@@ -103,16 +103,20 @@ Grant or Deny
 
 ### Invited Users
 
-**Source:** `app/alliances/[allianceId]/settings/invitations`
+**Source:** `app/alliances/[allianceId]/settings/invitations`, `app/invite/[token]/action.ts`
 
 Current implementation:
-- Invited users receive `OWNER` role by default (via `AllianceMembership.create()`)
-- **This is a known limitation** - all invited users become owners
+1. Invitation form captures `membershipRole`: `ADMIN`, `LEADER`, or `VIEWER` (defaults to `LEADER`)
+2. `Invitation` record stores selected `membershipRole`
+3. On acceptance, `AllianceMembership` created with `role: invitation.membershipRole` (line 93 of `action.ts`)
+4. **Invited users receive exactly the role specified in their invitation**
 
-**Issue #182 Decision:**
-- The product intent is for invited leadership to have appropriate collaboration roles (ADMIN/LEADER)
-- Current behavior grants full OWNER permissions to all invited users
-- **Recommendation:** #182 should focus on language/semantics corrections and rank independence verification, NOT introduce role selection UI
+Only the founding operator (alliance creator) receives `OWNER` role automatically.
+
+**Implication for #182:**
+- Role assignment already works correctly
+- Invited users do NOT become OWNER
+- Only semantic/language clarifications remain
 
 ---
 
@@ -140,14 +144,10 @@ This field:
 ### Semantic Issues to Fix
 
 1. **Setup task language**: `typicallyCompletedBy: "Owner"` could be misread as "R5 Owner"
-   - Should be: `"Founding Operator"` or `"Alliance Owner"` (ACC role)
+   - Should be: `"Founding Operator"` (ACC role, clarifies workspace ownership vs game rank)
 
-2. **Platform Console**: May use "owner" language that implies R5
-   - Audit: `/platform/beta/*` pages
-
-3. **Invitation flow**: Current grants OWNER to all invited users
-   - Document as known behavior
-   - Role selection is separate feature work
+2. **Platform Console**: May use "owner" language that could be misread as R5
+   - Audit: `/platform/beta/*` pages for workspace ownership terminology
 
 ### Verification Needed
 
@@ -167,9 +167,9 @@ This field:
 4. Document role assignment behavior
 
 **Out of Scope:**
-1. Role selection UI for invited users (separate feature)
-2. Changing how invited users receive roles (separate feature)
-3. Adding rank storage or rank-based auth (explicitly not desired)
+1. Changing role assignment mechanics (already correct)
+2. Adding rank storage or rank-based auth (explicitly not desired)
+3. Authorization refactor (current model is correct)
 
 ---
 

@@ -124,6 +124,7 @@ const TEST_USERS = {
   viewer: "viewer@test.local",
   platformAdmin: "platform-admin@test.local",
   otherOwner: "other-owner@test.local",
+  betaTester: "beta-tester@test.local",
 };
 
 // ---------------------------------------
@@ -267,6 +268,34 @@ const createPlatformAdmin = async () => {
   });
 };
 
+// ---------------------------------------
+// Create beta tester with pending invitation
+// Used for rank-independence E2E tests (#182)
+// ---------------------------------------
+
+const createBetaTester = async () => {
+  const user = await createUser(TEST_USERS.betaTester, TEST_PASSWORD, {
+    displayName: "Beta Tester",
+  });
+
+  // Create a pending beta invitation
+  const code = "TST-123"; // Fixed code for testing
+  const token = "00000000-0000-0000-0000-000000000001"; // Fixed token for testing
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+  await prisma.betaInvitation.create({
+    data: {
+      email: TEST_USERS.betaTester,
+      code,
+      token,
+      issuedAt: new Date(),
+      expiresAt,
+    },
+  });
+
+  return user;
+};
+
 const createMetricData = async (allianceId: string, memberId: string) => {
   // ---------------------------------------
   // Metric Periods
@@ -344,6 +373,10 @@ async function main() {
   await createPlatformAdmin();
   console.log("✓ Created platform admin user");
 
+  // Beta tester with pending invitation
+  await createBetaTester();
+  console.log("✓ Created beta tester with pending invitation");
+
   // Leadership Notes
   await createLeadershipNote(
     dragon.id,
@@ -391,6 +424,10 @@ TEST_OTHER_ALLIANCE_ID=${otherAlliance.id}
 # Platform admin credentials
 TEST_PLATFORM_ADMIN_EMAIL=${TEST_USERS.platformAdmin}
 TEST_PLATFORM_ADMIN_PASSWORD=${TEST_PASSWORD}
+
+# Beta tester credentials (for rank-independence tests #182)
+TEST_BETA_USER_EMAIL=${TEST_USERS.betaTester}
+TEST_BETA_USER_PASSWORD=${TEST_PASSWORD}
 
 # Platform admin emails for E2E tests (add to main .env or set in CI)
 PLATFORM_ADMIN_EMAILS_E2E=${TEST_USERS.platformAdmin}

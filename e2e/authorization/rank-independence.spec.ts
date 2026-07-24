@@ -74,8 +74,8 @@ test.describe("Rank Independence", () => {
 
   test("ADMIN role can complete setup tasks without OWNER role", async ({ page }) => {
     test.skip(
-      !process.env.TEST_ADMIN_EMAIL || !process.env.TEST_ADMIN_PASSWORD,
-      "TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD required for admin role test"
+      !process.env.TEST_ADMIN_EMAIL || !process.env.TEST_ADMIN_PASSWORD || !process.env.TEST_ALLIANCE_ID,
+      "TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD, and TEST_ALLIANCE_ID required"
     );
 
     await page.goto("/login");
@@ -84,33 +84,35 @@ test.describe("Rank Independence", () => {
     await page.getByRole("button", { name: /sign in/i }).click();
     await page.waitForURL(/\/(app|alliances)/);
 
-    const testAllianceId = process.env.TEST_ALLIANCE_ID;
-    test.skip(!testAllianceId, "TEST_ALLIANCE_ID required");
+    const testAllianceId = process.env.TEST_ALLIANCE_ID!;
 
-    // Admin should be able to access setup page
-    await page.goto(`/alliances/${testAllianceId}/setup`);
-    await expect(
-      page.getByRole("heading", { name: "Alliance Setup", level: 1 })
-    ).toBeVisible();
-
-    // Admin should see tasks they have permission for
-    // ADMIN has: configure metrics, import members
-    // This proves authorization is ACC-role-based, not rank-based
-    const pageContent = await page.textContent("body");
+    // Navigate to metrics configuration (ADMIN permission)
+    await page.goto(`/alliances/${testAllianceId}/metrics`);
     
-    // Should see admin-permitted tasks
-    if (pageContent?.includes("Configure Metrics")) {
-      await expect(page.getByText(/configure metrics/i)).toBeVisible();
-    }
-    if (pageContent?.includes("Import Members")) {
-      await expect(page.getByText(/import members/i)).toBeVisible();
-    }
+    // Should be able to access metrics page (proves ADMIN can manage metrics)
+    await expect(page.getByRole("heading", { name: /metrics/i })).toBeVisible();
+
+    // Try to create a new metric (actual mutation, not just visibility check)
+    await page.getByRole("button", { name: /create metric/i }).click();
+    
+    const metricName = `Test Metric ${Date.now()}`;
+    await page.getByLabel(/metric name/i).fill(metricName);
+    await page.getByLabel(/display name/i).fill(`Test Metric Display`);
+    
+    // Select metric type
+    await page.getByLabel(/type/i).click();
+    await page.getByRole("option", { name: /numeric/i }).click();
+    
+    await page.getByRole("button", { name: /save|create/i }).click();
+
+    // Should succeed - proves ADMIN can complete admin-level setup tasks
+    await expect(page.getByText(metricName)).toBeVisible();
   });
 
   test("LEADER role can complete period creation without admin privileges", async ({ page }) => {
     test.skip(
-      !process.env.TEST_LEADER_EMAIL || !process.env.TEST_LEADER_PASSWORD,
-      "TEST_LEADER_EMAIL and TEST_LEADER_PASSWORD required for leader role test"
+      !process.env.TEST_LEADER_EMAIL || !process.env.TEST_LEADER_PASSWORD || !process.env.TEST_ALLIANCE_ID,
+      "TEST_LEADER_EMAIL, TEST_LEADER_PASSWORD, and TEST_ALLIANCE_ID required"
     );
 
     await page.goto("/login");
@@ -119,23 +121,31 @@ test.describe("Rank Independence", () => {
     await page.getByRole("button", { name: /sign in/i }).click();
     await page.waitForURL(/\/(app|alliances)/);
 
-    const testAllianceId = process.env.TEST_ALLIANCE_ID;
-    test.skip(!testAllianceId, "TEST_ALLIANCE_ID required");
+    const testAllianceId = process.env.TEST_ALLIANCE_ID!;
 
-    // Leader should be able to access setup page
-    await page.goto(`/alliances/${testAllianceId}/setup`);
-    await expect(
-      page.getByRole("heading", { name: "Alliance Setup", level: 1 })
-    ).toBeVisible();
-
-    // Leader should see tasks they have permission for
-    // LEADER has: configure periods, import metrics
-    // This proves setup is alliance-scoped and continuable by authorized roles
-    const pageContent = await page.textContent("body");
+    // Navigate to periods page (LEADER permission)
+    await page.goto(`/alliances/${testAllianceId}/periods`);
     
-    if (pageContent?.includes("Create Evaluation Period")) {
-      await expect(page.getByText(/create.*period/i)).toBeVisible();
-    }
+    // Should be able to access periods page (proves LEADER can manage periods)
+    await expect(page.getByRole("heading", { name: /periods/i })).toBeVisible();
+
+    // Try to create a new evaluation period (actual mutation, not just visibility check)
+    await page.getByRole("button", { name: /create.*period/i }).click();
+    
+    const periodName = `Test Period ${Date.now()}`;
+    await page.getByLabel(/period name/i).fill(periodName);
+    
+    // Set start and end dates
+    const today = new Date().toISOString().split('T')[0];
+    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    
+    await page.getByLabel(/start date/i).fill(today);
+    await page.getByLabel(/end date/i).fill(future);
+    
+    await page.getByRole("button", { name: /save|create/i }).click();
+
+    // Should succeed - proves LEADER can complete leader-level setup tasks
+    await expect(page.getByText(periodName)).toBeVisible();
   });
 
   test("member roster role field is descriptive only, not authorization", async ({ page }) => {
