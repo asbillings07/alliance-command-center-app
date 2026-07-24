@@ -158,7 +158,11 @@ export const test = base.extend<TestFixtures>({
 
     await use({ email, password, userId: user.id });
 
-    // Cleanup: delete alliances created by this user, then memberships, invitations, and user
+    // Cleanup: FK-ordered deletion (invitations reference user, alliances reference memberships)
+    // 1. Delete beta invitation first (references user)
+    await prisma.betaInvitation.deleteMany({ where: { email } });
+
+    // 2. Find and delete alliances created by this user
     const memberships = await prisma.allianceMembership.findMany({
       where: { userId: user.id },
       select: { allianceId: true },
@@ -169,11 +173,12 @@ export const test = base.extend<TestFixtures>({
       await prisma.allianceMember.deleteMany({ where: { allianceId: membership.allianceId } });
       await prisma.metric.deleteMany({ where: { allianceId: membership.allianceId } });
       await prisma.metricPeriod.deleteMany({ where: { allianceId: membership.allianceId } });
+      await prisma.invitation.deleteMany({ where: { allianceId: membership.allianceId } });
       await prisma.allianceMembership.deleteMany({ where: { allianceId: membership.allianceId } });
       await prisma.alliance.delete({ where: { id: membership.allianceId } });
     }
 
-    await prisma.betaInvitation.deleteMany({ where: { email } });
+    // 3. Finally delete the user
     await prisma.user.delete({ where: { id: user.id } });
   },
 
@@ -215,10 +220,11 @@ export const test = base.extend<TestFixtures>({
 
     await use({ email, password, allianceId: alliance.id, userId: user.id });
 
-    // Cleanup
+    // Cleanup: FK-ordered deletion
     await prisma.metric.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.metricPeriod.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMember.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.invitation.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMembership.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.alliance.delete({ where: { id: alliance.id } });
     await prisma.user.delete({ where: { id: user.id } });
@@ -262,10 +268,11 @@ export const test = base.extend<TestFixtures>({
 
     await use({ email, password, allianceId: alliance.id, userId: user.id });
 
-    // Cleanup
+    // Cleanup: FK-ordered deletion
     await prisma.metricPeriod.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.metric.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMember.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.invitation.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMembership.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.alliance.delete({ where: { id: alliance.id } });
     await prisma.user.delete({ where: { id: user.id } });

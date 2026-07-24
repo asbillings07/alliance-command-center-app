@@ -33,15 +33,31 @@ test.describe("Rank Independence", () => {
     await page.waitForURL(/\/alliances\/.*\/setup/);
     await expect(page.getByText(allianceName)).toBeVisible();
 
-    // User receives OWNER role (granted by ACC workspace creation, not game rank)
-    // Verify by checking they can access all setup tasks
+    // Extract alliance ID from URL
+    const url = page.url();
+    const allianceIdMatch = url.match(/\/alliances\/([^/]+)\//);
+    expect(allianceIdMatch).not.toBeNull();
+    const allianceId = allianceIdMatch![1];
+
+    // Verify the user received OWNER role (granted by workspace creation, not game rank)
+    const { prisma } = await import("@/app/src/lib/prisma");
+    const membership = await prisma.allianceMembership.findUnique({
+      where: {
+        allianceId_userId: {
+          allianceId,
+          userId: betaUser.userId,
+        },
+      },
+      select: { role: true },
+    });
+
+    expect(membership).not.toBeNull();
+    expect(membership!.role).toBe("OWNER");
+
+    // User can access all setup tasks (UI verification)
     await expect(page.getByText(/configure metrics/i)).toBeVisible();
     await expect(page.getByText(/create.*period/i)).toBeVisible();
     await expect(page.getByText(/invite.*leadership/i)).toBeVisible();
-
-    // NOTE: Full OWNER-specific capability test (role management UI) is deferred
-    // until canManageLeadership-protected UI is implemented. Current test proves
-    // alliance creation grants OWNER role without rank requirement.
   });
 
   test("setup tasks display ACC role, not game rank", async ({ page }) => {
@@ -91,7 +107,11 @@ test.describe("Rank Independence", () => {
     await page.goto(`/alliances/${allianceId}/setup`);
     await expect(page.getByRole("heading", { name: "Alliance Setup" })).toBeVisible();
 
-    // The task should be visible (ADMIN has canConfigureMetrics)
+    // Capture initial progress count
+    const progressTextBefore = await page.locator('text=/\\d+ of \\d+ complete/').textContent();
+    expect(progressTextBefore).toMatch(/0 of \d+ complete/); // Should start at 0
+
+    // The task should be visible and incomplete (circle icon, not checkmark)
     const configureMetricsTask = page.locator("text=Configure Metrics").first();
     await expect(configureMetricsTask).toBeVisible();
 
@@ -114,12 +134,18 @@ test.describe("Rank Independence", () => {
     // Verify the metric was created
     await expect(page.getByText(metricName)).toBeVisible();
 
-    // 3. Return to setup page and verify task is now complete
+    // 3. Return to setup page and verify task transitioned from incomplete to complete
     await page.goto(`/alliances/${allianceId}/setup`);
     
-    // The "Configure Metrics" task should now show as complete
-    // (Implementation may use checkmark, strikethrough, or "completed" badge)
-    await expect(configureMetricsTask).toBeVisible();
+    // Verify progress count increased
+    const progressTextAfter = await page.locator('text=/\\d+ of \\d+ complete/').textContent();
+    expect(progressTextAfter).not.toBe(progressTextBefore);
+    expect(progressTextAfter).toMatch(/[1-9]\d* of \d+ complete/); // At least 1 complete
+
+    // Verify the task now shows with muted styling (completed state)
+    const completedTask = page.locator("text=Configure Metrics").first();
+    await expect(completedTask).toBeVisible();
+    await expect(completedTask).toHaveClass(/text-text-muted/); // Completed tasks are muted
 
     // 4. Negative assertion: ADMIN cannot manage leadership
     // Navigate to invitations page (ADMIN has canInviteCollaborators)
@@ -149,7 +175,11 @@ test.describe("Rank Independence", () => {
     await page.goto(`/alliances/${allianceId}/setup`);
     await expect(page.getByRole("heading", { name: "Alliance Setup" })).toBeVisible();
 
-    // The task should be visible (LEADER has canConfigurePeriods)
+    // Capture initial progress count
+    const progressTextBefore = await page.locator('text=/\\d+ of \\d+ complete/').textContent();
+    expect(progressTextBefore).toMatch(/0 of \d+ complete/); // Should start at 0
+
+    // The task should be visible and incomplete
     const createPeriodTask = page.locator("text=Create Evaluation Period").first();
     await expect(createPeriodTask).toBeVisible();
 
@@ -172,11 +202,18 @@ test.describe("Rank Independence", () => {
     // Verify the period was created
     await expect(page.getByText(periodName)).toBeVisible();
 
-    // 3. Return to setup page and verify task is now complete
+    // 3. Return to setup page and verify task transitioned from incomplete to complete
     await page.goto(`/alliances/${allianceId}/setup`);
 
-    // The "Create Evaluation Period" task should now show as complete
-    await expect(createPeriodTask).toBeVisible();
+    // Verify progress count increased
+    const progressTextAfter = await page.locator('text=/\\d+ of \\d+ complete/').textContent();
+    expect(progressTextAfter).not.toBe(progressTextBefore);
+    expect(progressTextAfter).toMatch(/[1-9]\d* of \d+ complete/); // At least 1 complete
+
+    // Verify the task now shows with muted styling (completed state)
+    const completedTask = page.locator("text=Create Evaluation Period").first();
+    await expect(completedTask).toBeVisible();
+    await expect(completedTask).toHaveClass(/text-text-muted/); // Completed tasks are muted
 
     // 4. Negative assertion: LEADER cannot configure metrics
     // Navigate to metrics page
