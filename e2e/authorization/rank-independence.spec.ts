@@ -55,7 +55,7 @@ test.describe("Rank Independence", () => {
     expect(membership!.role).toBe("OWNER");
 
     // User can access all setup tasks (UI verification)
-    await expect(page.getByText(/configure metrics/i)).toBeVisible();
+    await expect(page.getByText(/choose.*metrics/i)).toBeVisible();
     await expect(page.getByText(/create.*period/i)).toBeVisible();
     await expect(page.getByText(/invite.*leadership/i)).toBeVisible();
   });
@@ -103,7 +103,7 @@ test.describe("Rank Independence", () => {
 
     const allianceId = adminScenario.allianceId;
 
-    // 1. Navigate to setup page and verify "Configure Metrics" is incomplete
+    // 1. Navigate to setup page and verify "Choose Period Metrics" is incomplete
     await page.goto(`/alliances/${allianceId}/setup`);
     await expect(page.getByRole("heading", { name: "Alliance Setup" })).toBeVisible();
 
@@ -112,7 +112,7 @@ test.describe("Rank Independence", () => {
     expect(progressTextBefore).toMatch(/0 of \d+ complete/); // Should start at 0
 
     // The task should be visible and incomplete (circle icon, not checkmark)
-    const configureMetricsTask = page.locator("text=Configure Metrics").first();
+    const configureMetricsTask = page.locator("text=Choose Period Metrics").first();
     await expect(configureMetricsTask).toBeVisible();
 
     // 2. Navigate to metrics page and create a metric
@@ -143,7 +143,7 @@ test.describe("Rank Independence", () => {
     expect(progressTextAfter).toMatch(/[1-9]\d* of \d+ complete/); // At least 1 complete
 
     // Verify the task now shows with muted styling (completed state)
-    const completedTask = page.locator("text=Configure Metrics").first();
+    const completedTask = page.locator("text=Choose Period Metrics").first();
     await expect(completedTask).toBeVisible();
     await expect(completedTask).toHaveClass(/text-text-muted/); // Completed tasks are muted
 

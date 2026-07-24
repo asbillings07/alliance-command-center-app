@@ -108,9 +108,9 @@ test.describe("Owner Journey", () => {
     await expect(page.locator("h1:has-text('Alliance Setup')")).toBeVisible();
 
     // All tasks should initially be incomplete
-    await expect(page.locator('text="Configure Metrics"')).toBeVisible();
+    await expect(page.locator('text="Choose Period Metrics"')).toBeVisible();
     await expect(page.locator('text="Create Evaluation Period"')).toBeVisible();
-    await expect(page.locator('text="Import Roster"')).toBeVisible();
+    await expect(page.locator('text="Set Up Roster"')).toBeVisible();
   });
 
   test("can configure metrics", async ({ page }) => {
