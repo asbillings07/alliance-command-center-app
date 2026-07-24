@@ -2,11 +2,27 @@ import { test, expect } from "../shared/fixtures";
 import { prisma } from "@/app/src/lib/prisma";
 
 test.describe("Import Discoverability & Navigation Bridge", () => {
-  test.afterEach(async () => {
-    await prisma.memberMetricEntry.deleteMany({});
-    await prisma.metricPeriodMetric.deleteMany({});
-    await prisma.metricPeriod.deleteMany({});
-    await prisma.metric.deleteMany({});
+  test.afterEach(async ({ adminScenario }) => {
+    if (adminScenario?.allianceId) {
+      await prisma.memberMetricEntry.deleteMany({
+        where: { allianceMember: { allianceId: adminScenario.allianceId } },
+      });
+      await prisma.metricPeriodMetric.deleteMany({
+        where: { period: { allianceId: adminScenario.allianceId } },
+      });
+      await prisma.metricPeriod.deleteMany({
+        where: { allianceId: adminScenario.allianceId },
+      });
+      await prisma.metric.deleteMany({
+        where: { allianceId: adminScenario.allianceId },
+      });
+      await prisma.allianceMember.deleteMany({
+        where: {
+          allianceId: adminScenario.allianceId,
+          playerName: { in: ["DiscoverableHero", "ScoreTestPlayer"] },
+        },
+      });
+    }
   });
 
   test("member import immediately refreshes member list even when router cache is warm", async ({

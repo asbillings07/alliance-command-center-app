@@ -436,17 +436,24 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     }
     const unmatchedMembersList = Array.from(unmatchedRawNamesMap.values());
 
-    const committedSourceRows = new Set(
-      previews.flatMap((p) =>
-        p.summary.results
-          .filter((r) => r.status === "matched" && r.memberId)
-          .map((r) => r.sourceRow)
-      )
-    );
+    const committedFormulaWarnings = warningCellIssues.filter((issue) => {
+      if (issue.rowIndex === undefined) return true;
 
-    const committedFormulaWarnings = warningCellIssues.filter(
-      (issue) => issue.rowIndex === undefined || committedSourceRows.has(issue.rowIndex)
-    );
+      const preview = previews.find((p) => p.columnIndex === issue.columnIndex);
+      if (!preview) return false;
+
+      const selections = duplicateSelections[preview.columnIndex];
+      const selectedIndices = new Set(Object.values(selections ?? {}));
+
+      return preview.summary.results.some(
+        (r, index) =>
+          selectedIndices.has(index) &&
+          r.sourceRow === issue.rowIndex &&
+          r.status === "matched" &&
+          Boolean(r.memberId) &&
+          Boolean(r.rawValue)
+      );
+    });
 
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
