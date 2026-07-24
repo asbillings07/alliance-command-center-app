@@ -425,7 +425,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                     },
                 ],
             })
-        ).rejects.toThrow(/out of signed 32-bit integer range/i);
+        ).rejects.toThrow(/out of 32-bit signed integer range/i);
 
         const entriesCount = await prisma.memberMetricEntry.count({
             where: { periodId: periodA.id },
