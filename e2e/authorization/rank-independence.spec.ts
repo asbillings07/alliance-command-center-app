@@ -86,27 +86,27 @@ test.describe("Rank Independence", () => {
 
     const testAllianceId = process.env.TEST_ALLIANCE_ID!;
 
-    // Navigate to metrics configuration (ADMIN permission)
+    // Navigate to metrics page (ADMIN permission: canConfigureMetrics)
     await page.goto(`/alliances/${testAllianceId}/metrics`);
-    
-    // Should be able to access metrics page (proves ADMIN can manage metrics)
-    await expect(page.getByRole("heading", { name: /metrics/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /metrics library/i })).toBeVisible();
 
-    // Try to create a new metric (actual mutation, not just visibility check)
-    await page.getByRole("button", { name: /create metric/i }).click();
-    
-    const metricName = `Test Metric ${Date.now()}`;
-    await page.getByLabel(/metric name/i).fill(metricName);
-    await page.getByLabel(/display name/i).fill(`Test Metric Display`);
-    
-    // Select metric type
-    await page.getByLabel(/type/i).click();
-    await page.getByRole("option", { name: /numeric/i }).click();
-    
-    await page.getByRole("button", { name: /save|create/i }).click();
+    // Click the "+ Create Metric" button to open the form
+    await page.getByRole("button", { name: /^\+ create metric$/i }).click();
 
-    // Should succeed - proves ADMIN can complete admin-level setup tasks
+    // Fill in the metric form with unique name to avoid conflicts
+    const metricName = `E2E Admin Metric ${Date.now()}`;
+    await page.getByLabel(/^name$/i).fill(metricName);
+    await page.getByLabel(/^description/i).fill("Metric created by ADMIN to prove non-owner can complete setup");
+    
+    // Type defaults to Numeric - leave as-is
+    // Submit the form
+    await page.getByRole("button", { name: /^create metric$/i }).click();
+
+    // Verify the metric was created and form closed
     await expect(page.getByText(metricName)).toBeVisible();
+
+    // This proves ADMIN can complete the "Configure Metrics" setup task
+    // without OWNER role, advancing alliance-scoped setup
   });
 
   test("LEADER role can complete period creation without admin privileges", async ({ page }) => {
@@ -123,29 +123,26 @@ test.describe("Rank Independence", () => {
 
     const testAllianceId = process.env.TEST_ALLIANCE_ID!;
 
-    // Navigate to periods page (LEADER permission)
+    // Navigate to periods page (LEADER permission: canConfigurePeriods)
     await page.goto(`/alliances/${testAllianceId}/periods`);
-    
-    // Should be able to access periods page (proves LEADER can manage periods)
-    await expect(page.getByRole("heading", { name: /periods/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /evaluation periods/i })).toBeVisible();
 
-    // Try to create a new evaluation period (actual mutation, not just visibility check)
-    await page.getByRole("button", { name: /create.*period/i }).click();
-    
-    const periodName = `Test Period ${Date.now()}`;
-    await page.getByLabel(/period name/i).fill(periodName);
-    
-    // Set start and end dates
-    const today = new Date().toISOString().split('T')[0];
-    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    
-    await page.getByLabel(/start date/i).fill(today);
-    await page.getByLabel(/end date/i).fill(future);
-    
-    await page.getByRole("button", { name: /save|create/i }).click();
+    // Click the "+ Create Period" button to open the form
+    await page.getByRole("button", { name: /^\+ create period$/i }).click();
 
-    // Should succeed - proves LEADER can complete leader-level setup tasks
+    // Fill in the period form with unique name
+    const periodName = `E2E Leader Period ${Date.now()}`;
+    await page.getByLabel(/^name$/i).fill(periodName);
+    
+    // Dates are optional - leave them empty for simplicity
+    // Submit the form
+    await page.getByRole("button", { name: /^create period$/i }).click();
+
+    // Verify the period was created
     await expect(page.getByText(periodName)).toBeVisible();
+
+    // This proves LEADER can complete the "Create Evaluation Period" setup task
+    // without ADMIN or OWNER privileges, advancing alliance-scoped setup
   });
 
   test("member roster role field is descriptive only, not authorization", async ({ page }) => {

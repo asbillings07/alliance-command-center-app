@@ -269,7 +269,7 @@ const createPlatformAdmin = async () => {
 };
 
 // ---------------------------------------
-// Create beta tester with pending invitation
+// Create beta tester with accepted invitation
 // Used for rank-independence E2E tests (#182)
 // ---------------------------------------
 
@@ -278,7 +278,9 @@ const createBetaTester = async () => {
     displayName: "Beta Tester",
   });
 
-  // Create a pending beta invitation
+  // Create an accepted beta invitation so the test user can go straight to
+  // create-alliance without needing to redeem. This makes the E2E test path
+  // deterministic and retry-safe.
   const code = "TST-123"; // Fixed code for testing
   const token = "00000000-0000-0000-0000-000000000001"; // Fixed token for testing
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
@@ -290,6 +292,8 @@ const createBetaTester = async () => {
       token,
       issuedAt: new Date(),
       expiresAt,
+      acceptedAt: new Date(), // Already accepted
+      acceptedByUserId: user.id,
     },
   });
 

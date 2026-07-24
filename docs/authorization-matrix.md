@@ -120,15 +120,20 @@ Only the founding operator (alliance creator) receives `OWNER` role automaticall
 
 ---
 
-## In-Game Rank
+## In-Game Rank (Descriptive Metadata Only)
 
 **Storage:** `AllianceMember.role` (TEXT, nullable)
 
-This field:
-- Stores optional descriptive text like "R5", "R4", "Officer"
-- Has **no foreign keys, no enum, no authorization significance**
-- Is **never queried for permission checks**
-- Is display-only metadata
+In-game rank **is stored** as optional descriptive metadata, but:
+- Stored as free-form text like "R5", "R4", "Officer", "Member"
+- Has **no foreign keys, no enum constraint, zero authorization significance**
+- Is **never queried for permission checks or conditional logic**
+- Serves only as display-only roster metadata
+- Cannot influence ACC authorization in any way
+
+ACC authorization uses `AllianceMembership.role` (OWNER/ADMIN/LEADER/VIEWER enum).  
+In-game rank uses `AllianceMember.role` (nullable text field).  
+These are separate, unrelated fields with similar names.
 
 ---
 
@@ -137,14 +142,17 @@ This field:
 ### What Works Today
 
 ✓ Authorization is entirely ACC-role-based  
-✓ No in-game rank is consulted anywhere  
+✓ In-game rank is stored as optional roster metadata but never used for authorization  
 ✓ Setup is alliance-scoped and continuable by authorized users  
 ✓ Permission system is well-structured and complete
 
 ### Semantic Issues to Fix
 
 1. **Setup task language**: `typicallyCompletedBy: "Owner"` could be misread as "R5 Owner"
-   - Should be: `"Founding Operator"` (ACC role, clarifies workspace ownership vs game rank)
+   - Fixed to: `"Founding Operator"` (onboarding persona, not an ACC role)
+   - Clarifies this refers to the user creating the workspace, not game rank
+   - **Note**: "Founding Operator" is a label describing a typical use case, not a fifth ACC role
+   - ACC roles remain: OWNER, ADMIN, LEADER, VIEWER
 
 2. **Platform Console**: May use "owner" language that could be misread as R5
    - Audit: `/platform/beta/*` pages for workspace ownership terminology
