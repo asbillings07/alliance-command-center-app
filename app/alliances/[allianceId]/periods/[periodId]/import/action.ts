@@ -112,8 +112,8 @@ export async function importMemberMetrics(
   }
 
   // Enforce least-privilege: attaching needs CONFIGURE_PERIODS, creating a new
-  // metric needs CONFIGURE_METRICS. This preserves the boundary where a LEADER
-  // can import and attach but cannot invent new metrics.
+  // metric needs CONFIGURE_METRICS. Roles receive those capabilities through the
+  // central permission matrix, so this stays role-agnostic.
   for (const permission of deriveRequiredPermissions(classified)) {
     if (!hasPermission(auth.permissions, permission)) {
       throw new Error(

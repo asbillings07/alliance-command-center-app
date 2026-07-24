@@ -56,7 +56,7 @@ Permissions are mapped from roles, not the reverse:
 ```typescript
 const ROLE_PERMISSIONS: Record<AllianceRole, Permission[]> = {
   VIEWER: ["view:alliance", "view:members", "view:notes"],
-  LEADER: [...VIEWER_PERMS, "manage:notes", "import:metrics"],
+  LEADER: [...VIEWER_PERMS, "manage:notes", "import:metrics", "configure:metrics"],
   ADMIN: [...LEADER_PERMS, "manage:members", "configure:metrics", ...],
   OWNER: [...ADMIN_PERMS, "manage:leadership", "manage:alliance"],
 };

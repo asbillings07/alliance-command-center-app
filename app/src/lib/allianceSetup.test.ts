@@ -230,7 +230,7 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMember.count.mockResolvedValue(0);
     mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
-    // Leader permissions: can only import metrics and manage notes
+    // Leader permissions: can configure metrics, create periods, import results, and manage notes
     const leaderPermissions = {
       canViewAlliance: true,
       canViewMembers: true,
@@ -239,8 +239,8 @@ describe("getAllianceSetupStatus", () => {
       canImportMetrics: true,
       canManageMembers: false,
       canImportMembers: false,
-      canConfigureMetrics: false,
-      canConfigurePeriods: false,
+      canConfigureMetrics: true,
+      canConfigurePeriods: true,
       canInviteCollaborators: false,
       canManageLeadership: false,
       canManageAlliance: false,
@@ -248,10 +248,9 @@ describe("getAllianceSetupStatus", () => {
 
     const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
 
-    // Leader should only see the "data" task (Import Evaluation Results)
-    expect(status.tasks).toHaveLength(1);
-    expect(status.tasks[0].id).toBe("data");
-    expect(status.totalCount).toBe(1);
+    // Leader sees the setup tasks they can act on, plus evaluation result import.
+    expect(status.tasks.map((task) => task.id)).toEqual(["metrics", "period", "data"]);
+    expect(status.totalCount).toBe(3);
     
     // But isComplete reflects the alliance-wide status (all required tasks incomplete)
     expect(status.isComplete).toBe(false);
@@ -314,7 +313,7 @@ describe("getAllianceSetupStatus", () => {
   });
 
   it("recommends only tasks the user can act on (permission-filtered)", async () => {
-    // Required tasks incomplete, but a leader can only act on the data task.
+    // Required tasks incomplete; a leader can act on metrics, periods, and data.
     mockPrisma.metric.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.count.mockResolvedValue(0);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
@@ -330,8 +329,8 @@ describe("getAllianceSetupStatus", () => {
       canImportMetrics: true,
       canManageMembers: false,
       canImportMembers: false,
-      canConfigureMetrics: false,
-      canConfigurePeriods: false,
+      canConfigureMetrics: true,
+      canConfigurePeriods: true,
       canInviteCollaborators: false,
       canManageLeadership: false,
       canManageAlliance: false,
@@ -339,7 +338,7 @@ describe("getAllianceSetupStatus", () => {
 
     const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
 
-    expect(status.recommendedTask?.id).toBe("data");
+    expect(status.recommendedTask?.id).toBe("metrics");
   });
 
   it("returns null recommendation when the user has no applicable tasks", async () => {

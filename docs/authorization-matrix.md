@@ -35,7 +35,7 @@ Implementation: `app/src/lib/auth/permissions.ts`
 | **Import evaluation results** | ✓ | ✓ | ✓ | ✗ | Import evaluation metric data |
 | **Manage members** | ✓ | ✓ | ✗ | ✗ | Add/archive/restore members |
 | **Import roster** | ✓ | ✓ | ✗ | ✗ | Bulk roster import |
-| **Configure metrics** | ✓ | ✓ | ✗ | ✗ | Create/edit metric definitions |
+| **Configure metrics** | ✓ | ✓ | ✓ | ✗ | Create/edit metric definitions |
 | **Configure periods** | ✓ | ✓ | ✓ | ✗ | Create/manage evaluation periods |
 | **Invite collaborators** | ✓ | ✓ | ✗ | ✗ | Send alliance invitations |
 | **Manage leadership** | ✓ | ✗ | ✗ | ✗ | Change user roles |
@@ -60,7 +60,7 @@ Setup tasks are **alliance-scoped** (not user-scoped) and can be completed by an
 
 | Setup Task | Required | Permission | Min Role |
 |------------|----------|------------|----------|
-| Configure Metrics | ✓ | `canConfigureMetrics` | ADMIN |
+| Configure Metrics | ✓ | `canConfigureMetrics` | LEADER |
 | Create Evaluation Period | ✓ | `canConfigurePeriods` | LEADER |
 | Invite Leadership Team | ✓ | `canInviteCollaborators` | ADMIN |
 | Import Roster | ✗ | `canImportMembers` | ADMIN |
@@ -68,7 +68,7 @@ Setup tasks are **alliance-scoped** (not user-scoped) and can be completed by an
 
 **Setup completion is based on task completion state, not user identity.**
 
-A LEADER can complete "Create Evaluation Period" even if they didn't create the alliance. An ADMIN invited by the founding operator can complete metrics configuration and member import.
+A LEADER can complete metric configuration, period creation, and evaluation-result import even if they did not create the alliance. An ADMIN invited by the founding operator can additionally manage member import.
 
 ---
 

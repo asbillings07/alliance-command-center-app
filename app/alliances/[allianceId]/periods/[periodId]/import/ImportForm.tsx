@@ -238,6 +238,9 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           return { columnIndex: col.index, columnName: col.name, target: { kind: "attach", metricId: inLibrary.metricId } };
         }
       }
+      if (canCreateMetrics) {
+        return { columnIndex: col.index, columnName: col.name, target: { kind: "create", name: col.name } };
+      }
       return { columnIndex: col.index, columnName: col.name, target: { kind: "skip" } };
     });
 
@@ -614,7 +617,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           <div className="p-4 rounded-md bg-red-100 border-2 border-red-400 text-red-900">
             <p className="font-semibold text-red-900">Invalid Numeric Values Detected in Mapped Columns</p>
             <p className="text-sm text-red-800 mt-1">
-              Please fix or remove rows with invalid numeric values in mapped columns before continuing. Whole numbers in plain (450000000), period-grouped (450.000.000), or comma-grouped (&quot;450,000,000&quot;) formats are accepted.
+              Please fix or remove the listed cells before continuing. Whole numbers in plain (450000000), period-grouped (450.000.000), or comma-grouped (&quot;450,000,000&quot;) formats are accepted.
             </p>
           </div>
         )}
@@ -784,7 +787,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
               <p className="text-sm font-semibold text-text-primary mb-1">Choose which metric each column should import as</p>
               <p className="text-sm text-text-secondary mb-3">
                 Columns are matched to metrics by name where possible.
-                {canCreateMetrics ? " Unrecognized columns default to \u201cDo not import\u201d - choose Create to add a new metric." : " Set any column you don\u2019t need to \u201cDo not import.\u201d"}
+                {canCreateMetrics ? " Unrecognized columns default to Create. Set any column you do not need to \u201cDo not import.\u201d" : " Set any column you don\u2019t need to \u201cDo not import.\u201d"}
               </p>
               <div className="flex flex-col gap-3">
                 {columnMappings.map((mapping) => {
@@ -949,7 +952,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           <div className="p-4 rounded-md bg-red-100 border-2 border-red-400 text-red-900">
             <p className="font-semibold text-red-900">Invalid Numeric Values Detected in Mapped Columns</p>
             <p className="text-sm text-red-800 mt-1">
-              Please fix or remove rows with invalid numeric values in mapped columns before continuing. Whole numbers in plain (450000000), period-grouped (450.000.000), or comma-grouped (&quot;450,000,000&quot;) formats are accepted.
+              Please fix or remove the listed cells before continuing. Whole numbers in plain (450000000), period-grouped (450.000.000), or comma-grouped (&quot;450,000,000&quot;) formats are accepted.
             </p>
           </div>
         )}

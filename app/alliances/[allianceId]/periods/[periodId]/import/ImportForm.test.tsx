@@ -191,6 +191,40 @@ describe("ImportForm [component]", () => {
         expect(container.textContent).toContain("View Evaluation Period");
     });
 
+    it("defaults brand-new numeric columns to create when the user can configure metrics", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const csvContent = `Player,Donations\nDragon,1500\nPhoenix,2300`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Unrecognized columns default to Create");
+
+        const metricSelect = container.querySelector<HTMLSelectElement>(
+            'select[aria-label="Metric for Donations"]'
+        );
+        expect(metricSelect).not.toBeNull();
+        expect(metricSelect?.value).toBe("create");
+        expect(container.textContent).toContain("Donations");
+        expect(container.textContent).toContain("New metric");
+    });
+
     it("previews localized thousands separators correctly (450.000.000 -> 450,000,000)", async () => {
         await act(async () => {
             root.render(
@@ -259,6 +293,8 @@ describe("ImportForm [component]", () => {
         });
 
         expect(container.textContent).toContain("Invalid Numeric Values Detected in Mapped Columns");
+        expect(container.textContent).toContain('Kill Points: Cell B3');
+        expect(container.textContent).toContain('Invalid or missing value "450.5" for "Phoenix"');
 
         const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
             b.textContent?.includes("Import All")
