@@ -285,14 +285,22 @@ const createBetaTester = async () => {
   const token = "00000000-0000-0000-0000-000000000001"; // Fixed token for testing
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
-  await prisma.betaInvitation.create({
-    data: {
+  await prisma.betaInvitation.upsert({
+    where: { token },
+    update: {
+      email: TEST_USERS.betaTester,
+      code,
+      expiresAt,
+      acceptedAt: new Date(),
+      acceptedByUserId: user.id,
+    },
+    create: {
       email: TEST_USERS.betaTester,
       code,
       token,
       issuedAt: new Date(),
       expiresAt,
-      acceptedAt: new Date(), // Already accepted
+      acceptedAt: new Date(),
       acceptedByUserId: user.id,
     },
   });
