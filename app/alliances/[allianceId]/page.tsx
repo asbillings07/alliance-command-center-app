@@ -99,7 +99,7 @@ export default async function AlliancePage({ params }: Params) {
                       Record Now
                     </Button>
                     <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`} variant="secondary" size="sm">
-                      Import Results
+                      Import Evaluation Results
                     </Button>
                   </div>
                 </Card.Body>

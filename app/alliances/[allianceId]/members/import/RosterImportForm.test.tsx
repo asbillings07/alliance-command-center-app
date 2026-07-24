@@ -110,15 +110,15 @@ describe("RosterImportForm [component]", () => {
         });
 
         // Scope notice check
-        expect(container.textContent).toContain("Roster Import Scope");
-        expect(container.textContent).toContain("This page imports roster details: Name, Total Hero Power (THP), and Role. It does not import evaluation results.");
+        expect(container.textContent).toContain("Member Import Scope");
+        expect(container.textContent).toContain("This page imports member details: Name, Total Hero Power (THP), and Role. It does not import evaluation results.");
 
         // Accessible file input check
         const fileInput = container.querySelector<HTMLInputElement>("#roster-file");
         expect(fileInput).not.toBeNull();
         expect(fileInput?.className).toContain("sr-only");
         expect(fileInput?.className).not.toContain("hidden");
-        expect(fileInput?.getAttribute("aria-label")).toContain("Import roster from CSV spreadsheet (.csv)");
+        expect(fileInput?.getAttribute("aria-label")).toContain("Import member spreadsheet (.csv, .xlsx, .xls)");
 
         // File upload
         await act(async () => {
@@ -136,8 +136,8 @@ describe("RosterImportForm [component]", () => {
         });
 
         // Check completion copy
-        expect(container.textContent).toContain("Roster Import Complete");
-        expect(container.textContent).toContain("Import Another Roster");
+        expect(container.textContent).toContain("Members Imported");
+        expect(container.textContent).toContain("Import More Members");
     });
 
     it("parses CSV, highlights duplicate rows, deselects duplicates by default, and sends submitted payload with selected: false for duplicates", async () => {
@@ -378,7 +378,7 @@ New Candidate 3`;
             await new Promise((r) => setTimeout(r, 50));
         });
 
-        expect(container.textContent).toContain("Roster Capacity Exceeded");
+        expect(container.textContent).toContain("Member Capacity Exceeded");
         expect(container.textContent).toContain("Your alliance has 99 active members, so you can add 1 more unique member");
         expect(container.textContent).toContain("Deselect 2 members to continue");
 

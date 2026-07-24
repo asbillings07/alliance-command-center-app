@@ -78,7 +78,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                     size="sm"
                     href={`/alliances/${allianceId}/members/import`}
                 >
-                    Import Roster
+                    Import Members
                 </Button>
             )}
             {permissions.canManageMembers && (
@@ -122,8 +122,8 @@ export default async function MembersPage({ params, searchParams }: Params) {
                     description={
                         filter === "active"
                             ? permissions.canManageMembers
-                                ? "Import your roster or add members manually to get started."
-                                : "The alliance roster hasn't been set up yet. An admin will import members soon."
+                                ? "Import members or add them manually to get started."
+                                : "The alliance member list hasn't been set up yet. An admin will import members soon."
                             : filter === "archived"
                             ? "Members that have been archived will appear here."
                             : undefined

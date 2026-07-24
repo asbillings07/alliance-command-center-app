@@ -15,13 +15,13 @@ export const IMPORT_MEMBERS_TOUR_ID = "import-members";
 export const importMembersTour: TourDefinition = {
   id: IMPORT_MEMBERS_TOUR_ID,
   completionMessage:
-    "Tour complete. You can upload your roster below to add members.",
+    "Tour complete. You can upload your member spreadsheet below to add members.",
   steps: [
     {
       element: '[data-tour="roster-upload"]',
-      title: "Upload your roster",
+      title: "Upload member spreadsheet",
       description:
-        "Export your alliance roster to a CSV, then drop it here. We'll read it right in your browser—nothing is saved yet.",
+        "Export your member list to a CSV or Excel file, then drop it here. We'll read it right in your browser—nothing is saved yet.",
     },
     {
       element: '[data-tour="roster-columns"]',

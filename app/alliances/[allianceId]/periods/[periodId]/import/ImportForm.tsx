@@ -823,7 +823,8 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       <div data-tour="metric-upload">
         <SpreadsheetUpload
           id="csv-upload"
-          ariaLabel="Upload CSV spreadsheet (.csv)"
+          ariaLabel="Upload evaluation results spreadsheet (.csv, .xlsx, .xls)"
+          buttonLabel="Select Evaluation Results File"
           onFileSelected={handleFileSelected}
           isLoading={isLoadingFile}
         />

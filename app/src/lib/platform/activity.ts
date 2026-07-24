@@ -176,7 +176,7 @@ export async function getRecentActivity(
         type: "members_imported",
         allianceId: data.alliance.id,
         allianceName: data.alliance.name,
-        description: `Imported roster (${data.count} member${data.count === 1 ? "" : "s"})`,
+        description: `Imported members (${data.count} member${data.count === 1 ? "" : "s"})`,
         timestamp: data.timestamp,
         href: `/platform/support/alliance/${data.alliance.id}`,
       });

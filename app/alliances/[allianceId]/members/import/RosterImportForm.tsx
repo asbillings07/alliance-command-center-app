@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { analyzeRows, normalizeName, parseCSVLine } from "@/app/src/lib/memberMatcher";
+import { analyzeRows, normalizeName } from "@/app/src/lib/memberMatcher";
 import type { ColumnInfo } from "@/app/src/lib/memberMatcher";
 import { parseStrictInteger } from "@/app/src/lib/numberParser";
 import { TourButton } from "@/app/src/components/client";
@@ -428,21 +428,22 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
         />
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <div className="flex items-start justify-between gap-4 mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Upload Your Roster</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Upload Member Spreadsheet</h2>
             <TourButton tour={importMembersTour} />
           </div>
 
           <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900 mb-4">
-            <p className="font-medium">Roster Import Scope</p>
+            <p className="font-medium">Member Import Scope</p>
             <p className="mt-0.5 text-blue-800">
-              This page imports roster details: Name, Total Hero Power (THP), and Role. It does not import evaluation results. Existing active members are identified and skipped.
+              This page imports member details: Name, Total Hero Power (THP), and Role. It does not import evaluation results. Existing active members are identified and skipped.
             </p>
           </div>
 
           <div data-tour="roster-upload">
             <SpreadsheetUpload
               id="roster-file"
-              ariaLabel="Import roster from CSV spreadsheet (.csv)"
+              ariaLabel="Import member spreadsheet (.csv, .xlsx, .xls)"
+              buttonLabel="Select Member Spreadsheet"
               onFileSelected={handleFileSelected}
               isLoading={isLoadingFile}
             />
@@ -559,7 +560,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
         {/* Capacity warning banner */}
         {isOverCapacity && (
           <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 flex flex-col gap-1">
-            <p className="font-semibold text-amber-900">Roster Capacity Exceeded</p>
+            <p className="font-semibold text-amber-900">Member Capacity Exceeded</p>
             <p className="text-sm text-amber-800">
               Your alliance has {activeRosterCount} active member{activeRosterCount === 1 ? "" : "s"}, so you can add {capacityRemaining} more unique member{capacityRemaining === 1 ? "" : "s"}. You currently have {uniqueSelectedCount} unique member{uniqueSelectedCount === 1 ? "" : "s"} selected ({selectedNewMembers.length} new, {selectedRestoreMembers.length} restored). Deselect {overflowCount} member{overflowCount === 1 ? "" : "s"} to continue.
             </p>
@@ -604,7 +605,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
           </div>
           <div className="flex-1 bg-blue-50 border border-blue-200 rounded-lg p-4">
             <p className="text-2xl font-bold text-blue-900">{capacityRemaining}</p>
-            <p className="text-sm text-blue-700">Available roster capacity ({activeRosterCount}/100 active)</p>
+            <p className="text-sm text-blue-700">Available member capacity ({activeRosterCount}/100 active)</p>
           </div>
           <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg p-4">
             <p className="text-2xl font-bold text-gray-700">
@@ -616,7 +617,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
 
         {allExistingActive ? (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
-            <p className="text-blue-900 font-medium">Your roster is already up to date.</p>
+            <p className="text-blue-900 font-medium">Your member list is already up to date.</p>
             <p className="text-sm text-blue-700 mt-1">All members in this file already exist as active members in your alliance.</p>
           </div>
         ) : (
@@ -843,7 +844,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
               d="M5 13l4 4L19 7"
             />
           </svg>
-          <h2 className="text-xl font-bold text-green-900">Roster Import Complete</h2>
+          <h2 className="text-xl font-bold text-green-900">Members Imported</h2>
         </div>
 
         <div className="flex gap-4">
@@ -899,7 +900,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
             onClick={handleReset}
             className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 cursor-pointer"
           >
-            Import Another Roster
+            Import More Members
           </button>
           <a
             href={`/alliances/${allianceId}/members`}

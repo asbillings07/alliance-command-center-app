@@ -292,7 +292,7 @@ export async function getAllianceTimeline(
       completed: !!firstPeriod,
     },
     {
-      event: "Imported Roster",
+      event: "Imported Members",
       timestamp: firstMember,
       completed: !!firstMember,
     },

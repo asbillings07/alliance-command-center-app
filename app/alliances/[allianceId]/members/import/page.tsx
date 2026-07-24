@@ -39,10 +39,10 @@ export default async function MemberImportPage({ params }: Params) {
             breadcrumb={[
                 { label: "Dashboard", href: `/alliances/${allianceId}` },
                 { label: "Members", href: `/alliances/${allianceId}/members` },
-                { label: "Import Roster" },
+                { label: "Import Members" },
             ]}
-            title="Import Roster"
-            description="Upload a spreadsheet (.xlsx, .xls, .csv) to create or restore members in your alliance roster. Existing active members are identified and skipped."
+            title="Member Import"
+            description="Upload a spreadsheet (.xlsx, .xls, .csv) to create or restore members in your alliance. Existing active members are identified and skipped."
             action={<BackToSetupLink allianceId={allianceId} />}
         >
             <TourAutoStart />

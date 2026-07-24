@@ -5,6 +5,7 @@ import { useState, useRef, ReactNode } from "react";
 type SpreadsheetUploadProps = {
   id?: string;
   ariaLabel?: string;
+  buttonLabel?: string;
   onFileSelected: (file: File) => void;
   isLoading?: boolean;
   disabled?: boolean;
@@ -14,6 +15,7 @@ type SpreadsheetUploadProps = {
 export function SpreadsheetUpload({
   id,
   ariaLabel,
+  buttonLabel,
   onFileSelected,
   isLoading = false,
   disabled = false,
@@ -94,7 +96,7 @@ export function SpreadsheetUpload({
         ) : children ? (
           children
         ) : (
-          <div className="flex flex-col items-center justify-center space-y-2 py-4">
+          <div className="flex flex-col items-center justify-center space-y-3 py-4">
             <svg
               className="w-10 h-10 text-muted-foreground mb-1"
               fill="none"
@@ -114,6 +116,19 @@ export function SpreadsheetUpload({
             <p className="text-xs text-muted-foreground">
               Supports Excel (.xlsx, .xls), CSV (.csv), or Apple Numbers (.numbers)
             </p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!disabled && !isLoading && fileInputRef.current) {
+                  fileInputRef.current.click();
+                }
+              }}
+              disabled={disabled || isLoading}
+              className="mt-2 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 cursor-pointer"
+            >
+              {buttonLabel || "Select Spreadsheet File"}
+            </button>
           </div>
         )}
       </div>

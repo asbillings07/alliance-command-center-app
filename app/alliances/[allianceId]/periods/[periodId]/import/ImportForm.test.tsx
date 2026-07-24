@@ -119,7 +119,7 @@ describe("ImportForm [component]", () => {
         expect(fileInput).not.toBeNull();
         expect(fileInput?.className).toContain("sr-only");
         expect(fileInput?.className).not.toContain("hidden");
-        expect(fileInput?.getAttribute("aria-label")).toContain("Upload CSV spreadsheet (.csv)");
+        expect(fileInput?.getAttribute("aria-label")).toContain("Upload evaluation results spreadsheet (.csv, .xlsx, .xls)");
     });
 
     it("completes import flow with outcome-based success terminology and destination period context", async () => {
