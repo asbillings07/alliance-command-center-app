@@ -398,9 +398,13 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
         expect(entry?.value).toBe(450000000);
     });
 
-    it("integration: performs zero database writes when raw submitted evaluation value is invalid (450.5) or out-of-range (2147483648)", async () => {
+    it("integration: performs zero database writes (metrics, period attachments, entries) when raw submitted evaluation value is invalid (450.5) or out-of-range (2147483648)", async () => {
         const { alliance, member, periodA, attachedMetric } = await makeTestSetup();
 
+        const initialMetricCount = await prisma.metric.count({ where: { allianceId: alliance.id } });
+        const initialAttachmentCount = await prisma.metricPeriodMetric.count({ where: { periodId: periodA.id } });
+
+        // Case 1: Invalid value for existing attached metric
         await expect(
             importMemberMetrics({
                 periodId: periodA.id,
@@ -414,6 +418,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             })
         ).rejects.toThrow(/Invalid integer value "450.5"/i);
 
+        // Case 2: Out of 32-bit signed integer range value for existing attached metric
         await expect(
             importMemberMetrics({
                 periodId: periodA.id,
@@ -427,9 +432,39 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             })
         ).rejects.toThrow(/out of 32-bit signed integer range/i);
 
+        // Case 3: Invalid value for new metric creation during import
+        vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
+            user: { id: "integration-test-user", email: "test@local" },
+            permissions: {
+                canImportMetrics: true,
+                canConfigurePeriods: true,
+                canConfigureMetrics: true,
+            } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["permissions"],
+            membership: { role: "ADMIN" } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["membership"],
+        });
+
+        await expect(
+            importMemberMetrics({
+                periodId: periodA.id,
+                allianceId: alliance.id,
+                mappings: [
+                    {
+                        target: { kind: "create", name: "Never Created Metric" },
+                        entries: [{ memberId: member.id, rawValue: "invalid_num" }],
+                    },
+                ],
+            })
+        ).rejects.toThrow(/Invalid integer value "invalid_num"/i);
+
+        // Assert ZERO writes for metrics, period-metric attachments, and metric entries
+        const finalMetricCount = await prisma.metric.count({ where: { allianceId: alliance.id } });
+        const finalAttachmentCount = await prisma.metricPeriodMetric.count({ where: { periodId: periodA.id } });
         const entriesCount = await prisma.memberMetricEntry.count({
             where: { periodId: periodA.id },
         });
+
+        expect(finalMetricCount).toBe(initialMetricCount);
+        expect(finalAttachmentCount).toBe(initialAttachmentCount);
         expect(entriesCount).toBe(0);
     });
 });

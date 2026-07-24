@@ -110,10 +110,8 @@ export async function importMembers(
 
     // Validate selected THP values with parseStrictInteger and THP domain rule (non-negative)
     for (const entry of validatedEntries) {
-        if (entry.selected !== false && entry.thp !== undefined && entry.thp !== null && String(entry.thp).trim() !== "") {
-            const rawThpStr = String(entry.thp);
-            const parsed = parseStrictInteger(rawThpStr);
-            if (!parsed.success) {
+        if (entry.selected !== false && entry.thp !== undefined && entry.thp !== null) {
+            if (typeof entry.thp !== "string") {
                 return {
                     created: 0,
                     restored: 0,
@@ -121,21 +119,36 @@ export async function importMembers(
                     skippedDuplicates: 0,
                     skippedEmptyNames,
                     skippedUnselected: 0,
-                    errors: [`Invalid THP value "${rawThpStr}" for player "${entry.playerName}": ${parsed.error}`],
+                    errors: [`Invalid THP value for player "${entry.playerName}": THP must be provided as a raw string`],
                 };
             }
-            if (parsed.value < 0) {
-                return {
-                    created: 0,
-                    restored: 0,
-                    skippedExisting: 0,
-                    skippedDuplicates: 0,
-                    skippedEmptyNames,
-                    skippedUnselected: 0,
-                    errors: [`Total Hero Power cannot be negative for player "${entry.playerName}" (${parsed.value})`],
-                };
+            const rawThpStr = entry.thp.trim();
+            if (rawThpStr !== "") {
+                const parsed = parseStrictInteger(rawThpStr);
+                if (!parsed.success) {
+                    return {
+                        created: 0,
+                        restored: 0,
+                        skippedExisting: 0,
+                        skippedDuplicates: 0,
+                        skippedEmptyNames,
+                        skippedUnselected: 0,
+                        errors: [`Invalid THP value "${rawThpStr}" for player "${entry.playerName}": ${parsed.error}`],
+                    };
+                }
+                if (parsed.value < 0) {
+                    return {
+                        created: 0,
+                        restored: 0,
+                        skippedExisting: 0,
+                        skippedDuplicates: 0,
+                        skippedEmptyNames,
+                        skippedUnselected: 0,
+                        errors: [`Total Hero Power cannot be negative for player "${entry.playerName}" (${parsed.value})`],
+                    };
+                }
+                entry.parsedThp = parsed.value;
             }
-            entry.parsedThp = parsed.value;
         }
     }
 
