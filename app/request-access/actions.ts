@@ -2,6 +2,7 @@
 
 import { createAccessRequest } from "@/app/src/lib/accessRequest";
 import { emailService } from "@/app/src/lib/email";
+import { normalizeEmail } from "@/app/src/lib/email/normalize";
 
 export type RequestAccessState = {
   status: "idle" | "success" | "error";
@@ -25,7 +26,8 @@ export async function requestAccess(
   formData: FormData
 ): Promise<RequestAccessState> {
   const name = formData.get("name")?.toString().trim();
-  const email = formData.get("email")?.toString().trim().toLowerCase();
+  const rawEmail = formData.get("email")?.toString();
+  const email = rawEmail ? normalizeEmail(rawEmail.trim()) : undefined;
   const allianceName = formData.get("allianceName")?.toString();
   const message = formData.get("message")?.toString();
 

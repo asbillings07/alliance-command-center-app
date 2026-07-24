@@ -10,6 +10,7 @@ import {
   verifyBootstrapSecret,
 } from "@/app/src/lib/platform";
 import { validatePassword } from "@/app/src/lib/account";
+import { normalizeEmail } from "@/app/src/lib/email/normalize";
 
 export type InitializeState = {
   error: string | null;
@@ -33,7 +34,8 @@ export async function initializePlatform(
   _prevState: InitializeState,
   formData: FormData
 ): Promise<InitializeState> {
-  const email = formData.get("email")?.toString().trim().toLowerCase();
+  const rawEmail = formData.get("email")?.toString();
+  const email = rawEmail ? normalizeEmail(rawEmail) : undefined;
   const password = formData.get("password")?.toString();
   const confirmPassword = formData.get("confirmPassword")?.toString();
   const displayName = formData.get("displayName")?.toString().trim();

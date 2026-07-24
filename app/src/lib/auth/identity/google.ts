@@ -1,4 +1,5 @@
 import { MissingGoogleSubjectError, UnverifiedEmailError } from "./errors";
+import { normalizeEmail } from "@/app/src/lib/email/normalize";
 
 /**
  * Google identity (authentication layer).
@@ -28,7 +29,7 @@ export function isGoogleAuthEnabled(): boolean {
 
 /**
  * Assert that the Google profile represents a verified email and return the
- * normalized (lowercased, trimmed) email.
+ * normalized (canonical) email.
  *
  * Throws {@link UnverifiedEmailError} when the email is missing or unverified.
  * This is the security boundary: only verified Google emails may proceed,
@@ -39,12 +40,12 @@ export function assertVerifiedGoogleEmail(profile: GoogleProfile): string {
     throw new UnverifiedEmailError();
   }
 
-  const email = profile.email?.toLowerCase().trim();
-  if (!email) {
+  const rawEmail = profile.email?.trim();
+  if (!rawEmail) {
     throw new UnverifiedEmailError("Google profile is missing an email");
   }
 
-  return email;
+  return normalizeEmail(rawEmail);
 }
 
 /**

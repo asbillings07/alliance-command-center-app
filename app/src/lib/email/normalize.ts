@@ -1,24 +1,35 @@
 /**
  * Email normalization for Alliance Command Center.
  *
- * Email is the canonical account identity (ADR-013), so a single normalization
- * function ensures consistency across beta invitations, access requests, user
- * accounts, and participant resolution.
+ * ADR-013 (as amended by #144): Google `sub` is the immutable authentication
+ * anchor; email is the canonical normalized account address and a first-link/
+ * participant-association key, but it is mutable profile data after linking.
  *
- * Normalization: lowercase + trim
+ * A single normalization function ensures consistency across:
+ * - User account creation and credential sign-in
+ * - Beta invitations and access requests
+ * - Google OAuth first-link email matching
+ * - Participant identity resolution (#174)
+ * - Platform initialization and preview email allowlists
+ *
+ * **Normalization policy:** lowercase + trim
  * - No Gmail-specific rules (no dot/plus-address collapsing)
  * - Simple, predictable, and reversible from displayed email
+ * - Preserves all address features (dots, plus-addressing, subdomains)
  *
- * Usage: Import this shared function instead of inlining email.toLowerCase().trim()
+ * Usage: Import this shared function instead of inlining `email.toLowerCase().trim()`
  */
 
 /**
  * Canonical stored form of an email: lowercased and trimmed.
  *
  * This is the normalization used for:
- * - BetaInvitation.normalizedEmail
- * - AccessRequest.normalizedEmail
- * - User.email (always stored normalized)
+ * - User.email (always stored normalized, mutable after account creation)
+ * - BetaInvitation.email and BetaInvitation.normalizedEmail
+ * - AccessRequest.email and AccessRequest.normalizedEmail
+ * - Credential sign-in email lookup
+ * - Google OAuth email matching for first-link
+ * - Platform admin email authorization
  * - Participant identity resolution (#174)
  *
  * Does NOT apply Gmail-specific transformations like:
@@ -26,7 +37,7 @@
  * - Removing +suffix addressing
  *
  * These rules would break non-Gmail addresses and make normalization
- * non-reversible from the displayed email.
+ * non-reversible from the displayed email, violating user expectations.
  */
 export function normalizeEmail(raw: string): string {
   return raw.toLowerCase().trim();

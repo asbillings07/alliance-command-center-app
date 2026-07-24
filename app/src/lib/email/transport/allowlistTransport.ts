@@ -1,4 +1,5 @@
 import type { DeliverEmailRequest, EmailResult, EmailTransport } from "../types";
+import { normalizeEmail } from "../normalize";
 
 /**
  * Preview safety wrapper (ADR-016).
@@ -21,12 +22,12 @@ export class AllowlistTransport implements EmailTransport {
     private readonly inner: EmailTransport,
     allow: string[]
   ) {
-    this.allow = new Set(allow.map((a) => a.trim().toLowerCase()).filter(Boolean));
+    this.allow = new Set(allow.map((a) => normalizeEmail(a)).filter(Boolean));
   }
 
   async deliver(request: DeliverEmailRequest): Promise<EmailResult> {
     const recipients = extractRecipients(request);
-    const blocked = recipients.filter((r) => !this.allow.has(r.toLowerCase()));
+    const blocked = recipients.filter((r) => !this.allow.has(normalizeEmail(r)));
 
     if (recipients.length === 0 || blocked.length > 0) {
       // Log metadata only — never the body/token — mirroring LoggingTransport.
