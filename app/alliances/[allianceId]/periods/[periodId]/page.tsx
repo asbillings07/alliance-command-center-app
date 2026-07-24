@@ -95,12 +95,12 @@ export default async function PeriodPage({ params }: Params) {
                     <Card.Header>Recorded Results Coverage</Card.Header>
                     <Card.Body>
                         <div className="flex flex-col gap-4">
-                            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+                            <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg flex items-center justify-between">
                                 <div>
-                                    <p className="text-lg font-bold text-blue-900">
+                                    <p className="text-lg font-bold text-text-primary">
                                         {resultsSummary.participatingMemberCount} participating {resultsSummary.participatingMemberCount === 1 ? "member" : "members"}
                                     </p>
-                                    <p className="text-sm text-blue-800 mt-0.5">
+                                    <p className="text-sm text-text-secondary mt-0.5">
                                         {resultsSummary.participatingActiveMemberCount} of {resultsSummary.currentActiveMemberCount} current active members have recorded results
                                     </p>
                                 </div>
@@ -116,14 +116,14 @@ export default async function PeriodPage({ params }: Params) {
                             </div>
 
                             {resultsSummary.metrics.length > 0 && (
-                                <ul className="divide-y divide-gray-200 border rounded-lg overflow-hidden">
+                                <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden bg-surface-secondary">
                                     {resultsSummary.metrics.map((m) => (
                                         <li key={m.metricId} className="flex items-center justify-between p-3 text-sm">
-                                            <span className="font-medium text-gray-900">{m.metricName}</span>
-                                            <span className="text-gray-700">
-                                                <strong>{m.activeMemberCount}</strong> / {resultsSummary.currentActiveMemberCount} active members
+                                            <span className="font-medium text-text-primary">{m.metricName}</span>
+                                            <span className="text-text-secondary">
+                                                <strong className="text-text-primary">{m.activeMemberCount}</strong> / {resultsSummary.currentActiveMemberCount} active members
                                                 {m.memberCount > m.activeMemberCount && (
-                                                    <span className="text-gray-500 text-xs ml-1.5">
+                                                    <span className="text-text-muted text-xs ml-1.5">
                                                         ({m.memberCount} total incl. archived)
                                                     </span>
                                                 )}

@@ -99,7 +99,7 @@ export default async function ImportPage({ params }: Params) {
         description={`Upload a CSV spreadsheet (.csv) to record metric evaluation results for ${period.name}.`}
         maxWidth="md"
       >
-        <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 mb-6 font-medium">
+        <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary mb-6 font-medium">
           Destination Period: {period.name}
         </div>
         {hasNoMetrics ? (

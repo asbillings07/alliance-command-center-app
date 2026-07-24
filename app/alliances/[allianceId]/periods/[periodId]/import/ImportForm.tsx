@@ -80,9 +80,9 @@ function isPlayerColumn(columnName: string): boolean {
 }
 
 const DISPOSITION_BADGE: Record<MetricDisposition, { label: string; className: string }> = {
-  existing: { label: "On period", className: "bg-gray-200 text-gray-700" },
-  attach: { label: "Add to period", className: "bg-blue-200 text-blue-800" },
-  create: { label: "New metric", className: "bg-purple-200 text-purple-800" },
+  existing: { label: "On period", className: "bg-surface border border-border text-text-secondary" },
+  attach: { label: "Add to period", className: "bg-primary/20 border border-primary/40 text-primary-light font-medium" },
+  create: { label: "New metric", className: "bg-primary/20 border border-primary/40 text-primary-light font-medium" },
 };
 
 function targetToToken(target: ColumnTarget): string {
@@ -457,28 +457,28 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
-        <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 font-medium text-center">
+        <div className="w-full p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium text-center">
           Destination Period: {periodName}
         </div>
 
-        <div className="w-full p-6 rounded-lg bg-green-50 border border-green-200 flex flex-col gap-4">
+        <div className="w-full p-6 rounded-lg bg-success/10 border border-success/30 flex flex-col gap-4">
           <div className="text-center">
-            <h3 className="text-lg font-bold text-green-900">Evaluation Results Imported</h3>
-            <p className="text-sm text-green-800 mt-1">
+            <h3 className="text-lg font-bold text-success">Evaluation Results Imported</h3>
+            <p className="text-sm text-text-secondary mt-1">
               Evaluation results have been recorded into destination period &apos;{periodName}&apos;.
             </p>
           </div>
 
-          <div className="bg-white border border-green-200 rounded-lg p-4">
-            <h4 className="text-xs font-semibold text-green-900 uppercase tracking-wider mb-2">Committed Values</h4>
-            <ul className="divide-y divide-gray-100 text-sm">
+          <div className="bg-surface border border-border rounded-lg p-4">
+            <h4 className="text-xs font-semibold text-text-primary uppercase tracking-wider mb-2">Committed Values</h4>
+            <ul className="divide-y divide-border text-sm">
               {importResult.perMetric.map((m) => (
-                <li key={m.metricId} className="flex items-center justify-between py-2 text-gray-900">
+                <li key={m.metricId} className="flex items-center justify-between py-2 text-text-primary">
                   <span>{m.name}</span>
                   <span className="font-mono font-semibold">{m.count} values</span>
                 </li>
               ))}
-              <li className="flex items-center justify-between pt-2.5 font-bold text-green-900 border-t-2 border-green-200">
+              <li className="flex items-center justify-between pt-2.5 font-bold text-success border-t border-border">
                 <span>Total Recorded Values</span>
                 <span className="font-mono text-base">{importResult.totalCount}</span>
               </li>
@@ -488,23 +488,23 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           {((importResult.created?.length ?? 0) > 0 ||
             (importResult.attached?.length ?? 0) > 0 ||
             (importResult.reused?.length ?? 0) > 0) && (
-            <div className="bg-white border border-green-200 rounded-lg p-4 text-sm text-gray-800 space-y-1">
-              <h4 className="text-xs font-semibold text-green-900 uppercase tracking-wider mb-2">Metric Configuration</h4>
+            <div className="bg-surface border border-border rounded-lg p-4 text-sm text-text-secondary space-y-1">
+              <h4 className="text-xs font-semibold text-text-primary uppercase tracking-wider mb-2">Metric Configuration</h4>
               {(importResult.created?.length ?? 0) > 0 && (
                 <p>
-                  <strong className="text-purple-800 font-semibold">Created {importResult.created.length} new {importResult.created.length === 1 ? "metric" : "metrics"}:</strong>{" "}
+                  <strong className="text-primary-light font-semibold">Created {importResult.created.length} new {importResult.created.length === 1 ? "metric" : "metrics"}:</strong>{" "}
                   {importResult.created.map((m) => m.name).join(", ")}
                 </p>
               )}
               {(importResult.attached?.length ?? 0) > 0 && (
                 <p>
-                  <strong className="text-blue-800 font-semibold">Added {importResult.attached.length} to period:</strong>{" "}
+                  <strong className="text-primary-light font-semibold">Added {importResult.attached.length} to period:</strong>{" "}
                   {importResult.attached.map((m) => m.name).join(", ")}
                 </p>
               )}
               {(importResult.reused?.length ?? 0) > 0 && (
                 <p>
-                  <strong className="text-gray-700 font-semibold">Reused {importResult.reused.length} existing on period:</strong>{" "}
+                  <strong className="text-text-secondary font-semibold">Reused {importResult.reused.length} existing on period:</strong>{" "}
                   {importResult.reused.map((m) => m.name).join(", ")}
                 </p>
               )}
@@ -513,36 +513,36 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         </div>
 
         {(unmatchedMembersList.length > 0 || committedFormulaWarnings.length > 0) && (
-          <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg flex flex-col gap-3">
-            <h4 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">Not Imported / Excluded Input</h4>
+          <div className="w-full p-4 bg-surface-secondary border border-border rounded-lg flex flex-col gap-3">
+            <h4 className="text-xs font-semibold text-text-primary uppercase tracking-wider">Not Imported / Excluded Input</h4>
             {unmatchedMembersList.length > 0 && (
-              <p className="text-sm text-slate-700">
+              <p className="text-sm text-text-secondary">
                 <strong>{unmatchedMembersList.length} unmatched player {unmatchedMembersList.length === 1 ? "name was" : "names were"} skipped</strong> (names not found in member list). To import results for these members, first add them via <strong>Import Members</strong>.
               </p>
             )}
             {committedFormulaWarnings.length > 0 && (
-              <p className="text-sm text-slate-700">
+              <p className="text-sm text-text-secondary">
                 <strong>{committedFormulaWarnings.length} formula {committedFormulaWarnings.length === 1 ? "cell used" : "cells used"} pre-calculated cached values</strong> from spreadsheet for committed entries.
               </p>
             )}
 
-            <details className="mt-1 bg-white border border-slate-200 rounded-lg p-3 text-sm text-slate-700">
-              <summary className="font-semibold text-slate-800 hover:text-slate-900 cursor-pointer select-none">
+            <details className="mt-1 bg-surface border border-border rounded-lg p-3 text-sm text-text-secondary">
+              <summary className="font-semibold text-text-primary hover:text-text-primary cursor-pointer select-none">
                 Review Warnings &amp; Unmatched Details ({unmatchedMembersList.length + committedFormulaWarnings.length})
               </summary>
-              <div className="mt-3 space-y-3 pt-3 border-t border-slate-200">
+              <div className="mt-3 space-y-3 pt-3 border-t border-border">
                 {unmatchedMembersList.length > 0 && (
                   <div>
-                    <h5 className="font-semibold text-slate-800 text-xs uppercase tracking-wider mb-1">
+                    <h5 className="font-semibold text-text-primary text-xs uppercase tracking-wider mb-1">
                       Unmatched Player Names ({unmatchedMembersList.length})
                     </h5>
-                    <p className="text-xs text-slate-600 mb-2">
+                    <p className="text-xs text-text-muted mb-2">
                       Results for these player names were excluded because they do not exist in your member list.
                     </p>
-                    <ul className="list-disc list-inside text-xs text-slate-700 space-y-0.5 max-h-36 overflow-y-auto font-mono">
+                    <ul className="list-disc list-inside text-xs text-text-secondary space-y-0.5 max-h-36 overflow-y-auto font-mono">
                       {unmatchedMembersList.map((item) => (
                         <li key={item.rawName}>
-                          <strong className="text-slate-900">{item.rawName}</strong> (Row{item.rows.length === 1 ? "" : "s"} {item.rows.join(", ")})
+                          <strong className="text-text-primary">{item.rawName}</strong> (Row{item.rows.length === 1 ? "" : "s"} {item.rows.join(", ")})
                         </li>
                       ))}
                     </ul>
@@ -551,10 +551,10 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
                 {committedFormulaWarnings.length > 0 && (
                   <div>
-                    <h5 className="font-semibold text-slate-800 text-xs uppercase tracking-wider mb-1">
+                    <h5 className="font-semibold text-text-primary text-xs uppercase tracking-wider mb-1">
                       Formula Cached Values Used ({committedFormulaWarnings.length})
                     </h5>
-                    <ul className="list-disc list-inside text-xs text-slate-700 space-y-0.5 max-h-36 overflow-y-auto">
+                    <ul className="list-disc list-inside text-xs text-text-secondary space-y-0.5 max-h-36 overflow-y-auto">
                       {committedFormulaWarnings.map((issue, idx) => (
                         <li key={idx}>
                           Cell {issue.address ?? `R${issue.rowIndex}C${issue.columnIndex}`}: {issue.message}
@@ -600,12 +600,12 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
-        <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 font-medium">
+        <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium">
           Destination Period: {periodName}
         </div>
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Review &amp; Confirm Import</h3>
-          <button onClick={handleBack} className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
+          <h3 className="text-lg font-semibold text-text-primary">Review &amp; Confirm Import</h3>
+          <button onClick={handleBack} className="text-sm text-text-muted hover:text-text-primary cursor-pointer">
             ← Back
           </button>
         </div>
@@ -679,18 +679,18 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           />
         )}
 
-        <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 font-medium">
+        <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium">
           Destination Period: {periodName}
         </div>
-        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900">
-          <p className="font-medium">Evaluation Results Import Scope</p>
-          <p className="mt-0.5 text-blue-800">
+        <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary">
+          <p className="font-medium text-text-primary">Evaluation Results Import Scope</p>
+          <p className="mt-0.5 text-text-secondary">
             Importing results for destination period &apos;{periodName}&apos;. This matches existing roster members; unmatched names are skipped. During mapping, authorized users may attach an existing metric or create a new one. This workflow does not create roster members.
           </p>
         </div>
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Map Columns to Metrics</h3>
-          <button onClick={handleBack} className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
+          <h3 className="text-lg font-semibold text-text-primary">Map Columns to Metrics</h3>
+          <button onClick={handleBack} className="text-sm text-text-muted hover:text-text-primary cursor-pointer">
             ← Start Over
           </button>
         </div>
@@ -780,9 +780,9 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         {/* Mapping table */}
         {autoDetectedPlayerColumn && numericColumns.length > 0 && !noSelectableMetrics && (
           <>
-            <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
-              <p className="text-sm font-semibold text-gray-900 mb-1">Choose which metric each column should import as</p>
-              <p className="text-sm text-gray-600 mb-3">
+            <div className="p-4 bg-surface-secondary rounded-md border border-border">
+              <p className="text-sm font-semibold text-text-primary mb-1">Choose which metric each column should import as</p>
+              <p className="text-sm text-text-secondary mb-3">
                 Columns are matched to metrics by name where possible.
                 {canCreateMetrics ? " Unrecognized columns default to \u201cDo not import\u201d - choose Create to add a new metric." : " Set any column you don\u2019t need to \u201cDo not import.\u201d"}
               </p>
@@ -796,15 +796,15 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                   );
                   return (
                     <div key={mapping.columnIndex} className="flex items-center gap-3">
-                      <span className="w-2/5 truncate font-medium text-gray-900" title={mapping.columnName}>
+                      <span className="w-2/5 truncate font-medium text-text-primary" title={mapping.columnName}>
                         {mapping.columnName}
                       </span>
-                      <span className="text-gray-400">→</span>
+                      <span className="text-text-muted">→</span>
                       <select
                         aria-label={`Metric for ${mapping.columnName}`}
                         value={targetToToken(mapping.target)}
                         onChange={(e) => setColumnTarget(mapping.columnIndex, e.target.value, mapping.columnName)}
-                        className="flex-1 rounded-md border-2 border-gray-300 p-2 text-base text-gray-900 bg-white focus:border-blue-500"
+                        className="flex-1 rounded-md border border-border p-2 text-base text-text-primary bg-surface focus:border-primary"
                       >
                         <option value="">Do not import</option>
                         {metrics.length > 0 && (
@@ -836,11 +836,11 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             </div>
 
             {mappedColumns.length > 0 && (
-              <div className="p-4 rounded-md bg-blue-50 border border-blue-300">
-                <p className="text-blue-900 font-medium mb-1">
+              <div className="p-4 rounded-md bg-primary/10 border border-primary/30 text-text-primary">
+                <p className="font-medium mb-1">
                   Ready to import {mappedColumns.length} {mappedColumns.length === 1 ? "metric" : "metrics"}:
                 </p>
-                <ul className="text-blue-900 text-sm list-disc list-inside">
+                <ul className="text-text-secondary text-sm list-disc list-inside">
                   <li>Player names from: <strong>{autoDetectedPlayerColumn.name}</strong></li>
                   {mappedColumns.map((m) => {
                     const disp = m.target.kind === "skip" ? "existing" : m.target.kind;
@@ -1001,13 +1001,13 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         isOpen={showNumbersGuide}
         onClose={() => setShowNumbersGuide(false)}
       />
-      <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 font-medium flex items-center justify-between">
+      <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium flex items-center justify-between">
         <span>Destination Period: {periodName}</span>
         <TourButton tour={smartImportTour} />
       </div>
-      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900">
-        <p className="font-medium">Evaluation Results Import Scope</p>
-        <p className="mt-0.5 text-blue-800">
+      <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary">
+        <p className="font-medium text-text-primary">Evaluation Results Import Scope</p>
+        <p className="mt-0.5 text-text-secondary">
           Importing results for destination period &apos;{periodName}&apos;. This matches existing roster members; unmatched names are skipped. During mapping, authorized users may attach an existing metric or create a new one. This workflow does not create roster members.
         </p>
       </div>
@@ -1037,32 +1037,32 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">{error}</div>
       )}
 
-      <div data-tour="metric-requirements" className="p-4 rounded-md bg-gray-50 border border-gray-200">
-        <p className="font-semibold text-gray-900 mb-3">Requirements:</p>
-        <ul className="space-y-2 text-sm text-gray-700">
+      <div data-tour="metric-requirements" className="p-4 rounded-md bg-surface-secondary border border-border">
+        <p className="font-semibold text-text-primary mb-3">Requirements:</p>
+        <ul className="space-y-2 text-sm text-text-secondary">
           <li className="flex items-start gap-2">
-            <span className="text-green-600 mt-0.5">✓</span>
+            <span className="text-success mt-0.5">✓</span>
             <span>A column named <strong>Player</strong>, <strong>Member</strong>, <strong>Name</strong>, or <strong>IGN</strong></span>
           </li>
           <li className="flex items-start gap-2">
-            <span className="text-green-600 mt-0.5">✓</span>
+            <span className="text-success mt-0.5">✓</span>
             <div>
               <span>One or more numeric columns - map each to a metric on the next step</span>
-              <p className="text-xs text-gray-500 mt-0.5">Accepted format examples: 450000000, 450.000.000, &quot;450,000,000&quot;</p>
+              <p className="text-xs text-text-muted mt-0.5">Accepted format examples: 450000000, 450.000.000, &quot;450,000,000&quot;</p>
             </div>
           </li>
         </ul>
       </div>
 
-      <div className="p-4 rounded-md bg-gray-50 border border-gray-200">
-        <p className="font-semibold text-gray-900 mb-3">Example Spreadsheet:</p>
-        <pre className="text-sm bg-white p-3 rounded border border-gray-300 text-gray-900">
+      <div className="p-4 rounded-md bg-surface-secondary border border-border">
+        <p className="font-semibold text-text-primary mb-3">Example Spreadsheet:</p>
+        <pre className="text-sm bg-surface p-3 rounded border border-border text-text-primary font-mono">
 {`Member Name,Kill Points,VS Score,Donations
 Dragon,1500,2300,800
 Phoenix,2300,2900,600
 ...`}
         </pre>
-        <p className="text-sm text-gray-600 mt-2">
+        <p className="text-sm text-text-secondary mt-2">
           Bring every metric in one file - you&apos;ll map each column to a metric and import them together.
         </p>
       </div>
@@ -1098,43 +1098,43 @@ function MetricPreviewSection({
   const badge = DISPOSITION_BADGE[preview.disposition];
 
   return (
-    <div className="border border-gray-200 rounded-lg p-4 flex flex-col gap-3">
+    <div className="border border-border bg-surface-secondary rounded-lg p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h4 className="font-semibold text-gray-900">{preview.displayName}</h4>
+          <h4 className="font-semibold text-text-primary">{preview.displayName}</h4>
           <span className={`px-2 py-0.5 rounded text-xs ${badge.className}`}>{badge.label}</span>
         </div>
-        <span className="text-sm text-gray-600">from <strong>{preview.columnName}</strong></span>
+        <span className="text-sm text-text-muted">from <strong>{preview.columnName}</strong></span>
       </div>
 
       <div className="grid grid-cols-3 gap-3 text-center">
-        <div className="p-3 rounded-md bg-gray-100 border border-gray-300">
-          <div className="text-xl font-bold text-gray-900">{summary.total}</div>
-          <div className="text-xs text-gray-700">Total Rows</div>
+        <div className="p-3 rounded-md bg-surface border border-border">
+          <div className="text-xl font-bold text-text-primary">{summary.total}</div>
+          <div className="text-xs text-text-secondary">Total Rows</div>
         </div>
-        <div className="p-3 rounded-md bg-green-100 border border-green-300">
-          <div className="text-xl font-bold text-green-900">{willImportCount}</div>
-          <div className="text-xs text-green-800">Will Import</div>
+        <div className="p-3 rounded-md bg-success/10 border border-success/30">
+          <div className="text-xl font-bold text-success">{willImportCount}</div>
+          <div className="text-xs text-text-secondary">Will Import</div>
         </div>
-        <div className="p-3 rounded-md bg-red-100 border border-red-300">
-          <div className="text-xl font-bold text-red-900">{summary.unmatched}</div>
-          <div className="text-xs text-red-800">Unmatched</div>
+        <div className="p-3 rounded-md bg-danger/10 border border-danger/30">
+          <div className="text-xl font-bold text-danger">{summary.unmatched}</div>
+          <div className="text-xs text-text-secondary">Unmatched</div>
         </div>
       </div>
 
       {hasDuplicates && (
-        <div className="p-3 rounded-md bg-amber-100 border border-amber-300">
-          <p className="text-sm text-amber-800">
+        <div className="p-3 rounded-md bg-warning/10 border border-warning/30">
+          <p className="text-sm text-warning">
             {summary.duplicates} duplicate {summary.duplicates === 1 ? "entry" : "entries"} detected.
             Click &quot;Use This&quot; to choose which value to import for each member.
           </p>
         </div>
       )}
 
-      <div className="border rounded-md overflow-hidden">
+      <div className="border border-border rounded-md overflow-hidden bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-gray-100">
-            <tr className="text-gray-900 font-semibold">
+          <thead className="bg-surface-secondary border-b border-border">
+            <tr className="text-text-primary font-semibold">
               <th className="px-3 py-2 text-left">File Name</th>
               <th className="px-3 py-2 text-left">Matched To</th>
               <th className="px-3 py-2 text-right">Value</th>
@@ -1150,42 +1150,42 @@ function MetricPreviewSection({
                 <tr
                   key={i}
                   className={
-                    result.status === "invalid_value" ? "bg-red-100 text-red-900 font-semibold" :
-                    result.status === "unmatched" ? "bg-red-50 text-red-900" :
-                    !isSelected ? "bg-gray-100 text-gray-500" :
-                    "bg-green-50 text-green-900"
+                    result.status === "invalid_value" ? "bg-danger/20 text-danger font-semibold border-t border-border" :
+                    result.status === "unmatched" ? "bg-danger/10 text-text-secondary border-t border-border" :
+                    !isSelected ? "bg-surface-secondary text-text-disabled border-t border-border" :
+                    "bg-success/10 text-text-primary border-t border-border"
                   }
                 >
-                  <td className="px-3 py-2 border-t font-medium">{result.rawName}</td>
-                  <td className="px-3 py-2 border-t">
+                  <td className="px-3 py-2 font-medium">{result.rawName}</td>
+                  <td className="px-3 py-2">
                     {result.matchedName || "—"}
                     {result.confidence > 0 && result.confidence < 1 && (
-                      <span className={`ml-2 text-xs ${willImport ? 'text-green-700' : 'text-gray-500'}`}>
+                      <span className={`ml-2 text-xs ${willImport ? 'text-text-secondary' : 'text-text-disabled'}`}>
                         ({Math.round(result.confidence * 100)}%)
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 border-t text-right font-mono font-medium">
+                  <td className="px-3 py-2 text-right font-mono font-medium">
                     {result.status === "invalid_value" ? (
-                      <span className="text-red-700 font-bold">{result.rawValue} ({result.error})</span>
+                      <span className="text-danger font-bold">{result.rawValue} ({result.error})</span>
                     ) : (
                       result.value?.toLocaleString()
                     )}
                   </td>
-                  <td className="px-3 py-2 border-t text-center">
+                  <td className="px-3 py-2 text-center">
                     {result.status === "invalid_value" ? (
-                      <span className="px-2 py-0.5 rounded text-xs bg-red-200 text-red-900 font-bold">Invalid Value</span>
+                      <span className="px-2 py-0.5 rounded text-xs bg-danger/20 text-danger font-bold">Invalid Value</span>
                     ) : result.status === "unmatched" ? (
-                      <span className="px-2 py-0.5 rounded text-xs bg-red-200 text-red-800">No Match</span>
+                      <span className="px-2 py-0.5 rounded text-xs bg-danger/10 text-danger">No Match</span>
                     ) : memberHasDuplicates ? (
                       <button
                         onClick={() => result.memberId && onDuplicateSelection(preview.columnIndex, result.memberId, i)}
-                        className={`px-2 py-1 rounded text-xs cursor-pointer ${isSelected ? "bg-green-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
+                        className={`px-2 py-1 rounded text-xs cursor-pointer ${isSelected ? "bg-success text-white" : "bg-surface-secondary border border-border text-text-secondary hover:bg-surface-elevated"}`}
                       >
                         {isSelected ? "Selected" : "Use This"}
                       </button>
                     ) : willImport ? (
-                      <span className="px-2 py-0.5 rounded text-xs bg-green-200 text-green-800">Will Import</span>
+                      <span className="px-2 py-0.5 rounded text-xs bg-success/20 text-success font-medium">Will Import</span>
                     ) : null}
                   </td>
                 </tr>
