@@ -16,7 +16,7 @@ export const smartImportTour: TourDefinition = {
       element: '[data-tour="metric-upload"]',
       title: "Upload one spreadsheet",
       description:
-        "Export your data once and import several metrics from a single CSV—no need to upload a separate file per metric.",
+        "Export your data once and import evaluation results for several metrics from a single CSV—no need to upload a separate file per metric.",
     },
     {
       element: '[data-tour="metric-requirements"]',

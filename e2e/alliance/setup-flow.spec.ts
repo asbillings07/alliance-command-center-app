@@ -52,7 +52,7 @@ test.describe("Alliance Setup Flow", () => {
     // Check for setup tasks
     await expect(page.getByText(/configure metrics/i)).toBeVisible();
     await expect(page.getByText(/create.*period/i)).toBeVisible();
-    await expect(page.getByText(/import members/i)).toBeVisible();
+    await expect(page.getByText(/import roster/i)).toBeVisible();
   });
 
   test("completed tasks show checkmarks", async ({ page }) => {

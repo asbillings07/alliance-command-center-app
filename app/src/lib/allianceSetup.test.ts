@@ -248,7 +248,7 @@ describe("getAllianceSetupStatus", () => {
 
     const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
 
-    // Leader should only see the "data" task (Import First Dataset)
+    // Leader should only see the "data" task (Import Evaluation Results)
     expect(status.tasks).toHaveLength(1);
     expect(status.tasks[0].id).toBe("data");
     expect(status.totalCount).toBe(1);

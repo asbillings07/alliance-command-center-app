@@ -60,7 +60,7 @@ export default async function PeriodRecordPage({
       ]
     : [
         { label: "Dashboard", href: `/alliances/${allianceId}` },
-        { label: "Record Metrics" },
+        { label: "Record Results" },
       ];
 
   const hasNoMembers = !alliance || alliance.allianceMembers.length === 0;
@@ -71,7 +71,7 @@ export default async function PeriodRecordPage({
       <PageLayout
         breadcrumb={breadcrumb}
         title={period.name}
-        description="Record Metrics"
+        description="Record Results"
         maxWidth="md"
       >
         {hasNoMetrics ? (
@@ -80,17 +80,17 @@ export default async function PeriodRecordPage({
             description="Add metrics to this evaluation period before recording data."
             action={
               auth.permissions.canConfigurePeriods
-                ? <Button variant="primary" href={`/alliances/${allianceId}/periods/${periodId}`}>Configure Metrics</Button>
+                ? <Button variant="primary" href={`/alliances/${allianceId}/periods/${periodId}`}>Manage Period Metrics</Button>
                 : undefined
             }
           />
         ) : (
           <EmptyState
             title="No active members"
-            description="Import your alliance roster before recording metrics."
+            description="Import your alliance roster before recording results."
             action={
               auth.permissions.canImportMembers
-                ? <Button variant="primary" href={`/alliances/${allianceId}/members/import`}>Import Members</Button>
+                ? <Button variant="primary" href={`/alliances/${allianceId}/members/import`}>Import Roster</Button>
                 : undefined
             }
           />
@@ -103,14 +103,14 @@ export default async function PeriodRecordPage({
     <PageLayout
       breadcrumb={breadcrumb}
       title={period.name}
-      description="Record Metrics"
+      description="Record Results"
       action={
         <Button
           href={`/alliances/${allianceId}/periods/${periodId}/import`}
           variant="secondary"
           size="sm"
         >
-          Import from Spreadsheet
+          Import Evaluation Results
         </Button>
       }
       maxWidth="2xl"

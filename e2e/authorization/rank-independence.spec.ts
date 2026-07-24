@@ -224,24 +224,15 @@ test.describe("Rank Independence", () => {
     await expect(createMetricButton).not.toBeVisible();
   });
 
-  test("member roster role field is descriptive only, not authorization", async ({ page }) => {
-    test.skip(
-      !process.env.TEST_OWNER_EMAIL || 
-      !process.env.TEST_OWNER_PASSWORD || 
-      !process.env.TEST_ALLIANCE_ID,
-      "Owner credentials and TEST_ALLIANCE_ID required"
-    );
-
+  test("member roster role field is descriptive only, not authorization", async ({ page, adminScenario }) => {
     await page.goto("/login");
-    await page.getByLabel(/email/i).fill(process.env.TEST_OWNER_EMAIL!);
-    await page.getByLabel(/password/i).fill(process.env.TEST_OWNER_PASSWORD!);
+    await page.getByLabel(/email/i).fill(adminScenario.email);
+    await page.getByLabel(/password/i).fill(adminScenario.password);
     await page.getByRole("button", { name: /sign in/i }).click();
-    await page.waitForURL(/\/(app|alliances)/);
-
-    const testAllianceId = process.env.TEST_ALLIANCE_ID!;
+    await page.waitForURL(/\/alliances/);
 
     // Navigate to add member page
-    await page.goto(`/alliances/${testAllianceId}/members/new`);
+    await page.goto(`/alliances/${adminScenario.allianceId}/members/new`);
 
     // The "role" field (in-game rank like "R4", "Officer") should be optional
     // Wait for the form to load first

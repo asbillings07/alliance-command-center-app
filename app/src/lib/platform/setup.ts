@@ -100,12 +100,12 @@ export async function getSetupFunnel(): Promise<SetupFunnel> {
       percentage: (alliancesWithPeriods / maxCount) * 100,
     },
     {
-      label: "Members Imported",
+      label: "Roster Imported",
       count: alliancesWithMembers,
       percentage: (alliancesWithMembers / maxCount) * 100,
     },
     {
-      label: "Data Imported",
+      label: "Evaluation Results Imported",
       count: alliancesWithData,
       percentage: (alliancesWithData / maxCount) * 100,
     },

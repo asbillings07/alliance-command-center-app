@@ -41,7 +41,7 @@ test.describe("Leader Journey", () => {
     await expect(page).toHaveURL(/\/alliances\//);
   });
 
-  test("dashboard shows Manage Periods link (not Record Metrics)", async ({
+  test("dashboard shows Manage Periods link (not Evaluation Results)", async ({
     page,
   }) => {
     test.skip(!testAllianceId, "Requires alliance ID");
@@ -104,7 +104,7 @@ test.describe("Leader Journey", () => {
     );
 
     // Should see record metrics page
-    await expect(page.locator("h2:has-text('Record Metrics')")).toBeVisible();
+    await expect(page.getByText("Record Results")).toBeVisible();
 
     // Back link should go to dashboard (not period detail)
     await expect(
@@ -121,7 +121,7 @@ test.describe("Leader Journey", () => {
 
     // Should see import page
     await expect(
-      page.locator("h2:has-text('Import from Spreadsheet')")
+      page.getByRole("heading", { name: "Import Evaluation Results" })
     ).toBeVisible();
 
     // Back link should go to dashboard
