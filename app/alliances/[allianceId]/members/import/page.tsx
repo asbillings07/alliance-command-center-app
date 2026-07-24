@@ -42,7 +42,7 @@ export default async function MemberImportPage({ params }: Params) {
                 { label: "Import Roster" },
             ]}
             title="Import Roster"
-            description="Upload a CSV spreadsheet (.csv) to create or restore members in your alliance roster. Existing active members are identified and skipped."
+            description="Upload a spreadsheet (.xlsx, .xls, .csv) to create or restore members in your alliance roster. Existing active members are identified and skipped."
             action={<BackToSetupLink allianceId={allianceId} />}
         >
             <TourAutoStart />

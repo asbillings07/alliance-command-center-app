@@ -1,5 +1,5 @@
 /**
- * Member matching utilities for CSV import, OCR, and other data sources.
+ * Member matching utilities for CSV, XLSX, XLS import, OCR, and other data sources.
  * Decoupled from data source to allow reuse across different import methods.
  */
 
@@ -125,7 +125,7 @@ function findBestMatch(
 }
 
 /**
- * Match raw entries (from CSV, OCR, etc.) to members
+ * Match raw entries (from CSV, XLSX, OCR, etc.) to members
  * Handles duplicates by marking subsequent matches as duplicates
  */
 export function matchEntriesToMembers(
@@ -200,11 +200,13 @@ export function matchEntriesToMembers(
   };
 }
 
-export type CSVParseResult = {
+export type MetricParseResult = {
   entries: RawEntry[];
   errors: string[];
   detectedMetricName: string | null;
 };
+
+export type CSVParseResult = MetricParseResult;
 
 export type ColumnInfo = {
   index: number;
@@ -213,54 +215,52 @@ export type ColumnInfo = {
   sampleValues: string[];
 };
 
-export type CSVAnalysisResult = {
+export type MatrixAnalysisResult = {
   columns: ColumnInfo[];
   rowCount: number;
   error: string | null;
 };
 
+export type CSVAnalysisResult = MatrixAnalysisResult;
+
 /**
- * Analyze CSV content to discover columns and their types.
+ * Analyze matrix grid rows (from CSV, XLSX, XLS) to discover columns and their types.
  * Returns column metadata to help users choose which columns to import.
  */
-export function analyzeCSV(content: string): CSVAnalysisResult {
-  const trimmedContent = content.trim();
-  if (!trimmedContent) {
-    return { columns: [], rowCount: 0, error: "CSV file is empty" };
+export function analyzeRows(rows: string[][]): MatrixAnalysisResult {
+  if (!rows || rows.length === 0) {
+    return { columns: [], rowCount: 0, error: "Spreadsheet is empty" };
   }
 
-  const lines = trimmedContent.split(/\r?\n/);
-  if (lines.length < 2) {
-    return { columns: [], rowCount: 0, error: "CSV must have a header row and at least one data row" };
+  if (rows.length < 2) {
+    return { columns: [], rowCount: 0, error: "Spreadsheet must have a header row and at least one data row" };
   }
 
-  const headerColumns = parseCSVLine(lines[0]);
-  if (headerColumns.length === 0) {
-    return { columns: [], rowCount: 0, error: "No columns found in CSV header" };
+  const headerRow = rows[0];
+  if (!headerRow || headerRow.length === 0) {
+    return { columns: [], rowCount: 0, error: "No columns found in header row" };
   }
 
-  // Analyze each column using data rows
-  const columns: ColumnInfo[] = headerColumns.map((header, index) => ({
+  const columns: ColumnInfo[] = headerRow.map((header, index) => ({
     index,
     name: header.trim() || `Column ${index + 1}`,
     isNumeric: true,
     sampleValues: [],
   }));
 
-  const columnStats = headerColumns.map(() => ({
+  const columnStats = headerRow.map(() => ({
     validIntegerCount: 0,
     totalNonEmptyCount: 0,
   }));
 
   // Sample up to 10 data rows to determine column types
-  const sampleSize = Math.min(10, lines.length - 1);
+  const sampleSize = Math.min(10, rows.length - 1);
   for (let i = 1; i <= sampleSize; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
+    const row = rows[i];
+    if (!row || row.every((cell) => !cell.trim())) continue;
 
-    const values = parseCSVLine(line);
     for (let j = 0; j < columns.length; j++) {
-      const value = values[j]?.trim() || "";
+      const value = row[j]?.trim() || "";
       columns[j].sampleValues.push(value);
 
       if (value) {
@@ -279,60 +279,72 @@ export function analyzeCSV(content: string): CSVAnalysisResult {
       stats.validIntegerCount >= stats.totalNonEmptyCount / 2;
   }
 
-  // Count actual data rows (excluding header and empty lines)
+  // Count actual data rows (excluding header and empty rows)
   let rowCount = 0;
-  for (let i = 1; i < lines.length; i++) {
-    if (lines[i].trim()) rowCount++;
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (row && row.some((cell) => cell.trim().length > 0)) {
+      rowCount++;
+    }
   }
 
   return { columns, rowCount, error: null };
 }
 
 /**
- * Parse CSV content into raw entries using user-specified columns.
- * Supports CSVs with any number of columns - user chooses which to use.
+ * Legacy wrapper for CSV content string analysis.
  */
-export function parseCSV(
-  content: string,
+export function analyzeCSV(content: string): CSVAnalysisResult {
+  const trimmedContent = content.trim();
+  if (!trimmedContent) {
+    return { columns: [], rowCount: 0, error: "CSV file is empty" };
+  }
+  const lines = trimmedContent.split(/\r?\n/);
+  const rows = lines.map((line) => parseCSVLine(line));
+  return analyzeRows(rows);
+}
+
+/**
+ * Parse matrix grid rows into raw entries using user-specified columns.
+ */
+export function parseMetricRows(
+  rows: string[][],
   options: {
     nameColumn: number;
     valueColumn: number;
     hasHeader?: boolean;
   },
-): CSVParseResult {
+): MetricParseResult {
   const { nameColumn, valueColumn, hasHeader = true } = options;
-  const trimmedContent = content.trim();
-  if (!trimmedContent) {
-    return { entries: [], errors: ["CSV file is empty"], detectedMetricName: null };
+  if (!rows || rows.length === 0) {
+    return { entries: [], errors: ["Spreadsheet is empty"], detectedMetricName: null };
   }
-  const lines = trimmedContent.split(/\r?\n/);
+
   const entries: RawEntry[] = [];
   const errors: string[] = [];
   let detectedMetricName: string | null = null;
 
   // Extract metric name from header if present
-  if (hasHeader && lines.length > 0) {
-    const headerColumns = parseCSVLine(lines[0]);
-    if (headerColumns.length > valueColumn) {
-      detectedMetricName = headerColumns[valueColumn].trim() || null;
+  if (hasHeader && rows.length > 0) {
+    const headerRow = rows[0];
+    if (headerRow && headerRow.length > valueColumn) {
+      detectedMetricName = headerRow[valueColumn].trim() || null;
     }
   }
 
   const startIndex = hasHeader ? 1 : 0;
 
-  for (let i = startIndex; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
+  for (let i = startIndex; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.every((cell) => !cell.trim())) continue;
 
-    const columns = parseCSVLine(line);
-
-    if (columns.length <= Math.max(nameColumn, valueColumn)) {
+    if (row.length <= Math.max(nameColumn, valueColumn)) {
       errors.push(`Row ${i + 1}: Not enough columns`);
       continue;
     }
 
-    const name = columns[nameColumn].trim();
-    const rawValue = columns[valueColumn].trim();
+    const name = row[nameColumn]?.trim() || "";
+    const rawValue = row[valueColumn]?.trim() || "";
 
     if (!name) {
       errors.push(`Row ${i + 1}: Empty name`);
@@ -364,6 +376,26 @@ export function parseCSV(
   return { entries, errors, detectedMetricName };
 }
 
+/**
+ * Legacy wrapper for CSV parsing.
+ */
+export function parseCSV(
+  content: string,
+  options: {
+    nameColumn: number;
+    valueColumn: number;
+    hasHeader?: boolean;
+  },
+): CSVParseResult {
+  const trimmedContent = content.trim();
+  if (!trimmedContent) {
+    return { entries: [], errors: ["CSV file is empty"], detectedMetricName: null };
+  }
+  const lines = trimmedContent.split(/\r?\n/);
+  const rows = lines.map((line) => parseCSVLine(line));
+  return parseMetricRows(rows, options);
+}
+
 type MetricRecord = {
   id: string;
   name: string;
@@ -377,11 +409,7 @@ export type MetricMatchResult = {
 };
 
 /**
- * Match a detected metric name (from CSV header) to available metrics using exact matching.
- * Normalizes both names (lowercase, trim, collapse spaces) before comparison.
- * 
- * For CSV imports, exact matching is preferred for determinism.
- * Fuzzy matching can be added later for OCR use cases.
+ * Match a detected metric name to available metrics using exact matching.
  */
 export function matchMetricName(
   detectedName: string,
