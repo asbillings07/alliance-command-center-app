@@ -7,7 +7,7 @@
 
 Alliance Command Center uses a **4-role permission system** entirely independent of in-game Last War rank. The `AllianceMember.role` field (e.g., "R4", "Officer") is optional descriptive metadata with no authorization significance.
 
-**No in-game rank is stored, queried, or used for authorization decisions.**
+**In-game rank may be stored as optional roster metadata but is never queried or used for authorization decisions.**
 
 ---
 

@@ -1,5 +1,8 @@
 /* eslint-disable react-hooks/rules-of-hooks */
 import { test as base, expect, Page } from "@playwright/test";
+import { prisma } from "@/app/src/lib/prisma";
+import bcrypt from "bcrypt";
+import crypto from "crypto";
 
 /**
  * E2E Test Fixtures for Alliance Command Center
@@ -14,11 +17,34 @@ export type TestUser = {
   displayName: string;
 };
 
+export type BetaUserFixture = {
+  email: string;
+  password: string;
+  userId: string;
+};
+
+export type AdminScenarioFixture = {
+  email: string;
+  password: string;
+  allianceId: string;
+  userId: string;
+};
+
+export type LeaderScenarioFixture = {
+  email: string;
+  password: string;
+  allianceId: string;
+  userId: string;
+};
+
 export type TestFixtures = {
   testUser: TestUser;
   login: (user: TestUser) => Promise<void>;
   register: (user: TestUser, betaCode?: string) => Promise<void>;
   createBetaInvite: (email: string) => Promise<{ code: string; token: string }>;
+  betaUser: BetaUserFixture;
+  adminScenario: AdminScenarioFixture;
+  leaderScenario: LeaderScenarioFixture;
 };
 
 function generateTestEmail(): string {
@@ -91,6 +117,158 @@ export const test = base.extend<TestFixtures>({
       );
     };
     await use(createBetaInvite);
+  },
+
+  /**
+   * Database-backed fixture: Creates a unique beta user per test attempt.
+   * The user has an accepted beta invitation and can proceed directly to /create-alliance.
+   * Automatically cleans up all created resources after the test.
+   */
+  betaUser: async ({}, use, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}-${Math.random().toString(36).slice(2, 8)}`;
+    const email = `beta-${suffix}@test.local`;
+    const password = "Test1234";
+
+    // Create user with hashed password
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        displayName: `Beta User ${suffix}`,
+      },
+    });
+
+    // Create accepted beta invitation
+    const code = `TST-${suffix.slice(0, 6).toUpperCase()}`;
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+    await prisma.betaInvitation.create({
+      data: {
+        email,
+        code,
+        token,
+        issuedAt: new Date(),
+        expiresAt,
+        acceptedAt: new Date(), // Already accepted
+        acceptedByUserId: user.id,
+      },
+    });
+
+    await use({ email, password, userId: user.id });
+
+    // Cleanup: delete alliances created by this user, then memberships, invitations, and user
+    const memberships = await prisma.allianceMembership.findMany({
+      where: { userId: user.id },
+      select: { allianceId: true },
+    });
+
+    for (const membership of memberships) {
+      // Delete alliance-owned data
+      await prisma.allianceMember.deleteMany({ where: { allianceId: membership.allianceId } });
+      await prisma.metric.deleteMany({ where: { allianceId: membership.allianceId } });
+      await prisma.metricPeriod.deleteMany({ where: { allianceId: membership.allianceId } });
+      await prisma.allianceMembership.deleteMany({ where: { allianceId: membership.allianceId } });
+      await prisma.alliance.delete({ where: { id: membership.allianceId } });
+    }
+
+    await prisma.betaInvitation.deleteMany({ where: { email } });
+    await prisma.user.delete({ where: { id: user.id } });
+  },
+
+  /**
+   * Database-backed fixture: Creates an alliance with an ADMIN membership and zero metrics.
+   * Used to test that ADMIN can complete the "Configure Metrics" setup task.
+   */
+  adminScenario: async ({}, use, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}-${Math.random().toString(36).slice(2, 8)}`;
+    const email = `admin-${suffix}@test.local`;
+    const password = "Test1234";
+
+    // Create user
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        displayName: `Admin ${suffix}`,
+      },
+    });
+
+    // Create alliance
+    const alliance = await prisma.alliance.create({
+      data: {
+        name: `Admin Test Alliance ${suffix}`,
+        server: "9999",
+      },
+    });
+
+    // Create ADMIN membership
+    await prisma.allianceMembership.create({
+      data: {
+        allianceId: alliance.id,
+        userId: user.id,
+        role: "ADMIN",
+      },
+    });
+
+    await use({ email, password, allianceId: alliance.id, userId: user.id });
+
+    // Cleanup
+    await prisma.metric.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.metricPeriod.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.allianceMember.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.allianceMembership.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.alliance.delete({ where: { id: alliance.id } });
+    await prisma.user.delete({ where: { id: user.id } });
+  },
+
+  /**
+   * Database-backed fixture: Creates an alliance with a LEADER membership and zero periods.
+   * Used to test that LEADER can complete the "Create Evaluation Period" setup task.
+   */
+  leaderScenario: async ({}, use, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}-${Math.random().toString(36).slice(2, 8)}`;
+    const email = `leader-${suffix}@test.local`;
+    const password = "Test1234";
+
+    // Create user
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        displayName: `Leader ${suffix}`,
+      },
+    });
+
+    // Create alliance
+    const alliance = await prisma.alliance.create({
+      data: {
+        name: `Leader Test Alliance ${suffix}`,
+        server: "9999",
+      },
+    });
+
+    // Create LEADER membership
+    await prisma.allianceMembership.create({
+      data: {
+        allianceId: alliance.id,
+        userId: user.id,
+        role: "LEADER",
+      },
+    });
+
+    await use({ email, password, allianceId: alliance.id, userId: user.id });
+
+    // Cleanup
+    await prisma.metricPeriod.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.metric.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.allianceMember.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.allianceMembership.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.alliance.delete({ where: { id: alliance.id } });
+    await prisma.user.delete({ where: { id: user.id } });
   },
 });
 

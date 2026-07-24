@@ -15,8 +15,11 @@ import { CREATE_PERIOD_TOUR_ID, IMPORT_MEMBERS_TOUR_ID } from "./tours";
  */
 
 /**
- * Describes which ACC role typically completes a setup task.
- * These are ACC roles (OWNER, ADMIN, LEADER), NOT in-game Last War ranks.
+ * Typical persona completing each setup task.
+ * 
+ * "Founding Operator" is an onboarding persona label (not an ACC role).
+ * "Admin" and "Leader" refer to ACC authorization roles.
+ * The actual authorization is based on the required permission.
  */
 export type TypicalRole = "Founding Operator" | "Admin" | "Leader";
 
