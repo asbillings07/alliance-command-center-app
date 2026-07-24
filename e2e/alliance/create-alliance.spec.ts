@@ -32,17 +32,25 @@ test.describe("Create Alliance", () => {
     ).toBeVisible();
   });
 
-  test("shows validation error for empty name", async ({ page }) => {
-    test.skip(
-      !process.env.TEST_BETA_USER_EMAIL,
-      "Requires beta user authentication"
-    );
+  test("shows validation error for empty name", async ({ page, betaUser }) => {
+    await page.goto("/login");
+    await page.getByLabel(/email/i).fill(betaUser.email);
+    await page.getByLabel(/password/i).fill(betaUser.password);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await page.waitForURL(/\/create-alliance/);
 
-    await page.goto("/create-alliance");
+    // Verify input has required attribute
+    const nameInput = page.locator("#name");
+    await expect(nameInput).toHaveAttribute("required", "");
+
+    // Remove required attribute to test server-side action validation
+    await page.evaluate(() => {
+      document.querySelector("#name")?.removeAttribute("required");
+    });
     await page.getByRole("button", { name: /create/i }).click();
 
-    // Should show validation error
-    await expect(page.getByText(/name.*required/i)).toBeVisible();
+    // Should show server validation error
+    await expect(page.getByText(/alliance name is required/i)).toBeVisible();
   });
 
   test("creates alliance and redirects to setup", async ({ page }) => {
