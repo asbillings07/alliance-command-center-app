@@ -56,25 +56,25 @@ describe("SETUP_TASKS", () => {
     ]);
   });
 
-  it("has owner tasks before admin/leader tasks", () => {
-    const ownerTasks = SETUP_TASKS.filter(
-      (t) => t.typicallyCompletedBy === "Owner"
+  it("has founding operator tasks before admin/leader tasks", () => {
+    const foundingOperatorTasks = SETUP_TASKS.filter(
+      (t) => t.typicallyCompletedBy === "Founding Operator"
     );
-    const nonOwnerTasks = SETUP_TASKS.filter(
-      (t) => t.typicallyCompletedBy !== "Owner"
-    );
-
-    expect(ownerTasks).toHaveLength(3);
-    expect(nonOwnerTasks).toHaveLength(2);
-
-    const lastOwnerIndex = SETUP_TASKS.findLastIndex(
-      (t) => t.typicallyCompletedBy === "Owner"
-    );
-    const firstNonOwnerIndex = SETUP_TASKS.findIndex(
-      (t) => t.typicallyCompletedBy !== "Owner"
+    const nonFoundingOperatorTasks = SETUP_TASKS.filter(
+      (t) => t.typicallyCompletedBy !== "Founding Operator"
     );
 
-    expect(lastOwnerIndex).toBeLessThan(firstNonOwnerIndex);
+    expect(foundingOperatorTasks).toHaveLength(3);
+    expect(nonFoundingOperatorTasks).toHaveLength(2);
+
+    const lastFoundingOperatorIndex = SETUP_TASKS.findLastIndex(
+      (t) => t.typicallyCompletedBy === "Founding Operator"
+    );
+    const firstNonFoundingOperatorIndex = SETUP_TASKS.findIndex(
+      (t) => t.typicallyCompletedBy !== "Founding Operator"
+    );
+
+    expect(lastFoundingOperatorIndex).toBeLessThan(firstNonFoundingOperatorIndex);
   });
 
   it("has required permissions for each task", () => {
@@ -217,7 +217,7 @@ describe("getAllianceSetupStatus", () => {
       description: "Define what your alliance evaluates (e.g., VS Points, Donations)",
       completed: true,
       href: "/alliances/alliance-1/metrics",
-      typicallyCompletedBy: "Owner",
+      typicallyCompletedBy: "Founding Operator",
       required: true,
     });
   });

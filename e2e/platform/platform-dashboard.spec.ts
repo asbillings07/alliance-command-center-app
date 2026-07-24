@@ -53,11 +53,11 @@ test.describe("Platform Operations Console", () => {
       await page.goto("/platform/overview");
 
       // Check navigation links exist
-      await expect(page.getByRole("link", { name: "Overview" })).toBeVisible();
-      await expect(page.getByRole("link", { name: "Setup" })).toBeVisible();
-      await expect(page.getByRole("link", { name: "Support" })).toBeVisible();
-      await expect(page.getByRole("link", { name: "Activity" })).toBeVisible();
-      await expect(page.getByRole("link", { name: "Beta" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Overview", exact: true })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Setup", exact: true })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Support", exact: true })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Activity", exact: true })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Beta", exact: true })).toBeVisible();
     });
 
     test("displays platform footer", async ({ page }) => {
@@ -72,22 +72,22 @@ test.describe("Platform Operations Console", () => {
       await page.goto("/platform/overview");
 
       // Navigate to Setup
-      await page.getByRole("link", { name: "Setup" }).click();
+      await page.getByRole("link", { name: "Setup", exact: true }).click();
       await page.waitForURL("/platform/setup");
       await expect(page.getByText(/Setup Summary/i)).toBeVisible();
 
       // Navigate to Support
-      await page.getByRole("link", { name: "Support" }).click();
+      await page.getByRole("link", { name: "Support", exact: true }).click();
       await page.waitForURL("/platform/support");
       await expect(page.getByText(/search bar above/i)).toBeVisible();
 
       // Navigate to Activity
-      await page.getByRole("link", { name: "Activity" }).click();
+      await page.getByRole("link", { name: "Activity", exact: true }).click();
       await page.waitForURL("/platform/activity");
       await expect(page.getByText(/Live Feed/i)).toBeVisible();
 
       // Navigate to Beta
-      await page.getByRole("link", { name: "Beta" }).click();
+      await page.getByRole("link", { name: "Beta", exact: true }).click();
       await page.waitForURL("/platform/beta");
       await expect(
         page.getByRole("heading", { name: /Beta Invitations/i })
