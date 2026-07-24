@@ -5,20 +5,26 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { LeadershipNoteCard } from "./LeadershipNoteCard";
 import { MemberPerformanceSection } from "./MemberPerformanceSection";
-import type { CurrentMetricViewModel } from "./MemberPerformanceSection";
+import type { CurrentMetricViewModel, MemberPerformanceProps } from "./MemberPerformanceSection";
 import { MemberActions } from "./MemberActions";
 import { MemberAccountSection } from "./MemberAccountSection";
+import { MemberPeriodSelector } from "./MemberPeriodSelector";
 import { PageLayout, Card, Badge } from "@/app/src/components";
 
 type Params = {
     params: Promise<{
         allianceId: string;
         memberId: string;
-    }>
+    }>;
+    searchParams: Promise<{
+        periodId?: string;
+    }>;
 }
 
-export default async function MemberPage({ params }: Params) {
+export default async function MemberPage({ params, searchParams }: Params) {
     const { allianceId, memberId } = await params;
+    const { periodId: requestedPeriodId } = await searchParams;
+
     const auth = await requireAllianceAccess({
         allianceId,
         requiredPermission: Permissions.VIEW_MEMBERS,
@@ -32,30 +38,47 @@ export default async function MemberPage({ params }: Params) {
         notFound();
     }
 
-    const activePeriod = await prisma.metricPeriod.findFirst({
-        where: {
-            allianceId,
+    const allPeriods = await prisma.metricPeriod.findMany({
+        where: { allianceId },
+        orderBy: [
+            { createdAt: "desc" },
+            { id: "desc" },
+        ],
+        select: {
+            id: true,
+            name: true,
             active: true,
-        },
-        orderBy: {
-            createdAt: "desc",
-        },
-        include: {
-            periodMetrics: {
-                where: { active: true },
-                include: {
-                    metric: true,
-                },
-            },
         },
     });
 
-    const activeMetricIds = activePeriod?.periodMetrics.map((pm) => pm.metricId) ?? [];
-    const memberEntries = activePeriod && activeMetricIds.length > 0
+    if (requestedPeriodId && !allPeriods.some((p) => p.id === requestedPeriodId)) {
+        notFound();
+    }
+
+    const selectedPeriodHeader = requestedPeriodId
+        ? allPeriods.find((p) => p.id === requestedPeriodId)
+        : allPeriods.find((p) => p.active) ?? allPeriods[0] ?? null;
+
+    const selectedPeriod = selectedPeriodHeader
+        ? await prisma.metricPeriod.findUnique({
+              where: { id: selectedPeriodHeader.id },
+              include: {
+                  periodMetrics: {
+                      where: { active: true },
+                      include: {
+                          metric: true,
+                      },
+                  },
+              },
+          })
+        : null;
+
+    const activeMetricIds = selectedPeriod?.periodMetrics.map((pm) => pm.metricId) ?? [];
+    const memberEntries = selectedPeriod && activeMetricIds.length > 0
         ? await prisma.memberMetricEntry.findMany({
               where: {
                   allianceMemberId: allianceMember.id,
-                  periodId: activePeriod.id,
+                  periodId: selectedPeriod.id,
                   metricId: { in: activeMetricIds },
               },
               select: {
@@ -79,8 +102,8 @@ export default async function MemberPage({ params }: Params) {
         }
     }
 
-    const performanceMetrics: CurrentMetricViewModel[] = activePeriod
-        ? activePeriod.periodMetrics.map((pm) => {
+    const performanceMetrics: CurrentMetricViewModel[] = selectedPeriod
+        ? selectedPeriod.periodMetrics.map((pm) => {
               const entries = entriesByMetric.get(pm.metricId) || [];
               const current = entries[0];
               const previous = entries[1];
@@ -102,12 +125,40 @@ export default async function MemberPage({ params }: Params) {
           })
         : [];
 
-    const performanceProps: import("./MemberPerformanceSection").MemberPerformanceProps =
-        !activePeriod
-            ? { emptyState: "no-period" }
-            : activePeriod.periodMetrics.length === 0
-            ? { emptyState: "no-metrics", periodName: activePeriod.name }
-            : { emptyState: "has-metrics", periodName: activePeriod.name, metrics: performanceMetrics };
+    const periodSelector = selectedPeriod ? (
+        <MemberPeriodSelector
+            allianceId={allianceId}
+            memberId={memberId}
+            selectedPeriodId={selectedPeriod.id}
+            periods={allPeriods}
+        />
+    ) : undefined;
+
+    const isAutoFallbackToLatestInactive =
+        !requestedPeriodId &&
+        !allPeriods.some((p) => p.active) &&
+        selectedPeriodHeader?.id === allPeriods[0]?.id;
+
+    const periodStatusLabel = selectedPeriod && !selectedPeriod.active
+        ? isAutoFallbackToLatestInactive
+            ? "Latest Period · Not active"
+            : "Inactive Period"
+        : undefined;
+
+    const membersBreadcrumbHref = `/alliances/${allianceId}/members${selectedPeriod ? `?periodId=${selectedPeriod.id}` : ""}`;
+
+    const performanceProps: MemberPerformanceProps =
+        !selectedPeriod
+            ? { emptyState: "no-period", periodSelector }
+            : selectedPeriod.periodMetrics.length === 0
+            ? { emptyState: "no-metrics", periodName: selectedPeriod.name, periodSelector, periodStatusLabel }
+            : {
+                  emptyState: "has-metrics",
+                  periodName: selectedPeriod.name,
+                  metrics: performanceMetrics,
+                  periodSelector,
+                  periodStatusLabel,
+              };
 
     const leadershipNotes = await prisma.leadershipNote.findMany({
         where: {
@@ -151,7 +202,7 @@ export default async function MemberPage({ params }: Params) {
         <PageLayout
             breadcrumb={[
                 { label: "Dashboard", href: `/alliances/${allianceId}` },
-                { label: "Members", href: `/alliances/${allianceId}/members` },
+                { label: "Members", href: membersBreadcrumbHref },
                 { label: allianceMember.playerName },
             ]}
             title={allianceMember.playerName}

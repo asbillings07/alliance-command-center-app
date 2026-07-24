@@ -4,7 +4,7 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { normalizeName } from "@/app/src/lib/memberMatcher";
 import { parseStrictInteger } from "@/app/src/lib/numberParser";
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
-import { revalidatePath } from "next/cache";
+import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 
 export type RosterEntry = {
     playerName: string;
@@ -260,7 +260,10 @@ export async function importMembers(
             }
         );
 
-        revalidatePath(`/alliances/${allianceId}/members`);
+        revalidateAllianceData({
+            allianceId,
+            domains: ["members", "setup", "dashboard"],
+        });
 
         return result;
     } catch (error) {

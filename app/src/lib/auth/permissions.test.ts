@@ -158,6 +158,23 @@ describe("permissions", () => {
   });
 
   describe("role hierarchy validation", () => {
+    it("every role with IMPORT_METRICS also has VIEW_ALLIANCE and VIEW_MEMBERS", () => {
+      const roles = [
+        AllianceRole.OWNER,
+        AllianceRole.ADMIN,
+        AllianceRole.LEADER,
+        AllianceRole.VIEWER,
+      ];
+
+      for (const role of roles) {
+        const perms = buildPermissionSet(role);
+        if (perms.canImportMetrics) {
+          expect(perms.canViewAlliance).toBe(true);
+          expect(perms.canViewMembers).toBe(true);
+        }
+      }
+    });
+
     it("OWNER > ADMIN > LEADER > VIEWER in terms of permissions", () => {
       const ownerPerms = buildPermissionSet(AllianceRole.OWNER);
       const adminPerms = buildPermissionSet(AllianceRole.ADMIN);
