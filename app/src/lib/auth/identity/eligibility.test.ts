@@ -64,7 +64,7 @@ describe("isInvitationEligible", () => {
     expect(mockGetPendingInvitation).toHaveBeenCalledWith("user@example.com");
     expect(mockPrisma.invitation.findFirst).toHaveBeenCalledWith({
       where: {
-        email: "user@example.com",
+        email: { equals: "user@example.com", mode: "insensitive" },
         acceptedAt: null,
         cancelledAt: null,
         expiresAt: { gt: expect.any(Date) },

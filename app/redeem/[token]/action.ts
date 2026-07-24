@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/app/src/lib/auth";
 import { prisma } from "@/app/src/lib/prisma";
 import { acceptBetaInvitation as acceptInvitation } from "@/app/src/lib/betaInvitation";
+import { normalizeEmail } from "@/app/src/lib/email/normalize";
 
 export type AcceptState = {
   error: string | null;
@@ -45,7 +46,7 @@ export async function acceptBetaInvitation(
   }
 
   // Verify the authenticated user's email matches the invitation
-  if (invitation.email.toLowerCase() !== user.email.toLowerCase()) {
+  if (normalizeEmail(invitation.email) !== normalizeEmail(user.email)) {
     return { error: "This invitation was sent to a different email address" };
   }
 

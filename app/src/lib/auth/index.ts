@@ -22,6 +22,7 @@ import {
   getSessionVersion,
   validateSessionVersion,
 } from "@/app/src/lib/auth/session";
+import { normalizeEmail } from "@/app/src/lib/email/normalize";
 
 // Google is registered only when credentials are configured, so environments
 // without OAuth (local, CI) are unaffected.
@@ -33,9 +34,9 @@ const providers: NextAuthConfig["providers"] = [
           return null;
         }
 
-        // Match registration, which normalizes emails (trim + lowercase),
+        // Match registration and identity resolution, which normalize emails,
         // so casing/whitespace differences don't block sign-in.
-        const email = (credentials.email as string).toLowerCase().trim();
+        const email = normalizeEmail(credentials.email as string);
 
         const user = await prisma.user.findUnique({
           where: {

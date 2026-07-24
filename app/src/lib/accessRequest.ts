@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { normalizeEmail } from "./email/normalize";
 
 /**
  * Access Request domain service.
@@ -45,7 +46,7 @@ export async function createAccessRequest(
   return prisma.accessRequest.create({
     data: {
       name: input.name.trim(),
-      email: input.email.trim().toLowerCase(),
+      email: normalizeEmail(input.email),
       allianceName: optionalText(input.allianceName),
       message: optionalText(input.message),
     },

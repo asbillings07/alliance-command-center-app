@@ -77,6 +77,16 @@ describe("getPostLoginRedirect", () => {
     mockPrisma.invitation.findFirst.mockResolvedValue({ token: "tok_abc" });
 
     await expect(getPostLoginRedirect(member)).resolves.toBe("/invite/tok_abc");
+    expect(mockPrisma.invitation.findFirst).toHaveBeenCalledWith({
+      where: {
+        email: { equals: "user@example.com", mode: "insensitive" },
+        acceptedAt: null,
+        cancelledAt: null,
+        expiresAt: { gt: expect.any(Date) },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { token: true },
+    });
   });
 
   it("does not hijack an existing member who also has a pending alliance invite", async () => {

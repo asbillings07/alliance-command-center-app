@@ -6,6 +6,7 @@ import {
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 import { isPlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import { AllianceRole } from "@/app/generated/prisma/enums";
+import { normalizeEmail } from "@/app/src/lib/email/normalize";
 
 /**
  * The already-authenticated user, as known from the session. `isPlatformAdmin`
@@ -104,7 +105,7 @@ export async function getPostLoginRedirect(
   if (user.email) {
     const allianceInvite = await prisma.invitation.findFirst({
       where: {
-        email: user.email.toLowerCase().trim(),
+        email: { equals: normalizeEmail(user.email), mode: "insensitive" },
         acceptedAt: null,
         cancelledAt: null,
         expiresAt: { gt: new Date() },

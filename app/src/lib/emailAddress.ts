@@ -8,10 +8,11 @@
  * drifting apart across the codebase.
  */
 
-/** Canonical stored form of an email: lowercased and trimmed. */
-export function normalizeEmail(raw: string): string {
-  return raw.toLowerCase().trim();
-}
+/**
+ * Canonical stored form of an email: lowercased and trimmed.
+ * @deprecated Import from @/app/src/lib/email/normalize instead
+ */
+export { normalizeEmail } from "./email/normalize";
 
 /**
  * Validate email format. Simplified RFC 5322 (local@domain.tld) with no

@@ -10,6 +10,7 @@ import {
 } from "@/app/src/lib/betaInvitation";
 import { sanitizeCallbackUrl } from "@/app/src/lib/auth/callbackUrl";
 import { validateDisplayName, validatePassword } from "@/app/src/lib/account";
+import { normalizeEmail } from "@/app/src/lib/email/normalize";
 
 export type RegisterState = {
   error: string | null;
@@ -19,7 +20,8 @@ export async function register(
   _prevState: RegisterState,
   formData: FormData
 ): Promise<RegisterState> {
-  const email = formData.get("email")?.toString().trim().toLowerCase();
+  const rawEmail = formData.get("email")?.toString();
+  const email = rawEmail ? normalizeEmail(rawEmail) : undefined;
   const password = formData.get("password")?.toString();
   const confirmPassword = formData.get("confirmPassword")?.toString();
   const rawCallbackUrl = formData.get("callbackUrl")?.toString() || "";
@@ -96,7 +98,7 @@ export async function register(
 
     const betaInvitation = result.invitation;
 
-    if (betaInvitation.email.toLowerCase() !== email) {
+    if (normalizeEmail(betaInvitation.email) !== email) {
       return { error: "Email does not match the invitation" };
     }
 
@@ -201,7 +203,7 @@ export async function register(
     return { error: "Invalid registration attempt" };
   }
 
-  if (invitation.email.toLowerCase() !== email) {
+  if (normalizeEmail(invitation.email) !== email) {
     return { error: "Email does not match the invitation" };
   }
 

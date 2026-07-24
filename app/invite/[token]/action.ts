@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { prisma } from "@/app/src/lib/prisma";
+import { normalizeEmail } from "@/app/src/lib/email/normalize";
 
 type AcceptResult = {
   redirectTo?: string;
@@ -34,7 +35,7 @@ export async function acceptInvitation(invitationId: string): Promise<AcceptResu
   }
 
   // Verify the authenticated user's email matches the invitation
-  if (invitation.email.toLowerCase() !== fullUser.email.toLowerCase()) {
+  if (normalizeEmail(invitation.email) !== normalizeEmail(fullUser.email)) {
     return { error: "This invitation was sent to a different email address" };
   }
 

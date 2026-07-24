@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { prisma } from "../prisma";
+import { normalizeEmail } from "../email/normalize";
 
 /**
  * Platform Bootstrap Service
@@ -33,7 +34,7 @@ export function getBootstrapAllowedEmails(): string[] {
     if (!envValue) return [];
     return envValue
       .split(",")
-      .map((email) => email.trim().toLowerCase())
+      .map((email) => normalizeEmail(email))
       .filter((email) => email.length > 0);
   };
 
