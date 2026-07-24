@@ -140,8 +140,10 @@ test.describe("Rank Independence", () => {
 
   test("member roster role field is descriptive only, not authorization", async ({ page }) => {
     test.skip(
-      !process.env.TEST_OWNER_EMAIL || !process.env.TEST_OWNER_PASSWORD,
-      "Owner credentials required"
+      !process.env.TEST_OWNER_EMAIL || 
+      !process.env.TEST_OWNER_PASSWORD || 
+      !process.env.TEST_ALLIANCE_ID,
+      "Owner credentials and TEST_ALLIANCE_ID required"
     );
 
     await page.goto("/login");
@@ -150,23 +152,24 @@ test.describe("Rank Independence", () => {
     await page.getByRole("button", { name: /sign in/i }).click();
     await page.waitForURL(/\/(app|alliances)/);
 
-    const testAllianceId = process.env.TEST_ALLIANCE_ID;
-    test.skip(!testAllianceId, "TEST_ALLIANCE_ID required");
+    const testAllianceId = process.env.TEST_ALLIANCE_ID!;
 
     // Navigate to add member page
     await page.goto(`/alliances/${testAllianceId}/members/new`);
 
     // The "role" field (in-game rank like "R4", "Officer") should be optional
-    const roleField = page.getByLabel(/role/i);
-    await expect(roleField).toBeVisible();
+    // Wait for the form to load first
+    await expect(page.getByLabel(/player name/i)).toBeVisible();
     
-    // Verify it's optional by checking for "optional" indicator or lack of "required" attribute
-    const roleInput = roleField.locator("input");
+    const roleInput = page.getByLabel(/^role$/i);
+    await expect(roleInput).toBeVisible();
+    
+    // Verify it's optional by checking for lack of "required" attribute
     const isRequired = await roleInput.getAttribute("required");
     expect(isRequired).toBeNull();
     
     // The placeholder should show it's for game metadata, not ACC authorization
-    await expect(roleInput).toHaveAttribute("placeholder", /e\.g\.|officer|r4/i);
+    await expect(roleInput).toHaveAttribute("placeholder", /r4|officer/i);
   });
 
   test("alliance creation only requires beta invitation, not rank", async ({ page }) => {
