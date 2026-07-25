@@ -214,7 +214,7 @@ describe("ImportForm [component]", () => {
             await new Promise((r) => setTimeout(r, 50));
         });
 
-        expect(container.textContent).toContain("Unrecognized columns default to Create");
+        expect(container.textContent).toContain("Known metric matches are mapped automatically");
 
         const metricSelect = container.querySelector<HTMLSelectElement>(
             'select[aria-label="Metric for Donations"]'
@@ -517,5 +517,183 @@ describe("ImportForm [component]", () => {
         ) as HTMLButtonElement;
         expect(previewBtn).not.toBeUndefined();
         expect(previewBtn.disabled).toBe(false);
+    });
+
+    it("requires explicit confirmation for period-like columns and blocks Preview until confirmed", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: false,
+                })
+            );
+        });
+
+        // CSV with a period-like column "VS 7"
+        const csvContent = `Player,VS 7\nDragon,1500`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Inferential period notice card should be displayed
+        expect(container.textContent).toContain("This file may include multiple periods");
+        expect(container.textContent).toContain("Looks like a period name");
+        expect(container.textContent).toContain("Confirmation required");
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+        expect(previewBtn).not.toBeUndefined();
+        expect(previewBtn.disabled).toBe(true);
+
+        // Click "Skip this column"
+        const skipBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Skip this column")
+        ) as HTMLButtonElement;
+        expect(skipBtn).not.toBeUndefined();
+
+        await act(async () => {
+            skipBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Notice card should disappear, but no active columns mapped so preview disabled
+        expect(container.textContent).not.toContain("This file may include multiple periods");
+    });
+
+    it("allows keeping period-like column as metric when explicitly confirmed by leader", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: false,
+                })
+            );
+        });
+
+        const csvContent = `Player,VS 7\nDragon,1500`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Click "Keep as metric for Week 28 Evaluation"
+        const keepBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Keep as metric for Week 28 Evaluation")
+        ) as HTMLButtonElement;
+        expect(keepBtn).not.toBeUndefined();
+
+        await act(async () => {
+            keepBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).not.toContain("This file may include multiple periods");
+        expect(container.textContent).toContain("New metric: \u201cVS 7\u201d");
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+        expect(previewBtn.disabled).toBe(false);
+    });
+
+    it("handles VS Score as a metric keyword while VS 7 triggers period confirmation on the same sheet", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics: [{ id: "m-vs", name: "VS Score" }],
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: false,
+                })
+            );
+        });
+
+        const csvContent = `Player,VS Score,VS 7\nDragon,2500,1800`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // VS Score matches existing metric without requiring confirmation
+        // VS 7 triggers period confirmation notice
+        expect(container.textContent).toContain("This file may include multiple periods");
+        expect(container.textContent).toContain("\u201cVS 7\u201d");
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+        expect(previewBtn.disabled).toBe(true);
+
+        // Skip VS 7
+        const skipBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Skip this column")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            skipBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // VS Score remains mapped, preview enabled
+        expect(container.textContent).not.toContain("This file may include multiple periods");
+        expect(previewBtn.disabled).toBe(false);
+    });
+
+    it("respects canCreateMetrics false constraint when confirming a period-like column", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: false,
+                    canAttachMetrics: false,
+                })
+            );
+        });
+
+        const csvContent = `Player,VS 7\nDragon,1500`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const keepBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Keep as metric for Week 28 Evaluation")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            keepBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Should fall back to existing metric "Kill Points" instead of creating "VS 7"
+        expect(container.textContent).not.toContain("New metric");
+        expect(container.textContent).toContain("Kill Points");
     });
 });

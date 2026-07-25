@@ -16,6 +16,10 @@ import {
   type InvalidValueIssue,
   type MissingIdentityIssue,
 } from "@/app/src/lib/memberMatcher";
+import {
+  classifyColumn,
+  type ColumnClassification,
+} from "@/app/src/lib/columnClassifier";
 import { TourButton } from "@/app/src/components/client";
 import { smartImportTour } from "@/app/src/lib/tours";
 import { importMemberMetrics } from "./action";
@@ -59,10 +63,17 @@ type ColumnTarget =
   | { kind: "attach"; metricId: string }
   | { kind: "create"; name: string };
 
+export type ColumnConfirmationStatus =
+  | "unconfirmed"
+  | "confirmed_skip"
+  | "confirmed_metric";
+
 type ColumnMetricMapping = {
   columnIndex: number;
   columnName: string;
+  classification: ColumnClassification;
   target: ColumnTarget;
+  confirmationStatus: ColumnConfirmationStatus;
 };
 
 type MetricDisposition = "existing" | "attach" | "create";
@@ -357,22 +368,73 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
     const usedMetricIds = new Set<string>();
     const mappings: ColumnMetricMapping[] = numCols.map((col) => {
-      const onPeriod = matchMetricName(col.name, metrics);
-      if (onPeriod.status === "matched" && onPeriod.metricId && !usedMetricIds.has(onPeriod.metricId)) {
-        usedMetricIds.add(onPeriod.metricId);
-        return { columnIndex: col.index, columnName: col.name, target: { kind: "existing", metricId: onPeriod.metricId } };
+      const classification = classifyColumn({
+        columnIndex: col.index,
+        columnName: col.name,
+        periodMetrics: metrics,
+        libraryMetrics,
+      });
+
+      if (
+        classification.reason === "matches_existing_metric" &&
+        classification.matchedMetricId &&
+        !usedMetricIds.has(classification.matchedMetricId)
+      ) {
+        usedMetricIds.add(classification.matchedMetricId);
+        return {
+          columnIndex: col.index,
+          columnName: col.name,
+          classification,
+          target: { kind: "existing", metricId: classification.matchedMetricId },
+          confirmationStatus: "confirmed_metric",
+        };
       }
-      if (canAttachMetrics) {
-        const inLibrary = matchMetricName(col.name, libraryMetrics);
-        if (inLibrary.status === "matched" && inLibrary.metricId && !usedMetricIds.has(inLibrary.metricId)) {
-          usedMetricIds.add(inLibrary.metricId);
-          return { columnIndex: col.index, columnName: col.name, target: { kind: "attach", metricId: inLibrary.metricId } };
+
+      if (
+        classification.reason === "matches_library_metric" &&
+        classification.matchedMetricId &&
+        canAttachMetrics &&
+        !usedMetricIds.has(classification.matchedMetricId)
+      ) {
+        usedMetricIds.add(classification.matchedMetricId);
+        return {
+          columnIndex: col.index,
+          columnName: col.name,
+          classification,
+          target: { kind: "attach", metricId: classification.matchedMetricId },
+          confirmationStatus: "confirmed_metric",
+        };
+      }
+
+      if (classification.reason === "matches_period_pattern") {
+        return {
+          columnIndex: col.index,
+          columnName: col.name,
+          classification,
+          target: { kind: "skip" },
+          confirmationStatus: "unconfirmed",
+        };
+      }
+
+      if (classification.reason === "matches_metric_keyword") {
+        if (canCreateMetrics) {
+          return {
+            columnIndex: col.index,
+            columnName: col.name,
+            classification,
+            target: { kind: "create", name: col.name },
+            confirmationStatus: "confirmed_metric",
+          };
         }
       }
-      if (canCreateMetrics) {
-        return { columnIndex: col.index, columnName: col.name, target: { kind: "create", name: col.name } };
-      }
-      return { columnIndex: col.index, columnName: col.name, target: { kind: "skip" } };
+
+      return {
+        columnIndex: col.index,
+        columnName: col.name,
+        classification,
+        target: { kind: "skip" },
+        confirmationStatus: "confirmed_skip",
+      };
     });
 
     setRowCount(result.rowCount);
@@ -406,7 +468,81 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
   const setColumnTarget = (columnIndex: number, token: string, columnName: string) => {
     setColumnMappings((prev) =>
-      prev.map((m) => (m.columnIndex === columnIndex ? { ...m, target: tokenToTarget(token, columnName) } : m)),
+      prev.map((m) => {
+        if (m.columnIndex !== columnIndex) return m;
+        const target = tokenToTarget(token, columnName);
+        const confirmationStatus: ColumnConfirmationStatus =
+          target.kind === "skip" ? "confirmed_skip" : "confirmed_metric";
+        return {
+          ...m,
+          target,
+          confirmationStatus,
+        };
+      }),
+    );
+  };
+
+  const handleConfirmPeriodColumnAsMetric = (columnIndex: number, columnName: string) => {
+    setColumnMappings((prev) =>
+      prev.map((m) => {
+        if (m.columnIndex !== columnIndex) return m;
+
+        // Try existing metric first
+        const onPeriod = matchMetricName(columnName, metrics);
+        if (onPeriod.status === "matched" && onPeriod.metricId) {
+          return {
+            ...m,
+            target: { kind: "existing", metricId: onPeriod.metricId },
+            confirmationStatus: "confirmed_metric",
+          };
+        }
+        if (canAttachMetrics) {
+          const inLibrary = matchMetricName(columnName, libraryMetrics);
+          if (inLibrary.status === "matched" && inLibrary.metricId) {
+            return {
+              ...m,
+              target: { kind: "attach", metricId: inLibrary.metricId },
+              confirmationStatus: "confirmed_metric",
+            };
+          }
+        }
+        if (canCreateMetrics) {
+          return {
+            ...m,
+            target: { kind: "create", name: columnName },
+            confirmationStatus: "confirmed_metric",
+          };
+        }
+        if (metrics.length > 0) {
+          return {
+            ...m,
+            target: { kind: "existing", metricId: metrics[0].id },
+            confirmationStatus: "confirmed_metric",
+          };
+        }
+        if (canAttachMetrics && libraryMetrics.length > 0) {
+          return {
+            ...m,
+            target: { kind: "attach", metricId: libraryMetrics[0].id },
+            confirmationStatus: "confirmed_metric",
+          };
+        }
+        return {
+          ...m,
+          target: { kind: "skip" },
+          confirmationStatus: "confirmed_skip",
+        };
+      }),
+    );
+  };
+
+  const handleConfirmPeriodColumnAsSkip = (columnIndex: number) => {
+    setColumnMappings((prev) =>
+      prev.map((m) =>
+        m.columnIndex === columnIndex
+          ? { ...m, target: { kind: "skip" }, confirmationStatus: "confirmed_skip" }
+          : m,
+      ),
     );
   };
 
@@ -785,6 +921,12 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
   // Select step
   if (step === "select") {
+    const unconfirmedPeriodColumns = columnMappings.filter(
+      (m) =>
+        m.classification.reason === "matches_period_pattern" &&
+        m.confirmationStatus === "unconfirmed",
+    );
+
     const canProceed =
       Boolean(autoDetectedPlayerColumn) &&
       numericColumns.length > 0 &&
@@ -792,7 +934,8 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       mappedColumns.length > 0 &&
       !hasBlockingDiagnostics &&
       !hasValueIssuesBeforePreview &&
-      (!tableBounds?.needsConfirmation || isHeaderConfirmed);
+      (!tableBounds?.needsConfirmation || isHeaderConfirmed) &&
+      unconfirmedPeriodColumns.length === 0;
 
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
@@ -873,6 +1016,41 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             >
               Confirm Header &amp; Table Region
             </button>
+          </div>
+        )}
+
+        {/* Inferential Period Notice Card */}
+        {unconfirmedPeriodColumns.length > 0 && (
+          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex flex-col gap-3">
+            <div>
+              <p className="font-semibold text-amber-200 text-sm">This file may include multiple periods</p>
+              <p className="text-xs text-amber-300/90 mt-1">
+                Single-period import records results into <strong>{periodName}</strong>. Some columns ({unconfirmedPeriodColumns.map((c) => `\u201c${c.columnName}\u201d`).join(", ")}) appear to name evaluation periods rather than metrics. Confirm whether to import these columns as metrics for {periodName} or skip them.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              {unconfirmedPeriodColumns.map((col) => (
+                <div key={col.columnIndex} className="flex items-center justify-between bg-surface border border-border p-2.5 rounded text-xs gap-2">
+                  <span className="font-medium text-text-primary">&ldquo;{col.columnName}&rdquo;</span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmPeriodColumnAsMetric(col.columnIndex, col.columnName)}
+                      className="px-2.5 py-1 rounded bg-surface border border-border text-text-primary hover:bg-surface-secondary cursor-pointer font-medium"
+                    >
+                      Keep as metric for {periodName}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmPeriodColumnAsSkip(col.columnIndex)}
+                      className="px-2.5 py-1 rounded bg-surface-secondary border border-border text-text-secondary hover:text-text-primary cursor-pointer font-medium"
+                    >
+                      Skip this column
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -965,8 +1143,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             <div className="p-4 bg-surface-secondary rounded-md border border-border">
               <p className="text-sm font-semibold text-text-primary mb-1">Choose which metric each column should import as</p>
               <p className="text-sm text-text-secondary mb-3">
-                Columns are matched to metrics by name where possible.
-                {canCreateMetrics ? " Unrecognized columns default to Create. Set any column you do not need to \u201cDo not import.\u201d" : " Set any column you don\u2019t need to \u201cDo not import.\u201d"}
+                Known metric matches are mapped automatically. Columns that look like evaluation periods require confirmation. Unrecognized columns default to Do not import.
               </p>
               <div className="flex flex-col gap-3">
                 {columnMappings.map((mapping) => {
@@ -976,41 +1153,68 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                       .map((m) => (m.target.kind === "existing" || m.target.kind === "attach") ? m.target.metricId : null)
                       .filter((id): id is string => id !== null),
                   );
+                  const isPeriodLike = mapping.classification.reason === "matches_period_pattern";
+                  const isAmbiguous = mapping.classification.reason === "ambiguous_name";
+
                   return (
-                    <div key={mapping.columnIndex} className="flex items-center gap-3">
-                      <span className="w-2/5 truncate font-medium text-text-primary" title={mapping.columnName}>
-                        {mapping.columnName}
-                      </span>
-                      <span className="text-text-muted">→</span>
-                      <select
-                        aria-label={`Metric for ${mapping.columnName}`}
-                        value={targetToToken(mapping.target)}
-                        onChange={(e) => setColumnTarget(mapping.columnIndex, e.target.value, mapping.columnName)}
-                        className="flex-1 rounded-md border border-border p-2 text-base text-text-primary bg-surface focus:border-primary"
-                      >
-                        <option value="">Do not import</option>
-                        {metrics.length > 0 && (
-                          <optgroup label="On this period">
-                            {metrics.map((metric) => (
-                              <option key={metric.id} value={`existing:${metric.id}`} disabled={usedElsewhere.has(metric.id)}>
-                                {metric.name}{usedElsewhere.has(metric.id) ? " (already mapped)" : ""}
-                              </option>
-                            ))}
-                          </optgroup>
+                    <div key={mapping.columnIndex} className="flex flex-col gap-1.5 p-3 rounded-md bg-surface border border-border">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                          <span className="truncate font-medium text-text-primary text-sm" title={mapping.columnName}>
+                            {mapping.columnName}
+                          </span>
+                          {isPeriodLike && (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              Looks like a period name
+                            </span>
+                          )}
+                          {mapping.target.kind === "create" && (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-primary/20 text-primary-light border border-primary/30">
+                              New metric: &ldquo;{mapping.target.name}&rdquo;
+                            </span>
+                          )}
+                          {isAmbiguous && mapping.target.kind === "skip" && (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-surface-secondary text-text-muted border border-border">
+                              Defaults to Do not import
+                            </span>
+                          )}
+                        </div>
+                        {isPeriodLike && mapping.confirmationStatus === "unconfirmed" && (
+                          <span className="text-xs text-amber-400 font-medium whitespace-nowrap">Confirmation required</span>
                         )}
-                        {canAttachMetrics && libraryMetrics.length > 0 && (
-                          <optgroup label="Add to this period">
-                            {libraryMetrics.map((metric) => (
-                              <option key={metric.id} value={`attach:${metric.id}`} disabled={usedElsewhere.has(metric.id)}>
-                                {metric.name}{usedElsewhere.has(metric.id) ? " (already mapped)" : ""}
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {canCreateMetrics && (
-                          <option value="create">Create &ldquo;{mapping.columnName}&rdquo;</option>
-                        )}
-                      </select>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <select
+                          aria-label={`Metric for ${mapping.columnName}`}
+                          value={targetToToken(mapping.target)}
+                          onChange={(e) => setColumnTarget(mapping.columnIndex, e.target.value, mapping.columnName)}
+                          className="flex-1 rounded-md border border-border p-2 text-sm text-text-primary bg-surface focus:border-primary"
+                        >
+                          <option value="">Do not import</option>
+                          {metrics.length > 0 && (
+                            <optgroup label="On this period">
+                              {metrics.map((metric) => (
+                                <option key={metric.id} value={`existing:${metric.id}`} disabled={usedElsewhere.has(metric.id)}>
+                                  {metric.name}{usedElsewhere.has(metric.id) ? " (already mapped)" : ""}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {canAttachMetrics && libraryMetrics.length > 0 && (
+                            <optgroup label="Add to this period">
+                              {libraryMetrics.map((metric) => (
+                                <option key={metric.id} value={`attach:${metric.id}`} disabled={usedElsewhere.has(metric.id)}>
+                                  {metric.name}{usedElsewhere.has(metric.id) ? " (already mapped)" : ""}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {canCreateMetrics && (
+                            <option value="create">Create &ldquo;{mapping.columnName}&rdquo;</option>
+                          )}
+                        </select>
+                      </div>
                     </div>
                   );
                 })}
