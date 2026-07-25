@@ -145,7 +145,7 @@ test.describe("Import Discoverability & Navigation Bridge", () => {
     expect(page.url()).toContain(`periodId=${period.id}`);
 
     // Step 8: Click player link to view profile
-    await page.getByRole("link", { name: "ScoreTestPlayer" }).click();
+    await page.getByRole("link", { name: "ScoreTestPlayer", exact: true }).click();
 
     // Step 9: Verify Member Profile page displays imported metric
     await expect(page.getByText("1.3M")).toBeVisible();

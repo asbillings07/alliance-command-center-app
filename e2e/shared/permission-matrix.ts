@@ -53,7 +53,7 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
       selector: 'a:has-text("Manage Metrics")',
       onPage: "/alliances/{allianceId}",
     },
-    expected: { OWNER: true, ADMIN: true, LEADER: false, VIEWER: false },
+    expected: { OWNER: true, ADMIN: true, LEADER: true, VIEWER: false },
   },
   {
     feature: "dashboard.periods_link",
@@ -139,7 +139,7 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
       type: "page_accessible",
       path: "/alliances/{allianceId}/metrics",
     },
-    expected: { OWNER: true, ADMIN: true, LEADER: false, VIEWER: false },
+    expected: { OWNER: true, ADMIN: true, LEADER: true, VIEWER: false },
   },
   {
     feature: "metrics.create_button",
@@ -149,7 +149,7 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
       selector: 'button:has-text("Create Metric")',
       onPage: "/alliances/{allianceId}/metrics",
     },
-    expected: { OWNER: true, ADMIN: true, LEADER: false, VIEWER: false },
+    expected: { OWNER: true, ADMIN: true, LEADER: true, VIEWER: false },
   },
 
   // ============================================================

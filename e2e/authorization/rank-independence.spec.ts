@@ -215,13 +215,13 @@ test.describe("Rank Independence", () => {
     await expect(completedTask).toBeVisible();
     await expect(completedTask).toHaveClass(/text-text-muted/); // Completed tasks are muted
 
-    // 4. Negative assertion: LEADER cannot configure metrics
-    // Navigate to metrics page
+    // 4. LEADER can configure metrics; this is an ACC role permission,
+    // still independent of any in-game roster rank.
     await page.goto(`/alliances/${allianceId}/metrics`);
+    await expect(page.getByRole("heading", { name: /metrics library/i })).toBeVisible();
 
-    // LEADER should not see "+ Create Metric" button (ADMIN permission required)
     const createMetricButton = page.getByRole("button", { name: /^\+ create metric$/i });
-    await expect(createMetricButton).not.toBeVisible();
+    await expect(createMetricButton).toBeVisible();
   });
 
   test("member roster role field is descriptive only, not authorization", async ({ page, adminScenario }) => {
