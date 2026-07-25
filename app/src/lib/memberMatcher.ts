@@ -288,6 +288,63 @@ export function matchEntriesToMembers(
 }
 
 /**
+ * Strict check to determine if a cell value represents a summary/footer row label
+ * (e.g. "Total", "Average", "Grand Total", "Notes:", "Legend:") rather than a player name
+ * such as "TotalWar", "AverageJoe", or "SummaryKing".
+ */
+export function isSummaryFooterRowLabel(cellValue: string): boolean {
+  const norm = cellValue.toLowerCase().trim().replace(/\s+/g, " ");
+  if (!norm) return false;
+
+  const exactFooterLabels = new Set([
+    "total",
+    "totals",
+    "average",
+    "avg",
+    "overall",
+    "summary",
+    "grand total",
+    "subtotal",
+    "sub-total",
+    "alliance total",
+    "alliance average",
+  ]);
+  if (exactFooterLabels.has(norm)) {
+    return true;
+  }
+
+  if (norm.endsWith(":")) {
+    const withoutColon = norm.slice(0, -1).trim();
+    const colonFooterKeywords = new Set([
+      "total",
+      "totals",
+      "average",
+      "avg",
+      "overall",
+      "summary",
+      "note",
+      "notes",
+      "legend",
+      "comment",
+      "comments",
+      "grand total",
+      "subtotal",
+      "sub-total",
+      "alliance total",
+      "alliance average",
+    ]);
+    if (colonFooterKeywords.has(withoutColon)) {
+      return true;
+    }
+  }
+
+  const multiWordSummaryRegex =
+    /^(total|totals|average|avg|overall|summary|subtotal|sub-total|grand\s+total|alliance\s+total|alliance\s+average)\s+(score|scores|point|points|value|values|count|rows?|stats|statistics|results?|summary|notes?|legend)$/i;
+
+  return multiWordSummaryRegex.test(norm);
+}
+
+/**
  * Detect table region bounds (header index, data start, data end) in spreadsheet rows.
  */
 export function detectTableBounds(rows: string[][]): TableBoundsResult {
@@ -367,7 +424,6 @@ export function detectTableBounds(rows: string[][]): TableBoundsResult {
 
   let dataEndIndex = rows.length;
   let consecutiveEmptyRows = 0;
-  const summaryPattern = /^(total|totals|average|avg|overall|summary|notes?:|legend:)/i;
 
   for (let r = dataStartIndex; r < rows.length; r++) {
     const row = rows[r];
@@ -385,7 +441,7 @@ export function detectTableBounds(rows: string[][]): TableBoundsResult {
     consecutiveEmptyRows = 0;
 
     const firstNonEmptyCell = row.find((c) => c.trim())?.trim() || "";
-    if (summaryPattern.test(firstNonEmptyCell)) {
+    if (isSummaryFooterRowLabel(firstNonEmptyCell)) {
       dataEndIndex = r;
       break;
     }
@@ -551,13 +607,7 @@ export function parseMetricRows(
     metricName?: string;
   },
 ): StructuredParseResult {
-  const { nameColumn, valueColumn, hasHeader = true, tableBoundsInput } = options as {
-    nameColumn: number;
-    valueColumn: number;
-    hasHeader?: boolean;
-    tableBoundsInput?: TableBoundsResult;
-    metricName?: string;
-  };
+  const { nameColumn, valueColumn, hasHeader = true, tableBounds, metricName } = options;
 
   if (!rows || rows.length === 0) {
     const bounds = detectTableBounds(rows);
@@ -575,7 +625,7 @@ export function parseMetricRows(
     };
   }
 
-  const bounds = options.tableBounds ?? detectTableBounds(rows);
+  const bounds = tableBounds ?? detectTableBounds(rows);
   const headerRowIndex = hasHeader ? bounds.headerRowIndex : 0;
   const dataStartIndex = hasHeader ? bounds.dataStartIndex : 0;
   const dataEndIndex = bounds.dataEndIndex;
@@ -597,7 +647,7 @@ export function parseMetricRows(
     }
   }
 
-  const mName = options.metricName || detectedMetricName || `Column ${columnIndexToLabel(valueColumn)}`;
+  const mName = metricName || detectedMetricName || `Column ${columnIndexToLabel(valueColumn)}`;
 
   for (let i = dataStartIndex; i < dataEndIndex; i++) {
     const row = rows[i];

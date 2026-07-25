@@ -4,11 +4,11 @@ import {
   calculateSimilarity,
   analyzeCSV,
   parseCSV,
-  analyzeRows,
   parseMetricRows,
   matchEntriesToMembers,
   matchMetricName,
   detectTableBounds,
+  isSummaryFooterRowLabel,
 } from './memberMatcher';
 
 describe('normalizeName', () => {
@@ -516,6 +516,44 @@ describe('detectTableBounds and resilient structured parsing', () => {
     expect(result.validEntries[0].sourceRow).toBe(4);
     expect(result.validEntries[1].address).toBe('B5');
     expect(result.validEntries[1].sourceRow).toBe(5);
+  });
+
+  it('correctly distinguishes summary footer labels from player names like TotalWar, AverageJoe, SummaryKing', () => {
+    expect(isSummaryFooterRowLabel('TotalWar')).toBe(false);
+    expect(isSummaryFooterRowLabel('AverageJoe')).toBe(false);
+    expect(isSummaryFooterRowLabel('SummaryKing')).toBe(false);
+    expect(isSummaryFooterRowLabel('OverallLeader')).toBe(false);
+
+    expect(isSummaryFooterRowLabel('Total')).toBe(true);
+    expect(isSummaryFooterRowLabel('TOTAL')).toBe(true);
+    expect(isSummaryFooterRowLabel('Grand Total')).toBe(true);
+    expect(isSummaryFooterRowLabel('Average')).toBe(true);
+    expect(isSummaryFooterRowLabel('Notes:')).toBe(true);
+    expect(isSummaryFooterRowLabel('Total Score')).toBe(true);
+  });
+
+  it('does not drop valid player rows whose names start with summary keywords', () => {
+    const rows = [
+      ['Player', 'Kill Points'],
+      ['Alice', '1000'],
+      ['TotalWar', '1500'],
+      ['AverageJoe', '2000'],
+      ['SummaryKing', '2500'],
+      ['Total', '7000'],
+    ];
+
+    const bounds = detectTableBounds(rows);
+    expect(bounds.dataStartIndex).toBe(1);
+    expect(bounds.dataEndIndex).toBe(5); // Stops at 'Total', including TotalWar, AverageJoe, SummaryKing
+
+    const result = parseMetricRows(rows, { nameColumn: 0, valueColumn: 1, tableBounds: bounds });
+    expect(result.validEntries).toHaveLength(4);
+    expect(result.validEntries.map((e) => e.name)).toEqual([
+      'Alice',
+      'TotalWar',
+      'AverageJoe',
+      'SummaryKing',
+    ]);
   });
 });
 

@@ -9,7 +9,6 @@ import {
   THP_COLUMN_NAMES,
   ROLE_COLUMN_NAMES,
   detectColumn,
-  type ColumnInfo,
 } from "@/app/src/lib/importConstants";
 import { parseStrictInteger } from "@/app/src/lib/numberParser";
 import { TourButton } from "@/app/src/components/client";

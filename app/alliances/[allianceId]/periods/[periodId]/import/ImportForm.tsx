@@ -426,12 +426,25 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       (sum, p) => sum + getPreviewEntries(p, nextSelections[p.columnIndex]).length,
       0,
     );
+    const totalSkippedBlanksInSelect = nextPreviews.reduce(
+      (sum, p) => sum + p.skippedBlankCells.length,
+      0,
+    );
+
     if (totalMatched === 0) {
-      setError(
-        totalParsed === 0
-          ? "No valid values found to import. Values must be whole numbers - check for blanks or decimals in the mapped columns."
-          : "No rows matched any of your alliance members. Check the player names and try again.",
-      );
+      if (totalParsed === 0 && totalSkippedBlanksInSelect > 0) {
+        setError(
+          `No importable values found. ${totalSkippedBlanksInSelect} blank metric ${totalSkippedBlanksInSelect === 1 ? "cell was" : "cells were"} skipped.`,
+        );
+      } else if (totalParsed === 0) {
+        setError(
+          "No valid values found to import. Values must be whole numbers - check for blanks or decimals in the mapped columns.",
+        );
+      } else {
+        setError(
+          "No rows matched any of your alliance members. Check the player names and try again.",
+        );
+      }
       return;
     }
 
@@ -700,67 +713,6 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           >
             View Evaluation Period
           </Link>
-        </div>
-      </div>
-    );
-  }
-
-  // Preview step
-  if (step === "preview" && previews.length > 0) {
-    const hasBlockingParseErrors = previews.some((preview) =>
-      preview.summary.results.some((r) => r.status === "invalid_value" || !!r.error)
-    );
-
-    return (
-      <div className="w-full max-w-2xl flex flex-col gap-5">
-        <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium">
-          Destination Period: {periodName}
-        </div>
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-text-primary">Review &amp; Confirm Import</h3>
-          <button onClick={handleBack} className="text-sm text-text-muted hover:text-text-primary cursor-pointer">
-            ← Back
-          </button>
-        </div>
-
-        {hasBlockingParseErrors && (
-          <ValueIssueNotice
-            issues={parseErrors.map((err) => {
-              const separatorIndex = err.indexOf(": ");
-              return separatorIndex > 0
-                ? { columnName: err.slice(0, separatorIndex), error: err.slice(separatorIndex + 2) }
-                : { columnName: "Spreadsheet", error: err };
-            })}
-            phase="import"
-          />
-        )}
-
-        {previews.map((preview) => (
-          <MetricPreviewSection
-            key={preview.columnIndex}
-            preview={preview}
-            selections={duplicateSelections[preview.columnIndex]}
-            onDuplicateSelection={handleDuplicateSelection}
-          />
-        ))}
-
-        {error && (
-          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
-        )}
-
-        <div className="flex gap-3 justify-end">
-          <button onClick={handleBack} className="px-4 py-2 rounded-md border border-border text-text-primary hover:bg-surface-secondary cursor-pointer">
-            Back
-          </button>
-          <button
-            onClick={handleImport}
-            disabled={isPending || totalToImport === 0 || hasBlockingParseErrors}
-            className="px-4 py-2 rounded-md bg-success text-white hover:bg-success/90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isPending
-              ? "Importing..."
-              : `Import All (${totalToImport} ${totalToImport === 1 ? "entry" : "entries"} across ${previews.length} ${previews.length === 1 ? "metric" : "metrics"})`}
-          </button>
         </div>
       </div>
     );
