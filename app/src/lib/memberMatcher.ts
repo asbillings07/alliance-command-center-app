@@ -221,6 +221,23 @@ export type MatrixAnalysisResult = {
   error: string | null;
 };
 
+export function columnIndexToLabel(index: number): string {
+  let columnNumber = index + 1;
+  let label = "";
+
+  while (columnNumber > 0) {
+    const remainder = (columnNumber - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    columnNumber = Math.floor((columnNumber - 1) / 26);
+  }
+
+  return label;
+}
+
+function cellAddress(rowIndex: number, columnIndex: number): string {
+  return `${columnIndexToLabel(columnIndex)}${rowIndex + 1}`;
+}
+
 export type CSVAnalysisResult = MatrixAnalysisResult;
 
 /**
@@ -339,7 +356,9 @@ export function parseMetricRows(
     if (!row || row.every((cell) => !cell.trim())) continue;
 
     if (row.length <= Math.max(nameColumn, valueColumn)) {
-      errors.push(`Row ${i + 1}: Not enough columns`);
+      errors.push(
+        `Row ${i + 1}: Not enough columns; expected data through column ${columnIndexToLabel(Math.max(nameColumn, valueColumn))}`,
+      );
       continue;
     }
 
@@ -347,14 +366,14 @@ export function parseMetricRows(
     const rawValue = row[valueColumn]?.trim() || "";
 
     if (!name) {
-      errors.push(`Row ${i + 1}: Empty name`);
+      errors.push(`Cell ${cellAddress(i, nameColumn)}: Empty name`);
       continue;
     }
 
     const parsed = parseStrictInteger(rawValue);
     if (!parsed.success) {
       errors.push(
-        `Row ${i + 1}: Invalid or missing value "${rawValue}" for "${name}": ${parsed.error}`,
+        `Cell ${cellAddress(i, valueColumn)}: Invalid or missing value "${rawValue}" for "${name}": ${parsed.error}`,
       );
       entries.push({
         name,

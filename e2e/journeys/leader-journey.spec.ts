@@ -9,8 +9,8 @@ import { test, expect } from "../shared/fixtures";
  * 1. Accept invitation
  * 2. Register/login
  * 3. Access alliance dashboard
- * 4. Verify leader permissions (record data, view members)
- * 5. Verify cannot configure metrics/periods or invite
+ * 4. Verify leader permissions (configure metrics/periods, record data, view members)
+ * 5. Verify cannot invite collaborators
  */
 
 test.describe("Leader Journey", () => {
@@ -60,14 +60,17 @@ test.describe("Leader Journey", () => {
     ).not.toBeVisible();
   });
 
-  test("cannot access Metrics Library directly", async ({ page }) => {
+  test("can access Metrics Library directly", async ({ page }) => {
     test.skip(!testAllianceId, "Requires alliance ID");
 
-    // Leader should not see the Metrics Library action on the dashboard
+    // Leaders can configure metrics used during evaluation imports.
     await page.goto(`/alliances/${testAllianceId}`);
     await expect(
       page.locator('a:has-text("Manage Metrics")')
-    ).not.toBeVisible();
+    ).toBeVisible();
+
+    await page.goto(`/alliances/${testAllianceId}/metrics`);
+    await expect(page.getByRole("heading", { name: /metrics library/i })).toBeVisible();
   });
 
   test("cannot access Leadership Team page", async ({ page }) => {

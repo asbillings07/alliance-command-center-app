@@ -4,6 +4,16 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ImportForm } from "./ImportForm";
 
+const mockRefresh = vi.fn();
+
+vi.mock("next/navigation", () => ({
+    useRouter: () => ({
+        push: vi.fn(),
+        replace: vi.fn(),
+        refresh: mockRefresh,
+    }),
+}));
+
 vi.mock("@/app/src/components/client", () => ({
     TourButton: () => createElement("button", null, "Tour"),
 }));
@@ -112,7 +122,7 @@ describe("ImportForm [component]", () => {
 
         // Scope notice check
         expect(container.textContent).toContain("Evaluation Results Import Scope");
-        expect(container.textContent).toContain("This workflow does not create roster members.");
+        expect(container.textContent).toContain("This workflow does not create members.");
 
         // Accessible input check
         const fileInput = container.querySelector<HTMLInputElement>("#csv-upload");
@@ -128,6 +138,7 @@ describe("ImportForm [component]", () => {
             totalCount: 2,
             created: [],
             attached: [],
+            reused: [{ metricId: "met1", name: "Kill Points" }],
         });
 
         await act(async () => {
@@ -172,9 +183,46 @@ describe("ImportForm [component]", () => {
         });
 
         // Assert completion copy
+        expect(mockRefresh).toHaveBeenCalledTimes(1);
         expect(container.textContent).toContain("Evaluation Results Imported");
         expect(container.textContent).toContain("Evaluation results have been recorded into destination period 'Week 28 Evaluation'.");
         expect(container.textContent).toContain("Import More Results");
+        expect(container.textContent).toContain("View Member Results");
+        expect(container.textContent).toContain("View Evaluation Period");
+    });
+
+    it("defaults brand-new numeric columns to create when the user can configure metrics", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const csvContent = `Player,Donations\nDragon,1500\nPhoenix,2300`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Unrecognized columns default to Create");
+
+        const metricSelect = container.querySelector<HTMLSelectElement>(
+            'select[aria-label="Metric for Donations"]'
+        );
+        expect(metricSelect).not.toBeNull();
+        expect(metricSelect?.value).toBe("create");
+        expect(container.textContent).toContain("Donations");
+        expect(container.textContent).toContain("New metric");
     });
 
     it("previews localized thousands separators correctly (450.000.000 -> 450,000,000)", async () => {
@@ -235,23 +283,18 @@ describe("ImportForm [component]", () => {
             await new Promise((r) => setTimeout(r, 50));
         });
 
+        expect(container.textContent).toContain("Fix 1 spreadsheet cell before previewing");
+        expect(container.textContent).toContain("Column: Kill Points");
+        expect(container.textContent).toContain('Kill Points: Cell B3');
+        expect(container.textContent).toContain('Invalid or missing value "450.5" for "Phoenix"');
+        expect(container.textContent).not.toContain("Parse Feedback");
+
         const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
             b.textContent?.includes("Preview Import")
         ) as HTMLButtonElement;
 
-        await act(async () => {
-            previewBtn.click();
-            await new Promise((r) => setTimeout(r, 50));
-        });
-
-        expect(container.textContent).toContain("Invalid Numeric Values Detected in Mapped Columns");
-
-        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
-            b.textContent?.includes("Import All")
-        ) as HTMLButtonElement;
-
-        expect(importBtn).not.toBeNull();
-        expect(importBtn.disabled).toBe(true);
+        expect(previewBtn).not.toBeNull();
+        expect(previewBtn.disabled).toBe(true);
     });
 
     it("displays sheet selector for multi-sheet XLSX workbooks and switches sheets before previewing", async () => {
@@ -341,8 +384,10 @@ describe("ImportForm [component]", () => {
         });
 
         // Verify blocking diagnostic banner is displayed directly on the mapping step for cell A2
-        expect(container.textContent).toContain("Workbook Cell Issues Detected in Mapped Columns");
-        expect(container.textContent).toContain("Cell A2");
+        expect(container.textContent).toContain("Fix 1 spreadsheet cell before importing");
+        expect(container.textContent).toContain("Column: Player");
+        expect(container.textContent).toContain("Player (A2)");
+        expect(container.textContent).not.toContain("Workbook Cell Issues Detected");
 
         const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
             b.textContent?.includes("Preview Import")

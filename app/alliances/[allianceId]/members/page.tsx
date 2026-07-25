@@ -24,6 +24,11 @@ function isValidFilter(filter: string | undefined): filter is FilterType {
     return filter === "active" || filter === "archived" || filter === "all";
 }
 
+type PeriodMetricColumn = {
+    metricId: string;
+    metricName: string;
+};
+
 export default async function MembersPage({ params, searchParams }: Params) {
     const { allianceId } = await params;
     const { filter: filterParam, periodId } = await searchParams;
@@ -58,6 +63,74 @@ export default async function MembersPage({ params, searchParams }: Params) {
         },
     });
 
+    const selectedPeriod = periodId
+        ? await prisma.metricPeriod.findFirst({
+            where: { id: periodId, allianceId },
+            select: {
+                id: true,
+                name: true,
+                periodMetrics: {
+                    where: { active: true },
+                    select: {
+                        metricId: true,
+                        metric: {
+                            select: {
+                                id: true,
+                                name: true,
+                            },
+                        },
+                    },
+                    orderBy: {
+                        metric: { name: "asc" },
+                    },
+                },
+            },
+        })
+        : null;
+
+    const selectedPeriodId = selectedPeriod?.id;
+
+    const periodMetricColumns: PeriodMetricColumn[] =
+        selectedPeriod?.periodMetrics.map((pm) => ({
+            metricId: pm.metricId,
+            metricName: pm.metric.name,
+        })) ?? [];
+
+    const periodMetricIds = periodMetricColumns.map((metric) => metric.metricId);
+    const memberIds = allianceMembers.map((member) => member.id);
+    const periodMetricEntries =
+        selectedPeriod && periodMetricIds.length > 0 && memberIds.length > 0
+            ? await prisma.memberMetricEntry.findMany({
+                where: {
+                    periodId: selectedPeriod.id,
+                    metricId: { in: periodMetricIds },
+                    allianceMemberId: { in: memberIds },
+                    allianceMember: { allianceId },
+                },
+                select: {
+                    allianceMemberId: true,
+                    metricId: true,
+                    value: true,
+                    recordedAt: true,
+                    createdAt: true,
+                    id: true,
+                },
+                orderBy: [
+                    { recordedAt: "desc" },
+                    { createdAt: "desc" },
+                    { id: "desc" },
+                ],
+            })
+            : [];
+
+    const latestMetricValueByMemberAndMetric = new Map<string, number>();
+    for (const entry of periodMetricEntries) {
+        const key = `${entry.allianceMemberId}:${entry.metricId}`;
+        if (!latestMetricValueByMemberAndMetric.has(key)) {
+            latestMetricValueByMemberAndMetric.set(key, entry.value);
+        }
+    }
+
     const [activeCount, archivedCount] = await Promise.all([
         prisma.allianceMember.count({
             where: { allianceId, archivedAt: null },
@@ -69,7 +142,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
 
     const { permissions } = authContext;
 
-    const description = `${allianceMembers.length} member${allianceMembers.length !== 1 ? "s" : ""}${filter !== "all" ? ` (${filter})` : ""}`;
+    const description = `${allianceMembers.length} member${allianceMembers.length !== 1 ? "s" : ""}${filter !== "all" ? ` (${filter})` : ""}${selectedPeriod ? ` · ${selectedPeriod.name} results` : ""}`;
 
     const actionButtons = (
         <div className="flex gap-3">
@@ -109,7 +182,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 activeCount={activeCount}
                 archivedCount={archivedCount}
                 allianceId={allianceId}
-                periodId={periodId}
+                periodId={selectedPeriodId}
             />
 
             {allianceMembers.length === 0 ? (
@@ -145,6 +218,14 @@ export default async function MembersPage({ params, searchParams }: Params) {
                                     <th className="text-left px-4 py-3 text-sm font-medium text-text-secondary">
                                         Player
                                     </th>
+                                    {periodMetricColumns.map((metric) => (
+                                        <th
+                                            key={metric.metricId}
+                                            className="text-right px-4 py-3 text-sm font-medium text-text-secondary whitespace-nowrap"
+                                        >
+                                            {metric.metricName}
+                                        </th>
+                                    ))}
                                     <th className="text-right px-4 py-3 text-sm font-medium text-text-secondary">
                                         THP
                                     </th>
@@ -157,35 +238,72 @@ export default async function MembersPage({ params, searchParams }: Params) {
                                 </tr>
                             </thead>
                             <tbody>
-                                {allianceMembers.map((member) => (
-                                    <tr
-                                        key={member.id}
-                                        className="border-b border-border hover:bg-surface-secondary transition-colors"
-                                    >
-                                        <td className="px-4 py-3">
-                                            <Link
-                                                href={`/alliances/${allianceId}/members/${member.id}${periodId ? `?periodId=${encodeURIComponent(periodId)}` : ""}`}
-                                                className="font-medium text-primary-light hover:text-primary"
-                                            >
-                                                {member.playerName}
-                                            </Link>
-                                            {member.archivedAt && (
-                                                <Badge variant="neutral" size="sm" className="ml-2">
-                                                    Archived
-                                                </Badge>
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-3 text-right text-text-secondary">
-                                            {member.thp == null ? "—" : formatPower(member.thp)}
-                                        </td>
-                                        <td className="px-4 py-3 text-right text-text-secondary">
-                                            {member.squadPower == null ? "—" : formatPower(member.squadPower)}
-                                        </td>
-                                        <td className="px-4 py-3 text-text-secondary">
-                                            {member.role || "—"}
-                                        </td>
-                                    </tr>
-                                ))}
+                                {allianceMembers.map((member) => {
+                                    const memberHref = `/alliances/${allianceId}/members/${member.id}${selectedPeriodId ? `?periodId=${encodeURIComponent(selectedPeriodId)}` : ""}`;
+
+                                    return (
+                                        <tr
+                                            key={member.id}
+                                            className="border-b border-border hover:bg-surface-secondary transition-colors cursor-pointer"
+                                        >
+                                            <td className="p-0">
+                                                <Link
+                                                    href={memberHref}
+                                                    className="block px-4 py-3 font-medium text-primary-light hover:text-primary"
+                                                >
+                                                    {member.playerName}
+                                                    {member.archivedAt && (
+                                                        <Badge variant="neutral" size="sm" className="ml-2">
+                                                            Archived
+                                                        </Badge>
+                                                    )}
+                                                </Link>
+                                            </td>
+                                            {periodMetricColumns.map((metric) => {
+                                                const value = latestMetricValueByMemberAndMetric.get(`${member.id}:${metric.metricId}`);
+
+                                                return (
+                                                    <td key={metric.metricId} className="p-0 text-right">
+                                                        <Link
+                                                            href={memberHref}
+                                                            className="block px-4 py-3 text-text-primary font-medium whitespace-nowrap"
+                                                            aria-label={`${member.playerName} ${metric.metricName}`}
+                                                        >
+                                                            {value == null ? "—" : formatPower(value)}
+                                                        </Link>
+                                                    </td>
+                                                );
+                                            })}
+                                            <td className="p-0 text-right">
+                                                <Link
+                                                    href={memberHref}
+                                                    className="block px-4 py-3 text-text-secondary whitespace-nowrap"
+                                                    aria-label={`${member.playerName} THP`}
+                                                >
+                                                    {member.thp == null ? "—" : formatPower(member.thp)}
+                                                </Link>
+                                            </td>
+                                            <td className="p-0 text-right">
+                                                <Link
+                                                    href={memberHref}
+                                                    className="block px-4 py-3 text-text-secondary whitespace-nowrap"
+                                                    aria-label={`${member.playerName} Squad Power`}
+                                                >
+                                                    {member.squadPower == null ? "—" : formatPower(member.squadPower)}
+                                                </Link>
+                                            </td>
+                                            <td className="p-0">
+                                                <Link
+                                                    href={memberHref}
+                                                    className="block px-4 py-3 text-text-secondary whitespace-nowrap"
+                                                    aria-label={`${member.playerName} Role`}
+                                                >
+                                                    {member.role || "—"}
+                                                </Link>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>

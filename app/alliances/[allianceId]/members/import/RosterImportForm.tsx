@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { analyzeRows, normalizeName } from "@/app/src/lib/memberMatcher";
 import type { ColumnInfo } from "@/app/src/lib/memberMatcher";
 import { parseStrictInteger } from "@/app/src/lib/numberParser";
@@ -110,6 +112,7 @@ function detectColumn(columns: ColumnInfo[], knownNames: Set<string>): ColumnInf
 }
 
 export function RosterImportForm({ allianceId, existingMembers }: RosterImportFormProps) {
+  const router = useRouter();
   const [step, setStep] = useState<ImportStep>("upload");
   const [error, setError] = useState<string | null>(null);
   const [parseErrorCode, setParseErrorCode] = useState<SpreadsheetParseErrorCode | null>(null);
@@ -398,13 +401,18 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     }));
 
     startTransition(async () => {
-      const result = await importMembers(allianceId, entries);
-      setImportResult(result);
-      if (result.errors.length > 0 && result.created === 0 && result.restored === 0) {
-        setError(result.errors.join("; "));
-      } else {
-        setError(null);
-        setStep("complete");
+      try {
+        const result = await importMembers(allianceId, entries);
+        setImportResult(result);
+        if (result.errors.length > 0 && result.created === 0 && result.restored === 0) {
+          setError(result.errors.join("; "));
+        } else {
+          setError(null);
+          router.refresh();
+          setStep("complete");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to create members. Please try again.");
       }
     });
   };
@@ -846,39 +854,58 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
           <h2 className="text-xl font-bold text-green-900">Members Imported</h2>
         </div>
 
-        <div className="flex gap-4">
-          <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
-            <p className="text-3xl font-bold text-green-600">{importResult.created}</p>
-            <p className="text-sm text-gray-600">Members created</p>
+        <div className="space-y-4">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-green-900 uppercase tracking-wider mb-3">Committed</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white border border-green-200 rounded-lg p-4 text-center">
+                <p className="text-3xl font-bold text-green-600">{importResult.created}</p>
+                <p className="text-sm text-gray-700 font-medium mt-1">Members created</p>
+              </div>
+              {importResult.restored > 0 ? (
+                <div className="bg-white border border-green-200 rounded-lg p-4 text-center">
+                  <p className="text-3xl font-bold text-amber-600">{importResult.restored}</p>
+                  <p className="text-sm text-gray-700 font-medium mt-1">Members restored</p>
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-200 rounded-lg p-4 text-center opacity-75">
+                  <p className="text-3xl font-bold text-gray-400">0</p>
+                  <p className="text-sm text-gray-500 font-medium mt-1">Members restored</p>
+                </div>
+              )}
+            </div>
           </div>
-          {importResult.restored > 0 && (
-            <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
-              <p className="text-3xl font-bold text-amber-600">{importResult.restored}</p>
-              <p className="text-sm text-gray-600">Members restored</p>
-            </div>
-          )}
-          {importResult.skippedExisting > 0 && (
-            <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
-              <p className="text-3xl font-bold text-gray-500">{importResult.skippedExisting}</p>
-              <p className="text-sm text-gray-600">Already active</p>
-            </div>
-          )}
-          {importResult.skippedDuplicates > 0 && (
-            <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
-              <p className="text-3xl font-bold text-gray-500">{importResult.skippedDuplicates}</p>
-              <p className="text-sm text-gray-600">Duplicates in file</p>
-            </div>
-          )}
-          {importResult.skippedEmptyNames > 0 && (
-            <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
-              <p className="text-3xl font-bold text-yellow-600">{importResult.skippedEmptyNames}</p>
-              <p className="text-sm text-gray-600">Empty names skipped</p>
-            </div>
-          )}
-          {importResult.skippedUnselected > 0 && (
-            <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 text-center">
-              <p className="text-3xl font-bold text-slate-500">{importResult.skippedUnselected}</p>
-              <p className="text-sm text-gray-600">Unselected</p>
+
+          {(importResult.skippedExisting > 0 ||
+            importResult.skippedDuplicates > 0 ||
+            importResult.skippedEmptyNames > 0 ||
+            importResult.skippedUnselected > 0) && (
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wider mb-2">
+                Not Imported / Unchanged
+              </h3>
+              <ul className="text-sm text-slate-700 space-y-1 list-disc list-inside">
+                {importResult.skippedExisting > 0 && (
+                  <li>
+                    <strong>{importResult.skippedExisting}</strong> existing active members were already active in your member list (identified as unchanged)
+                  </li>
+                )}
+                {importResult.skippedDuplicates > 0 && (
+                  <li>
+                    <strong>{importResult.skippedDuplicates}</strong> duplicate rows in file ignored
+                  </li>
+                )}
+                {importResult.skippedEmptyNames > 0 && (
+                  <li>
+                    <strong>{importResult.skippedEmptyNames}</strong> rows with empty player names skipped
+                  </li>
+                )}
+                {importResult.skippedUnselected > 0 && (
+                  <li>
+                    <strong>{importResult.skippedUnselected}</strong> rows were unselected during review
+                  </li>
+                )}
+              </ul>
             </div>
           )}
         </div>
@@ -901,12 +928,12 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
           >
             Import More Members
           </button>
-          <a
+          <Link
             href={`/alliances/${allianceId}/members`}
-            className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+            className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 inline-block text-center font-medium"
           >
             View Members
-          </a>
+          </Link>
         </div>
       </div>
     );

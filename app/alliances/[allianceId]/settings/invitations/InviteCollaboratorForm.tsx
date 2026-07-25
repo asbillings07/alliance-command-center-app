@@ -239,7 +239,7 @@ export function InviteCollaboratorForm({
               className="w-full px-3 py-2 border border-[#374151] rounded-md bg-[#1F2937] text-[#F9FAFB] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-transparent text-sm"
             >
               <option value="ADMIN">Admin — Full access except ownership</option>
-              <option value="LEADER">Leader — Can view and record metrics</option>
+              <option value="LEADER">Leader — Can configure and record metrics</option>
               <option value="VIEWER">Viewer — Read-only access</option>
             </select>
           </div>
