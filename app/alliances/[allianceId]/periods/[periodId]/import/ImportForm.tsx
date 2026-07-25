@@ -2,7 +2,20 @@
 import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { analyzeRows, parseMetricRows, matchEntriesToMembers, matchMetricName, type MatchSummary, type ColumnInfo } from "@/app/src/lib/memberMatcher";
+import {
+  analyzeRows,
+  parseMetricRows,
+  matchEntriesToMembers,
+  matchMetricName,
+  detectTableBounds,
+  isPlayerColumn,
+  type MatchSummary,
+  type ColumnInfo,
+  type TableBoundsResult,
+  type SkippedBlankCell,
+  type InvalidValueIssue,
+  type MissingIdentityIssue,
+} from "@/app/src/lib/memberMatcher";
 import { TourButton } from "@/app/src/components/client";
 import { smartImportTour } from "@/app/src/lib/tours";
 import { importMemberMetrics } from "./action";
@@ -61,6 +74,9 @@ type MetricImportPreview = {
   disposition: MetricDisposition;
   target: ColumnTarget;
   summary: MatchSummary;
+  skippedBlankCells: SkippedBlankCell[];
+  invalidValueIssues: InvalidValueIssue[];
+  missingIdentityIssues: MissingIdentityIssue[];
 };
 
 type DuplicateSelections = Record<number, Record<string, number>>;
@@ -72,17 +88,6 @@ type ColumnValueIssue = {
   columnName: string;
   error: string;
 };
-
-const PLAYER_COLUMN_NAMES = new Set([
-  'player', 'player name', 'playername', 'member', 'member name',
-  'membername', 'alliance member', 'alliancemember', 'name', 'ign',
-]);
-
-function isPlayerColumn(columnName: string): boolean {
-  const normalized = columnName.toLowerCase().trim().replace(/\s+/g, ' ').replace(/-/g, ' ');
-  const noSpaces = normalized.replace(/\s/g, '');
-  return PLAYER_COLUMN_NAMES.has(normalized) || PLAYER_COLUMN_NAMES.has(noSpaces);
-}
 
 const DISPOSITION_BADGE: Record<MetricDisposition, { label: string; className: string }> = {
   existing: { label: "On period", className: "bg-surface border border-border text-text-secondary" },
@@ -226,6 +231,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   const [selectedSheetIndex, setSelectedSheetIndex] = useState(0);
 
   const [rowCount, setRowCount] = useState(0);
+  const [tableBounds, setTableBounds] = useState<TableBoundsResult | null>(null);
   const [autoDetectedPlayerColumn, setAutoDetectedPlayerColumn] = useState<ColumnInfo | null>(null);
   const [numericColumns, setNumericColumns] = useState<ColumnInfo[]>([]);
   const [columnMappings, setColumnMappings] = useState<ColumnMetricMapping[]>([]);
@@ -281,6 +287,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     const sheet = workbook.sheets[sheetIndex];
     if (!sheet || sheet.rows.length === 0) {
       setRowCount(0);
+      setTableBounds(null);
       setAutoDetectedPlayerColumn(null);
       setNumericColumns([]);
       setColumnMappings([]);
@@ -290,7 +297,10 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       return;
     }
 
-    const result = analyzeRows(sheet.rows);
+    const bounds = detectTableBounds(sheet.rows);
+    setTableBounds(bounds);
+
+    const result = analyzeRows(sheet.rows, bounds);
     if (result.error) {
       setRowCount(0);
       setAutoDetectedPlayerColumn(null);
@@ -378,14 +388,18 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     const aggregatedErrors: string[] = [];
 
     for (const mapping of mappedColumns) {
-      const { entries, errors } = parseMetricRows(currentSheet.rows, {
+      const metricDisplayName = displayNameFor(mapping.target, mapping.columnName);
+      const parseResult = parseMetricRows(currentSheet.rows, {
         nameColumn: autoDetectedPlayerColumn.index,
         valueColumn: mapping.columnIndex,
         hasHeader: true,
+        tableBounds: tableBounds ?? undefined,
+        metricName: metricDisplayName,
       });
-      errors.forEach((err) => aggregatedErrors.push(`${mapping.columnName}: ${err}`));
 
-      const summary = matchEntriesToMembers(entries, members);
+      parseResult.errors.forEach((err) => aggregatedErrors.push(`${mapping.columnName}: ${err}`));
+
+      const summary = matchEntriesToMembers(parseResult.entries, members);
       const selections: Record<string, number> = {};
       summary.results.forEach((result, index) => {
         if ((result.status === "matched" || result.status === "duplicate") && result.memberId) {
@@ -396,10 +410,13 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       nextPreviews.push({
         columnIndex: mapping.columnIndex,
         columnName: mapping.columnName,
-        displayName: displayNameFor(mapping.target, mapping.columnName),
+        displayName: metricDisplayName,
         disposition: mapping.target.kind === "skip" ? "existing" : mapping.target.kind,
         target: mapping.target,
         summary,
+        skippedBlankCells: parseResult.skippedBlankCells,
+        invalidValueIssues: parseResult.invalidValueIssues,
+        missingIdentityIssues: parseResult.missingIdentityIssues,
       });
       nextSelections[mapping.columnIndex] = selections;
     }
@@ -437,7 +454,11 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     [previews, duplicateSelections],
   );
 
-  // Cell Diagnostic Blocking Check for Evaluation
+  const totalSkippedBlanks = useMemo(
+    () => previews.reduce((sum, p) => sum + p.skippedBlankCells.length, 0),
+    [previews],
+  );
+
   const currentSheet = parsedWorkbook?.sheets[selectedSheetIndex];
   const mappedIndicesSet = new Set(
     [
@@ -475,12 +496,19 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   const valueIssuesBeforePreview: ColumnValueIssue[] = [];
   if (currentSheet && autoDetectedPlayerColumn) {
     for (const mapping of mappedColumns) {
-      const { errors } = parseMetricRows(currentSheet.rows, {
+      const parseRes = parseMetricRows(currentSheet.rows, {
         nameColumn: autoDetectedPlayerColumn.index,
         valueColumn: mapping.columnIndex,
         hasHeader: true,
+        tableBounds: tableBounds ?? undefined,
+        metricName: displayNameFor(mapping.target, mapping.columnName),
       });
-      errors.forEach((err) => valueIssuesBeforePreview.push({ columnName: mapping.columnName, error: err }));
+      parseRes.invalidValueIssues.forEach((issue) =>
+        valueIssuesBeforePreview.push({ columnName: issue.metricName, error: `${issue.address}: ${issue.error}` }),
+      );
+      parseRes.missingIdentityIssues.forEach((issue) =>
+        valueIssuesBeforePreview.push({ columnName: issue.metricName, error: `${issue.address}: ${issue.error}` }),
+      );
     }
   }
 
@@ -517,6 +545,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     setParseErrorCode(null);
     setParsedWorkbook(null);
     setRowCount(0);
+    setTableBounds(null);
     setAutoDetectedPlayerColumn(null);
     setNumericColumns([]);
     setColumnMappings([]);
@@ -631,12 +660,17 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           )}
         </div>
 
-        {(unmatchedMembersList.length > 0 || committedFormulaWarnings.length > 0) && (
+        {(unmatchedMembersList.length > 0 || committedFormulaWarnings.length > 0 || totalSkippedBlanks > 0) && (
           <div className="w-full p-4 bg-surface-secondary border border-border rounded-lg flex flex-col gap-3">
             <h4 className="text-xs font-semibold text-text-primary uppercase tracking-wider">Not Imported / Excluded Input</h4>
             {unmatchedMembersList.length > 0 && (
               <p className="text-sm text-text-secondary">
-                <strong>{unmatchedMembersList.length} unmatched player {unmatchedMembersList.length === 1 ? "name was" : "names were"} skipped</strong> (names not found in member list). To import results for these members, first add them via <strong>Import Members</strong>.
+                <strong>{unmatchedMembersList.length} unmatched player {unmatchedMembersList.length === 1 ? "name was" : "names were"} skipped</strong> (names not found in member list).
+              </p>
+            )}
+            {totalSkippedBlanks > 0 && (
+              <p className="text-sm text-text-secondary">
+                <strong>{totalSkippedBlanks} blank metric {totalSkippedBlanks === 1 ? "cell was" : "cells were"} skipped</strong> (no entries or zeroes created).
               </p>
             )}
             {committedFormulaWarnings.length > 0 && (
@@ -644,65 +678,25 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                 <strong>{committedFormulaWarnings.length} formula {committedFormulaWarnings.length === 1 ? "cell used" : "cells used"} pre-calculated cached values</strong> from spreadsheet for committed entries.
               </p>
             )}
-
-            <details className="mt-1 bg-surface border border-border rounded-lg p-3 text-sm text-text-secondary">
-              <summary className="font-semibold text-text-primary hover:text-text-primary cursor-pointer select-none">
-                Review Warnings &amp; Unmatched Details ({unmatchedMembersList.length + committedFormulaWarnings.length})
-              </summary>
-              <div className="mt-3 space-y-3 pt-3 border-t border-border">
-                {unmatchedMembersList.length > 0 && (
-                  <div>
-                    <h5 className="font-semibold text-text-primary text-xs uppercase tracking-wider mb-1">
-                      Unmatched Player Names ({unmatchedMembersList.length})
-                    </h5>
-                    <p className="text-xs text-text-muted mb-2">
-                      Results for these player names were excluded because they do not exist in your member list.
-                    </p>
-                    <ul className="list-disc list-inside text-xs text-text-secondary space-y-0.5 max-h-36 overflow-y-auto font-mono">
-                      {unmatchedMembersList.map((item) => (
-                        <li key={item.rawName}>
-                          <strong className="text-text-primary">{item.rawName}</strong> (Row{item.rows.length === 1 ? "" : "s"} {item.rows.join(", ")})
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {committedFormulaWarnings.length > 0 && (
-                  <div>
-                    <h5 className="font-semibold text-text-primary text-xs uppercase tracking-wider mb-1">
-                      Formula Cached Values Used ({committedFormulaWarnings.length})
-                    </h5>
-                    <ul className="list-disc list-inside text-xs text-text-secondary space-y-0.5 max-h-36 overflow-y-auto">
-                      {committedFormulaWarnings.map((issue, idx) => (
-                        <li key={idx}>
-                          Cell {issue.address ?? `R${issue.rowIndex}C${issue.columnIndex}`}: {issue.message}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            </details>
           </div>
         )}
 
         <div className="flex flex-wrap gap-3 justify-end w-full">
           <button
             onClick={handleReset}
-            className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer text-sm font-medium"
+            className="px-4 py-2 rounded-md border border-border text-text-primary hover:bg-surface-secondary cursor-pointer text-sm font-medium"
           >
             Import More Results
           </button>
           <Link
             href={`/alliances/${allianceId}/members?periodId=${periodId}`}
-            className="px-4 py-2 rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 text-sm font-medium inline-block text-center"
+            className="px-4 py-2 rounded-md border border-primary/40 bg-primary/10 text-primary-light hover:bg-primary/20 text-sm font-medium inline-block text-center"
           >
             View Member Results
           </Link>
           <Link
             href={`/alliances/${allianceId}/periods/${periodId}`}
-            className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium inline-block text-center"
+            className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover text-sm font-medium inline-block text-center"
           >
             View Evaluation Period
           </Link>
@@ -751,17 +745,17 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         ))}
 
         {error && (
-          <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">{error}</div>
+          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
         )}
 
         <div className="flex gap-3 justify-end">
-          <button onClick={handleBack} className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer">
+          <button onClick={handleBack} className="px-4 py-2 rounded-md border border-border text-text-primary hover:bg-surface-secondary cursor-pointer">
             Back
           </button>
           <button
             onClick={handleImport}
             disabled={isPending || totalToImport === 0 || hasBlockingParseErrors}
-            className="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-md bg-success text-white hover:bg-success/90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isPending
               ? "Importing..."
@@ -823,27 +817,27 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
         {/* Player Column Status */}
         {autoDetectedPlayerColumn ? (
-          <div className="p-4 rounded-md bg-green-50 border border-green-300">
+          <div className="p-4 rounded-md bg-success/10 border border-success/30">
             <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
-              <p className="text-green-900 font-medium">
+              <p className="text-text-primary font-medium">
                 Player column found: <strong>{autoDetectedPlayerColumn.name}</strong>
               </p>
             </div>
-            <p className="text-green-800 text-sm mt-1 ml-7">{rowCount} rows detected</p>
+            <p className="text-text-secondary text-sm mt-1 ml-7">{rowCount} rows detected</p>
           </div>
         ) : (
-          <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
+          <div className="p-4 rounded-md bg-danger/10 border border-danger/30">
             <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-danger" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
-              <p className="text-red-900 font-semibold">No player column found</p>
+              <p className="text-danger font-semibold">No player column found</p>
             </div>
-            <p className="text-sm text-red-800 mt-2 ml-7">Please rename a column in your spreadsheet to one of these:</p>
-            <ul className="text-sm text-red-800 mt-1 ml-7 list-disc list-inside">
+            <p className="text-sm text-text-secondary mt-2 ml-7">Please rename a column in your spreadsheet to one of these:</p>
+            <ul className="text-sm text-text-secondary mt-1 ml-7 list-disc list-inside">
               <li><strong>Player</strong> or <strong>Player Name</strong></li>
               <li><strong>Member</strong> or <strong>Member Name</strong></li>
               <li><strong>Name</strong>, <strong>IGN</strong>, or <strong>Alliance Member</strong></li>
@@ -852,16 +846,16 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         )}
 
         {numericColumns.length === 0 && (
-          <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
-            <p className="text-red-900 font-semibold">No numeric columns found</p>
-            <p className="text-sm text-red-800 mt-1">Your spreadsheet needs at least one column with whole numbers.</p>
+          <div className="p-4 rounded-md bg-danger/10 border border-danger/30">
+            <p className="text-danger font-semibold">No numeric columns found</p>
+            <p className="text-sm text-text-secondary mt-1">Your spreadsheet needs at least one column with whole numbers.</p>
           </div>
         )}
 
         {noSelectableMetrics && (
-          <div className="p-4 rounded-md bg-red-100 border-2 border-red-400">
-            <p className="text-red-900 font-semibold">No metrics available</p>
-            <p className="text-sm text-red-800 mt-1">Ask an alliance admin to add metrics, then import again.</p>
+          <div className="p-4 rounded-md bg-danger/10 border border-danger/30">
+            <p className="text-danger font-semibold">No metrics available</p>
+            <p className="text-sm text-text-secondary mt-1">Ask an alliance admin to add metrics, then import again.</p>
           </div>
         )}
 
@@ -936,7 +930,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                       <li key={m.columnIndex}>
                         <strong>{m.columnName}</strong> → <strong>{displayNameFor(m.target, m.columnName)}</strong>
                         {disp !== "existing" && (
-                          <span className="ml-1 text-xs text-blue-700">({DISPOSITION_BADGE[disp].label})</span>
+                          <span className="ml-1 text-xs text-primary-light">({DISPOSITION_BADGE[disp].label})</span>
                         )}
                       </li>
                     );
@@ -948,17 +942,17 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         )}
 
         {error && (
-          <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">{error}</div>
+          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
         )}
 
         <div className="flex gap-3 justify-end">
-          <button onClick={handleBack} className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer">
+          <button onClick={handleBack} className="px-4 py-2 rounded-md border border-border text-text-primary hover:bg-surface-secondary cursor-pointer">
             Cancel
           </button>
           <button
             onClick={handleSelectComplete}
             disabled={!canProceed}
-            className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Preview Import
           </button>
@@ -985,12 +979,12 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           />
         )}
 
-        <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 font-medium">
+        <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium">
           Destination Period: {periodName}
         </div>
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Review &amp; Confirm Import</h3>
-          <button onClick={handleBack} className="text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
+          <h3 className="text-lg font-semibold text-text-primary">Review &amp; Confirm Import</h3>
+          <button onClick={handleBack} className="text-sm text-text-muted hover:text-text-primary cursor-pointer">
             ← Back
           </button>
         </div>
@@ -1029,17 +1023,17 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         ))}
 
         {error && (
-          <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">{error}</div>
+          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
         )}
 
         <div className="flex gap-3 justify-end">
-          <button onClick={handleBack} className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer">
+          <button onClick={handleBack} className="px-4 py-2 rounded-md border border-border text-text-primary hover:bg-surface-secondary cursor-pointer">
             Back
           </button>
           <button
             onClick={handleImport}
             disabled={isPending || totalToImport === 0 || hasBlockingParseErrors || hasBlockingDiagnostics}
-            className="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-md bg-success text-white hover:bg-success/90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isPending
               ? "Importing..."
@@ -1090,7 +1084,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       )}
 
       {!parseErrorCode && error && (
-        <div className="p-4 rounded-md bg-red-100 border border-red-300 text-red-900">{error}</div>
+        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
       )}
 
       <div data-tour="metric-requirements" className="p-4 rounded-md bg-surface-secondary border border-border">
@@ -1135,7 +1129,7 @@ function MetricPreviewSection({
   selections: Record<string, number> | undefined;
   onDuplicateSelection: (columnIndex: number, memberId: string, resultIndex: number) => void;
 }) {
-  const { summary } = preview;
+  const { summary, skippedBlankCells } = preview;
 
   const membersWithDuplicates = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1163,20 +1157,43 @@ function MetricPreviewSection({
         <span className="text-sm text-text-muted">from <strong>{preview.columnName}</strong></span>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 text-center">
+      <div className="grid grid-cols-4 gap-3 text-center">
         <div className="p-3 rounded-md bg-surface border border-border">
           <div className="text-xl font-bold text-text-primary">{summary.total}</div>
-          <div className="text-xs text-text-secondary">Total Rows</div>
+          <div className="text-xs text-text-secondary">Valid Data Rows</div>
         </div>
         <div className="p-3 rounded-md bg-success/10 border border-success/30">
           <div className="text-xl font-bold text-success">{willImportCount}</div>
           <div className="text-xs text-text-secondary">Will Import</div>
+        </div>
+        <div className="p-3 rounded-md bg-surface border border-border">
+          <div className="text-xl font-bold text-text-muted">{skippedBlankCells.length}</div>
+          <div className="text-xs text-text-secondary">Skipped Blanks</div>
         </div>
         <div className="p-3 rounded-md bg-danger/10 border border-danger/30">
           <div className="text-xl font-bold text-danger">{summary.unmatched}</div>
           <div className="text-xs text-text-secondary">Unmatched</div>
         </div>
       </div>
+
+      {skippedBlankCells.length > 0 && (
+        <details className="text-sm text-text-secondary bg-surface border border-border rounded-md p-3">
+          <summary className="cursor-pointer font-medium text-text-primary select-none">
+            Review {skippedBlankCells.length} skipped blank cell{skippedBlankCells.length === 1 ? "" : "s"}
+          </summary>
+          <p className="text-xs text-text-muted mt-1">
+            Blank cells will be skipped without creating entries or zeroes:
+          </p>
+          <ul className="text-xs font-mono space-y-1 mt-2 max-h-32 overflow-y-auto">
+            {skippedBlankCells.map((cell, idx) => (
+              <li key={idx} className="flex justify-between py-0.5 border-b border-border/40 last:border-0">
+                <span>{cell.rawName}</span>
+                <span className="text-text-muted">Cell {cell.address}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {hasDuplicates && (
         <div className="p-3 rounded-md bg-warning/10 border border-warning/30">

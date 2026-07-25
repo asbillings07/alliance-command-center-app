@@ -285,8 +285,8 @@ describe("ImportForm [component]", () => {
 
         expect(container.textContent).toContain("Fix 1 spreadsheet cell before previewing");
         expect(container.textContent).toContain("Column: Kill Points");
-        expect(container.textContent).toContain('Kill Points: Cell B3');
-        expect(container.textContent).toContain('Invalid or missing value "450.5" for "Phoenix"');
+        expect(container.textContent).toContain('Kill Points: B3');
+        expect(container.textContent).toContain('450.5');
         expect(container.textContent).not.toContain("Parse Feedback");
 
         const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>

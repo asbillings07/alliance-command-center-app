@@ -8,6 +8,7 @@ import {
   parseMetricRows,
   matchEntriesToMembers,
   matchMetricName,
+  detectTableBounds,
 } from './memberMatcher';
 
 describe('normalizeName', () => {
@@ -200,17 +201,30 @@ Val,2000,600`;
     expect(result.entries[1]).toEqual({ name: 'Val', value: 600, rawValue: '600', sourceRow: 3 });
   });
 
-  it('should report error for rows with missing values and preserve entry with error', () => {
+  it('should skip rows with missing/blank values and place them in skippedBlankCells', () => {
     const csv = `name,Score
 Dragon,1500
 Val,`;
     const result = parseCSV(csv, { nameColumn: 0, valueColumn: 1 });
     
-    expect(result.entries).toHaveLength(2);
-    expect(result.entries[0]).toEqual({ name: 'Dragon', value: 1500, rawValue: '1500', sourceRow: 2 });
-    expect(result.entries[1].error).toBeDefined();
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain('Invalid or missing value');
+    expect(result.validEntries).toHaveLength(1);
+    expect(result.validEntries[0]).toEqual({
+      name: 'Dragon',
+      value: 1500,
+      rawValue: '1500',
+      sourceRow: 2,
+      columnIndex: 1,
+      address: 'B2',
+      metricName: 'Score',
+    });
+    expect(result.skippedBlankCells).toHaveLength(1);
+    expect(result.skippedBlankCells[0]).toEqual({
+      sourceRow: 3,
+      columnIndex: 1,
+      address: 'B3',
+      rawName: 'Val',
+      metricName: 'Score',
+    });
   });
 
   it('should report error for non-integer values and preserve row entries with error', () => {
@@ -422,33 +436,86 @@ describe('matchMetricName', () => {
   });
 });
 
-describe('analyzeRows and parseMetricRows matrix grid functions', () => {
-  it('analyzeRows classifies columns from string matrix grid', () => {
+describe('detectTableBounds and resilient structured parsing', () => {
+  it('detects header row index and table bounds ignoring leading title rows and trailing summary blocks', () => {
     const rows = [
-      ['Player', 'THP', 'Role'],
-      ['Alice', '1.000.000', 'Leader'],
-      ['Bob', '500.000', 'Officer'],
+      ['Alliance vs Alliance Season 5 Weekly Export'], // Row 0: Title banner
+      [''], // Row 1: Blank spacer
+      ['Player Name', 'VS Score', 'Kill Points'], // Row 2: Header row
+      ['Alice', '1500', '800'], // Row 3: Data row 1
+      ['Bob', '2000', '600'], // Row 4: Data row 2
+      ['Total', '3500', '1400'], // Row 5: Summary row
     ];
 
-    const result = analyzeRows(rows);
-    expect(result.error).toBeNull();
-    expect(result.rowCount).toBe(2);
-    expect(result.columns[0].isNumeric).toBe(false);
-    expect(result.columns[1].isNumeric).toBe(true);
-    expect(result.columns[2].isNumeric).toBe(false);
+    const bounds = detectTableBounds(rows);
+    expect(bounds.headerRowIndex).toBe(2);
+    expect(bounds.dataStartIndex).toBe(3);
+    expect(bounds.dataEndIndex).toBe(5);
+    expect(bounds.confidence).toBe('high');
+    expect(bounds.needsConfirmation).toBe(false);
   });
 
-  it('parseMetricRows extracts entries from string matrix grid', () => {
+  it('classifies sparse blank metric cells as skipped and valid cells as valid entries', () => {
     const rows = [
-      ['Player', 'THP', 'Role'],
-      ['Alice', '1.000.000', 'Leader'],
-      ['Bob', '500.000', 'Officer'],
+      ['Player', 'Kill Points'],
+      ['Alice', '1500'],
+      ['Bob', ''], // Blank metric cell
+      ['Charlie', '2000'],
     ];
 
     const result = parseMetricRows(rows, { nameColumn: 0, valueColumn: 1 });
-    expect(result.detectedMetricName).toBe('THP');
-    expect(result.entries).toHaveLength(2);
-    expect(result.entries[0]).toEqual({ name: 'Alice', value: 1000000, rawValue: '1.000.000', sourceRow: 2 });
-    expect(result.entries[1]).toEqual({ name: 'Bob', value: 500000, rawValue: '500.000', sourceRow: 3 });
+    expect(result.validEntries).toHaveLength(2);
+    expect(result.validEntries[0].name).toBe('Alice');
+    expect(result.validEntries[1].name).toBe('Charlie');
+
+    expect(result.skippedBlankCells).toHaveLength(1);
+    expect(result.skippedBlankCells[0]).toEqual({
+      sourceRow: 3,
+      columnIndex: 1,
+      address: 'B3',
+      rawName: 'Bob',
+      metricName: 'Kill Points',
+    });
+  });
+
+  it('classifies nonblank invalid numeric strings with exact cell address and column metric name', () => {
+    const rows = [
+      ['Player', 'Kill Points'],
+      ['Alice', 'abc'],
+      ['Bob', '#VALUE!'],
+    ];
+
+    const result = parseMetricRows(rows, { nameColumn: 0, valueColumn: 1 });
+    expect(result.validEntries).toHaveLength(0);
+    expect(result.invalidValueIssues).toHaveLength(2);
+
+    expect(result.invalidValueIssues[0].rawName).toBe('Alice');
+    expect(result.invalidValueIssues[0].address).toBe('B2');
+    expect(result.invalidValueIssues[0].metricName).toBe('Kill Points');
+    expect(result.invalidValueIssues[0].error).toMatch(/integer/i);
+
+    expect(result.invalidValueIssues[1].rawName).toBe('Bob');
+    expect(result.invalidValueIssues[1].address).toBe('B3');
+    expect(result.invalidValueIssues[1].metricName).toBe('Kill Points');
+    expect(result.invalidValueIssues[1].error).toMatch(/integer/i);
+  });
+
+  it('preserves accurate cell addresses after title row offset', () => {
+    const rows = [
+      ['Title Banner'],
+      [''],
+      ['Player', 'Score'],
+      ['Alice', '100'],
+      ['Bob', '200'],
+    ];
+
+    const bounds = detectTableBounds(rows);
+    const result = parseMetricRows(rows, { nameColumn: 0, valueColumn: 1, tableBounds: bounds });
+
+    expect(result.validEntries[0].address).toBe('B4');
+    expect(result.validEntries[0].sourceRow).toBe(4);
+    expect(result.validEntries[1].address).toBe('B5');
+    expect(result.validEntries[1].sourceRow).toBe(5);
   });
 });
+
