@@ -60,9 +60,6 @@ const METRIC_KEYWORDS = new Set([
   "merits",
   "contribution",
   "contributions",
-  "score",
-  "points",
-  "score points",
 ]);
 
 // Period pattern matching:

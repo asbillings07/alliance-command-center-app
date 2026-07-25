@@ -132,8 +132,8 @@ describe("classifyColumn", () => {
     expect(vs7Result.needsConfirmation).toBe(true);
   });
 
-  it("classifies unrecognized and ambiguous column names as ambiguous_name with default skip and no blocking", () => {
-    const ambiguousColumns = ["Event", "Result", "Overview", "Column 3", "Category"];
+  it("classifies unrecognized and ambiguous column names including Score and Points as ambiguous_name", () => {
+    const ambiguousColumns = ["Score", "Points", "Event", "Result", "Overview", "Column 3", "Category"];
 
     for (const colName of ambiguousColumns) {
       const result = classifyColumn({

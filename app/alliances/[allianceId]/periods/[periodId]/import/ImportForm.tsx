@@ -433,7 +433,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         columnName: col.name,
         classification,
         target: { kind: "skip" },
-        confirmationStatus: "confirmed_skip",
+        confirmationStatus: "unconfirmed",
       };
     });
 
@@ -483,6 +483,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   };
 
   const handleConfirmPeriodColumnAsMetric = (columnIndex: number, columnName: string) => {
+    setError(null);
     setColumnMappings((prev) =>
       prev.map((m) => {
         if (m.columnIndex !== columnIndex) return m;
@@ -513,30 +514,13 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             confirmationStatus: "confirmed_metric",
           };
         }
-        if (metrics.length > 0) {
-          return {
-            ...m,
-            target: { kind: "existing", metricId: metrics[0].id },
-            confirmationStatus: "confirmed_metric",
-          };
-        }
-        if (canAttachMetrics && libraryMetrics.length > 0) {
-          return {
-            ...m,
-            target: { kind: "attach", metricId: libraryMetrics[0].id },
-            confirmationStatus: "confirmed_metric",
-          };
-        }
-        return {
-          ...m,
-          target: { kind: "skip" },
-          confirmationStatus: "confirmed_skip",
-        };
+        setError(`Creating a new metric for "${columnName}" requires metric configuration permission. Please select an existing metric or skip the column.`);
+        return m;
       }),
     );
   };
 
-  const handleConfirmPeriodColumnAsSkip = (columnIndex: number) => {
+  const handleConfirmColumnAsSkip = (columnIndex: number) => {
     setColumnMappings((prev) =>
       prev.map((m) =>
         m.columnIndex === columnIndex
@@ -927,6 +911,10 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         m.confirmationStatus === "unconfirmed",
     );
 
+    const unconfirmedColumns = columnMappings.filter(
+      (m) => m.confirmationStatus === "unconfirmed",
+    );
+
     const canProceed =
       Boolean(autoDetectedPlayerColumn) &&
       numericColumns.length > 0 &&
@@ -935,7 +923,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       !hasBlockingDiagnostics &&
       !hasValueIssuesBeforePreview &&
       (!tableBounds?.needsConfirmation || isHeaderConfirmed) &&
-      unconfirmedPeriodColumns.length === 0;
+      unconfirmedColumns.length === 0;
 
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
@@ -1042,7 +1030,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleConfirmPeriodColumnAsSkip(col.columnIndex)}
+                      onClick={() => handleConfirmColumnAsSkip(col.columnIndex)}
                       className="px-2.5 py-1 rounded bg-surface-secondary border border-border text-text-secondary hover:text-text-primary cursor-pointer font-medium"
                     >
                       Skip this column
@@ -1173,13 +1161,18 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                               New metric: &ldquo;{mapping.target.name}&rdquo;
                             </span>
                           )}
-                          {isAmbiguous && mapping.target.kind === "skip" && (
+                          {isAmbiguous && mapping.confirmationStatus === "unconfirmed" && (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              Ambiguous column — confirm choice
+                            </span>
+                          )}
+                          {isAmbiguous && mapping.confirmationStatus !== "unconfirmed" && mapping.target.kind === "skip" && (
                             <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-surface-secondary text-text-muted border border-border">
-                              Defaults to Do not import
+                              Confirmed Do not import
                             </span>
                           )}
                         </div>
-                        {isPeriodLike && mapping.confirmationStatus === "unconfirmed" && (
+                        {(isPeriodLike || isAmbiguous) && mapping.confirmationStatus === "unconfirmed" && (
                           <span className="text-xs text-amber-400 font-medium whitespace-nowrap">Confirmation required</span>
                         )}
                       </div>
@@ -1214,6 +1207,16 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                             <option value="create">Create &ldquo;{mapping.columnName}&rdquo;</option>
                           )}
                         </select>
+
+                        {mapping.confirmationStatus === "unconfirmed" && mapping.target.kind === "skip" && (
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmColumnAsSkip(mapping.columnIndex)}
+                            className="px-2.5 py-1.5 rounded bg-surface border border-border text-text-primary hover:bg-surface-secondary cursor-pointer text-xs font-medium whitespace-nowrap"
+                          >
+                            Confirm Do not import
+                          </button>
+                        )}
                       </div>
                     </div>
                   );

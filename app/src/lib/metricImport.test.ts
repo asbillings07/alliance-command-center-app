@@ -97,9 +97,10 @@ describe("buildMetricImportPlan", () => {
 });
 
 describe("validateColumnTargets", () => {
-  it("dedupes rows per member within a column and passes the target through", () => {
+  it("dedupes rows per member within a column and passes the target and sourceColumnName through", () => {
     const mappings: ColumnTargetMapping[] = [
       {
+        sourceColumnName: "VS 7",
         target: { kind: "existing", metricId: "m-kp" },
         entries: [
           { memberId: "m1", rawValue: "100" },
@@ -109,6 +110,7 @@ describe("validateColumnTargets", () => {
       },
     ];
     const [result] = validateColumnTargets(mappings);
+    expect(result.sourceColumnName).toBe("VS 7");
     expect(result.target).toEqual({ kind: "existing", metricId: "m-kp" });
     expect(result.entries).toEqual([
       { memberId: "m1", value: 100 },

@@ -15,6 +15,7 @@ import {
   resolveMetricTargets,
 } from "@/app/src/lib/metricResolution";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
+import { classifyColumn } from "@/app/src/lib/columnClassifier";
 
 type ImportMetricsInput = {
   periodId: string;
@@ -86,13 +87,35 @@ export async function importMemberMetrics(
   // one in the active library, or one already attached to this (alliance-scoped)
   // period. The latter covers metrics that were archived without being detached
   // - they still legitimately belong here and are offered by the import UI.
-  for (const { target } of validated) {
+  for (const { target, sourceColumnName } of validated) {
     if (
       target.kind === "existing" &&
       !libraryMetricIds.has(target.metricId) &&
       !attachedMetricIds.has(target.metricId)
     ) {
       throw new Error("One or more metrics do not belong to this alliance");
+    }
+
+    if (sourceColumnName) {
+      const colClassification = classifyColumn({
+        columnIndex: 0,
+        columnName: sourceColumnName,
+        periodMetrics: libraryMetrics.filter((m) => attachedMetricIds.has(m.id)),
+        libraryMetrics,
+      });
+
+      if (
+        colClassification.reason === "matches_period_pattern" ||
+        colClassification.reason === "ambiguous_name"
+      ) {
+        if (target.kind === "create") {
+          if (!hasPermission(auth.permissions, Permissions.CONFIGURE_METRICS)) {
+            throw new Error(
+              `You do not have permission to create a metric for unresolved column '${sourceColumnName}'`,
+            );
+          }
+        }
+      }
     }
   }
 

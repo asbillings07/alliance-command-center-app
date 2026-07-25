@@ -660,7 +660,57 @@ describe("ImportForm [component]", () => {
         expect(previewBtn.disabled).toBe(false);
     });
 
-    it("respects canCreateMetrics false constraint when confirming a period-like column", async () => {
+    it("requires explicit confirmation for ambiguous columns like Score and unlocks Preview upon confirmation", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: false,
+                })
+            );
+        });
+
+        // CSV with a known metric (Kill Points) and an ambiguous column ("Score")
+        const csvContent = `Player,Kill Points,Score\nDragon,1500,2000`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // "Score" should be identified as an ambiguous column requiring confirmation
+        expect(container.textContent).toContain("Ambiguous column \u2014 confirm choice");
+        expect(container.textContent).toContain("Confirmation required");
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+        expect(previewBtn).not.toBeUndefined();
+        expect(previewBtn.disabled).toBe(true);
+
+        // Click "Confirm Do not import" on the ambiguous column row
+        const confirmBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Confirm Do not import")
+        ) as HTMLButtonElement;
+        expect(confirmBtn).not.toBeUndefined();
+
+        await act(async () => {
+            confirmBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Score is confirmed skipped, Kill Points remains mapped, Preview becomes enabled
+        expect(container.textContent).toContain("Confirmed Do not import");
+        expect(previewBtn.disabled).toBe(false);
+    });
+
+    it("displays error message and does not assign arbitrary metric when leader without create permission confirms period column", async () => {
         await act(async () => {
             root.render(
                 createElement(ImportForm, {
@@ -692,8 +742,8 @@ describe("ImportForm [component]", () => {
             await new Promise((r) => setTimeout(r, 50));
         });
 
-        // Should fall back to existing metric "Kill Points" instead of creating "VS 7"
+        // Must NOT silently assign "VS 7" to unrelated metric "Kill Points"
+        expect(container.textContent).toContain("requires metric configuration permission");
         expect(container.textContent).not.toContain("New metric");
-        expect(container.textContent).toContain("Kill Points");
     });
 });
