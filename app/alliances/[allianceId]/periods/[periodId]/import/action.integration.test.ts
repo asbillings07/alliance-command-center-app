@@ -26,6 +26,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
     });
 
     beforeEach(() => {
+        vi.clearAllMocks();
         vi.mocked(requireAllianceAccess).mockResolvedValue({
             user: { id: "integration-test-user", email: "test@local" },
             permissions: {
@@ -247,7 +248,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                     },
                 ],
             })
-        ).rejects.toThrow("You do not have permission to create or attach metrics during import");
+        ).rejects.toThrow("You do not have permission to create a metric for column 'Brand New Metric'");
 
         // Verify metric was NOT created and no result rows were created
         const createdMetric = await prisma.metric.findFirst({
@@ -445,16 +446,6 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
         ).rejects.toThrow(/out of 32-bit signed integer range/i);
 
         // Case 3: Invalid value for new metric creation during import
-        vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
-            user: { id: "integration-test-user", email: "test@local" },
-            permissions: {
-                canImportMetrics: true,
-                canConfigurePeriods: true,
-                canConfigureMetrics: true,
-            } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["permissions"],
-            membership: { role: "ADMIN" } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["membership"],
-        });
-
         await expect(
             importMemberMetrics({
                 periodId: periodA.id,
