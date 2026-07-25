@@ -576,6 +576,34 @@ describe('detectTableBounds and resilient structured parsing', () => {
     expect(bounds.needsConfirmation).toBe(true);
   });
 
+  it('calculates region-specific dataEndIndex so side-by-side tables ending at different rows do not drop rows', () => {
+    const rows = [
+      ['Player', 'Kills', '', '', 'Player', 'VS'],
+      ['Alice', '10', '', '', 'Bob', '20'],
+      ['Total', '10', '', '', 'Phoenix', '30'],
+      ['', '', '', '', 'Dragon', '40'],
+    ];
+
+    const bounds = detectTableBounds(rows);
+    expect(bounds.tableRegions).toHaveLength(2);
+
+    // Region 0 (Table 1) ends at row 2 because of "Total" in Col A
+    expect(bounds.tableRegions[0].dataEndIndex).toBe(2);
+
+    // Region 1 (Table 2) extends to row 4 because "Total" in Col A is outside Region 1
+    expect(bounds.tableRegions[1].dataEndIndex).toBe(4);
+
+    const res1 = parseMetricRows(rows, {
+      nameColumn: 4,
+      valueColumn: 5,
+      tableBounds: { ...bounds, selectedRegionIndex: 1 },
+    });
+
+    expect(res1.validEntries).toHaveLength(3);
+    expect(res1.validEntries.map((e) => e.name)).toEqual(['Bob', 'Phoenix', 'Dragon']);
+    expect(res1.validEntries.map((e) => e.value)).toEqual([20, 30, 40]);
+  });
+
   it('requires confirmation when header detection confidence is low', () => {
     const rows = [
       ['Notes', 'Random Text', 'Stuff'],

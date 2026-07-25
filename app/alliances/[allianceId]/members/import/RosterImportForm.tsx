@@ -189,8 +189,9 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     }
 
     const bounds = detectTableBounds(sheet.rows);
-    setTableBounds(bounds);
     const analysis = analyzeRows(sheet.rows, bounds);
+    const activeBounds = analysis.tableBounds ?? bounds;
+    setTableBounds(activeBounds);
     if (analysis.error) {
       setParsedMembers([]);
       setMappedColumnIndices({ playerColIndex: null, thpColIndex: null, roleColIndex: null });
@@ -216,7 +217,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     });
 
     const rawMembers: ParsedMember[] = [];
-    for (let i = bounds.dataStartIndex; i < bounds.dataEndIndex; i++) {
+    for (let i = activeBounds.dataStartIndex; i < activeBounds.dataEndIndex; i++) {
       const row = sheet.rows[i];
       if (!row || row.every((c) => !c.trim())) continue;
 

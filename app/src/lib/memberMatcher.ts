@@ -108,6 +108,8 @@ export type TableRegion = {
   headerRowIndex: number;
   dataStartIndex: number;
   dataEndIndex: number;
+  hasExcludedDataBelow: boolean;
+  excludedRowsCount: number;
 };
 
 export type TableBoundsResult = {
@@ -362,6 +364,23 @@ export function isSummaryFooterRowLabel(cellValue: string): boolean {
   return multiWordSummaryRegex.test(norm);
 }
 
+function isRegionRowEmpty(row: string[] | undefined, startCol: number, endCol: number): boolean {
+  if (!row) return true;
+  for (let c = startCol; c <= endCol && c < row.length; c++) {
+    if (row[c]?.trim()) return false;
+  }
+  return true;
+}
+
+function getRegionFirstNonEmptyCell(row: string[] | undefined, startCol: number, endCol: number): string {
+  if (!row) return "";
+  for (let c = startCol; c <= endCol && c < row.length; c++) {
+    const trimmed = row[c]?.trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
 /**
  * Detect table region bounds (header index, data start, data end) in spreadsheet rows.
  */
@@ -469,6 +488,8 @@ export function detectTableBounds(rows: string[][]): TableBoundsResult {
         headerRowIndex,
         dataStartIndex,
         dataEndIndex: rows.length,
+        hasExcludedDataBelow: false,
+        excludedRowsCount: 0,
       });
     }
   } else {
@@ -487,55 +508,63 @@ export function detectTableBounds(rows: string[][]): TableBoundsResult {
       headerRowIndex,
       dataStartIndex,
       dataEndIndex: rows.length,
+      hasExcludedDataBelow: false,
+      excludedRowsCount: 0,
     });
   }
 
-  // Calculate dataEndIndex: scan rows from dataStartIndex
+  // Calculate dataEndIndex, excludedRowsCount, and hasExcludedDataBelow for EACH table region independently
   // Spacer row resilience: empty rows do NOT truncate data if valid non-summary data rows exist below!
-  let dataEndIndex = rows.length;
+  tableRegions.forEach((reg) => {
+    let regEndIndex = rows.length;
 
-  for (let r = dataStartIndex; r < rows.length; r++) {
-    const row = rows[r];
-    const isRowEmpty = !row || row.every((c) => !c.trim());
+    for (let r = dataStartIndex; r < rows.length; r++) {
+      const row = rows[r];
+      const isRowEmpty = isRegionRowEmpty(row, reg.startColumn, reg.endColumn);
 
-    if (isRowEmpty) {
-      let hasDataBelow = false;
-      for (let subR = r + 1; subR < rows.length; subR++) {
-        const subRow = rows[subR];
-        if (subRow && subRow.some((c) => c.trim())) {
-          const firstCell = subRow.find((c) => c.trim())?.trim() || "";
-          if (!isSummaryFooterRowLabel(firstCell)) {
-            hasDataBelow = true;
-            break;
+      if (isRowEmpty) {
+        let hasDataBelow = false;
+        for (let subR = r + 1; subR < rows.length; subR++) {
+          const subRow = rows[subR];
+          if (!isRegionRowEmpty(subRow, reg.startColumn, reg.endColumn)) {
+            const firstCell = getRegionFirstNonEmptyCell(subRow, reg.startColumn, reg.endColumn);
+            if (!isSummaryFooterRowLabel(firstCell)) {
+              hasDataBelow = true;
+              break;
+            }
           }
         }
+        if (!hasDataBelow) {
+          regEndIndex = r;
+          break;
+        }
+        continue;
       }
-      if (!hasDataBelow) {
-        dataEndIndex = r;
+
+      const firstCell = getRegionFirstNonEmptyCell(row, reg.startColumn, reg.endColumn);
+      if (isSummaryFooterRowLabel(firstCell)) {
+        regEndIndex = r;
         break;
       }
-      continue;
     }
 
-    const firstNonEmptyCell = row.find((c) => c.trim())?.trim() || "";
-    if (isSummaryFooterRowLabel(firstNonEmptyCell)) {
-      dataEndIndex = r;
-      break;
-    }
-  }
+    reg.dataEndIndex = regEndIndex;
 
-  tableRegions.forEach((reg) => {
-    reg.dataEndIndex = dataEndIndex;
+    let excludedRowsCount = 0;
+    for (let r = regEndIndex; r < rows.length; r++) {
+      const row = rows[r];
+      if (!isRegionRowEmpty(row, reg.startColumn, reg.endColumn)) {
+        excludedRowsCount++;
+      }
+    }
+    reg.excludedRowsCount = excludedRowsCount;
+    reg.hasExcludedDataBelow = excludedRowsCount > 0;
   });
 
-  let excludedRowsCount = 0;
-  for (let r = dataEndIndex; r < rows.length; r++) {
-    const row = rows[r];
-    if (row && row.some((c) => c.trim())) {
-      excludedRowsCount++;
-    }
-  }
-  const hasExcludedDataBelow = excludedRowsCount > 0;
+  const primaryRegion = tableRegions[0];
+  const dataEndIndex = primaryRegion ? primaryRegion.dataEndIndex : rows.length;
+  const excludedRowsCount = primaryRegion ? primaryRegion.excludedRowsCount : 0;
+  const hasExcludedDataBelow = primaryRegion ? primaryRegion.hasExcludedDataBelow : false;
 
   let confidence: "high" | "medium" | "low" = "low";
   let needsConfirmation = true;
@@ -626,6 +655,7 @@ export function analyzeRows(
       ? selectedRegionIndex
       : 0;
   const region = bounds.tableRegions[regionIndex];
+  const activeEndIndex = region ? region.dataEndIndex : bounds.dataEndIndex;
 
   if (rows.length < bounds.dataStartIndex + 1) {
     return {
@@ -665,10 +695,10 @@ export function analyzeRows(
     totalNonEmptyCount: 0,
   }));
 
-  const sampleEndIndex = Math.min(bounds.dataStartIndex + 10, bounds.dataEndIndex);
+  const sampleEndIndex = Math.min(bounds.dataStartIndex + 10, activeEndIndex);
   for (let i = bounds.dataStartIndex; i < sampleEndIndex; i++) {
     const row = rows[i];
-    if (!row || row.every((cell) => !cell.trim())) continue;
+    if (!row || isRegionRowEmpty(row, startCol, endCol)) continue;
 
     for (let j = 0; j < columns.length; j++) {
       const colIdx = columns[j].index;
@@ -692,9 +722,9 @@ export function analyzeRows(
   }
 
   let rowCount = 0;
-  for (let i = bounds.dataStartIndex; i < bounds.dataEndIndex; i++) {
+  for (let i = bounds.dataStartIndex; i < activeEndIndex; i++) {
     const row = rows[i];
-    if (row && row.some((cell) => cell.trim().length > 0)) {
+    if (row && !isRegionRowEmpty(row, startCol, endCol)) {
       rowCount++;
     }
   }
@@ -702,6 +732,9 @@ export function analyzeRows(
   const updatedBounds: TableBoundsResult = {
     ...bounds,
     selectedRegionIndex: regionIndex,
+    dataEndIndex: activeEndIndex,
+    hasExcludedDataBelow: region ? region.hasExcludedDataBelow : bounds.hasExcludedDataBelow,
+    excludedRowsCount: region ? region.excludedRowsCount : bounds.excludedRowsCount,
   };
 
   return { columns, rowCount, error: null, tableBounds: updatedBounds };
@@ -753,9 +786,12 @@ export function parseMetricRows(
   }
 
   const bounds = tableBounds ?? detectTableBounds(rows);
+  const regionIndex = bounds.selectedRegionIndex ?? 0;
+  const region = bounds.tableRegions[regionIndex];
+
   const headerRowIndex = hasHeader ? bounds.headerRowIndex : 0;
   const dataStartIndex = hasHeader ? bounds.dataStartIndex : 0;
-  const dataEndIndex = bounds.dataEndIndex;
+  const dataEndIndex = region ? region.dataEndIndex : bounds.dataEndIndex;
 
   const entries: RawEntry[] = [];
   const validEntries: ValidMetricEntry[] = [];

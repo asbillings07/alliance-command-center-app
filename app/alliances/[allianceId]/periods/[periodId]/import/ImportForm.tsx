@@ -319,6 +319,10 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     setSelectedRegionIndex(regionIndex);
 
     const result = analyzeRows(sheet.rows, bounds, regionIndex);
+    if (result.tableBounds) {
+      bounds = result.tableBounds;
+      setTableBounds(bounds);
+    }
     if (result.error) {
       setRowCount(0);
       setAutoDetectedPlayerColumn(null);
