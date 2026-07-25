@@ -24,12 +24,14 @@ export type MetricEntrySubmission = {
 
 /** A spreadsheet column's chosen import target plus its submitted or parsed rows. */
 export type ColumnTargetMapping = {
+  sourceColumnName: string;
   target: ImportMetricTarget;
   entries: MetricEntrySubmission[];
 };
 
 /** A validated column mapping with parsed numeric values. */
 export type ValidatedColumnTargetMapping = {
+  sourceColumnName: string;
   target: ImportMetricTarget;
   entries: MetricImportEntry[];
 };
@@ -140,7 +142,11 @@ export function validateColumnTargets(
   const result: ValidatedColumnTargetMapping[] = [];
 
   for (const mapping of mappings) {
-    const { target, entries } = mapping;
+    const { sourceColumnName, target, entries } = mapping;
+
+    if (typeof sourceColumnName !== "string" || !sourceColumnName.trim()) {
+      throw new Error("Source column name is required for every mapping");
+    }
 
     if (target.kind === "existing") {
       if (typeof target.metricId !== "string" || !target.metricId) {
@@ -189,7 +195,11 @@ export function validateColumnTargets(
       dedupedEntries.push({ memberId: entry.memberId, value: parsedNum });
     }
 
-    result.push({ target, entries: dedupedEntries });
+    result.push({
+      sourceColumnName: sourceColumnName.trim(),
+      target,
+      entries: dedupedEntries,
+    });
   }
 
   return result;

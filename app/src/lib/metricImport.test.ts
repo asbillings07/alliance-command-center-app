@@ -97,9 +97,10 @@ describe("buildMetricImportPlan", () => {
 });
 
 describe("validateColumnTargets", () => {
-  it("dedupes rows per member within a column and passes the target through", () => {
+  it("dedupes rows per member within a column and passes the target and sourceColumnName through", () => {
     const mappings: ColumnTargetMapping[] = [
       {
+        sourceColumnName: "VS 7",
         target: { kind: "existing", metricId: "m-kp" },
         entries: [
           { memberId: "m1", rawValue: "100" },
@@ -109,6 +110,7 @@ describe("validateColumnTargets", () => {
       },
     ];
     const [result] = validateColumnTargets(mappings);
+    expect(result.sourceColumnName).toBe("VS 7");
     expect(result.target).toEqual({ kind: "existing", metricId: "m-kp" });
     expect(result.entries).toEqual([
       { memberId: "m1", value: 100 },
@@ -116,25 +118,36 @@ describe("validateColumnTargets", () => {
     ]);
   });
 
+  it("rejects missing or empty sourceColumnName", () => {
+    const mappings: ColumnTargetMapping[] = [
+      {
+        sourceColumnName: "  ",
+        target: { kind: "existing", metricId: "m-kp" },
+        entries: [{ memberId: "m1", rawValue: "1" }],
+      },
+    ];
+    expect(() => validateColumnTargets(mappings)).toThrow(/source column name is required/i);
+  });
+
   it("rejects the same existing metric mapped to two columns", () => {
     const mappings: ColumnTargetMapping[] = [
-      { target: { kind: "existing", metricId: "m-kp" }, entries: [{ memberId: "m1", rawValue: "1" }] },
-      { target: { kind: "existing", metricId: "m-kp" }, entries: [{ memberId: "m2", rawValue: "2" }] },
+      { sourceColumnName: "Col A", target: { kind: "existing", metricId: "m-kp" }, entries: [{ memberId: "m1", rawValue: "1" }] },
+      { sourceColumnName: "Col B", target: { kind: "existing", metricId: "m-kp" }, entries: [{ memberId: "m2", rawValue: "2" }] },
     ];
     expect(() => validateColumnTargets(mappings)).toThrow(/only be mapped once/i);
   });
 
   it("rejects two create targets with the same name ignoring case/space", () => {
     const mappings: ColumnTargetMapping[] = [
-      { target: { kind: "create", name: "VS Score" }, entries: [{ memberId: "m1", rawValue: "1" }] },
-      { target: { kind: "create", name: "  vs   score " }, entries: [{ memberId: "m2", rawValue: "2" }] },
+      { sourceColumnName: "VS Score", target: { kind: "create", name: "VS Score" }, entries: [{ memberId: "m1", rawValue: "1" }] },
+      { sourceColumnName: "vs score", target: { kind: "create", name: "  vs   score " }, entries: [{ memberId: "m2", rawValue: "2" }] },
     ];
     expect(() => validateColumnTargets(mappings)).toThrow(/new metric may only be mapped once/i);
   });
 
   it("rejects a create target with a blank name", () => {
     const mappings: ColumnTargetMapping[] = [
-      { target: { kind: "create", name: "   " }, entries: [{ memberId: "m1", rawValue: "1" }] },
+      { sourceColumnName: "Col A", target: { kind: "create", name: "   " }, entries: [{ memberId: "m1", rawValue: "1" }] },
     ];
     expect(() => validateColumnTargets(mappings)).toThrow(/requires a name/i);
   });
@@ -142,6 +155,7 @@ describe("validateColumnTargets", () => {
   it("parses raw strings with localized thousands separators strictly", () => {
     const mappings: ColumnTargetMapping[] = [
       {
+        sourceColumnName: "Kill Points",
         target: { kind: "existing", metricId: "m-kp" },
         entries: [
           { memberId: "m1", rawValue: "450.000.000" },
@@ -161,6 +175,7 @@ describe("validateColumnTargets", () => {
   it("rejects malformed raw string values", () => {
     const mappings: ColumnTargetMapping[] = [
       {
+        sourceColumnName: "Kill Points",
         target: { kind: "existing", metricId: "m-kp" },
         entries: [{ memberId: "m1", rawValue: "450.5" }],
       },
