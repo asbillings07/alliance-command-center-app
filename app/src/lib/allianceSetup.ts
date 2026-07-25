@@ -266,6 +266,7 @@ export async function getAllianceSetupStatus(
         where: {
           periodId: targetPeriod.id,
           metricId: { in: activeMetricIds },
+          allianceMember: { allianceId },
         },
       });
       targetPeriodHasEntries = targetEntriesCount > 0;
