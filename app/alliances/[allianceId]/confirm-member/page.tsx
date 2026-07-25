@@ -58,12 +58,12 @@ export default async function ConfirmMemberPage({ params }: PageProps) {
   });
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full bg-white rounded-lg shadow p-8">
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="max-w-md w-full bg-surface border border-border rounded-lg shadow p-8">
         <div className="text-center mb-6">
-          <div className="w-16 h-16 mx-auto mb-4 bg-green-100 rounded-full flex items-center justify-center">
+          <div className="w-16 h-16 mx-auto mb-4 bg-success/10 rounded-full flex items-center justify-center">
             <svg
-              className="w-8 h-8 text-green-600"
+              className="w-8 h-8 text-success"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -76,10 +76,10 @@ export default async function ConfirmMemberPage({ params }: PageProps) {
               />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-gray-900 mb-2">
+          <h1 className="text-xl font-bold text-text-primary mb-2">
             Welcome to {alliance.name}!
           </h1>
-          <p className="text-gray-600">
+          <p className="text-text-secondary">
             Which member are you?
           </p>
         </div>

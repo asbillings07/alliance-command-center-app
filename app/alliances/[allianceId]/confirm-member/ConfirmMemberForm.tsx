@@ -42,7 +42,7 @@ export function ConfirmMemberForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-md p-3 text-sm text-red-700">
+        <div className="bg-danger/10 border border-danger/30 rounded-md p-3 text-sm text-danger">
           {error}
         </div>
       )}
@@ -54,8 +54,8 @@ export function ConfirmMemberForm({
               key={member.id}
               className={`flex items-center gap-3 p-3 border rounded-md cursor-pointer transition-colors ${
                 selectedMemberId === member.id
-                  ? "border-blue-500 bg-blue-50"
-                  : "border-gray-200 hover:border-gray-300"
+                  ? "border-primary bg-primary/10"
+                  : "border-border hover:border-border-hover bg-surface-secondary"
               }`}
             >
               <input
@@ -64,16 +64,16 @@ export function ConfirmMemberForm({
                 value={member.id}
                 checked={selectedMemberId === member.id}
                 onChange={(e) => setSelectedMemberId(e.target.value)}
-                className="text-blue-600 focus:ring-blue-500"
+                className="accent-primary"
               />
-              <span className="font-medium text-gray-900">
+              <span className="font-medium text-text-primary">
                 {member.playerName}
               </span>
             </label>
           ))}
         </div>
       ) : (
-        <p className="text-gray-500 text-sm text-center py-4">
+        <p className="text-text-muted text-sm text-center py-4">
           No unlinked members found.
         </p>
       )}
@@ -81,8 +81,8 @@ export function ConfirmMemberForm({
       <label
         className={`flex items-center gap-3 p-3 border rounded-md cursor-pointer transition-colors ${
           selectedMemberId === null
-            ? "border-blue-500 bg-blue-50"
-            : "border-gray-200 hover:border-gray-300"
+            ? "border-primary bg-primary/10"
+            : "border-border hover:border-border-hover bg-surface-secondary"
         }`}
       >
         <input
@@ -91,15 +91,15 @@ export function ConfirmMemberForm({
           value=""
           checked={selectedMemberId === null}
           onChange={() => setSelectedMemberId(null)}
-          className="text-blue-600 focus:ring-blue-500"
+          className="accent-primary"
         />
-        <span className="text-gray-600">None of these / Skip for now</span>
+        <span className="text-text-secondary">None of these / Skip for now</span>
       </label>
 
       <button
         type="submit"
         disabled={isPending}
-        className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm transition-colors"
       >
         {isPending ? "Confirming..." : "Continue"}
       </button>
