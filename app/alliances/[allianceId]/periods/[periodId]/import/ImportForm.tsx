@@ -467,6 +467,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   };
 
   const setColumnTarget = (columnIndex: number, token: string, columnName: string) => {
+    setError(null);
     setColumnMappings((prev) =>
       prev.map((m) => {
         if (m.columnIndex !== columnIndex) return m;
@@ -483,44 +484,56 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   };
 
   const handleConfirmPeriodColumnAsMetric = (columnIndex: number, columnName: string) => {
-    setError(null);
-    setColumnMappings((prev) =>
-      prev.map((m) => {
-        if (m.columnIndex !== columnIndex) return m;
+    // Try existing metric first
+    const onPeriod = matchMetricName(columnName, metrics);
+    if (onPeriod.status === "matched" && onPeriod.metricId) {
+      const metricId = onPeriod.metricId;
+      setError(null);
+      setColumnMappings((prev) =>
+        prev.map((m) =>
+          m.columnIndex === columnIndex
+            ? { ...m, target: { kind: "existing", metricId }, confirmationStatus: "confirmed_metric" }
+            : m,
+        ),
+      );
+      return;
+    }
 
-        // Try existing metric first
-        const onPeriod = matchMetricName(columnName, metrics);
-        if (onPeriod.status === "matched" && onPeriod.metricId) {
-          return {
-            ...m,
-            target: { kind: "existing", metricId: onPeriod.metricId },
-            confirmationStatus: "confirmed_metric",
-          };
-        }
-        if (canAttachMetrics) {
-          const inLibrary = matchMetricName(columnName, libraryMetrics);
-          if (inLibrary.status === "matched" && inLibrary.metricId) {
-            return {
-              ...m,
-              target: { kind: "attach", metricId: inLibrary.metricId },
-              confirmationStatus: "confirmed_metric",
-            };
-          }
-        }
-        if (canCreateMetrics) {
-          return {
-            ...m,
-            target: { kind: "create", name: columnName },
-            confirmationStatus: "confirmed_metric",
-          };
-        }
-        setError(`Creating a new metric for "${columnName}" requires metric configuration permission. Please select an existing metric or skip the column.`);
-        return m;
-      }),
+    if (canAttachMetrics) {
+      const inLibrary = matchMetricName(columnName, libraryMetrics);
+      if (inLibrary.status === "matched" && inLibrary.metricId) {
+        const metricId = inLibrary.metricId;
+        setError(null);
+        setColumnMappings((prev) =>
+          prev.map((m) =>
+            m.columnIndex === columnIndex
+              ? { ...m, target: { kind: "attach", metricId }, confirmationStatus: "confirmed_metric" }
+              : m,
+          ),
+        );
+        return;
+      }
+    }
+
+    if (canCreateMetrics) {
+      setError(null);
+      setColumnMappings((prev) =>
+        prev.map((m) =>
+          m.columnIndex === columnIndex
+            ? { ...m, target: { kind: "create", name: columnName }, confirmationStatus: "confirmed_metric" }
+            : m,
+        ),
+      );
+      return;
+    }
+
+    setError(
+      `Creating a new metric for "${columnName}" requires metric configuration permission. Please select an existing metric or skip the column.`,
     );
   };
 
   const handleConfirmColumnAsSkip = (columnIndex: number) => {
+    setError(null);
     setColumnMappings((prev) =>
       prev.map((m) =>
         m.columnIndex === columnIndex
@@ -716,6 +729,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   const handleImport = () => {
     const mappings: WireMapping[] = previews
       .map((preview) => ({
+        sourceColumnName: preview.columnName,
         target: toWireTarget(preview.target),
         entries: getPreviewEntries(preview, duplicateSelections[preview.columnIndex]),
       }))

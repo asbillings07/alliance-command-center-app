@@ -96,24 +96,22 @@ export async function importMemberMetrics(
       throw new Error("One or more metrics do not belong to this alliance");
     }
 
-    if (sourceColumnName) {
-      const colClassification = classifyColumn({
-        columnIndex: 0,
-        columnName: sourceColumnName,
-        periodMetrics: libraryMetrics.filter((m) => attachedMetricIds.has(m.id)),
-        libraryMetrics,
-      });
+    const colClassification = classifyColumn({
+      columnIndex: 0,
+      columnName: sourceColumnName,
+      periodMetrics: libraryMetrics.filter((m) => attachedMetricIds.has(m.id)),
+      libraryMetrics,
+    });
 
-      if (
-        colClassification.reason === "matches_period_pattern" ||
-        colClassification.reason === "ambiguous_name"
-      ) {
-        if (target.kind === "create") {
-          if (!hasPermission(auth.permissions, Permissions.CONFIGURE_METRICS)) {
-            throw new Error(
-              `You do not have permission to create a metric for unresolved column '${sourceColumnName}'`,
-            );
-          }
+    if (
+      colClassification.reason === "matches_period_pattern" ||
+      colClassification.reason === "ambiguous_name"
+    ) {
+      if (target.kind === "create") {
+        if (!hasPermission(auth.permissions, Permissions.CONFIGURE_METRICS)) {
+          throw new Error(
+            `You do not have permission to create a metric for column '${sourceColumnName}'`,
+          );
         }
       }
     }

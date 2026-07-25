@@ -184,6 +184,17 @@ describe("ImportForm [component]", () => {
 
         // Assert completion copy
         expect(mockRefresh).toHaveBeenCalledTimes(1);
+        expect(importMemberMetrics).toHaveBeenCalledWith(
+            expect.objectContaining({
+                periodId,
+                allianceId,
+                mappings: expect.arrayContaining([
+                    expect.objectContaining({
+                        sourceColumnName: "Kill Points",
+                    }),
+                ]),
+            })
+        );
         expect(container.textContent).toContain("Evaluation Results Imported");
         expect(container.textContent).toContain("Evaluation results have been recorded into destination period 'Week 28 Evaluation'.");
         expect(container.textContent).toContain("Import More Results");

@@ -143,6 +143,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 allianceId: alliance.id,
                 mappings: [
                     {
+                        sourceColumnName: "Attached Metric",
                         target: { kind: "existing", metricId: attachedMetric.id },
                         entries: [{ memberId: member.id, rawValue: "100" }],
                     },
@@ -166,6 +167,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 allianceId: alliance.id,
                 mappings: [
                     {
+                        sourceColumnName: "Library Metric",
                         target: { kind: "existing", metricId: libraryMetric.id },
                         entries: [{ memberId: member.id, rawValue: "100" }],
                     },
@@ -203,6 +205,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             allianceId: alliance.id,
             mappings: [
                 {
+                    sourceColumnName: "Library Metric",
                     target: { kind: "existing", metricId: libraryMetric.id },
                     entries: [{ memberId: member.id, rawValue: "100" }],
                 },
@@ -238,6 +241,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 allianceId: alliance.id,
                 mappings: [
                     {
+                        sourceColumnName: "Brand New Metric",
                         target: { kind: "create", name: "Brand New Metric" },
                         entries: [{ memberId: member.id, rawValue: "200" }],
                     },
@@ -275,6 +279,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             allianceId: alliance.id,
             mappings: [
                 {
+                    sourceColumnName: "Brand New Metric",
                     target: { kind: "create", name: "Brand New Metric" },
                     entries: [{ memberId: member.id, rawValue: "200" }],
                 },
@@ -302,6 +307,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 allianceId: setup2.alliance.id, // mismatch
                 mappings: [
                     {
+                        sourceColumnName: "Attached Metric",
                         target: { kind: "existing", metricId: setup2.attachedMetric.id },
                         entries: [{ memberId: setup2.member.id, rawValue: "100" }],
                     },
@@ -320,6 +326,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 allianceId: setup1.alliance.id,
                 mappings: [
                     {
+                        sourceColumnName: "Attached Metric",
                         target: { kind: "existing", metricId: setup1.attachedMetric.id },
                         entries: [{ memberId: setup2.member.id, rawValue: "100" }], // member from setup2
                     },
@@ -338,6 +345,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 allianceId: setup1.alliance.id,
                 mappings: [
                     {
+                        sourceColumnName: "Attached Metric",
                         target: { kind: "existing", metricId: setup2.attachedMetric.id }, // metric from setup2
                         entries: [{ memberId: setup1.member.id, rawValue: "100" }],
                     },
@@ -354,8 +362,9 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             allianceId: alliance.id,
             mappings: [
                 {
+                    sourceColumnName: "Attached Metric",
                     target: { kind: "existing", metricId: attachedMetric.id },
-                        entries: [{ memberId: member.id, rawValue: "500" }],
+                    entries: [{ memberId: member.id, rawValue: "500" }],
                 },
             ],
         });
@@ -382,6 +391,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             allianceId: alliance.id,
             mappings: [
                 {
+                    sourceColumnName: "Attached Metric",
                     target: { kind: "existing", metricId: attachedMetric.id },
                     entries: [{ memberId: member.id, rawValue: "450.000.000" }],
                 },
@@ -411,6 +421,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 allianceId: alliance.id,
                 mappings: [
                     {
+                        sourceColumnName: "Attached Metric",
                         target: { kind: "existing", metricId: attachedMetric.id },
                         entries: [{ memberId: member.id, rawValue: "450.5" }],
                     },
@@ -425,6 +436,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 allianceId: alliance.id,
                 mappings: [
                     {
+                        sourceColumnName: "Attached Metric",
                         target: { kind: "existing", metricId: attachedMetric.id },
                         entries: [{ memberId: member.id, rawValue: "2147483648" }],
                     },
@@ -449,6 +461,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 allianceId: alliance.id,
                 mappings: [
                     {
+                        sourceColumnName: "Never Created Metric",
                         target: { kind: "create", name: "Never Created Metric" },
                         entries: [{ memberId: member.id, rawValue: "invalid_num" }],
                     },
@@ -466,5 +479,33 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
         expect(finalMetricCount).toBe(initialMetricCount);
         expect(finalAttachmentCount).toBe(initialAttachmentCount);
         expect(entriesCount).toBe(0);
+    });
+
+    it("rejects metric creation for period-like or ambiguous column when user lacks CONFIGURE_METRICS permission", async () => {
+        const { alliance, member, periodA } = await makeTestSetup();
+
+        vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
+            user: { id: "integration-test-user", email: "test@local" },
+            permissions: {
+                canImportMetrics: true,
+                canConfigurePeriods: true,
+                canConfigureMetrics: false,
+            } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["permissions"],
+            membership: { role: "LEADER" } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["membership"],
+        });
+
+        await expect(
+            importMemberMetrics({
+                periodId: periodA.id,
+                allianceId: alliance.id,
+                mappings: [
+                    {
+                        sourceColumnName: "VS 7",
+                        target: { kind: "create", name: "VS 7" },
+                        entries: [{ memberId: member.id, rawValue: "1500" }],
+                    },
+                ],
+            })
+        ).rejects.toThrow(/You do not have permission to create a metric for column 'VS 7'/i);
     });
 });
