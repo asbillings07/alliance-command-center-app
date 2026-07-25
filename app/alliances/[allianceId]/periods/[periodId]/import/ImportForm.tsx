@@ -200,16 +200,16 @@ function ValueIssueNotice({
   if (issues.length === 0) return null;
 
   return (
-    <div className="p-4 rounded-md bg-red-50 border border-red-300 text-red-900 flex flex-col gap-2">
+    <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger flex flex-col gap-2">
       <div>
-        <p className="font-semibold">Fix {formatCellCount(issues.length)} before {phase === "preview" ? "previewing" : "importing"}</p>
-        <p className="text-sm text-red-800 mt-1">
-          {summarizeColumns(issues.map((issue) => issue.columnName))}. Values need to be whole numbers.
+        <p className="font-semibold text-danger">Fix {formatCellCount(issues.length)} before {phase === "preview" ? "previewing" : "importing"}</p>
+        <p className="text-sm text-text-secondary mt-1">
+          {summarizeColumns(issues.map((issue) => issue.columnName))}. Check cell details below.
         </p>
       </div>
-      <details className="text-sm text-red-800">
-        <summary className="cursor-pointer font-medium">View cell details</summary>
-        <ul className="text-xs list-disc list-inside mt-2 max-h-32 overflow-y-auto space-y-0.5">
+      <details className="text-sm text-text-secondary">
+        <summary className="cursor-pointer font-medium text-text-primary select-none">View cell details</summary>
+        <ul className="text-xs list-disc list-inside mt-2 max-h-32 overflow-y-auto space-y-0.5 font-mono">
           {issues.map((issue, i) => (
             <li key={i}>
               <strong>{issue.columnName}</strong>: {issue.error}
@@ -232,6 +232,9 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
   const [rowCount, setRowCount] = useState(0);
   const [tableBounds, setTableBounds] = useState<TableBoundsResult | null>(null);
+  const [selectedRegionIndex, setSelectedRegionIndex] = useState(0);
+  const [isHeaderConfirmed, setIsHeaderConfirmed] = useState(false);
+  const [selectedHeaderRowIndex, setSelectedHeaderRowIndex] = useState(0);
   const [autoDetectedPlayerColumn, setAutoDetectedPlayerColumn] = useState<ColumnInfo | null>(null);
   const [numericColumns, setNumericColumns] = useState<ColumnInfo[]>([]);
   const [columnMappings, setColumnMappings] = useState<ColumnMetricMapping[]>([]);
@@ -276,14 +279,20 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
       setParsedWorkbook(parseResult.workbook);
       setSelectedSheetIndex(parseResult.workbook.defaultSheetIndex);
-      analyzeWorkbookSheet(parseResult.workbook, parseResult.workbook.defaultSheetIndex);
+      setIsHeaderConfirmed(false);
+      analyzeWorkbookSheet(parseResult.workbook, parseResult.workbook.defaultSheetIndex, 0);
     } catch {
       setIsLoadingFile(false);
       setError("An unexpected error occurred while reading the file.");
     }
   };
 
-  const analyzeWorkbookSheet = (workbook: ParsedWorkbook, sheetIndex: number) => {
+  const analyzeWorkbookSheet = (
+    workbook: ParsedWorkbook,
+    sheetIndex: number,
+    regionIndex: number = 0,
+    overrideHeaderRowIndex?: number,
+  ) => {
     const sheet = workbook.sheets[sheetIndex];
     if (!sheet || sheet.rows.length === 0) {
       setRowCount(0);
@@ -297,10 +306,19 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       return;
     }
 
-    const bounds = detectTableBounds(sheet.rows);
+    let bounds = detectTableBounds(sheet.rows);
+    if (overrideHeaderRowIndex !== undefined && overrideHeaderRowIndex >= 0) {
+      bounds = {
+        ...bounds,
+        headerRowIndex: overrideHeaderRowIndex,
+        dataStartIndex: overrideHeaderRowIndex + 1,
+      };
+    }
     setTableBounds(bounds);
+    setSelectedHeaderRowIndex(bounds.headerRowIndex);
+    setSelectedRegionIndex(regionIndex);
 
-    const result = analyzeRows(sheet.rows, bounds);
+    const result = analyzeRows(sheet.rows, bounds, regionIndex);
     if (result.error) {
       setRowCount(0);
       setAutoDetectedPlayerColumn(null);
@@ -318,13 +336,20 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       setColumnMappings([]);
       setPreviews([]);
       setParseErrors([]);
-      setError("Worksheet must have at least 2 columns");
+      setError("Worksheet must have at least 2 columns in selected region");
       return;
     }
 
     const textCols = result.columns.filter((c) => !c.isNumeric);
-    const playerCol = textCols.find((c) => isPlayerColumn(c.name)) || null;
-    const numCols = result.columns.filter((c) => c.isNumeric);
+    const selectedRegion = bounds.tableRegions[regionIndex] || bounds.tableRegions[0];
+    const playerColIdx = selectedRegion ? selectedRegion.playerColumnIndex : -1;
+    const playerCol =
+      result.columns.find((c) => c.index === playerColIdx) ||
+      textCols.find((c) => isPlayerColumn(c.name)) ||
+      textCols[0] ||
+      null;
+
+    const numCols = result.columns.filter((c) => c.isNumeric && c.index !== playerCol?.index);
 
     const usedMetricIds = new Set<string>();
     const mappings: ColumnMetricMapping[] = numCols.map((col) => {
@@ -352,6 +377,18 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     setColumnMappings(mappings);
     setError(null);
     setStep("select");
+  };
+
+  const handleSelectRegion = (regionIdx: number) => {
+    if (!parsedWorkbook) return;
+    setSelectedRegionIndex(regionIdx);
+    analyzeWorkbookSheet(parsedWorkbook, selectedSheetIndex, regionIdx, selectedHeaderRowIndex);
+  };
+
+  const handleSelectHeaderRow = (headerRowIdx: number) => {
+    if (!parsedWorkbook) return;
+    setSelectedHeaderRowIndex(headerRowIdx);
+    analyzeWorkbookSheet(parsedWorkbook, selectedSheetIndex, selectedRegionIndex, headerRowIdx);
   };
 
   const handleSelectSheet = (sheetIndex: number) => {
@@ -430,15 +467,31 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       (sum, p) => sum + p.skippedBlankCells.length,
       0,
     );
+    const totalMissingIdentityCount = nextPreviews.reduce(
+      (sum, p) => sum + p.missingIdentityIssues.length,
+      0,
+    );
+    const totalInvalidValueCount = nextPreviews.reduce(
+      (sum, p) => sum + p.invalidValueIssues.length,
+      0,
+    );
 
-    if (totalMatched === 0) {
-      if (totalParsed === 0 && totalSkippedBlanksInSelect > 0) {
+    if (totalMatched === 0 || totalMissingIdentityCount > 0 || totalInvalidValueCount > 0) {
+      if (totalMissingIdentityCount > 0) {
+        setError(
+          `Cannot import: ${totalMissingIdentityCount} ${totalMissingIdentityCount === 1 ? "cell contains" : "cells contain"} metric values but missing player names. Check player column.`,
+        );
+      } else if (totalInvalidValueCount > 0) {
+        setError(
+          `Cannot import: ${totalInvalidValueCount} ${totalInvalidValueCount === 1 ? "cell contains" : "cells contain"} invalid non-whole-number values.`,
+        );
+      } else if (totalParsed === 0 && totalSkippedBlanksInSelect > 0) {
         setError(
           `No importable values found. ${totalSkippedBlanksInSelect} blank metric ${totalSkippedBlanksInSelect === 1 ? "cell was" : "cells were"} skipped.`,
         );
       } else if (totalParsed === 0) {
         setError(
-          "No valid values found to import. Values must be whole numbers - check for blanks or decimals in the mapped columns.",
+          "No valid values found to import. Check the mapped columns.",
         );
       } else {
         setError(
@@ -483,9 +536,17 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   const blockingCellIssues: WorkbookIssue[] = [];
   const warningCellIssues: WorkbookIssue[] = [];
 
+  const activeDataStart = tableBounds ? tableBounds.dataStartIndex : 0;
+  const activeDataEnd = tableBounds ? tableBounds.dataEndIndex : (currentSheet?.rows.length ?? 0);
+  const selectedRegion = tableBounds?.tableRegions[selectedRegionIndex] || tableBounds?.tableRegions[0];
+  const activeStartCol = selectedRegion ? selectedRegion.startColumn : 0;
+  const activeEndCol = selectedRegion ? selectedRegion.endColumn : 999;
+
   if (currentSheet && currentSheet.issues) {
     for (const issue of currentSheet.issues) {
       if (!mappedIndicesSet.has(issue.columnIndex)) continue;
+      if (issue.rowIndex < activeDataStart || issue.rowIndex >= activeDataEnd) continue;
+      if (issue.columnIndex < activeStartCol || issue.columnIndex > activeEndCol) continue;
 
       if (issue.severity === "blocking" || issue.code === "formula_missing_cached_value" || issue.code === "cell_error") {
         blockingCellIssues.push(issue);
@@ -520,7 +581,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         valueIssuesBeforePreview.push({ columnName: issue.metricName, error: `${issue.address}: ${issue.error}` }),
       );
       parseRes.missingIdentityIssues.forEach((issue) =>
-        valueIssuesBeforePreview.push({ columnName: issue.metricName, error: `${issue.address}: ${issue.error}` }),
+        valueIssuesBeforePreview.push({ columnName: issue.metricName, error: `${issue.address} (Value "${issue.rawValue}"): ${issue.error}` }),
       );
     }
   }
@@ -726,7 +787,8 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       !noSelectableMetrics &&
       mappedColumns.length > 0 &&
       !hasBlockingDiagnostics &&
-      !hasValueIssuesBeforePreview;
+      !hasValueIssuesBeforePreview &&
+      (!tableBounds?.needsConfirmation || isHeaderConfirmed);
 
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
@@ -737,6 +799,88 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             onSelectSheet={handleSelectSheet}
             disabled={isPending}
           />
+        )}
+
+        {/* Table Region Selector */}
+        {tableBounds && tableBounds.tableRegions.length > 1 && (
+          <div className="p-4 bg-surface-secondary border border-border rounded-lg flex flex-col gap-2">
+            <p className="font-semibold text-text-primary text-sm flex items-center justify-between">
+              <span>Multiple Tables Detected on Sheet ({tableBounds.tableRegions.length})</span>
+              <span className="text-xs text-primary-light font-normal">Isolates column mapping</span>
+            </p>
+            <p className="text-xs text-text-secondary">
+              Select which table region to import from. Metric columns will strictly pair with player names in that region:
+            </p>
+            <div className="flex flex-col gap-1.5 mt-1">
+              {tableBounds.tableRegions.map((region, idx) => (
+                <label
+                  key={region.id}
+                  className={`flex items-center gap-2 text-sm p-2 rounded cursor-pointer border ${
+                    selectedRegionIndex === idx
+                      ? "border-primary bg-primary/10 text-text-primary font-medium"
+                      : "border-border text-text-secondary hover:bg-surface"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="tableRegion"
+                    checked={selectedRegionIndex === idx}
+                    onChange={() => handleSelectRegion(idx)}
+                    className="text-primary"
+                  />
+                  <span>{region.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Low-confidence Header Confirmation */}
+        {tableBounds && (tableBounds.needsConfirmation || tableBounds.tableRegions.length > 1) && !isHeaderConfirmed && (
+          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex flex-col gap-3">
+            <div>
+              <p className="font-semibold text-amber-200 text-sm">Confirm Header Row &amp; Table Region</p>
+              <p className="text-xs text-amber-300/90 mt-1">
+                {tableBounds.tableRegions.length > 1
+                  ? "Multiple tables were detected. Confirm your table selection and header row before mapping columns."
+                  : "Header row detection confidence is low. Please confirm which row contains your column headers."}
+              </p>
+            </div>
+            {tableBounds.candidates.length > 0 && (
+              <div className="flex flex-col gap-1 text-xs">
+                <span className="text-amber-200 font-medium">Header Row:</span>
+                <select
+                  value={selectedHeaderRowIndex}
+                  onChange={(e) => handleSelectHeaderRow(Number(e.target.value))}
+                  className="p-2 rounded border border-border bg-surface text-text-primary text-xs"
+                >
+                  {tableBounds.candidates.map((c) => (
+                    <option key={c.rowIndex} value={c.rowIndex}>
+                      Row {c.rowIndex + 1}: {c.sampleHeaders.join(", ")}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsHeaderConfirmed(true)}
+              className="px-3 py-1.5 rounded bg-primary text-white text-xs font-medium hover:bg-primary-hover self-start cursor-pointer"
+            >
+              Confirm Header &amp; Table Region
+            </button>
+          </div>
+        )}
+
+        {/* Excluded Data Disclosure */}
+        {tableBounds && tableBounds.hasExcludedDataBelow && (
+          <div className="p-3 bg-surface-secondary border border-border rounded-lg text-xs text-text-secondary">
+            <p className="font-medium text-text-primary">Table Region Bounds Disclosure:</p>
+            <p className="mt-0.5">
+              Detected active data rows {tableBounds.dataStartIndex + 1}–{tableBounds.dataEndIndex}.{" "}
+              {tableBounds.excludedRowsCount} non-empty {tableBounds.excludedRowsCount === 1 ? "row" : "rows"} below row {tableBounds.dataEndIndex} were excluded (summary footers / trailing notes).
+            </p>
+          </div>
         )}
 
         <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium">

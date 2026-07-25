@@ -3,7 +3,7 @@
 import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { analyzeRows, normalizeName, detectTableBounds } from "@/app/src/lib/memberMatcher";
+import { analyzeRows, normalizeName, detectTableBounds, TableBoundsResult } from "@/app/src/lib/memberMatcher";
 import {
   PLAYER_COLUMN_NAMES,
   THP_COLUMN_NAMES,
@@ -83,6 +83,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
   }>({ playerColIndex: null, thpColIndex: null, roleColIndex: null });
 
   const [isLoadingFile, setIsLoadingFile] = useState(false);
+  const [tableBounds, setTableBounds] = useState<TableBoundsResult | null>(null);
   const [parsedMembers, setParsedMembers] = useState<ParsedMember[]>([]);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -187,8 +188,9 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
       return;
     }
 
-    const tableBounds = detectTableBounds(sheet.rows);
-    const analysis = analyzeRows(sheet.rows, tableBounds);
+    const bounds = detectTableBounds(sheet.rows);
+    setTableBounds(bounds);
+    const analysis = analyzeRows(sheet.rows, bounds);
     if (analysis.error) {
       setParsedMembers([]);
       setMappedColumnIndices({ playerColIndex: null, thpColIndex: null, roleColIndex: null });
@@ -214,7 +216,7 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     });
 
     const rawMembers: ParsedMember[] = [];
-    for (let i = tableBounds.dataStartIndex; i < tableBounds.dataEndIndex; i++) {
+    for (let i = bounds.dataStartIndex; i < bounds.dataEndIndex; i++) {
       const row = sheet.rows[i];
       if (!row || row.every((c) => !c.trim())) continue;
 
@@ -320,9 +322,10 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
   const blockingCellIssues: WorkbookIssue[] = [];
   const warningCellIssues: WorkbookIssue[] = [];
 
-  if (currentSheet && currentSheet.issues) {
+  if (currentSheet && currentSheet.issues && tableBounds) {
     for (const issue of currentSheet.issues) {
       if (!mappedIndicesSet.has(issue.columnIndex)) continue;
+      if (issue.rowIndex < tableBounds.dataStartIndex || issue.rowIndex >= tableBounds.dataEndIndex) continue;
 
       const memberInRow = parsedMembers.find((m) => m.sourceRow === issue.rowIndex + 1);
       if (memberInRow && memberInRow.selected) {

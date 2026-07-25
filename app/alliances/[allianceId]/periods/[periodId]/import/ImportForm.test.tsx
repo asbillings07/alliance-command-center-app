@@ -395,4 +395,127 @@ describe("ImportForm [component]", () => {
         expect(previewBtn).not.toBeUndefined();
         expect(previewBtn.disabled).toBe(true);
     });
+
+    it("requires user confirmation for low-confidence or multi-region tables and unlocks Preview upon confirmation", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: false,
+                    canAttachMetrics: false,
+                })
+            );
+        });
+
+        // Multi-table CSV with side-by-side player columns
+        const csvContent = `Player,Kill Points,,,Player Name,VS Score\nDragon,1500,,,Phoenix,2300`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Check that multi-table region selector is present
+        expect(container.textContent).toContain("Multiple Tables Detected on Sheet");
+        expect(container.textContent).toContain("Confirm Header & Table Region");
+
+        // Preview button should be disabled before confirmation
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+        expect(previewBtn).not.toBeUndefined();
+        expect(previewBtn.disabled).toBe(true);
+
+        // Click "Confirm Header & Table Region"
+        const confirmBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Confirm Header & Table Region")
+        ) as HTMLButtonElement;
+        expect(confirmBtn).not.toBeUndefined();
+
+        await act(async () => {
+            confirmBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Upon confirmation, header confirmation card disappears and preview button is enabled
+        expect(container.textContent).not.toContain("Confirm Header Row & Table Region");
+        expect(previewBtn.disabled).toBe(false);
+    });
+
+    it("displays truthful error notice when player name is missing for populated metric cells without saying whole numbers", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: false,
+                    canAttachMetrics: false,
+                })
+            );
+        });
+
+        // CSV with empty player name in data row 2
+        const csvContent = `Player,Kill Points\nDragon,1500\n,2000`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Fix 1 spreadsheet cell before previewing");
+        expect(container.textContent).toContain("Missing player name in cell A3");
+        expect(container.textContent).not.toContain("whole numbers");
+    });
+
+    it("ignores cell issues outside active data region (e.g. summary or footer rows)", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: false,
+                    canAttachMetrics: false,
+                })
+            );
+        });
+
+        // Create workbook with an error cell in a summary/footer row below dataEndIndex
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kill Points"],
+            ["Dragon", "1000"],
+            ["Total", "1000"],
+            ["Footnote", "#REF!"],
+        ]);
+        ws["B4"] = { t: "e", v: 0x17, w: "#REF!" };
+        XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "footer_error.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // The error in row 4 (B4) is after 'Total' (dataEndIndex = 2), so it shouldn't block preview
+        expect(container.textContent).not.toContain("Fix 1 spreadsheet cell before importing");
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+        expect(previewBtn).not.toBeUndefined();
+        expect(previewBtn.disabled).toBe(false);
+    });
 });

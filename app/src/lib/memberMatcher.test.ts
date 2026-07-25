@@ -555,5 +555,93 @@ describe('detectTableBounds and resilient structured parsing', () => {
       'SummaryKing',
     ]);
   });
+
+  it('detects side-by-side table regions when multiple player columns are present', () => {
+    const rows = [
+      ['Player', 'Kill Points', '', '', 'Player Name', 'VS Score'],
+      ['Alice', '1000', '', '', 'Bob', '2000'],
+      ['Charlie', '1500', '', '', 'David', '2500'],
+    ];
+
+    const bounds = detectTableBounds(rows);
+    expect(bounds.tableRegions).toHaveLength(2);
+    expect(bounds.tableRegions[0].startColumn).toBe(0);
+    expect(bounds.tableRegions[0].endColumn).toBe(3);
+    expect(bounds.tableRegions[0].playerColumnIndex).toBe(0);
+
+    expect(bounds.tableRegions[1].startColumn).toBe(4);
+    expect(bounds.tableRegions[1].endColumn).toBe(5);
+    expect(bounds.tableRegions[1].playerColumnIndex).toBe(4);
+
+    expect(bounds.needsConfirmation).toBe(true);
+  });
+
+  it('requires confirmation when header detection confidence is low', () => {
+    const rows = [
+      ['Notes', 'Random Text', 'Stuff'],
+      ['100', '200', '300'],
+      ['400', '500', '600'],
+    ];
+
+    const bounds = detectTableBounds(rows);
+    expect(bounds.confidence).toBe('low');
+    expect(bounds.needsConfirmation).toBe(true);
+  });
+
+  it('demonstrates spacer row resilience across multiple consecutive empty rows', () => {
+    const rows = [
+      ['Player', 'Kill Points'],
+      ['Alice', '1000'],
+      ['', ''], // Empty row 1
+      ['', ''], // Empty row 2 (consecutive spacer)
+      ['Bob', '2000'], // Valid data row after spacers!
+      ['Total', '3000'],
+    ];
+
+    const bounds = detectTableBounds(rows);
+    expect(bounds.dataStartIndex).toBe(1);
+    expect(bounds.dataEndIndex).toBe(5); // Includes Bob, stops at Total
+  });
+
+  it('discloses excluded data rows below dataEndIndex', () => {
+    const rows = [
+      ['Player', 'Kill Points'],
+      ['Alice', '1000'],
+      ['Total', '1000'],
+      ['Footnote:', 'Extra observations below table'],
+    ];
+
+    const bounds = detectTableBounds(rows);
+    expect(bounds.dataEndIndex).toBe(2);
+    expect(bounds.hasExcludedDataBelow).toBe(true);
+    expect(bounds.excludedRowsCount).toBe(2); // Total summary row + Footnote row
+  });
+
+  it('records missing identity issue with accurate nameAddress and cell address when value is present but player name is blank', () => {
+    const rows = [
+      ['Title Banner'],
+      ['Player', 'Kill Points'],
+      ['Alice', '1000'],
+      ['', '1500'], // Missing player name in A4, value 1500 in B4
+    ];
+
+    const bounds = detectTableBounds(rows);
+    const result = parseMetricRows(rows, { nameColumn: 0, valueColumn: 1, tableBounds: bounds });
+
+    expect(result.validEntries).toHaveLength(1);
+    expect(result.validEntries[0].name).toBe('Alice');
+
+    expect(result.missingIdentityIssues).toHaveLength(1);
+    expect(result.missingIdentityIssues[0]).toEqual({
+      sourceRow: 4,
+      columnIndex: 1,
+      nameColumnIndex: 0,
+      address: 'B4',
+      nameAddress: 'A4',
+      metricName: 'Kill Points',
+      rawValue: '1500',
+      error: 'Missing player name in cell A4',
+    });
+  });
 });
 
