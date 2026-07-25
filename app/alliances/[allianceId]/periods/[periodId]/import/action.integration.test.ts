@@ -26,7 +26,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
     });
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.resetAllMocks();
         vi.mocked(requireAllianceAccess).mockResolvedValue({
             user: { id: "integration-test-user", email: "test@local" },
             permissions: {

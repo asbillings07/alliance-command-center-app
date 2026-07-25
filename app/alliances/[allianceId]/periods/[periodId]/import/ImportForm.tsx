@@ -1027,7 +1027,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             <div>
               <p className="font-semibold text-amber-200 text-sm">This file may include multiple periods</p>
               <p className="text-xs text-amber-300/90 mt-1">
-                Single-period import records results into <strong>{periodName}</strong>. Some columns ({unconfirmedPeriodColumns.map((c) => `\u201c${c.columnName}\u201d`).join(", ")}) appear to name evaluation periods rather than metrics. Confirm whether to import these columns as metrics for {periodName} or skip them. Creating or selecting evaluation periods directly from detected columns is supported in multi-period import (#218).
+                Single-period import records results into <strong>{periodName}</strong>. Some columns ({unconfirmedPeriodColumns.map((c) => `\u201c${c.columnName}\u201d`).join(", ")}) appear to name evaluation periods rather than metrics. Confirm whether to import these columns as metrics for {periodName} or skip them. To import data into a different evaluation period, open that period and import this spreadsheet.
               </p>
             </div>
             <div className="flex flex-col gap-2">
