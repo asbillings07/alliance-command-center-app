@@ -4,18 +4,125 @@
  */
 
 import { parseStrictInteger, isValidIntegerString } from "./numberParser";
+import {
+  PLAYER_COLUMN_NAMES,
+  THP_COLUMN_NAMES,
+  ROLE_COLUMN_NAMES,
+  POWER_COLUMN_NAMES,
+  normalizeColumnName,
+  isPlayerColumn,
+  detectColumn,
+  type ColumnInfo,
+} from "./importConstants";
+
+export {
+  PLAYER_COLUMN_NAMES,
+  THP_COLUMN_NAMES,
+  ROLE_COLUMN_NAMES,
+  POWER_COLUMN_NAMES,
+  normalizeColumnName,
+  isPlayerColumn,
+  detectColumn,
+  type ColumnInfo,
+};
 
 type MemberRecord = {
   id: string;
   playerName: string;
 };
 
-type RawEntry = {
+export type RawEntry = {
   name: string;
   value?: number;
   rawValue: string;
   sourceRow: number;
   error?: string;
+};
+
+export type ValidMetricEntry = {
+  name: string;
+  value: number;
+  rawValue: string;
+  sourceRow: number;
+  columnIndex: number;
+  address: string;
+  metricName: string;
+};
+
+export type SkippedBlankCell = {
+  sourceRow: number;
+  columnIndex: number;
+  address: string;
+  rawName: string;
+  metricName: string;
+};
+
+export type InvalidValueIssue = {
+  sourceRow: number;
+  columnIndex: number;
+  address: string;
+  rawName: string;
+  metricName: string;
+  rawValue: string;
+  error: string;
+};
+
+export type MissingIdentityIssue = {
+  sourceRow: number;
+  columnIndex: number;
+  nameColumnIndex: number;
+  address: string;
+  nameAddress: string;
+  metricName: string;
+  rawValue: string;
+  error: string;
+};
+
+export type UnmatchedMemberIssue = {
+  sourceRow: number;
+  rawName: string;
+  metricName: string;
+  rawValue: string;
+};
+
+export type DuplicateMemberIssue = {
+  sourceRow: number;
+  rawName: string;
+  metricName: string;
+  firstSeenRow: number;
+};
+
+export type HeaderCandidate = {
+  rowIndex: number;
+  score: number;
+  sampleHeaders: string[];
+};
+
+export type TableRegion = {
+  id: string;
+  name: string;
+  startColumn: number;
+  endColumn: number;
+  playerColumnIndex: number;
+  playerColumnName: string;
+  headerRowIndex: number;
+  dataStartIndex: number;
+  dataEndIndex: number;
+  hasExcludedDataBelow: boolean;
+  excludedRowsCount: number;
+};
+
+export type TableBoundsResult = {
+  headerRowIndex: number;
+  dataStartIndex: number;
+  dataEndIndex: number; // exclusive upper index for rows.slice(dataStartIndex, dataEndIndex)
+  confidence: "high" | "medium" | "low";
+  candidates: HeaderCandidate[];
+  needsConfirmation: boolean;
+  tableRegions: TableRegion[];
+  selectedRegionIndex: number;
+  hasExcludedDataBelow: boolean;
+  excludedRowsCount: number;
 };
 
 export type MatchResult = {
@@ -200,25 +307,314 @@ export function matchEntriesToMembers(
   };
 }
 
-export type MetricParseResult = {
+/**
+ * Strict check to determine if a cell value represents a summary/footer row label
+ * (e.g. "Total", "Average", "Grand Total", "Notes:", "Legend:") rather than a player name
+ * such as "TotalWar", "AverageJoe", or "SummaryKing".
+ */
+export function isSummaryFooterRowLabel(cellValue: string): boolean {
+  const norm = cellValue.toLowerCase().trim().replace(/\s+/g, " ");
+  if (!norm) return false;
+
+  const exactFooterLabels = new Set([
+    "total",
+    "totals",
+    "average",
+    "avg",
+    "overall",
+    "summary",
+    "grand total",
+    "subtotal",
+    "sub-total",
+    "alliance total",
+    "alliance average",
+  ]);
+  if (exactFooterLabels.has(norm)) {
+    return true;
+  }
+
+  if (norm.endsWith(":")) {
+    const withoutColon = norm.slice(0, -1).trim();
+    const colonFooterKeywords = new Set([
+      "total",
+      "totals",
+      "average",
+      "avg",
+      "overall",
+      "summary",
+      "note",
+      "notes",
+      "legend",
+      "comment",
+      "comments",
+      "grand total",
+      "subtotal",
+      "sub-total",
+      "alliance total",
+      "alliance average",
+    ]);
+    if (colonFooterKeywords.has(withoutColon)) {
+      return true;
+    }
+  }
+
+  const multiWordSummaryRegex =
+    /^(total|totals|average|avg|overall|summary|subtotal|sub-total|grand\s+total|alliance\s+total|alliance\s+average)\s+(score|scores|point|points|value|values|count|rows?|stats|statistics|results?|summary|notes?|legend)$/i;
+
+  return multiWordSummaryRegex.test(norm);
+}
+
+function isRegionRowEmpty(row: string[] | undefined, startCol: number, endCol: number): boolean {
+  if (!row) return true;
+  for (let c = startCol; c <= endCol && c < row.length; c++) {
+    if (row[c]?.trim()) return false;
+  }
+  return true;
+}
+
+function getRegionFirstNonEmptyCell(row: string[] | undefined, startCol: number, endCol: number): string {
+  if (!row) return "";
+  for (let c = startCol; c <= endCol && c < row.length; c++) {
+    const trimmed = row[c]?.trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
+/**
+ * Detect table region bounds (header index, data start, data end) in spreadsheet rows.
+ */
+export function detectTableBounds(rows: string[][]): TableBoundsResult {
+  if (!rows || rows.length === 0) {
+    return {
+      headerRowIndex: 0,
+      dataStartIndex: 0,
+      dataEndIndex: 0,
+      confidence: "low",
+      candidates: [],
+      needsConfirmation: true,
+      tableRegions: [],
+      selectedRegionIndex: 0,
+      hasExcludedDataBelow: false,
+      excludedRowsCount: 0,
+    };
+  }
+
+  const candidateRowsLimit = Math.min(15, rows.length);
+  const candidates: HeaderCandidate[] = [];
+
+  for (let r = 0; r < candidateRowsLimit; r++) {
+    const row = rows[r];
+    if (!row || row.every((cell) => !cell.trim())) continue;
+
+    const nonEmptyCells = row.map((c) => c.trim()).filter(Boolean);
+    if (nonEmptyCells.length === 0) continue;
+
+    let score = 0;
+
+    for (const cell of row) {
+      const trimmed = cell.trim();
+      if (!trimmed) continue;
+
+      const norm = normalizeColumnName(trimmed);
+      const noSpaces = norm.replace(/\s/g, "");
+
+      if (PLAYER_COLUMN_NAMES.has(norm) || PLAYER_COLUMN_NAMES.has(noSpaces)) {
+        score += 15;
+      } else if (THP_COLUMN_NAMES.has(norm) || THP_COLUMN_NAMES.has(noSpaces)) {
+        score += 8;
+      } else if (ROLE_COLUMN_NAMES.has(norm) || ROLE_COLUMN_NAMES.has(noSpaces)) {
+        score += 8;
+      } else if (POWER_COLUMN_NAMES.has(norm) || POWER_COLUMN_NAMES.has(noSpaces)) {
+        score += 8;
+      } else if (norm.length > 0 && norm.length <= 30 && !/^\d+$/.test(norm)) {
+        score += 1;
+      }
+    }
+
+    if (nonEmptyCells.length === 1 && (nonEmptyCells[0].length > 25 || r === 0)) {
+      score -= 10;
+    }
+
+    candidates.push({
+      rowIndex: r,
+      score,
+      sampleHeaders: nonEmptyCells.slice(0, 5),
+    });
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+
+  const best = candidates[0];
+  const headerRowIndex = best ? best.rowIndex : 0;
+  const dataStartIndex = headerRowIndex + 1;
+
+  // Detect side-by-side TableRegions in the header row
+  const headerRow = rows[headerRowIndex] || [];
+  const maxCols = Math.max(...rows.map((r) => r.length), 0);
+
+  const playerCols: { colIndex: number; name: string }[] = [];
+  for (let c = 0; c < headerRow.length; c++) {
+    const cell = headerRow[c]?.trim() || "";
+    if (!cell) continue;
+    const norm = normalizeColumnName(cell);
+    const noSpaces = norm.replace(/\s/g, "");
+    if (PLAYER_COLUMN_NAMES.has(norm) || PLAYER_COLUMN_NAMES.has(noSpaces)) {
+      playerCols.push({ colIndex: c, name: cell });
+    }
+  }
+
+  const tableRegions: TableRegion[] = [];
+
+  if (playerCols.length > 1) {
+    for (let i = 0; i < playerCols.length; i++) {
+      const p = playerCols[i];
+      const startColumn = i === 0 ? 0 : playerCols[i].colIndex;
+      const endColumn =
+        i === playerCols.length - 1
+          ? maxCols - 1
+          : playerCols[i + 1].colIndex - 1;
+
+      const startLabel = columnIndexToLabel(startColumn);
+      const endLabel = columnIndexToLabel(endColumn);
+
+      tableRegions.push({
+        id: `region_${i}`,
+        name: `Table ${i + 1} (Cols ${startLabel}–${endLabel}: ${p.name})`,
+        startColumn,
+        endColumn,
+        playerColumnIndex: p.colIndex,
+        playerColumnName: p.name,
+        headerRowIndex,
+        dataStartIndex,
+        dataEndIndex: rows.length,
+        hasExcludedDataBelow: false,
+        excludedRowsCount: 0,
+      });
+    }
+  } else {
+    const pColIdx = playerCols[0] ? playerCols[0].colIndex : 0;
+    const pColName = playerCols[0] ? playerCols[0].name : "Player";
+    const startLabel = columnIndexToLabel(0);
+    const endLabel = columnIndexToLabel(Math.max(maxCols - 1, 0));
+
+    tableRegions.push({
+      id: "region_0",
+      name: `Table 1 (Cols ${startLabel}–${endLabel})`,
+      startColumn: 0,
+      endColumn: Math.max(maxCols - 1, 0),
+      playerColumnIndex: pColIdx,
+      playerColumnName: pColName,
+      headerRowIndex,
+      dataStartIndex,
+      dataEndIndex: rows.length,
+      hasExcludedDataBelow: false,
+      excludedRowsCount: 0,
+    });
+  }
+
+  // Calculate dataEndIndex, excludedRowsCount, and hasExcludedDataBelow for EACH table region independently
+  // Spacer row resilience: empty rows do NOT truncate data if valid non-summary data rows exist below!
+  tableRegions.forEach((reg) => {
+    let regEndIndex = rows.length;
+
+    for (let r = dataStartIndex; r < rows.length; r++) {
+      const row = rows[r];
+      const isRowEmpty = isRegionRowEmpty(row, reg.startColumn, reg.endColumn);
+
+      if (isRowEmpty) {
+        let hasDataBelow = false;
+        for (let subR = r + 1; subR < rows.length; subR++) {
+          const subRow = rows[subR];
+          if (!isRegionRowEmpty(subRow, reg.startColumn, reg.endColumn)) {
+            const firstCell = getRegionFirstNonEmptyCell(subRow, reg.startColumn, reg.endColumn);
+            if (!isSummaryFooterRowLabel(firstCell)) {
+              hasDataBelow = true;
+              break;
+            }
+          }
+        }
+        if (!hasDataBelow) {
+          regEndIndex = r;
+          break;
+        }
+        continue;
+      }
+
+      const firstCell = getRegionFirstNonEmptyCell(row, reg.startColumn, reg.endColumn);
+      if (isSummaryFooterRowLabel(firstCell)) {
+        regEndIndex = r;
+        break;
+      }
+    }
+
+    reg.dataEndIndex = regEndIndex;
+
+    let excludedRowsCount = 0;
+    for (let r = regEndIndex; r < rows.length; r++) {
+      const row = rows[r];
+      if (!isRegionRowEmpty(row, reg.startColumn, reg.endColumn)) {
+        excludedRowsCount++;
+      }
+    }
+    reg.excludedRowsCount = excludedRowsCount;
+    reg.hasExcludedDataBelow = excludedRowsCount > 0;
+  });
+
+  const primaryRegion = tableRegions[0];
+  const dataEndIndex = primaryRegion ? primaryRegion.dataEndIndex : rows.length;
+  const excludedRowsCount = primaryRegion ? primaryRegion.excludedRowsCount : 0;
+  const hasExcludedDataBelow = primaryRegion ? primaryRegion.hasExcludedDataBelow : false;
+
+  let confidence: "high" | "medium" | "low" = "low";
+  let needsConfirmation = true;
+
+  if (best && best.score >= 10 && tableRegions.length === 1) {
+    confidence = "high";
+    needsConfirmation = false;
+  } else if (best && best.score >= 5 && tableRegions.length === 1) {
+    confidence = "medium";
+    needsConfirmation = false;
+  } else {
+    confidence = tableRegions.length > 1 ? "medium" : "low";
+    needsConfirmation = true;
+  }
+
+  return {
+    headerRowIndex,
+    dataStartIndex,
+    dataEndIndex,
+    confidence,
+    candidates,
+    needsConfirmation,
+    tableRegions,
+    selectedRegionIndex: 0,
+    hasExcludedDataBelow,
+    excludedRowsCount,
+  };
+}
+
+export type StructuredParseResult = {
   entries: RawEntry[];
+  validEntries: ValidMetricEntry[];
+  skippedBlankCells: SkippedBlankCell[];
+  invalidValueIssues: InvalidValueIssue[];
+  missingIdentityIssues: MissingIdentityIssue[];
+  unmatchedMemberIssues: UnmatchedMemberIssue[];
+  duplicateMemberIssues: DuplicateMemberIssue[];
   errors: string[];
   detectedMetricName: string | null;
+  tableBounds: TableBoundsResult;
 };
 
+export type MetricParseResult = StructuredParseResult;
 export type CSVParseResult = MetricParseResult;
-
-export type ColumnInfo = {
-  index: number;
-  name: string;
-  isNumeric: boolean;
-  sampleValues: string[];
-};
 
 export type MatrixAnalysisResult = {
   columns: ColumnInfo[];
   rowCount: number;
   error: string | null;
+  tableBounds: TableBoundsResult;
 };
 
 export function columnIndexToLabel(index: number): string {
@@ -234,50 +630,79 @@ export function columnIndexToLabel(index: number): string {
   return label;
 }
 
-function cellAddress(rowIndex: number, columnIndex: number): string {
+export function cellAddress(rowIndex: number, columnIndex: number): string {
   return `${columnIndexToLabel(columnIndex)}${rowIndex + 1}`;
 }
 
 export type CSVAnalysisResult = MatrixAnalysisResult;
 
 /**
- * Analyze matrix grid rows (from CSV, XLSX, XLS) to discover columns and their types.
- * Returns column metadata to help users choose which columns to import.
+ * Analyze matrix grid rows (from CSV, XLSX, XLS) to discover columns, table bounds, and types.
  */
-export function analyzeRows(rows: string[][]): MatrixAnalysisResult {
+export function analyzeRows(
+  rows: string[][],
+  tableBoundsInput?: TableBoundsResult,
+  selectedRegionIndex: number = 0,
+): MatrixAnalysisResult {
   if (!rows || rows.length === 0) {
-    return { columns: [], rowCount: 0, error: "Spreadsheet is empty" };
+    const emptyBounds = detectTableBounds(rows);
+    return { columns: [], rowCount: 0, error: "Spreadsheet is empty", tableBounds: emptyBounds };
   }
 
-  if (rows.length < 2) {
-    return { columns: [], rowCount: 0, error: "Spreadsheet must have a header row and at least one data row" };
+  const bounds = tableBoundsInput ?? detectTableBounds(rows);
+  const regionIndex =
+    selectedRegionIndex >= 0 && selectedRegionIndex < bounds.tableRegions.length
+      ? selectedRegionIndex
+      : 0;
+  const region = bounds.tableRegions[regionIndex];
+  const activeEndIndex = region ? region.dataEndIndex : bounds.dataEndIndex;
+
+  if (rows.length < bounds.dataStartIndex + 1) {
+    return {
+      columns: [],
+      rowCount: 0,
+      error: "Spreadsheet must have a header row and at least one data row",
+      tableBounds: bounds,
+    };
   }
 
-  const headerRow = rows[0];
+  const headerRow = rows[bounds.headerRowIndex];
   if (!headerRow || headerRow.length === 0) {
-    return { columns: [], rowCount: 0, error: "No columns found in header row" };
+    return {
+      columns: [],
+      rowCount: 0,
+      error: "No columns found in header row",
+      tableBounds: bounds,
+    };
   }
 
-  const columns: ColumnInfo[] = headerRow.map((header, index) => ({
-    index,
-    name: header.trim() || `Column ${index + 1}`,
-    isNumeric: true,
-    sampleValues: [],
-  }));
+  const startCol = region ? region.startColumn : 0;
+  const endCol = region ? region.endColumn : headerRow.length - 1;
 
-  const columnStats = headerRow.map(() => ({
+  const columns: ColumnInfo[] = [];
+  for (let index = startCol; index <= Math.min(endCol, headerRow.length - 1); index++) {
+    const header = headerRow[index] || "";
+    columns.push({
+      index,
+      name: header.trim() || `Column ${columnIndexToLabel(index)}`,
+      isNumeric: true,
+      sampleValues: [],
+    });
+  }
+
+  const columnStats = columns.map(() => ({
     validIntegerCount: 0,
     totalNonEmptyCount: 0,
   }));
 
-  // Sample up to 10 data rows to determine column types
-  const sampleSize = Math.min(10, rows.length - 1);
-  for (let i = 1; i <= sampleSize; i++) {
+  const sampleEndIndex = Math.min(bounds.dataStartIndex + 10, activeEndIndex);
+  for (let i = bounds.dataStartIndex; i < sampleEndIndex; i++) {
     const row = rows[i];
-    if (!row || row.every((cell) => !cell.trim())) continue;
+    if (!row || isRegionRowEmpty(row, startCol, endCol)) continue;
 
     for (let j = 0; j < columns.length; j++) {
-      const value = row[j]?.trim() || "";
+      const colIdx = columns[j].index;
+      const value = row[colIdx]?.trim() || "";
       columns[j].sampleValues.push(value);
 
       if (value) {
@@ -296,16 +721,23 @@ export function analyzeRows(rows: string[][]): MatrixAnalysisResult {
       stats.validIntegerCount >= stats.totalNonEmptyCount / 2;
   }
 
-  // Count actual data rows (excluding header and empty rows)
   let rowCount = 0;
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = bounds.dataStartIndex; i < activeEndIndex; i++) {
     const row = rows[i];
-    if (row && row.some((cell) => cell.trim().length > 0)) {
+    if (row && !isRegionRowEmpty(row, startCol, endCol)) {
       rowCount++;
     }
   }
 
-  return { columns, rowCount, error: null };
+  const updatedBounds: TableBoundsResult = {
+    ...bounds,
+    selectedRegionIndex: regionIndex,
+    dataEndIndex: activeEndIndex,
+    hasExcludedDataBelow: region ? region.hasExcludedDataBelow : bounds.hasExcludedDataBelow,
+    excludedRowsCount: region ? region.excludedRowsCount : bounds.excludedRowsCount,
+  };
+
+  return { columns, rowCount, error: null, tableBounds: updatedBounds };
 }
 
 /**
@@ -314,7 +746,8 @@ export function analyzeRows(rows: string[][]): MatrixAnalysisResult {
 export function analyzeCSV(content: string): CSVAnalysisResult {
   const trimmedContent = content.trim();
   if (!trimmedContent) {
-    return { columns: [], rowCount: 0, error: "CSV file is empty" };
+    const emptyBounds = detectTableBounds([]);
+    return { columns: [], rowCount: 0, error: "CSV file is empty", tableBounds: emptyBounds };
   }
   const lines = trimmedContent.split(/\r?\n/);
   const rows = lines.map((line) => parseCSVLine(line));
@@ -322,7 +755,7 @@ export function analyzeCSV(content: string): CSVAnalysisResult {
 }
 
 /**
- * Parse matrix grid rows into raw entries using user-specified columns.
+ * Parse matrix grid rows into raw entries and structured diagnostics.
  */
 export function parseMetricRows(
   rows: string[][],
@@ -330,28 +763,56 @@ export function parseMetricRows(
     nameColumn: number;
     valueColumn: number;
     hasHeader?: boolean;
+    tableBounds?: TableBoundsResult;
+    metricName?: string;
   },
-): MetricParseResult {
-  const { nameColumn, valueColumn, hasHeader = true } = options;
+): StructuredParseResult {
+  const { nameColumn, valueColumn, hasHeader = true, tableBounds, metricName } = options;
+
   if (!rows || rows.length === 0) {
-    return { entries: [], errors: ["Spreadsheet is empty"], detectedMetricName: null };
+    const bounds = detectTableBounds(rows);
+    return {
+      entries: [],
+      validEntries: [],
+      skippedBlankCells: [],
+      invalidValueIssues: [],
+      missingIdentityIssues: [],
+      unmatchedMemberIssues: [],
+      duplicateMemberIssues: [],
+      errors: ["Spreadsheet is empty"],
+      detectedMetricName: null,
+      tableBounds: bounds,
+    };
   }
 
+  const bounds = tableBounds ?? detectTableBounds(rows);
+  const regionIndex = bounds.selectedRegionIndex ?? 0;
+  const region = bounds.tableRegions[regionIndex];
+
+  const headerRowIndex = hasHeader ? bounds.headerRowIndex : 0;
+  const dataStartIndex = hasHeader ? bounds.dataStartIndex : 0;
+  const dataEndIndex = region ? region.dataEndIndex : bounds.dataEndIndex;
+
   const entries: RawEntry[] = [];
+  const validEntries: ValidMetricEntry[] = [];
+  const skippedBlankCells: SkippedBlankCell[] = [];
+  const invalidValueIssues: InvalidValueIssue[] = [];
+  const missingIdentityIssues: MissingIdentityIssue[] = [];
+  const unmatchedMemberIssues: UnmatchedMemberIssue[] = [];
+  const duplicateMemberIssues: DuplicateMemberIssue[] = [];
   const errors: string[] = [];
   let detectedMetricName: string | null = null;
 
-  // Extract metric name from header if present
-  if (hasHeader && rows.length > 0) {
-    const headerRow = rows[0];
+  if (hasHeader && rows.length > headerRowIndex) {
+    const headerRow = rows[headerRowIndex];
     if (headerRow && headerRow.length > valueColumn) {
-      detectedMetricName = headerRow[valueColumn].trim() || null;
+      detectedMetricName = headerRow[valueColumn]?.trim() || null;
     }
   }
 
-  const startIndex = hasHeader ? 1 : 0;
+  const mName = metricName || detectedMetricName || `Column ${columnIndexToLabel(valueColumn)}`;
 
-  for (let i = startIndex; i < rows.length; i++) {
+  for (let i = dataStartIndex; i < dataEndIndex; i++) {
     const row = rows[i];
     if (!row || row.every((cell) => !cell.trim())) continue;
 
@@ -364,26 +825,71 @@ export function parseMetricRows(
 
     const name = row[nameColumn]?.trim() || "";
     const rawValue = row[valueColumn]?.trim() || "";
+    const address = cellAddress(i, valueColumn);
 
-    if (!name) {
-      errors.push(`Cell ${cellAddress(i, nameColumn)}: Empty name`);
+    if (!name && !rawValue) {
+      continue;
+    }
+
+    if (!name && rawValue) {
+      const nameAddr = cellAddress(i, nameColumn);
+      const err = `Missing player name in cell ${nameAddr}`;
+      errors.push(`Cell ${nameAddr}: Missing player name for value "${rawValue}" in column ${mName}`);
+      missingIdentityIssues.push({
+        sourceRow: i + 1,
+        columnIndex: valueColumn,
+        nameColumnIndex: nameColumn,
+        address,
+        nameAddress: nameAddr,
+        metricName: mName,
+        rawValue,
+        error: err,
+      });
+      continue;
+    }
+
+    if (name && !rawValue) {
+      skippedBlankCells.push({
+        sourceRow: i + 1,
+        columnIndex: valueColumn,
+        address,
+        rawName: name,
+        metricName: mName,
+      });
       continue;
     }
 
     const parsed = parseStrictInteger(rawValue);
     if (!parsed.success) {
-      errors.push(
-        `Cell ${cellAddress(i, valueColumn)}: Invalid or missing value "${rawValue}" for "${name}": ${parsed.error}`,
-      );
+      const errMsg = parsed.error;
+      errors.push(`Cell ${address}: Invalid value "${rawValue}" for "${name}": ${errMsg}`);
+      invalidValueIssues.push({
+        sourceRow: i + 1,
+        columnIndex: valueColumn,
+        address,
+        rawName: name,
+        metricName: mName,
+        rawValue,
+        error: errMsg,
+      });
       entries.push({
         name,
         rawValue,
         sourceRow: i + 1,
-        error: parsed.error,
+        error: errMsg,
       });
       continue;
     }
 
+    validEntries.push({
+      name,
+      value: parsed.value,
+      rawValue,
+      sourceRow: i + 1,
+      columnIndex: valueColumn,
+      address,
+      metricName: mName,
+    });
     entries.push({
       name,
       value: parsed.value,
@@ -392,7 +898,18 @@ export function parseMetricRows(
     });
   }
 
-  return { entries, errors, detectedMetricName };
+  return {
+    entries,
+    validEntries,
+    skippedBlankCells,
+    invalidValueIssues,
+    missingIdentityIssues,
+    unmatchedMemberIssues,
+    duplicateMemberIssues,
+    errors,
+    detectedMetricName,
+    tableBounds: bounds,
+  };
 }
 
 /**
@@ -408,7 +925,19 @@ export function parseCSV(
 ): CSVParseResult {
   const trimmedContent = content.trim();
   if (!trimmedContent) {
-    return { entries: [], errors: ["CSV file is empty"], detectedMetricName: null };
+    const bounds = detectTableBounds([]);
+    return {
+      entries: [],
+      validEntries: [],
+      skippedBlankCells: [],
+      invalidValueIssues: [],
+      missingIdentityIssues: [],
+      unmatchedMemberIssues: [],
+      duplicateMemberIssues: [],
+      errors: ["CSV file is empty"],
+      detectedMetricName: null,
+      tableBounds: bounds,
+    };
   }
   const lines = trimmedContent.split(/\r?\n/);
   const rows = lines.map((line) => parseCSVLine(line));
