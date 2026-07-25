@@ -549,4 +549,26 @@ describe("getAllianceSetupStatus", () => {
 
     expect(dataTask?.href).toBe("/alliances/alliance-1/periods/period-inactive-attachment");
   });
+
+  it("remains incomplete when target period only has entries for inactive metric attachments", async () => {
+    mockPrisma.metric.count.mockResolvedValue(1);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(5);
+    // Global metricEntries count > 0 (there are entries in the DB for the period, e.g. under an inactive metric)
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(50);
+
+    // Active period query returns 0 active metric attachments because the metric/attachment is inactive
+    mockPrisma.metricPeriod.findFirst.mockResolvedValue({
+      id: "period-with-inactive-entries",
+      periodMetrics: [], // filtered out by active: true, metric: { active: true }
+    });
+
+    const status = await getAllianceSetupStatus("alliance-1");
+    const dataTask = status.tasks.find((t) => t.id === "data");
+
+    // Must remain incomplete because there are 0 visible active metrics/results for this period
+    expect(dataTask?.completed).toBe(false);
+  });
 });

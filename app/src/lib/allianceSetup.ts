@@ -260,10 +260,16 @@ export async function getAllianceSetupStatus(
 
   let targetPeriodHasEntries = false;
   if (targetPeriod) {
-    const targetEntriesCount = await prisma.memberMetricEntry.count({
-      where: { periodId: targetPeriod.id },
-    });
-    targetPeriodHasEntries = targetEntriesCount > 0;
+    const activeMetricIds = targetPeriod.periodMetrics.map((pm) => pm.metricId);
+    if (activeMetricIds.length > 0) {
+      const targetEntriesCount = await prisma.memberMetricEntry.count({
+        where: {
+          periodId: targetPeriod.id,
+          metricId: { in: activeMetricIds },
+        },
+      });
+      targetPeriodHasEntries = targetEntriesCount > 0;
+    }
   }
 
   // Filter to tasks the user can complete, if permissions provided
