@@ -190,7 +190,7 @@ test.describe("Alliance Member Filter Tests", () => {
     await page.goto(`/alliances/${testAllianceId}/members?filter=all`);
 
     // Should show at least the count combining active and archived
-    await expect(page.getByRole("heading", { name: /roster/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /members/i })).toBeVisible();
   });
 
   test("Filter persists across navigation", async ({ page }) => {

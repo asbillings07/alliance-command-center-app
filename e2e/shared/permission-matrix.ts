@@ -92,7 +92,7 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
   // ============================================================
   {
     feature: "members.view",
-    description: "Can view members roster",
+    description: "Can view members",
     verification: {
       type: "page_accessible",
       path: "/alliances/{allianceId}/members",
@@ -111,7 +111,7 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
   },
   {
     feature: "members.import_link",
-    description: "Import Roster link visible",
+    description: "Import Members link visible",
     verification: {
       type: "link_visible",
       selector: 'a:has-text("Import")',

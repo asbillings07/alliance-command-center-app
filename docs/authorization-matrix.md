@@ -34,7 +34,7 @@ Implementation: `app/src/lib/auth/permissions.ts`
 | **Manage notes** | ✓ | ✓ | ✓ | ✗ | Add/edit leadership notes |
 | **Import evaluation results** | ✓ | ✓ | ✓ | ✗ | Import evaluation metric data |
 | **Manage members** | ✓ | ✓ | ✗ | ✗ | Add/archive/restore members |
-| **Import roster** | ✓ | ✓ | ✗ | ✗ | Bulk roster import |
+| **Import members** | ✓ | ✓ | ✗ | ✗ | Bulk member import |
 | **Configure metrics** | ✓ | ✓ | ✓ | ✗ | Create/edit metric definitions |
 | **Configure periods** | ✓ | ✓ | ✓ | ✗ | Create/manage evaluation periods |
 | **Invite collaborators** | ✓ | ✓ | ✗ | ✗ | Send alliance invitations |
@@ -63,7 +63,7 @@ Setup tasks are **alliance-scoped** (not user-scoped) and can be completed by an
 | Configure Metrics | ✓ | `canConfigureMetrics` | LEADER |
 | Create Evaluation Period | ✓ | `canConfigurePeriods` | LEADER |
 | Invite Leadership Team | ✓ | `canInviteCollaborators` | ADMIN |
-| Import Roster | ✗ | `canImportMembers` | ADMIN |
+| Import Members | ✗ | `canImportMembers` | ADMIN |
 | Import Evaluation Results | ✗ | `canImportMetrics` | LEADER |
 
 **Setup completion is based on task completion state, not user identity.**

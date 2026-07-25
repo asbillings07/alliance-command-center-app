@@ -36,7 +36,7 @@ test.describe("Import Discoverability & Navigation Bridge", () => {
 
     // Step 1: Visit /members to warm router client cache
     await page.goto(`/alliances/${allianceId}/members`);
-    await expect(page.getByRole("heading", { name: /Roster/i })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: /Members/i })).toBeVisible();
 
     // Step 2: In-app navigate to Member Import page via Client Link
     await page.getByRole("link", { name: "Import Members" }).click();

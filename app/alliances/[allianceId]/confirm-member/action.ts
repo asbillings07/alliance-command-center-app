@@ -24,7 +24,7 @@ export async function confirmMember(
   });
 
   if (existingRosterLink) {
-    return { error: "You are already linked to a roster member in this alliance" };
+    return { error: "You are already linked to a member in this alliance" };
   }
 
   if (memberId) {

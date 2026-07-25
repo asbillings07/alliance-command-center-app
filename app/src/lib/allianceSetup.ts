@@ -231,21 +231,83 @@ export async function getAllianceSetupStatus(
   ).length;
   const allRequiredTotal = allRequiredTasks.length;
 
+  // Resolve target evaluation period for dynamic task links (e.g. data import)
+  const activePeriod = await prisma.metricPeriod.findFirst({
+    where: { allianceId, active: true },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      periodMetrics: {
+        where: { active: true, metric: { active: true } },
+        select: { metricId: true },
+      },
+    },
+  });
+
+  const targetPeriod =
+    activePeriod ??
+    (await prisma.metricPeriod.findFirst({
+      where: { allianceId },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: {
+        id: true,
+        periodMetrics: {
+          where: { active: true, metric: { active: true } },
+          select: { metricId: true },
+        },
+      },
+    }));
+
+  let targetPeriodHasEntries = false;
+  if (targetPeriod) {
+    const activeMetricIds = targetPeriod.periodMetrics.map((pm) => pm.metricId);
+    if (activeMetricIds.length > 0) {
+      const targetEntriesCount = await prisma.memberMetricEntry.count({
+        where: {
+          periodId: targetPeriod.id,
+          metricId: { in: activeMetricIds },
+          allianceMember: { allianceId },
+        },
+      });
+      targetPeriodHasEntries = targetEntriesCount > 0;
+    }
+  }
+
   // Filter to tasks the user can complete, if permissions provided
   // This is for display purposes only
   const applicableTasks = permissions
     ? SETUP_TASKS.filter((t) => permissions[t.requiredPermission])
     : SETUP_TASKS;
 
-  const tasks: SetupTask[] = applicableTasks.map((definition) => ({
-    id: definition.id,
-    label: definition.label,
-    description: definition.description,
-    completed: evaluateTaskCompletion(definition.id, counts),
-    href: definition.href(allianceId),
-    typicallyCompletedBy: definition.typicallyCompletedBy,
-    required: definition.required,
-  }));
+  const tasks: SetupTask[] = applicableTasks.map((definition) => {
+    let href = definition.href(allianceId);
+    let completed = evaluateTaskCompletion(definition.id, counts);
+
+    if (definition.id === "data") {
+      if (targetPeriod) {
+        completed = targetPeriodHasEntries;
+        const hasAssignedMetrics = targetPeriod.periodMetrics.length > 0;
+        const canProvisionMetrics = Boolean(
+          permissions?.canConfigureMetrics || permissions?.canConfigurePeriods
+        );
+        if (hasAssignedMetrics || canProvisionMetrics) {
+          href = `/alliances/${allianceId}/periods/${targetPeriod.id}/import`;
+        } else {
+          href = `/alliances/${allianceId}/periods/${targetPeriod.id}`;
+        }
+      }
+    }
+
+    return {
+      id: definition.id,
+      label: definition.label,
+      description: definition.description,
+      completed,
+      href,
+      typicallyCompletedBy: definition.typicallyCompletedBy,
+      required: definition.required,
+    };
+  });
 
   const completedCount = tasks.filter((t) => t.completed).length;
   const totalCount = tasks.length;

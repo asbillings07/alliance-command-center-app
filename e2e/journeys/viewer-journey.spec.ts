@@ -65,8 +65,8 @@ test.describe("Viewer Journey", () => {
 
     await page.goto(`/alliances/${testAllianceId}/members`);
 
-    // Should be able to view roster
-    await expect(page.locator("h1:has-text('Roster')")).toBeVisible();
+    // Should be able to view members
+    await expect(page.getByRole("heading", { level: 1, name: /Members/i })).toBeVisible();
   });
 
   test("cannot see import link on members page", async ({ page }) => {
@@ -88,7 +88,7 @@ test.describe("Viewer Journey", () => {
       await memberLink.click();
 
       // Should see member details with back link
-      await expect(page.locator('a:has-text("← Back to Roster")')).toBeVisible();
+      await expect(page.getByRole("link", { name: "Members" })).toBeVisible();
     }
   });
 
@@ -195,7 +195,7 @@ test.describe("Viewer Journey", () => {
     const memberLink = page.locator("table tbody tr a").first();
     if (await memberLink.isVisible()) {
       await memberLink.click();
-      await page.click('a:has-text("← Back to Roster")');
+      await page.getByRole("link", { name: "Members" }).click();
 
       await expect(page).toHaveURL(
         `/alliances/${testAllianceId}/members`

@@ -70,7 +70,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 id: true,
                 name: true,
                 periodMetrics: {
-                    where: { active: true },
+                    where: { active: true, metric: { active: true } },
                     select: {
                         metricId: true,
                         metric: {
@@ -173,9 +173,9 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 { label: "Dashboard", href: `/alliances/${allianceId}` },
                 { label: "Members" },
             ]}
-            title={`${alliance.name} Roster`}
+            title={`${alliance.name} Members`}
             description={description}
-            action={actionButtons}
+            action={allianceMembers.length > 0 ? actionButtons : undefined}
         >
             <MembersFilter
                 currentFilter={filter}
@@ -196,16 +196,44 @@ export default async function MembersPage({ params, searchParams }: Params) {
                     }
                     description={
                         filter === "active"
-                            ? permissions.canManageMembers
-                                ? "Import members or add them manually to get started."
-                                : "The alliance member list hasn't been set up yet. An admin will import members soon."
+                            ? permissions.canImportMembers || permissions.canManageMembers
+                                ? "Import members from a spreadsheet or add them manually to get started."
+                                : "An alliance Admin or Owner must import or add members first."
                             : filter === "archived"
                             ? "Members that have been archived will appear here."
                             : undefined
                     }
                     action={
-                        filter === "active" && permissions.canManageMembers
-                            ? <Button variant="primary" href={`/alliances/${allianceId}/members/new`}>Add Member</Button>
+                        filter === "active"
+                            ? permissions.canImportMembers || permissions.canManageMembers
+                                ? (
+                                    <div className="flex gap-3 flex-wrap justify-center">
+                                        {permissions.canImportMembers && (
+                                            <Button
+                                                variant="primary"
+                                                href={`/alliances/${allianceId}/members/import`}
+                                            >
+                                                Import Members
+                                            </Button>
+                                        )}
+                                        {permissions.canManageMembers && (
+                                            <Button
+                                                variant={permissions.canImportMembers ? "secondary" : "primary"}
+                                                href={`/alliances/${allianceId}/members/new`}
+                                            >
+                                                Add Member
+                                            </Button>
+                                        )}
+                                    </div>
+                                )
+                                : (
+                                    <Button
+                                        variant="secondary"
+                                        href={`/alliances/${allianceId}`}
+                                    >
+                                        Back to Dashboard
+                                    </Button>
+                                )
                             : undefined
                     }
                 />

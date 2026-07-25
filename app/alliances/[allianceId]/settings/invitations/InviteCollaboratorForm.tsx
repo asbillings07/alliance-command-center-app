@@ -104,11 +104,11 @@ export function InviteCollaboratorForm({
 
   if (result) {
     return (
-      <div className="border border-[#374151] rounded-lg p-6 bg-[#111827]">
+      <div className="border border-border rounded-lg p-6 bg-surface">
         <div className="flex items-start gap-3">
-          <div className="w-8 h-8 bg-[#22C55E]/20 rounded-full flex items-center justify-center flex-shrink-0">
+          <div className="w-8 h-8 bg-success/20 rounded-full flex items-center justify-center flex-shrink-0">
             <svg
-              className="w-4 h-4 text-[#22C55E]"
+              className="w-4 h-4 text-success"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -122,18 +122,18 @@ export function InviteCollaboratorForm({
             </svg>
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-medium text-[#F9FAFB]">
+            <h3 className="font-medium text-text-primary">
               Invitation sent
             </h3>
-            <p className="text-sm text-[#9CA3AF] mt-0.5">
+            <p className="text-sm text-text-muted mt-0.5">
               {result.memberCreated
-                ? "A new roster entry was created. Share the link or code below."
+                ? "A new member entry was created. Share the link or code below."
                 : "Share the link or code below with your collaborator."}
             </p>
 
             <div className="mt-4 space-y-3">
               <div>
-                <label className="block text-xs font-medium text-[#9CA3AF] uppercase tracking-wide mb-1.5">
+                <label className="block text-xs font-medium text-text-muted uppercase tracking-wide mb-1.5">
                   Invitation Link
                 </label>
                 <div className="flex gap-2">
@@ -141,12 +141,12 @@ export function InviteCollaboratorForm({
                     type="text"
                     readOnly
                     value={result.inviteUrl}
-                    className="flex-1 px-3 py-2 bg-[#1F2937] border border-[#374151] rounded-md text-sm text-[#D1D5DB] min-w-0"
+                    className="flex-1 px-3 py-2 bg-surface-secondary border border-border rounded-md text-sm text-text-secondary min-w-0"
                   />
                   <button
                     type="button"
                     onClick={handleCopyUrl}
-                    className="px-3 py-2 bg-[#3B82F6] text-white rounded-md text-sm hover:bg-[#2563EB] flex-shrink-0"
+                    className="px-3 py-2 bg-primary text-white rounded-md text-sm hover:bg-primary-hover flex-shrink-0"
                   >
                     Copy
                   </button>
@@ -154,7 +154,7 @@ export function InviteCollaboratorForm({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-[#9CA3AF] uppercase tracking-wide mb-1.5">
+                <label className="block text-xs font-medium text-text-muted uppercase tracking-wide mb-1.5">
                   Invitation Code
                 </label>
                 <div className="flex gap-2">
@@ -162,12 +162,12 @@ export function InviteCollaboratorForm({
                     type="text"
                     readOnly
                     value={result.inviteCode}
-                    className="flex-1 px-3 py-2 bg-[#1F2937] border border-[#374151] rounded-md text-sm font-mono text-[#D1D5DB] tracking-wider min-w-0"
+                    className="flex-1 px-3 py-2 bg-surface-secondary border border-border rounded-md text-sm font-mono text-text-secondary tracking-wider min-w-0"
                   />
                   <button
                     type="button"
                     onClick={handleCopyCode}
-                    className="px-3 py-2 bg-[#3B82F6] text-white rounded-md text-sm hover:bg-[#2563EB] flex-shrink-0"
+                    className="px-3 py-2 bg-primary text-white rounded-md text-sm hover:bg-primary-hover flex-shrink-0"
                   >
                     Copy
                   </button>
@@ -175,11 +175,11 @@ export function InviteCollaboratorForm({
               </div>
             </div>
 
-            <div className="mt-5 pt-4 border-t border-[#374151]">
+            <div className="mt-5 pt-4 border-t border-border">
               <button
                 type="button"
                 onClick={() => setResult(null)}
-                className="text-sm text-[#3B82F6] hover:text-[#60A5FA]"
+                className="text-sm text-primary-light hover:text-primary"
               >
                 Invite another collaborator →
               </button>
@@ -193,7 +193,7 @@ export function InviteCollaboratorForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="bg-[#EF4444]/10 border border-[#EF4444]/30 rounded-md p-3 text-sm text-[#EF4444]">
+        <div className="bg-danger/10 border border-danger/30 rounded-md p-3 text-sm text-danger">
           {error}
         </div>
       )}
@@ -208,7 +208,7 @@ export function InviteCollaboratorForm({
           <div>
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-[#D1D5DB] mb-1.5"
+              className="block text-sm font-medium text-text-secondary mb-1.5"
             >
               Email
             </label>
@@ -219,14 +219,14 @@ export function InviteCollaboratorForm({
               onChange={(e) => setEmail(e.target.value)}
               required
               placeholder="collaborator@example.com"
-              className="w-full px-3 py-2 border border-[#374151] rounded-md bg-[#1F2937] text-[#F9FAFB] placeholder-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-transparent text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md bg-surface-secondary text-text-primary placeholder-text-disabled focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
             />
           </div>
 
           <div>
             <label
               htmlFor="role"
-              className="block text-sm font-medium text-[#D1D5DB] mb-1.5"
+              className="block text-sm font-medium text-text-secondary mb-1.5"
             >
               Role
             </label>
@@ -236,7 +236,7 @@ export function InviteCollaboratorForm({
               onChange={(e) =>
                 setMembershipRole(e.target.value as "ADMIN" | "LEADER" | "VIEWER")
               }
-              className="w-full px-3 py-2 border border-[#374151] rounded-md bg-[#1F2937] text-[#F9FAFB] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-transparent text-sm"
+              className="w-full px-3 py-2 border border-border rounded-md bg-surface-secondary text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
             >
               <option value="ADMIN">Admin — Full access except ownership</option>
               <option value="LEADER">Leader — Can configure and record metrics</option>
@@ -246,16 +246,16 @@ export function InviteCollaboratorForm({
 
           {isNewMember && (
             <>
-              <div className="border-t border-[#374151] pt-4 mt-4">
-                <p className="text-xs text-[#9CA3AF] uppercase tracking-wide font-medium mb-3">
-                  Optional roster details
+              <div className="border-t border-border pt-4 mt-4">
+                <p className="text-xs text-text-muted uppercase tracking-wide font-medium mb-3">
+                  Optional member details
                 </p>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label
                       htmlFor="thp"
-                      className="block text-sm font-medium text-[#D1D5DB] mb-1.5"
+                      className="block text-sm font-medium text-text-secondary mb-1.5"
                     >
                       THP
                     </label>
@@ -265,14 +265,14 @@ export function InviteCollaboratorForm({
                       value={thp}
                       onChange={(e) => setThp(e.target.value)}
                       placeholder="e.g. 500000000"
-                      className="w-full px-3 py-2 border border-[#374151] rounded-md bg-[#1F2937] text-[#F9FAFB] placeholder-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-transparent text-sm"
+                      className="w-full px-3 py-2 border border-border rounded-md bg-surface-secondary text-text-primary placeholder-text-disabled focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
                     />
                   </div>
 
                   <div>
                     <label
                       htmlFor="squadPower"
-                      className="block text-sm font-medium text-[#D1D5DB] mb-1.5"
+                      className="block text-sm font-medium text-text-secondary mb-1.5"
                     >
                       Squad Power
                     </label>
@@ -282,7 +282,7 @@ export function InviteCollaboratorForm({
                       value={squadPower}
                       onChange={(e) => setSquadPower(e.target.value)}
                       placeholder="e.g. 100000000"
-                      className="w-full px-3 py-2 border border-[#374151] rounded-md bg-[#1F2937] text-[#F9FAFB] placeholder-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-transparent text-sm"
+                      className="w-full px-3 py-2 border border-border rounded-md bg-surface-secondary text-text-primary placeholder-text-disabled focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
                     />
                   </div>
                 </div>
@@ -294,7 +294,7 @@ export function InviteCollaboratorForm({
             <button
               type="submit"
               disabled={isPending || !email.trim()}
-              className="w-full px-4 py-2.5 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB] disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+              className="w-full px-4 py-2.5 bg-primary text-white rounded-md hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
             >
               {isPending ? "Sending..." : "Send Invitation"}
             </button>

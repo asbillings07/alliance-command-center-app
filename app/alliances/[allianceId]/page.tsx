@@ -37,9 +37,16 @@ export default async function AlliancePage({ params }: Params) {
           allianceId,
           active: true,
         },
+        orderBy: [
+          { createdAt: "desc" },
+          { id: "desc" },
+        ],
         include: {
           periodMetrics: {
-            where: { metric: { active: true } },
+            where: {
+              active: true,
+              metric: { active: true },
+            },
           },
         },
       })
@@ -79,7 +86,7 @@ export default async function AlliancePage({ params }: Params) {
               <Card.Body>
                 <h3 className="font-medium text-primary mb-2">Members</h3>
                 <p className="text-sm text-text-secondary mb-4">
-                  Manage your alliance roster and member data.
+                  Manage your alliance members and player data.
                 </p>
                 <Button href={`/alliances/${allianceId}/members`} variant="primary" size="sm">
                   View Members
@@ -87,21 +94,52 @@ export default async function AlliancePage({ params }: Params) {
               </Card.Body>
             </Card>
 
-            {permissions.canImportMetrics && activePeriod && activePeriod.periodMetrics.length > 0 && (
+            {permissions.canImportMetrics && activePeriod && (
               <Card>
                 <Card.Body>
                   <h3 className="font-medium text-primary mb-2">Evaluation Results</h3>
-                  <p className="text-sm text-text-secondary mb-4">
-                    Record or import performance data for <strong>{activePeriod.name}</strong>.
-                  </p>
-                  <div className="flex gap-2">
-                    <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}/record`} variant="primary" size="sm">
-                      Record Now
-                    </Button>
-                    <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`} variant="secondary" size="sm">
-                      Import Evaluation Results
-                    </Button>
-                  </div>
+                  {activePeriod.periodMetrics.length > 0 ? (
+                    <>
+                      <p className="text-sm text-text-secondary mb-4">
+                        Record or import performance data for <strong>{activePeriod.name}</strong>.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}/record`} variant="primary" size="sm">
+                          Record Now
+                        </Button>
+                        <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`} variant="secondary" size="sm">
+                          Import Evaluation Results
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm text-text-secondary mb-4">
+                        Active period <strong>{activePeriod.name}</strong> has no assigned metrics yet. Assign metrics to record results, or import a spreadsheet.
+                      </p>
+                      <div className="flex gap-2 flex-wrap">
+                        {permissions.canConfigurePeriods || permissions.canConfigureMetrics ? (
+                          <>
+                            <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}`} variant="primary" size="sm">
+                              Manage Period Metrics
+                            </Button>
+                            <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`} variant="secondary" size="sm">
+                              Import Evaluation Results
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`} variant="primary" size="sm">
+                              Import Evaluation Results
+                            </Button>
+                            <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}`} variant="secondary" size="sm">
+                              View Period
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </Card.Body>
               </Card>
             )}

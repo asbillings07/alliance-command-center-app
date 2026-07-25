@@ -13,6 +13,7 @@ vi.mock("./prisma", () => ({
     },
     metricPeriod: {
       count: vi.fn(),
+      findFirst: vi.fn(),
     },
     allianceMembership: {
       count: vi.fn(),
@@ -33,7 +34,10 @@ import { prisma } from "./prisma";
 
 const mockPrisma = prisma as unknown as {
   metric: { count: ReturnType<typeof vi.fn> };
-  metricPeriod: { count: ReturnType<typeof vi.fn> };
+  metricPeriod: {
+    count: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
+  };
   allianceMembership: { count: ReturnType<typeof vi.fn> };
   invitation: { count: ReturnType<typeof vi.fn> };
   allianceMember: { count: ReturnType<typeof vi.fn> };
@@ -405,5 +409,166 @@ describe("getAllianceSetupStatus", () => {
     expect(status.isComplete).toBe(true);
     expect(status.requiredTotal).toBe(3);
     expect(status.requiredComplete).toBe(3);
+  });
+
+  it("targets the active evaluation period directly for evaluation results import href", async () => {
+    mockPrisma.metric.count.mockResolvedValue(1);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(5);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    // Mock active period with 1 assigned metric
+    mockPrisma.metricPeriod.findFirst.mockResolvedValue({
+      id: "period-123",
+      periodMetrics: [{ metricId: "m-1" }],
+    });
+
+    const status = await getAllianceSetupStatus("alliance-1");
+    const dataTask = status.tasks.find((t) => t.id === "data");
+
+    expect(dataTask?.href).toBe("/alliances/alliance-1/periods/period-123/import");
+  });
+
+  it("targets /import when period has 0 assigned metrics but user can provision metrics", async () => {
+    mockPrisma.metric.count.mockResolvedValue(1);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(5);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    mockPrisma.metricPeriod.findFirst.mockResolvedValue({
+      id: "period-empty",
+      periodMetrics: [],
+    });
+
+    const leaderPermissions = {
+      canViewAlliance: true,
+      canViewMembers: true,
+      canViewNotes: true,
+      canManageNotes: true,
+      canImportMetrics: true,
+      canManageMembers: false,
+      canImportMembers: false,
+      canConfigureMetrics: true,
+      canConfigurePeriods: true,
+      canInviteCollaborators: false,
+      canManageLeadership: false,
+      canManageAlliance: false,
+    };
+
+    const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
+    const dataTask = status.tasks.find((t) => t.id === "data");
+
+    expect(dataTask?.href).toBe("/alliances/alliance-1/periods/period-empty/import");
+  });
+
+  it("evaluates data setup task as incomplete when historical entries exist but active target period is empty", async () => {
+    mockPrisma.metric.count.mockResolvedValue(2);
+    mockPrisma.metricPeriod.count.mockResolvedValue(2);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(5);
+    // Historical metric entries exist globally
+    mockPrisma.memberMetricEntry.count.mockImplementation(async (args?: { where?: { periodId?: string } }) => {
+      if (args?.where?.periodId === "period-active-empty") {
+        return 0; // Active target period has NO entries
+      }
+      return 150; // Total entries across history
+    });
+
+    mockPrisma.metricPeriod.findFirst.mockResolvedValue({
+      id: "period-active-empty",
+      periodMetrics: [{ metricId: "m-1" }],
+    });
+
+    const status = await getAllianceSetupStatus("alliance-1");
+    const dataTask = status.tasks.find((t) => t.id === "data");
+
+    expect(dataTask?.completed).toBe(false);
+  });
+
+  it("selects active period deterministically when multiple active periods exist", async () => {
+    mockPrisma.metric.count.mockResolvedValue(1);
+    mockPrisma.metricPeriod.count.mockResolvedValue(2);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(5);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    mockPrisma.metricPeriod.findFirst.mockResolvedValue({
+      id: "period-latest-active",
+      periodMetrics: [{ metricId: "m-1" }],
+    });
+
+    await getAllianceSetupStatus("alliance-1");
+
+    expect(mockPrisma.metricPeriod.findFirst).toHaveBeenCalledWith({
+      where: { allianceId: "alliance-1", active: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: expect.objectContaining({
+        id: true,
+        periodMetrics: expect.any(Object),
+      }),
+    });
+  });
+
+  it("treats period with only inactive metric attachments as having 0 assigned metrics", async () => {
+    mockPrisma.metric.count.mockResolvedValue(1);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(5);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    // Active period has 0 active metric attachments
+    mockPrisma.metricPeriod.findFirst.mockResolvedValue({
+      id: "period-inactive-attachment",
+      periodMetrics: [], // filtered out by active: true, metric: { active: true }
+    });
+
+    const viewerPermissions = {
+      canViewAlliance: true,
+      canViewMembers: true,
+      canViewNotes: true,
+      canManageNotes: false,
+      canImportMetrics: true,
+      canManageMembers: false,
+      canImportMembers: false,
+      canConfigureMetrics: false,
+      canConfigurePeriods: false,
+      canInviteCollaborators: false,
+      canManageLeadership: false,
+      canManageAlliance: false,
+    };
+
+    const status = await getAllianceSetupStatus("alliance-1", viewerPermissions);
+    const dataTask = status.tasks.find((t) => t.id === "data");
+
+    expect(dataTask?.href).toBe("/alliances/alliance-1/periods/period-inactive-attachment");
+  });
+
+  it("remains incomplete when target period only has entries for inactive metric attachments", async () => {
+    mockPrisma.metric.count.mockResolvedValue(1);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(5);
+    // Global metricEntries count > 0 (there are entries in the DB for the period, e.g. under an inactive metric)
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(50);
+
+    // Active period query returns 0 active metric attachments because the metric/attachment is inactive
+    mockPrisma.metricPeriod.findFirst.mockResolvedValue({
+      id: "period-with-inactive-entries",
+      periodMetrics: [], // filtered out by active: true, metric: { active: true }
+    });
+
+    const status = await getAllianceSetupStatus("alliance-1");
+    const dataTask = status.tasks.find((t) => t.id === "data");
+
+    // Must remain incomplete because there are 0 visible active metrics/results for this period
+    expect(dataTask?.completed).toBe(false);
   });
 });

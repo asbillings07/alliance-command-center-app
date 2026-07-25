@@ -110,7 +110,7 @@ test.describe("Owner Journey", () => {
     // All tasks should initially be incomplete
     await expect(page.locator('text="Configure Metrics"')).toBeVisible();
     await expect(page.locator('text="Create Evaluation Period"')).toBeVisible();
-    await expect(page.locator('text="Import Roster"')).toBeVisible();
+    await expect(page.locator('text="Import Members"')).toBeVisible();
   });
 
   test("can configure metrics", async ({ page }) => {
