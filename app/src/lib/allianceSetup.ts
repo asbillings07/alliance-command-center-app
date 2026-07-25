@@ -234,10 +234,11 @@ export async function getAllianceSetupStatus(
   // Resolve target evaluation period for dynamic task links (e.g. data import)
   const activePeriod = await prisma.metricPeriod.findFirst({
     where: { allianceId, active: true },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: {
       id: true,
       periodMetrics: {
-        where: { active: true },
+        where: { active: true, metric: { active: true } },
         select: { metricId: true },
       },
     },
@@ -251,11 +252,19 @@ export async function getAllianceSetupStatus(
       select: {
         id: true,
         periodMetrics: {
-          where: { active: true },
+          where: { active: true, metric: { active: true } },
           select: { metricId: true },
         },
       },
     }));
+
+  let targetPeriodHasEntries = false;
+  if (targetPeriod) {
+    const targetEntriesCount = await prisma.memberMetricEntry.count({
+      where: { periodId: targetPeriod.id },
+    });
+    targetPeriodHasEntries = targetEntriesCount > 0;
+  }
 
   // Filter to tasks the user can complete, if permissions provided
   // This is for display purposes only
@@ -265,15 +274,20 @@ export async function getAllianceSetupStatus(
 
   const tasks: SetupTask[] = applicableTasks.map((definition) => {
     let href = definition.href(allianceId);
-    if (definition.id === "data" && targetPeriod) {
-      const hasAssignedMetrics = targetPeriod.periodMetrics.length > 0;
-      const canProvisionMetrics = Boolean(
-        permissions?.canConfigureMetrics || permissions?.canConfigurePeriods
-      );
-      if (hasAssignedMetrics || canProvisionMetrics) {
-        href = `/alliances/${allianceId}/periods/${targetPeriod.id}/import`;
-      } else {
-        href = `/alliances/${allianceId}/periods/${targetPeriod.id}`;
+    let completed = evaluateTaskCompletion(definition.id, counts);
+
+    if (definition.id === "data") {
+      if (targetPeriod) {
+        completed = targetPeriodHasEntries;
+        const hasAssignedMetrics = targetPeriod.periodMetrics.length > 0;
+        const canProvisionMetrics = Boolean(
+          permissions?.canConfigureMetrics || permissions?.canConfigurePeriods
+        );
+        if (hasAssignedMetrics || canProvisionMetrics) {
+          href = `/alliances/${allianceId}/periods/${targetPeriod.id}/import`;
+        } else {
+          href = `/alliances/${allianceId}/periods/${targetPeriod.id}`;
+        }
       }
     }
 
@@ -281,7 +295,7 @@ export async function getAllianceSetupStatus(
       id: definition.id,
       label: definition.label,
       description: definition.description,
-      completed: evaluateTaskCompletion(definition.id, counts),
+      completed,
       href,
       typicallyCompletedBy: definition.typicallyCompletedBy,
       required: definition.required,

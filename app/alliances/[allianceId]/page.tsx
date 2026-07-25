@@ -37,9 +37,16 @@ export default async function AlliancePage({ params }: Params) {
           allianceId,
           active: true,
         },
+        orderBy: [
+          { createdAt: "desc" },
+          { id: "desc" },
+        ],
         include: {
           periodMetrics: {
-            where: { metric: { active: true } },
+            where: {
+              active: true,
+              metric: { active: true },
+            },
           },
         },
       })

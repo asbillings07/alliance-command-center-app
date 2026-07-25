@@ -70,7 +70,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 id: true,
                 name: true,
                 periodMetrics: {
-                    where: { active: true },
+                    where: { active: true, metric: { active: true } },
                     select: {
                         metricId: true,
                         metric: {
