@@ -112,7 +112,7 @@ test.describe("Admin Journey", () => {
     const alliancePage = new AlliancePage(page);
     await alliancePage.navigateToMembers(testAllianceId!);
 
-    await expect(page.locator("h1:has-text('Roster')")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: /Members/i })).toBeVisible();
     // Admin can import members
     await expect(page.locator('a:has-text("Import")')).toBeVisible();
   });

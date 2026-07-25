@@ -175,7 +175,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
             ]}
             title={`${alliance.name} Members`}
             description={description}
-            action={actionButtons}
+            action={allianceMembers.length > 0 ? actionButtons : undefined}
         >
             <MembersFilter
                 currentFilter={filter}
@@ -196,7 +196,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                     }
                     description={
                         filter === "active"
-                            ? permissions.canManageMembers
+                            ? permissions.canImportMembers || permissions.canManageMembers
                                 ? "Import members from a spreadsheet or add them manually to get started."
                                 : "An alliance Admin or Owner must import or add members first."
                             : filter === "archived"
@@ -205,21 +205,25 @@ export default async function MembersPage({ params, searchParams }: Params) {
                     }
                     action={
                         filter === "active"
-                            ? permissions.canManageMembers
+                            ? permissions.canImportMembers || permissions.canManageMembers
                                 ? (
-                                    <div className="flex gap-3">
-                                        <Button
-                                            variant="primary"
-                                            href={`/alliances/${allianceId}/members/new`}
-                                        >
-                                            Add Member
-                                        </Button>
-                                        <Button
-                                            variant="secondary"
-                                            href={`/alliances/${allianceId}/members/import`}
-                                        >
-                                            Import Members
-                                        </Button>
+                                    <div className="flex gap-3 flex-wrap justify-center">
+                                        {permissions.canImportMembers && (
+                                            <Button
+                                                variant="primary"
+                                                href={`/alliances/${allianceId}/members/import`}
+                                            >
+                                                Import Members
+                                            </Button>
+                                        )}
+                                        {permissions.canManageMembers && (
+                                            <Button
+                                                variant={permissions.canImportMembers ? "secondary" : "primary"}
+                                                href={`/alliances/${allianceId}/members/new`}
+                                            >
+                                                Add Member
+                                            </Button>
+                                        )}
                                     </div>
                                 )
                                 : (
