@@ -127,7 +127,7 @@ export function InviteCollaboratorForm({
             </h3>
             <p className="text-sm text-[#9CA3AF] mt-0.5">
               {result.memberCreated
-                ? "A new roster entry was created. Share the link or code below."
+                ? "A new member entry was created. Share the link or code below."
                 : "Share the link or code below with your collaborator."}
             </p>
 
@@ -248,7 +248,7 @@ export function InviteCollaboratorForm({
             <>
               <div className="border-t border-[#374151] pt-4 mt-4">
                 <p className="text-xs text-[#9CA3AF] uppercase tracking-wide font-medium mb-3">
-                  Optional roster details
+                  Optional member details
                 </p>
 
                 <div className="grid grid-cols-2 gap-4">

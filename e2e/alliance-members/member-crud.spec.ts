@@ -29,7 +29,7 @@ test.describe("Alliance Member CRUD", () => {
   test("displays member roster", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}/members`);
 
-    await expect(page.getByRole("heading", { name: /roster/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /members/i })).toBeVisible();
   });
 
   test("shows Add Member button for authorized users", async ({ page }) => {

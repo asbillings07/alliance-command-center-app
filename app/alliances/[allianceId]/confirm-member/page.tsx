@@ -80,7 +80,7 @@ export default async function ConfirmMemberPage({ params }: PageProps) {
             Welcome to {alliance.name}!
           </h1>
           <p className="text-gray-600">
-            Which roster member are you?
+            Which member are you?
           </p>
         </div>
 

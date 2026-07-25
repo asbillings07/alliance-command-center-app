@@ -10,6 +10,7 @@ import { MemberActions } from "./MemberActions";
 import { MemberAccountSection } from "./MemberAccountSection";
 import { MemberPeriodSelector } from "./MemberPeriodSelector";
 import { PageLayout, Card, Badge } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type Params = {
     params: Promise<{
@@ -29,6 +30,7 @@ export default async function MemberPage({ params, searchParams }: Params) {
         allianceId,
         requiredPermission: Permissions.VIEW_MEMBERS,
     });
+    const { permissions, user } = auth;
 
     const allianceMember = await prisma.allianceMember.findFirst({
         where: { id: memberId, allianceId },
@@ -147,11 +149,21 @@ export default async function MemberPage({ params, searchParams }: Params) {
 
     const membersBreadcrumbHref = `/alliances/${allianceId}/members${selectedPeriod ? `?periodId=${selectedPeriod.id}` : ""}`;
 
+    const performanceAction = !selectedPeriod
+        ? permissions.canConfigurePeriods
+            ? <Button variant="primary" href={`/alliances/${allianceId}/periods`}>Manage Periods</Button>
+            : <Button variant="secondary" href={`/alliances/${allianceId}`}>Back to Dashboard</Button>
+        : selectedPeriod.periodMetrics.length === 0
+        ? permissions.canConfigurePeriods
+            ? <Button variant="primary" href={`/alliances/${allianceId}/periods/${selectedPeriod.id}`}>Manage Period Metrics</Button>
+            : <Button variant="secondary" href={`/alliances/${allianceId}`}>Back to Dashboard</Button>
+        : undefined;
+
     const performanceProps: MemberPerformanceProps =
         !selectedPeriod
-            ? { emptyState: "no-period", periodSelector }
+            ? { emptyState: "no-period", periodSelector, action: performanceAction }
             : selectedPeriod.periodMetrics.length === 0
-            ? { emptyState: "no-metrics", periodName: selectedPeriod.name, periodSelector, periodStatusLabel }
+            ? { emptyState: "no-metrics", periodName: selectedPeriod.name, periodSelector, periodStatusLabel, action: performanceAction }
             : {
                   emptyState: "has-metrics",
                   periodName: selectedPeriod.name,
@@ -176,8 +188,6 @@ export default async function MemberPage({ params, searchParams }: Params) {
             createdAt: "desc",
         },
     });
-
-    const { permissions, user } = auth;
 
     const linkedUserInfo = allianceMember.userId
         ? await prisma.user.findUnique({

@@ -17,6 +17,7 @@ export type CurrentMetricViewModel = {
 export type MemberPerformanceProps = {
     periodSelector?: React.ReactNode;
     periodStatusLabel?: string;
+    action?: React.ReactNode;
 } & (
     | { emptyState: "no-period" }
     | { emptyState: "no-metrics"; periodName: string }
@@ -70,6 +71,7 @@ export function MemberPerformanceSection(props: MemberPerformanceProps) {
                 <EmptyState
                     title="No evaluation period found"
                     description="Create a period to begin tracking member performance."
+                    action={props.action}
                 />
             </section>
         );
@@ -90,6 +92,7 @@ export function MemberPerformanceSection(props: MemberPerformanceProps) {
                 <EmptyState
                     title="No metrics configured"
                     description="No metrics have been configured for this evaluation period."
+                    action={props.action}
                 />
             </section>
         );

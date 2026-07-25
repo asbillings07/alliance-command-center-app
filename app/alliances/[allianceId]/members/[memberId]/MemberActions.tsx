@@ -23,7 +23,7 @@ export function MemberActions({
   async function handleArchive() {
     if (
       !confirm(
-        "Are you sure you want to archive this member? They will be hidden from the active roster but their data will be preserved."
+        "Are you sure you want to archive this member? They will be hidden from active members but their data will be preserved."
       )
     ) {
       return;

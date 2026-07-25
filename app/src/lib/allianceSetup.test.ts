@@ -13,6 +13,7 @@ vi.mock("./prisma", () => ({
     },
     metricPeriod: {
       count: vi.fn(),
+      findFirst: vi.fn(),
     },
     allianceMembership: {
       count: vi.fn(),
@@ -33,7 +34,10 @@ import { prisma } from "./prisma";
 
 const mockPrisma = prisma as unknown as {
   metric: { count: ReturnType<typeof vi.fn> };
-  metricPeriod: { count: ReturnType<typeof vi.fn> };
+  metricPeriod: {
+    count: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
+  };
   allianceMembership: { count: ReturnType<typeof vi.fn> };
   invitation: { count: ReturnType<typeof vi.fn> };
   allianceMember: { count: ReturnType<typeof vi.fn> };
@@ -405,5 +409,59 @@ describe("getAllianceSetupStatus", () => {
     expect(status.isComplete).toBe(true);
     expect(status.requiredTotal).toBe(3);
     expect(status.requiredComplete).toBe(3);
+  });
+
+  it("targets the active evaluation period directly for evaluation results import href", async () => {
+    mockPrisma.metric.count.mockResolvedValue(1);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(5);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    // Mock active period with 1 assigned metric
+    mockPrisma.metricPeriod.findFirst.mockResolvedValue({
+      id: "period-123",
+      periodMetrics: [{ metricId: "m-1" }],
+    });
+
+    const status = await getAllianceSetupStatus("alliance-1");
+    const dataTask = status.tasks.find((t) => t.id === "data");
+
+    expect(dataTask?.href).toBe("/alliances/alliance-1/periods/period-123/import");
+  });
+
+  it("targets /import when period has 0 assigned metrics but user can provision metrics", async () => {
+    mockPrisma.metric.count.mockResolvedValue(1);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(5);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+
+    mockPrisma.metricPeriod.findFirst.mockResolvedValue({
+      id: "period-empty",
+      periodMetrics: [],
+    });
+
+    const leaderPermissions = {
+      canViewAlliance: true,
+      canViewMembers: true,
+      canViewNotes: true,
+      canManageNotes: true,
+      canImportMetrics: true,
+      canManageMembers: false,
+      canImportMembers: false,
+      canConfigureMetrics: true,
+      canConfigurePeriods: true,
+      canInviteCollaborators: false,
+      canManageLeadership: false,
+      canManageAlliance: false,
+    };
+
+    const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
+    const dataTask = status.tasks.find((t) => t.id === "data");
+
+    expect(dataTask?.href).toBe("/alliances/alliance-1/periods/period-empty/import");
   });
 });

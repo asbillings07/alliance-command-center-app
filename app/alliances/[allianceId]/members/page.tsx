@@ -173,7 +173,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 { label: "Dashboard", href: `/alliances/${allianceId}` },
                 { label: "Members" },
             ]}
-            title={`${alliance.name} Roster`}
+            title={`${alliance.name} Members`}
             description={description}
             action={actionButtons}
         >
@@ -197,15 +197,39 @@ export default async function MembersPage({ params, searchParams }: Params) {
                     description={
                         filter === "active"
                             ? permissions.canManageMembers
-                                ? "Import members or add them manually to get started."
-                                : "The alliance member list hasn't been set up yet. An admin will import members soon."
+                                ? "Import members from a spreadsheet or add them manually to get started."
+                                : "An alliance Admin or Owner must import or add members first."
                             : filter === "archived"
                             ? "Members that have been archived will appear here."
                             : undefined
                     }
                     action={
-                        filter === "active" && permissions.canManageMembers
-                            ? <Button variant="primary" href={`/alliances/${allianceId}/members/new`}>Add Member</Button>
+                        filter === "active"
+                            ? permissions.canManageMembers
+                                ? (
+                                    <div className="flex gap-3">
+                                        <Button
+                                            variant="primary"
+                                            href={`/alliances/${allianceId}/members/new`}
+                                        >
+                                            Add Member
+                                        </Button>
+                                        <Button
+                                            variant="secondary"
+                                            href={`/alliances/${allianceId}/members/import`}
+                                        >
+                                            Import Members
+                                        </Button>
+                                    </div>
+                                )
+                                : (
+                                    <Button
+                                        variant="secondary"
+                                        href={`/alliances/${allianceId}`}
+                                    >
+                                        Back to Dashboard
+                                    </Button>
+                                )
                             : undefined
                     }
                 />

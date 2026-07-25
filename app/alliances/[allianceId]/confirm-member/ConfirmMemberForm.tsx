@@ -74,7 +74,7 @@ export function ConfirmMemberForm({
         </div>
       ) : (
         <p className="text-gray-500 text-sm text-center py-4">
-          No unlinked roster members found.
+          No unlinked members found.
         </p>
       )}
 

@@ -109,7 +109,7 @@ export default async function ImportPage({ params }: Params) {
             action={
               auth.permissions.canConfigurePeriods
                 ? <Button variant="primary" href={`/alliances/${allianceId}/periods/${periodId}`}>Manage Period Metrics</Button>
-                : undefined
+                : <Button variant="secondary" href={`/alliances/${allianceId}/periods/${periodId}`}>View Period</Button>
             }
           />
         ) : (
@@ -119,7 +119,7 @@ export default async function ImportPage({ params }: Params) {
             action={
               auth.permissions.canImportMembers
                 ? <Button variant="primary" href={`/alliances/${allianceId}/members/import`}>Import Members First</Button>
-                : undefined
+                : <Button variant="secondary" href={`/alliances/${allianceId}/members`}>View Members</Button>
             }
           />
         )}

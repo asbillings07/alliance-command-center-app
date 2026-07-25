@@ -79,7 +79,7 @@ export default async function AlliancePage({ params }: Params) {
               <Card.Body>
                 <h3 className="font-medium text-primary mb-2">Members</h3>
                 <p className="text-sm text-text-secondary mb-4">
-                  Manage your alliance roster and member data.
+                  Manage your alliance members and player data.
                 </p>
                 <Button href={`/alliances/${allianceId}/members`} variant="primary" size="sm">
                   View Members

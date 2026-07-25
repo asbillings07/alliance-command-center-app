@@ -43,11 +43,70 @@ vi.mock("@/app/src/lib/prisma", () => ({
 }));
 
 import { prisma } from "@/app/src/lib/prisma";
+import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import MembersPage from "./page";
 
 describe("MembersPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("renders actionable empty state CTAs for Admins/Owners when no active members exist", async () => {
+    vi.mocked(requireAllianceAccess).mockResolvedValue({
+      permissions: {
+        canImportMembers: true,
+        canManageMembers: true,
+      },
+    } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
+
+    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+      id: "all_1",
+      name: "Alliance One",
+    } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+
+    vi.mocked(prisma.allianceMember.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.allianceMember.count).mockResolvedValue(0);
+
+    const page = await MembersPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({}),
+    });
+
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("No active members yet");
+    expect(html).toContain("Import members from a spreadsheet or add them manually to get started.");
+    expect(html).toContain("/alliances/all_1/members/new");
+    expect(html).toContain("/alliances/all_1/members/import");
+  });
+
+  it("renders informative empty state with Back to Dashboard for non-admins when no active members exist", async () => {
+    vi.mocked(requireAllianceAccess).mockResolvedValue({
+      permissions: {
+        canImportMembers: false,
+        canManageMembers: false,
+      },
+    } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
+
+    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+      id: "all_1",
+      name: "Alliance One",
+    } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+
+    vi.mocked(prisma.allianceMember.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.allianceMember.count).mockResolvedValue(0);
+
+    const page = await MembersPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({}),
+    });
+
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("No active members yet");
+    expect(html).toContain("An alliance Admin or Owner must import or add members first.");
+    expect(html).toContain("/alliances/all_1");
+    expect(html).toContain("Back to Dashboard");
   });
 
   it("shows selected period metric values in the members table and links rows to period-aware member profiles", async () => {

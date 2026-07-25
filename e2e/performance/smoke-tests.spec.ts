@@ -52,7 +52,7 @@ test.describe("Performance Smoke Tests", () => {
     expect(loadTime).toBeLessThan(5000);
 
     await expect(
-      page.getByRole("heading", { name: /roster/i })
+      page.getByRole("heading", { name: /members/i })
     ).toBeVisible();
   });
 
