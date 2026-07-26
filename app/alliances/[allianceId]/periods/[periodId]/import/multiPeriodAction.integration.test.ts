@@ -231,8 +231,8 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
             targetPeriodId: periodB.id,
             mappings: [
               {
-                sourceColumnName: "Other",
-                target: { kind: "create", name: "Other Metric" },
+                sourceColumnName: "Also Attached",
+                target: { kind: "existing", metricId: libraryMetric.id },
                 entries: [{ memberId: member.id, rawValue: "6" }],
               },
             ],
@@ -313,6 +313,6 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
           },
         ],
       }),
-    ).toThrow(/only appear once/i);
+    ).rejects.toThrow(/only appear once/i);
   });
 });
