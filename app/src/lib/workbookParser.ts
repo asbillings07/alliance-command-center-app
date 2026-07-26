@@ -20,12 +20,30 @@ export type WorkbookIssue = {
 
 export type SheetVisibility = "visible" | "hidden" | "very_hidden";
 
+export type DecodedCalendarDate = {
+  year: number;
+  month: number;
+  day: number;
+};
+
+export type CellDateMetadata = {
+  address: string;
+  rowIndex: number;
+  columnIndex: number;
+  formattedText: string;
+  isTypedDate: boolean;
+  rawNum?: number;
+  /** Authoritative calendar date decoded from Excel serial / typed-date cell. */
+  decodedDate?: DecodedCalendarDate;
+};
+
 export type WorkbookSheet = {
   index: number;
   name: string;
   rows: string[][];
   issues: WorkbookIssue[];
   visibility: SheetVisibility;
+  cellDates?: Record<string, CellDateMetadata>;
 };
 
 export type ParsedWorkbook = {
@@ -33,6 +51,8 @@ export type ParsedWorkbook = {
   format: "xlsx" | "xls" | "csv" | "numbers";
   sheets: WorkbookSheet[];
   defaultSheetIndex: number;
+  /** True when workbook uses the 1904 date system (legacy Mac Excel). */
+  date1904: boolean;
 };
 
 export type SpreadsheetParseErrorCode =
@@ -95,6 +115,36 @@ function isNumbersFile(fileName: string, bytes: Uint8Array): boolean {
 function hasBinaryGarbage(str: string): boolean {
   // Checks for non-printable control characters typical of raw binary files (excluding \t, \n, \r)
   return /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(str);
+}
+
+/** Decode an Excel serial date using the workbook's 1900/1904 date system. */
+export function decodeExcelSerialDate(
+  serial: number,
+  date1904: boolean,
+  SSF: typeof import("xlsx").SSF,
+): DecodedCalendarDate | null {
+  if (!Number.isFinite(serial)) return null;
+  const parsed = SSF.parse_date_code(serial, { date1904: date1904 ? 1 : 0 });
+  if (!parsed || !parsed.y || !parsed.m || !parsed.d) return null;
+  return { year: parsed.y, month: parsed.m, day: parsed.d };
+}
+
+function decodeTypedCellDate(
+  rawVal: unknown,
+  date1904: boolean,
+  SSF: typeof import("xlsx").SSF,
+): DecodedCalendarDate | null {
+  if (typeof rawVal === "number") {
+    return decodeExcelSerialDate(rawVal, date1904, SSF);
+  }
+  if (rawVal instanceof Date && !Number.isNaN(rawVal.getTime())) {
+    return {
+      year: rawVal.getFullYear(),
+      month: rawVal.getMonth() + 1,
+      day: rawVal.getDate(),
+    };
+  }
+  return null;
 }
 
 export async function parseWorkbookBytes(
@@ -185,6 +235,7 @@ export async function parseWorkbookBytes(
   let totalWorkbookRows = 0;
   let totalMaterializedCells = 0;
   let detectedBinaryGarbage = false;
+  const date1904 = Boolean(workbook.Workbook?.WBProps?.date1904);
 
   for (let sIdx = 0; sIdx < workbook.SheetNames.length; sIdx++) {
     const sheetName = workbook.SheetNames[sIdx];
@@ -244,6 +295,7 @@ export async function parseWorkbookBytes(
 
     const sheetRows: string[][] = [];
     const sheetIssues: WorkbookIssue[] = [];
+    const sheetCellDates: Record<string, CellDateMetadata> = {};
 
     for (let r = range.s.r; r <= range.e.r; r++) {
       const rowData: string[] = [];
@@ -268,6 +320,30 @@ export async function parseWorkbookBytes(
 
         const rawVal = cell.v;
         const formattedText = cell.w !== undefined ? String(cell.w) : rawVal !== undefined && rawVal !== null ? String(rawVal) : "";
+
+        const hasDateFormatHint =
+          (cell.z !== undefined && /[ymdhs]/i.test(String(cell.z))) ||
+          (cell.w !== undefined &&
+            (/^\d{1,2}[-/.]\d{1,2}(?:[-/.]\d{1,4})?$/.test(String(cell.w)) ||
+              /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(String(cell.w))));
+
+        // Collect typed date metadata if cell is date-formatted in Excel
+        const isDateType = cell.t === "d";
+        const isDateNum =
+          cell.t === "n" && typeof rawVal === "number" && hasDateFormatHint;
+        if (isDateType || isDateNum) {
+          const decodedDate =
+            decodeTypedCellDate(rawVal, date1904, XLSX.SSF) ?? undefined;
+          sheetCellDates[address] = {
+            address,
+            rowIndex: r - range.s.r,
+            columnIndex: c - range.s.c,
+            formattedText,
+            isTypedDate: true,
+            rawNum: typeof rawVal === "number" ? rawVal : undefined,
+            decodedDate,
+          };
+        }
 
         if (hasBinaryGarbage(formattedText)) {
           detectedBinaryGarbage = true;
@@ -360,6 +436,7 @@ export async function parseWorkbookBytes(
       rows: sheetRows,
       issues: sheetIssues,
       visibility,
+      cellDates: Object.keys(sheetCellDates).length > 0 ? sheetCellDates : undefined,
     });
   }
 
@@ -395,6 +472,7 @@ export async function parseWorkbookBytes(
       format,
       sheets,
       defaultSheetIndex,
+      date1904,
     },
   };
 }

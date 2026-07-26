@@ -907,4 +907,188 @@ describe("ImportForm [component]", () => {
         expect(payload.mappings[0].sourceColumnName).toBe("Kill Points");
         expect(payload.mappings[0].target).toEqual({ kind: "existing", metricId: "met1" });
     });
+
+    it("displays read-only multi-period proposal review when date-stamped columns are uploaded and lets leader decline", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kills on 3/29", "Kills on 4/13", "% Change"],
+            ["Dragon", "1500", "2000", "33%"],
+            ["Phoenix", "2300", "3000", "30%"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "multi_period_results.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Multi-Period Spreadsheet Detected");
+        expect(container.textContent).toContain("Decline & Use Selected Period Instead");
+        expect(container.textContent).toContain("Excluded columns");
+        expect(container.textContent).toContain("Medium confidence");
+        expect(container.textContent).toContain("Fixed-period import is paused");
+        expect(container.textContent).not.toContain("Map Columns to Metrics");
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        );
+        expect(previewBtn).toBeUndefined();
+
+        const declineBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Decline & Use Selected Period Instead")
+        ) as HTMLButtonElement;
+        expect(declineBtn).not.toBeUndefined();
+
+        await act(async () => {
+            declineBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).not.toContain("Multi-Period Spreadsheet Detected");
+        expect(container.textContent).not.toContain("Fixed-period import is paused");
+        expect(container.textContent).toContain("Map Columns to Metrics");
+        expect(container.textContent).toContain("Destination Period: Week 28 Evaluation");
+    });
+
+    it("blocks fixed-period mapping until multi-period proposal is explicitly declined", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kills on 3/29", "Kills on 4/13"],
+            ["Dragon", "1500", "2000"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "blocked_until_decline.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Fixed-period import is paused");
+        expect(container.querySelector('select[aria-label="Metric for Kills on 3/29"]')).toBeNull();
+    });
+
+    it("does not block fixed-period mapping for a single-period suggestion", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const csvContent = `Player,Kills on 3/29/2026\nDragon,1500\nPhoenix,2300`;
+
+        await act(async () => {
+            fireFileUpload(csvContent, "single_period_suggestion.csv");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Single Evaluation Period Suggested");
+        expect(container.textContent).not.toContain("Fixed-period import is paused");
+        expect(container.textContent).toContain("Map Columns to Metrics");
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+        expect(previewBtn).not.toBeUndefined();
+    });
+
+    it("shows both endpoints for reviewable range evidence in the confirmation card", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const csvContent = `Player,Kills from 3/29-4/13\nDragon,1500\nPhoenix,2300`;
+
+        await act(async () => {
+            fireFileUpload(csvContent, "reviewable_range.csv");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Columns needing confirmation");
+        expect(container.textContent).toContain("3/29 – 4/13 (year unknown)");
+    });
+
+    it("uses detected header row for source addresses when a title row precedes headers", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Alliance Weekly Stats", "", ""],
+            ["Player", "Kills on 3/29/2026", "Kills on 4/13/2026"],
+            ["Dragon", "1500", "2000"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "title_row.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("header row 2");
+    });
 });

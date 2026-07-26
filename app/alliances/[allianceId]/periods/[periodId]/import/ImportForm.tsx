@@ -10,6 +10,7 @@ import {
   detectTableBounds,
   isPlayerColumn,
   columnIndexToLabel,
+  cellAddress,
   type MatchSummary,
   type ColumnInfo,
   type TableBoundsResult,
@@ -37,6 +38,7 @@ import { WorkbookParseError } from "@/app/src/components/spreadsheet/WorkbookPar
 import { SpreadsheetDataShapeGuide } from "@/app/src/components/spreadsheet/SpreadsheetDataShapeGuide";
 import { ColumnTranslationCard } from "@/app/src/components/spreadsheet/ColumnTranslationCard";
 import { SpreadsheetTranslationSummary } from "@/app/src/components/spreadsheet/SpreadsheetTranslationSummary";
+import { PeriodProposalReview } from "@/app/src/components/spreadsheet/PeriodProposalReview";
 import {
   type ColumnTarget,
   type ColumnTranslation,
@@ -44,6 +46,10 @@ import {
   buildPlannedMetricTranslationSummary,
   buildCommittedMetricTranslationSummary,
 } from "@/app/src/lib/importTranslation";
+import {
+  buildPeriodMappingReview,
+  type PeriodMappingReview,
+} from "@/app/src/lib/import/periodProposal";
 
 type MemberOption = {
   id: string;
@@ -257,6 +263,9 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   const [previews, setPreviews] = useState<MetricImportPreview[]>([]);
   const [duplicateSelections, setDuplicateSelections] = useState<DuplicateSelections>({});
   const [parseErrors, setParseErrors] = useState<string[]>([]);
+  const [periodProposalReview, setPeriodProposalReview] = useState<PeriodMappingReview | null>(null);
+  const [declinedMultiPeriod, setDeclinedMultiPeriod] = useState<boolean>(false);
+  const [dismissedPeriodSuggestion, setDismissedPeriodSuggestion] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -442,10 +451,27 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       };
     });
 
+    const proposalReview = buildPeriodMappingReview({
+      sheetName: sheet.name,
+      tableRegionId: selectedRegion?.id,
+      headerRowIndex: bounds.headerRowIndex,
+      cellDates: sheet.cellDates,
+      headers: result.columns.map((c) => ({
+        columnIndex: c.index,
+        headerText: c.name,
+        headerAddress: cellAddress(bounds.headerRowIndex, c.index),
+        isPlayerColumn: playerCol?.index === c.index,
+        isNumeric: c.isNumeric,
+      })),
+    });
+
     setRowCount(result.rowCount);
     setAutoDetectedPlayerColumn(playerCol);
     setNumericColumns(numCols);
     setColumnMappings(mappings);
+    setPeriodProposalReview(proposalReview);
+    setDeclinedMultiPeriod(false);
+    setDismissedPeriodSuggestion(false);
     setError(null);
     setStep("select");
   };
@@ -1082,6 +1108,22 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       (m) => m.confirmationStatus === "unconfirmed",
     );
 
+    const hasUnacknowledgedMultiPeriod =
+      periodProposalReview?.mode === "multi_period" && !declinedMultiPeriod;
+
+    const showPeriodProposalReview =
+      periodProposalReview &&
+      !(
+        periodProposalReview.mode === "multi_period" && declinedMultiPeriod
+      ) &&
+      !(
+        periodProposalReview.mode === "single_period_suggestion" &&
+        dismissedPeriodSuggestion
+      ) &&
+      (periodProposalReview.mode === "multi_period" ||
+        periodProposalReview.mode === "single_period_suggestion" ||
+        periodProposalReview.reviewableColumns.length > 0);
+
     const canProceed =
       Boolean(autoDetectedPlayerColumn) &&
       numericColumns.length > 0 &&
@@ -1090,7 +1132,8 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       !hasBlockingDiagnostics &&
       !hasValueIssuesBeforePreview &&
       (!tableBounds?.needsConfirmation || isHeaderConfirmed) &&
-      unconfirmedColumns.length === 0;
+      unconfirmedColumns.length === 0 &&
+      !hasUnacknowledgedMultiPeriod;
 
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
@@ -1220,82 +1263,100 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           </div>
         )}
 
-        <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium">
-          Destination Period: {periodName}
-        </div>
-        <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary">
-          <p className="font-medium text-text-primary">Evaluation Results Import Scope</p>
-          <p className="mt-0.5 text-text-secondary">
-            Importing results for destination period &apos;{periodName}&apos;. This matches existing active members in your member list; unmatched names are skipped. During mapping, authorized users may attach an existing metric or create a new one. This workflow does not create members.
-          </p>
-        </div>
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-text-primary">Map Columns to Metrics</h3>
-          <button onClick={handleBack} className="text-sm text-text-muted hover:text-text-primary cursor-pointer">
-            ← Start Over
-          </button>
-        </div>
+        {showPeriodProposalReview && periodProposalReview && (
+            <PeriodProposalReview
+              review={periodProposalReview}
+              destinationPeriodName={periodName}
+              onDecline={() => setDeclinedMultiPeriod(true)}
+              onDismissSuggestion={() => setDismissedPeriodSuggestion(true)}
+            />
+          )}
 
-        <WorkbookIssueNotice
-          issues={blockingCellIssues}
-          tone="blocking"
-          columnNameForIssue={columnNameForIssue}
-        />
-        <WorkbookIssueNotice
-          issues={warningCellIssues}
-          tone="warning"
-          columnNameForIssue={columnNameForIssue}
-        />
-        <ValueIssueNotice issues={valueIssuesBeforePreview} phase="preview" />
-
-        {/* Player Column Status */}
-        {autoDetectedPlayerColumn ? (
-          <div className="p-4 rounded-md bg-success/10 border border-success/30">
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <p className="text-text-primary font-medium">
-                Player column found: <strong>{autoDetectedPlayerColumn.name}</strong>
-              </p>
-            </div>
-            <p className="text-text-secondary text-sm mt-1 ml-7">{rowCount} rows detected</p>
+        {hasUnacknowledgedMultiPeriod ? (
+          <div className="p-4 bg-surface-secondary/60 border border-border rounded-lg text-sm text-text-secondary">
+            <p className="font-medium text-text-primary">Fixed-period import is paused</p>
+            <p className="mt-1 text-xs">
+              This spreadsheet may contain multiple evaluation periods. Review the proposal above and
+              explicitly choose &ldquo;Decline &amp; Use Selected Period Instead&rdquo; to continue
+              importing into <strong>{periodName}</strong>.
+            </p>
           </div>
         ) : (
-          <div className="p-4 rounded-md bg-danger/10 border border-danger/30">
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-danger" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              <p className="text-danger font-semibold">No player column found</p>
-            </div>
-            <p className="text-sm text-text-secondary mt-2 ml-7">Please rename a column in your spreadsheet to one of these:</p>
-            <ul className="text-sm text-text-secondary mt-1 ml-7 list-disc list-inside">
-              <li><strong>Player</strong> or <strong>Player Name</strong></li>
-              <li><strong>Member</strong> or <strong>Member Name</strong></li>
-              <li><strong>Name</strong>, <strong>IGN</strong>, or <strong>Alliance Member</strong></li>
-            </ul>
-          </div>
-        )}
-
-        {numericColumns.length === 0 && (
-          <div className="p-4 rounded-md bg-danger/10 border border-danger/30">
-            <p className="text-danger font-semibold">No numeric columns found</p>
-            <p className="text-sm text-text-secondary mt-1">Your spreadsheet needs at least one column with whole numbers.</p>
-          </div>
-        )}
-
-        {noSelectableMetrics && (
-          <div className="p-4 rounded-md bg-danger/10 border border-danger/30">
-            <p className="text-danger font-semibold">No metrics available</p>
-            <p className="text-sm text-text-secondary mt-1">Ask an alliance admin to add metrics, then import again.</p>
-          </div>
-        )}
-
-        {/* Mapping table */}
-        {autoDetectedPlayerColumn && numericColumns.length > 0 && !noSelectableMetrics && (
           <>
-            <div className="p-4 bg-surface-secondary rounded-md border border-border">
+            <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium">
+              Destination Period: {periodName}
+            </div>
+            <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary">
+              <p className="font-medium text-text-primary">Evaluation Results Import Scope</p>
+              <p className="mt-0.5 text-text-secondary">
+                Importing results for destination period &apos;{periodName}&apos;. This matches existing active members in your member list; unmatched names are skipped. During mapping, authorized users may attach an existing metric or create a new one. This workflow does not create members.
+              </p>
+            </div>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-text-primary">Map Columns to Metrics</h3>
+              <button onClick={handleBack} className="text-sm text-text-muted hover:text-text-primary cursor-pointer">
+                ← Start Over
+              </button>
+            </div>
+
+            <WorkbookIssueNotice
+              issues={blockingCellIssues}
+              tone="blocking"
+              columnNameForIssue={columnNameForIssue}
+            />
+            <WorkbookIssueNotice
+              issues={warningCellIssues}
+              tone="warning"
+              columnNameForIssue={columnNameForIssue}
+            />
+            <ValueIssueNotice issues={valueIssuesBeforePreview} phase="preview" />
+
+            {autoDetectedPlayerColumn ? (
+              <div className="p-4 rounded-md bg-success/10 border border-success/30">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <p className="text-text-primary font-medium">
+                    Player column found: <strong>{autoDetectedPlayerColumn.name}</strong>
+                  </p>
+                </div>
+                <p className="text-text-secondary text-sm mt-1 ml-7">{rowCount} rows detected</p>
+              </div>
+            ) : (
+              <div className="p-4 rounded-md bg-danger/10 border border-danger/30">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-danger" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  <p className="text-danger font-semibold">No player column found</p>
+                </div>
+                <p className="text-sm text-text-secondary mt-2 ml-7">Please rename a column in your spreadsheet to one of these:</p>
+                <ul className="text-sm text-text-secondary mt-1 ml-7 list-disc list-inside">
+                  <li><strong>Player</strong> or <strong>Player Name</strong></li>
+                  <li><strong>Member</strong> or <strong>Member Name</strong></li>
+                  <li><strong>Name</strong>, <strong>IGN</strong>, or <strong>Alliance Member</strong></li>
+                </ul>
+              </div>
+            )}
+
+            {numericColumns.length === 0 && (
+              <div className="p-4 rounded-md bg-danger/10 border border-danger/30">
+                <p className="text-danger font-semibold">No numeric columns found</p>
+                <p className="text-sm text-text-secondary mt-1">Your spreadsheet needs at least one column with whole numbers.</p>
+              </div>
+            )}
+
+            {noSelectableMetrics && (
+              <div className="p-4 rounded-md bg-danger/10 border border-danger/30">
+                <p className="text-danger font-semibold">No metrics available</p>
+                <p className="text-sm text-text-secondary mt-1">Ask an alliance admin to add metrics, then import again.</p>
+              </div>
+            )}
+
+            {autoDetectedPlayerColumn && numericColumns.length > 0 && !noSelectableMetrics && (
+              <>
+                <div className="p-4 bg-surface-secondary rounded-md border border-border">
               <p className="text-sm font-semibold text-text-primary mb-1">Choose which metric each column should import as</p>
               <p className="text-sm text-text-secondary mb-3">
                 Known metric matches are mapped automatically. Columns that look like evaluation periods require confirmation. Unrecognized columns default to Do not import.
@@ -1414,6 +1475,8 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             )}
           </>
         )}
+          </>
+        )}
 
         {error && (
           <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
@@ -1423,13 +1486,15 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           <button onClick={handleBack} className="px-4 py-2 rounded-md border border-border text-text-primary hover:bg-surface-secondary cursor-pointer">
             Cancel
           </button>
-          <button
-            onClick={handleSelectComplete}
-            disabled={!canProceed}
-            className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Preview Import
-          </button>
+          {!hasUnacknowledgedMultiPeriod && (
+            <button
+              onClick={handleSelectComplete}
+              disabled={!canProceed}
+              className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Preview Import
+            </button>
+          )}
         </div>
       </div>
     );
