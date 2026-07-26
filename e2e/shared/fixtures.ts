@@ -169,13 +169,7 @@ export const test = base.extend<TestFixtures>({
     });
 
     for (const membership of memberships) {
-      // Delete alliance-owned data (FK-ordered, same as adminScenario)
-      await prisma.memberMetricEntry.deleteMany({
-        where: { allianceMember: { allianceId: membership.allianceId } },
-      });
-      await prisma.metricPeriodMetric.deleteMany({
-        where: { period: { allianceId: membership.allianceId } },
-      });
+      // Delete alliance-owned data
       await prisma.allianceMember.deleteMany({ where: { allianceId: membership.allianceId } });
       await prisma.metric.deleteMany({ where: { allianceId: membership.allianceId } });
       await prisma.metricPeriod.deleteMany({ where: { allianceId: membership.allianceId } });
