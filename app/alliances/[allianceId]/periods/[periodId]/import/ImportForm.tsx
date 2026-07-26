@@ -265,6 +265,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [periodProposalReview, setPeriodProposalReview] = useState<PeriodMappingReview | null>(null);
   const [declinedMultiPeriod, setDeclinedMultiPeriod] = useState<boolean>(false);
+  const [dismissedPeriodSuggestion, setDismissedPeriodSuggestion] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -470,6 +471,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     setColumnMappings(mappings);
     setPeriodProposalReview(proposalReview);
     setDeclinedMultiPeriod(false);
+    setDismissedPeriodSuggestion(false);
     setError(null);
     setStep("select");
   };
@@ -1109,6 +1111,19 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     const hasUnacknowledgedMultiPeriod =
       periodProposalReview?.mode === "multi_period" && !declinedMultiPeriod;
 
+    const showPeriodProposalReview =
+      periodProposalReview &&
+      !(
+        periodProposalReview.mode === "multi_period" && declinedMultiPeriod
+      ) &&
+      !(
+        periodProposalReview.mode === "single_period_suggestion" &&
+        dismissedPeriodSuggestion
+      ) &&
+      (periodProposalReview.mode === "multi_period" ||
+        periodProposalReview.mode === "single_period_suggestion" ||
+        periodProposalReview.reviewableColumns.length > 0);
+
     const canProceed =
       Boolean(autoDetectedPlayerColumn) &&
       numericColumns.length > 0 &&
@@ -1248,13 +1263,12 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           </div>
         )}
 
-        {periodProposalReview &&
-          periodProposalReview.mode === "multi_period" &&
-          !declinedMultiPeriod && (
+        {showPeriodProposalReview && periodProposalReview && (
             <PeriodProposalReview
               review={periodProposalReview}
               destinationPeriodName={periodName}
               onDecline={() => setDeclinedMultiPeriod(true)}
+              onDismissSuggestion={() => setDismissedPeriodSuggestion(true)}
             />
           )}
 

@@ -4,7 +4,7 @@ export type ParsedDateComponent = {
   year?: number;
 };
 
-export type YearSource = "header" | "sheet_name" | "unresolved";
+export type YearSource = "header" | "sheet_name" | "typed_metadata" | "unresolved";
 
 export type ParsedDateEvidence = {
   kind: "snapshot" | "range";
@@ -109,7 +109,10 @@ function parseDateStr(str: string): ParsedDateStrResult | null {
     if (y < 100) y += 2000;
     const component: ParsedDateComponent = { year: y, month: m, day: d };
     if (!isValidCalendarDate(component)) return null;
-    return { component, isLocaleAmbiguous: false };
+    return {
+      component,
+      isLocaleAmbiguous: isLocaleAmbiguousShorthand(m, d),
+    };
   }
 
   const mdMatch = trimmed.match(/^(\d{1,2})[-/.](\d{1,2})$/);

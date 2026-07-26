@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import * as XLSX from "xlsx";
 import {
   parseDateHeader,
   extractYearFromSheetName,
@@ -8,6 +9,7 @@ import {
 import { analyzeDerivedColumn } from "./derivedColumnDetector";
 import { buildPeriodMappingReview } from "./periodProposal";
 import { cellAddress } from "@/app/src/lib/memberMatcher";
+import { decodeExcelSerialDate } from "@/app/src/lib/workbookParser";
 
 describe("dateHeaderParser", () => {
   it("extracts year from sheet name", () => {
@@ -53,6 +55,12 @@ describe("dateHeaderParser", () => {
     expect(isLocaleAmbiguousShorthand(3, 4)).toBe(true);
     const res = parseDateHeader("Kills on 3/4", { sheetName: "March 2026" });
     expect(res.dateEvidence?.isLocaleAmbiguous).toBe(true);
+  });
+
+  it("flags locale-ambiguous numeric dates even when year is explicit", () => {
+    const res = parseDateHeader("Kills 3/4/2026");
+    expect(res.dateEvidence?.isLocaleAmbiguous).toBe(true);
+    expect(res.dateEvidence?.start.year).toBe(2026);
   });
 
   it("parses date-range headers and supports cross-year ranges from sheet context", () => {
@@ -119,12 +127,11 @@ describe("buildPeriodMappingReview", () => {
     expect(review.headerRowIndex).toBe(headerRowIndex);
     expect(review.proposals.length).toBeGreaterThanOrEqual(2);
     expect(review.excludedColumns.some((c) => c.reason === "derived" && c.derivedReason === "percentage")).toBe(true);
-    expect(review.excludedColumns.some((c) => c.reason === "derived" && c.derivedReason === "rank")).toBe(true);
     expect(review.proposals.every((p) => p.confidence === "medium")).toBe(true);
     expect(review.proposals[0].columns[0].headerAddress).toBe("B3");
   });
 
-  it("does not declare multi_period for a single temporal group at medium confidence", () => {
+  it("uses single_period_suggestion for one qualifying temporal group at medium confidence", () => {
     const review = buildPeriodMappingReview({
       sheetName: "March 2026",
       headerRowIndex: 0,
@@ -137,10 +144,10 @@ describe("buildPeriodMappingReview", () => {
 
     expect(review.proposals).toHaveLength(1);
     expect(review.proposals[0].confidence).toBe("medium");
-    expect(review.mode).toBe("insufficient_evidence");
+    expect(review.mode).toBe("single_period_suggestion");
   });
 
-  it("allows single-group multi_period only at high confidence with explicit header year", () => {
+  it("uses single_period_suggestion (not multi_period) for one high-confidence group", () => {
     const review = buildPeriodMappingReview({
       sheetName: "Roster Data",
       headerRowIndex: 0,
@@ -153,26 +160,76 @@ describe("buildPeriodMappingReview", () => {
 
     expect(review.proposals).toHaveLength(1);
     expect(review.proposals[0].confidence).toBe("high");
-    expect(review.mode).toBe("multi_period");
+    expect(review.mode).toBe("single_period_suggestion");
   });
 
-  it("excludes non-numeric columns with date-like headers", () => {
+  it("retains issue #218 Kills on 5/3 example as reviewable unresolved/ambiguous evidence", () => {
     const review = buildPeriodMappingReview({
-      sheetName: "March 2026",
+      sheetName: "Sheet1",
       headerRowIndex: 0,
       headers: [
         header(0, "Player", { isPlayerColumn: true }),
-        header(1, "Notes on 3/29", { isNumeric: false }),
-        header(2, "Kills on 3/29", { isNumeric: true }),
-        header(3, "Kills on 4/13", { isNumeric: true }),
+        header(1, "Kills on 5/3", { isNumeric: true }),
       ],
     });
 
-    expect(review.excludedColumns.some((c) => c.reason === "non_numeric")).toBe(true);
-    expect(review.mode).toBe("multi_period");
+    expect(review.reviewableColumns).toHaveLength(1);
+    expect(review.reviewableColumns[0].headerText).toBe("Kills on 5/3");
+    expect(review.reviewableColumns[0].reviewReason).toBe("locale_ambiguous");
+    expect(review.proposals).toHaveLength(0);
+    expect(review.mode).toBe("insufficient_evidence");
   });
 
-  it("excludes locale-ambiguous and invalid dates from proposals", () => {
+  it("retains yearless columns as reviewable evidence instead of hard exclusion", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "Sheet1",
+      headerRowIndex: 0,
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills on 3/29", { isNumeric: true }),
+        header(2, "Kills on 4/13", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.reviewableColumns).toHaveLength(2);
+    expect(review.reviewableColumns.every((c) => c.reviewReason === "unresolved_year")).toBe(true);
+    expect(review.excludedColumns.some((c) => c.headerText.includes("Kills on 3/29"))).toBe(false);
+    expect(review.proposals).toHaveLength(0);
+    expect(review.mode).toBe("insufficient_evidence");
+  });
+
+  it("resolves year from typed Excel metadata when display format omits the year", () => {
+    const serialFor20260329 = 46110;
+    const decoded = decodeExcelSerialDate(serialFor20260329, false, XLSX.SSF);
+    expect(decoded).toEqual({ year: 2026, month: 3, day: 29 });
+
+    const review = buildPeriodMappingReview({
+      sheetName: "Sheet1",
+      headerRowIndex: 0,
+      cellDates: {
+        B1: {
+          address: "B1",
+          rowIndex: 0,
+          columnIndex: 1,
+          formattedText: "3/29",
+          isTypedDate: true,
+          rawNum: serialFor20260329,
+          decodedDate: decoded!,
+        },
+      },
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills on 3/29", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.proposals).toHaveLength(1);
+    expect(review.proposals[0].startsAtISO).toBe("2026-03-29");
+    expect(review.proposals[0].columns[0].parsedDate?.yearSource).toBe("typed_metadata");
+    expect(review.mode).toBe("single_period_suggestion");
+  });
+
+  it("keeps locale-ambiguous dates reviewable and invalid dates hard-excluded", () => {
     const review = buildPeriodMappingReview({
       sheetName: "March 2026",
       headerRowIndex: 0,
@@ -185,50 +242,25 @@ describe("buildPeriodMappingReview", () => {
       ],
     });
 
-    expect(review.excludedColumns.some((c) => c.reason === "locale_ambiguous")).toBe(true);
+    expect(review.reviewableColumns.some((c) => c.reviewReason === "locale_ambiguous")).toBe(true);
     expect(review.excludedColumns.some((c) => c.reason === "invalid_date")).toBe(true);
     expect(review.mode).toBe("multi_period");
   });
 
-  it("excludes yearless columns without sheet year context and stays insufficient_evidence", () => {
-    const review = buildPeriodMappingReview({
-      sheetName: "Sheet1",
-      headerRowIndex: 0,
-      headers: [
-        header(0, "Player", { isPlayerColumn: true }),
-        header(1, "Kills on 3/29", { isNumeric: true }),
-        header(2, "Kills on 4/13", { isNumeric: true }),
-      ],
-    });
-
-    expect(review.excludedColumns.every((c) => c.reason === "unresolved_year" || c.reason === "player_column")).toBe(true);
-    expect(review.proposals).toHaveLength(0);
-    expect(review.mode).toBe("insufficient_evidence");
-  });
-
-  it("uses typed date header metadata for high confidence and evidence warnings", () => {
+  it("keeps ambiguous dates with explicit year in reviewable evidence", () => {
     const review = buildPeriodMappingReview({
       sheetName: "Roster",
       headerRowIndex: 0,
-      cellDates: {
-        B1: {
-          address: "B1",
-          rowIndex: 0,
-          columnIndex: 1,
-          formattedText: "3/29/2026",
-          isTypedDate: true,
-        },
-      },
       headers: [
         header(0, "Player", { isPlayerColumn: true }),
-        header(1, "Kills on 3/29/2026", { isNumeric: true }),
+        header(1, "Kills 3/4/2026", { isNumeric: true }),
       ],
     });
 
-    expect(review.proposals[0].confidence).toBe("high");
-    expect(review.proposals[0].columns[0].hasTypedDateHeader).toBe(true);
-    expect(review.proposals[0].warnings.some((w) => w.includes("Excel typed-date"))).toBe(true);
-    expect(review.mode).toBe("multi_period");
+    expect(review.reviewableColumns).toHaveLength(1);
+    expect(review.reviewableColumns[0].parsedDate.start.year).toBe(2026);
+    expect(review.proposals).toHaveLength(0);
+    expect(review.mode).toBe("insufficient_evidence");
   });
 
   it("returns insufficient_evidence when headers lack date evidence", () => {

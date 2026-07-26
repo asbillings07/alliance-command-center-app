@@ -999,6 +999,39 @@ describe("ImportForm [component]", () => {
         expect(container.querySelector('select[aria-label="Metric for Kills on 3/29"]')).toBeNull();
     });
 
+    it("does not block fixed-period mapping for a single-period suggestion", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const csvContent = `Player,Kills on 3/29/2026\nDragon,1500\nPhoenix,2300`;
+
+        await act(async () => {
+            fireFileUpload(csvContent, "single_period_suggestion.csv");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Single Evaluation Period Suggested");
+        expect(container.textContent).not.toContain("Fixed-period import is paused");
+        expect(container.textContent).toContain("Map Columns to Metrics");
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+        expect(previewBtn).not.toBeUndefined();
+    });
+
     it("uses detected header row for source addresses when a title row precedes headers", async () => {
         await act(async () => {
             root.render(

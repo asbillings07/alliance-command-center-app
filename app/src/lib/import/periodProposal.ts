@@ -1,6 +1,7 @@
 import {
   parseDateHeader,
   type ParsedDateEvidence,
+  type DateHeaderParseResult,
 } from "./dateHeaderParser";
 import {
   analyzeDerivedColumn,
@@ -13,9 +14,9 @@ export type ColumnExclusionReason =
   | "non_numeric"
   | "no_date_evidence"
   | "invalid_date"
-  | "locale_ambiguous"
-  | "unresolved_year"
   | "player_column";
+
+export type ReviewableColumnReason = "unresolved_year" | "locale_ambiguous";
 
 export type ExcludedColumnEvidence = {
   columnIndex: number;
@@ -25,6 +26,20 @@ export type ExcludedColumnEvidence = {
   reason: ColumnExclusionReason;
   detail: string;
   derivedReason?: DerivedReason;
+};
+
+export type ReviewableColumnEvidence = {
+  columnIndex: number;
+  headerAddress?: string;
+  headerText: string;
+  tableRegionId?: string;
+  parsedDate: ParsedDateEvidence;
+  proposedMetricName: string;
+  reviewReason: ReviewableColumnReason;
+  detail: string;
+  warnings: string[];
+  hasTypedDateHeader: boolean;
+  typedDateFormattedText?: string;
 };
 
 export type ColumnPeriodEvidence = {
@@ -54,12 +69,19 @@ export type PeriodMappingProposal = {
   warnings: string[];
 };
 
+export type PeriodMappingReviewMode =
+  | "multi_period"
+  | "single_period_suggestion"
+  | "insufficient_evidence"
+  | "declined";
+
 export type PeriodMappingReview = {
-  mode: "multi_period" | "insufficient_evidence" | "declined";
+  mode: PeriodMappingReviewMode;
   sheetName: string;
   tableRegionId?: string;
   headerRowIndex: number;
   proposals: PeriodMappingProposal[];
+  reviewableColumns: ReviewableColumnEvidence[];
   excludedColumns: ExcludedColumnEvidence[];
   evidenceSummary: string;
   hasDerivedColumns: boolean;
@@ -93,8 +115,12 @@ function generatePeriodName(dateEvidence: ParsedDateEvidence): string {
 }
 
 function groupingKeyForEvidence(dateEvidence: ParsedDateEvidence): string {
-  const startStr = formatISODate(dateEvidence.start) ?? `??-${dateEvidence.start.month}-${dateEvidence.start.day}`;
-  const endStr = formatISODate(dateEvidence.end) ?? `??-${dateEvidence.end.month}-${dateEvidence.end.day}`;
+  const startStr =
+    formatISODate(dateEvidence.start) ??
+    `??-${dateEvidence.start.month}-${dateEvidence.start.day}`;
+  const endStr =
+    formatISODate(dateEvidence.end) ??
+    `??-${dateEvidence.end.month}-${dateEvidence.end.day}`;
   return `${dateEvidence.kind}:${startStr}..${endStr}`;
 }
 
@@ -110,6 +136,72 @@ function findTypedDateForHeader(
       meta.rowIndex === headerRowIndex &&
       meta.columnIndex === columnIndex,
   );
+}
+
+function applyTypedDateMetadata(
+  dateResult: DateHeaderParseResult,
+  typedMeta?: CellDateMetadata,
+): DateHeaderParseResult {
+  if (!typedMeta?.decodedDate || !dateResult.dateEvidence) {
+    return dateResult;
+  }
+
+  const decoded = typedMeta.decodedDate;
+  const evidence = dateResult.dateEvidence;
+  const start = {
+    ...evidence.start,
+    year: evidence.start.year ?? decoded.year,
+    month: evidence.start.year === undefined ? decoded.month : evidence.start.month,
+    day: evidence.start.year === undefined ? decoded.day : evidence.start.day,
+  };
+  const end = {
+    ...evidence.end,
+    year: evidence.end.year ?? decoded.year,
+    month: evidence.end.year === undefined ? decoded.month : evidence.end.month,
+    day: evidence.end.year === undefined ? decoded.day : evidence.end.day,
+  };
+
+  const ambiguities = evidence.ambiguities.filter(
+    (a) => !a.includes("Year could not be determined"),
+  );
+
+  let yearSource = evidence.yearSource;
+  if (evidence.yearSource === "unresolved") {
+    yearSource = "typed_metadata";
+    ambiguities.push(
+      `Year resolved from Excel typed-date cell metadata (${decoded.year})`,
+    );
+  }
+
+  return {
+    ...dateResult,
+    dateEvidence: {
+      ...evidence,
+      start,
+      end,
+      yearSource,
+      ambiguities,
+      isCalendarValid:
+        evidence.isCalendarValid &&
+        formatISODate(start) !== null &&
+        (evidence.kind === "snapshot" || formatISODate(end) !== null),
+    },
+  };
+}
+
+function collectColumnWarnings(
+  col: ColumnPeriodEvidence,
+): string[] {
+  const warnings: string[] = [];
+  col.parsedDate?.ambiguities.forEach((a) => {
+    if (!warnings.includes(a)) warnings.push(a);
+  });
+  if (col.hasTypedDateHeader && col.typedDateFormattedText) {
+    warnings.push(
+      `Header cell ${col.headerAddress ?? ""} has Excel typed-date formatting (${col.typedDateFormattedText})`,
+    );
+  }
+  return warnings;
 }
 
 function scoreProposalConfidence(
@@ -129,30 +221,54 @@ function scoreProposalConfidence(
     return "medium";
   }
 
-  // header year: high only when all eligibility signals are clean
+  if (dateEvidence.yearSource === "typed_metadata") {
+    return "high";
+  }
+
   const hasTypedDateBoost = columns.some((c) => c.hasTypedDateHeader);
   if (hasTypedDateBoost) {
     return "high";
   }
 
-  // Explicit year in header without typed-date metadata is still high
-  // when calendar-valid, unambiguous, and numeric (numeric enforced upstream).
   return "high";
 }
 
+function isQualifyingProposal(proposal: PeriodMappingProposal): boolean {
+  return proposal.confidence === "high" || proposal.confidence === "medium";
+}
+
 /**
- * Multi-period mode requires either:
- * - more than one distinct temporal group (proposal), OR
- * - exactly one group at high confidence (explicit year, valid calendar, numeric, unambiguous).
- *
- * A single low/medium-confidence group alone is insufficient — err toward not overclaiming.
+ * Multi-period mode requires at least two distinct qualifying temporal groups.
+ * Confidence establishes credibility within a group; plurality requires ≥2 groups.
  */
-function qualifiesForMultiPeriod(proposals: PeriodMappingProposal[]): boolean {
-  if (proposals.length === 0) return false;
-  if (proposals.length > 1) {
-    return proposals.some((p) => p.confidence !== "low");
+function resolveReviewMode(
+  proposals: PeriodMappingProposal[],
+): Exclude<PeriodMappingReviewMode, "declined"> {
+  const qualifying = proposals.filter(isQualifyingProposal);
+  if (qualifying.length >= 2) return "multi_period";
+  if (qualifying.length === 1) return "single_period_suggestion";
+  return "insufficient_evidence";
+}
+
+function buildEvidenceSummary(
+  mode: Exclude<PeriodMappingReviewMode, "declined">,
+  sheetName: string,
+  tableRegionId: string | undefined,
+  proposals: PeriodMappingProposal[],
+  reviewableColumns: ReviewableColumnEvidence[],
+  eligibleColumnCount: number,
+): string {
+  switch (mode) {
+    case "multi_period":
+      return `Detected ${eligibleColumnCount} eligible date-stamped numeric column${eligibleColumnCount === 1 ? "" : "s"} proposing ${proposals.filter(isQualifyingProposal).length} evaluation period${proposals.filter(isQualifyingProposal).length === 1 ? "" : "s"} from worksheet "${sheetName}"${tableRegionId ? ` (region ${tableRegionId})` : ""}.`;
+    case "single_period_suggestion":
+      return `This worksheet appears to represent a single evaluation period (${proposals[0]?.proposedPeriodName ?? "one date group"}). You can continue with the fixed-period import below, or review the suggested date evidence.`;
+    default:
+      if (reviewableColumns.length > 0) {
+        return `Date-stamped columns were detected on "${sheetName}", but none are confident enough to suggest concrete periods yet. Review columns needing year or locale confirmation below.`;
+      }
+      return `Insufficient date evidence on worksheet "${sheetName}" for period-mapping suggestions.`;
   }
-  return proposals[0].confidence === "high";
 }
 
 export type BuildPeriodProposalsInput = {
@@ -176,6 +292,7 @@ export function buildPeriodMappingReview(
 
   const candidateColumns: ColumnPeriodEvidence[] = [];
   const excludedColumns: ExcludedColumnEvidence[] = [];
+  const reviewableColumns: ReviewableColumnEvidence[] = [];
   let excludedDerivedColumnsCount = 0;
 
   for (const h of headers) {
@@ -192,8 +309,11 @@ export function buildPeriodMappingReview(
     }
 
     const derived = analyzeDerivedColumn(h.headerText);
-    const dateResult = parseDateHeader(h.headerText, { sheetName });
     const typedDateMeta = findTypedDateForHeader(headerRowIndex, h.columnIndex, cellDates);
+    const dateResult = applyTypedDateMetadata(
+      parseDateHeader(h.headerText, { sheetName }),
+      typedDateMeta,
+    );
 
     if (derived.isDerived) {
       excludedDerivedColumnsCount++;
@@ -277,27 +397,37 @@ export function buildPeriodMappingReview(
     }
 
     if (evidence.isLocaleAmbiguous) {
-      excludedColumns.push({
+      reviewableColumns.push({
         columnIndex: h.columnIndex,
         headerAddress: h.headerAddress,
         headerText: h.headerText,
         tableRegionId,
-        reason: "locale_ambiguous",
+        parsedDate: evidence,
+        proposedMetricName,
+        reviewReason: "locale_ambiguous",
         detail:
-          "Date shorthand is locale-ambiguous (e.g. 3/4 could be March 4 or April 3)",
+          "Date order is locale-ambiguous (e.g. 3/4 or 3/4/2026 could be March 4 or April 3); please confirm",
+        warnings: collectColumnWarnings(colEvidence),
+        hasTypedDateHeader: Boolean(typedDateMeta),
+        typedDateFormattedText: typedDateMeta?.formattedText,
       });
       candidateColumns.push(colEvidence);
       continue;
     }
 
     if (evidence.yearSource === "unresolved") {
-      excludedColumns.push({
+      reviewableColumns.push({
         columnIndex: h.columnIndex,
         headerAddress: h.headerAddress,
         headerText: h.headerText,
         tableRegionId,
-        reason: "unresolved_year",
+        parsedDate: evidence,
+        proposedMetricName,
+        reviewReason: "unresolved_year",
         detail: "Year could not be determined; please confirm the year for this period",
+        warnings: collectColumnWarnings(colEvidence),
+        hasTypedDateHeader: Boolean(typedDateMeta),
+        typedDateFormattedText: typedDateMeta?.formattedText,
       });
       candidateColumns.push(colEvidence);
       continue;
@@ -328,13 +458,9 @@ export function buildPeriodMappingReview(
 
     const warnings: string[] = [];
     cols.forEach((c) => {
-      c.parsedDate?.ambiguities.forEach((a) => {
-        if (!warnings.includes(a)) warnings.push(a);
+      collectColumnWarnings(c).forEach((w) => {
+        if (!warnings.includes(w)) warnings.push(w);
       });
-      if (c.hasTypedDateHeader && c.typedDateFormattedText) {
-        const typedNote = `Header cell ${c.headerAddress ?? ""} has Excel typed-date formatting (${c.typedDateFormattedText})`;
-        if (!warnings.includes(typedNote)) warnings.push(typedNote);
-      }
     });
 
     const confidence = scoreProposalConfidence(dateEvidence, cols);
@@ -358,17 +484,8 @@ export function buildPeriodMappingReview(
     return aKey.localeCompare(bKey);
   });
 
-  const mode = qualifiesForMultiPeriod(proposals)
-    ? "multi_period"
-    : "insufficient_evidence";
-
+  const mode = resolveReviewMode(proposals);
   const eligibleColumnCount = candidateColumns.filter((c) => !c.excludedByDefault).length;
-  const evidenceSummary =
-    mode === "multi_period"
-      ? `Detected ${eligibleColumnCount} eligible date-stamped numeric column${eligibleColumnCount === 1 ? "" : "s"} proposing ${proposals.length} evaluation period${proposals.length === 1 ? "" : "s"} from worksheet "${sheetName}"${tableRegionId ? ` (region ${tableRegionId})` : ""}.`
-      : proposals.length === 1
-        ? `One date-stamped column group detected on "${sheetName}", but confidence is insufficient to declare a multi-period workbook. Confirm dates or use the fixed-period import path.`
-        : `Insufficient date evidence on worksheet "${sheetName}" for multi-period detection.`;
 
   return {
     mode,
@@ -376,8 +493,16 @@ export function buildPeriodMappingReview(
     tableRegionId,
     headerRowIndex,
     proposals,
+    reviewableColumns,
     excludedColumns,
-    evidenceSummary,
+    evidenceSummary: buildEvidenceSummary(
+      mode,
+      sheetName,
+      tableRegionId,
+      proposals,
+      reviewableColumns,
+      eligibleColumnCount,
+    ),
     hasDerivedColumns: excludedDerivedColumnsCount > 0,
     excludedDerivedColumnsCount,
   };
