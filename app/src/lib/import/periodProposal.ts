@@ -187,9 +187,8 @@ function calendarValidForEvidence(
 
 /**
  * After typed metadata corrects a range start, reconcile the end year using the
- * same cross-year semantics as header parsing: Dec→Jan spans get end.year =
- * start.year + 1; otherwise the end follows the corrected start year when it
- * still reflects the pre-correction weaker inference context.
+ * same cross-year semantics as header parsing when the end year is absent or
+ * came from weaker worksheet context — never overwrite an explicit endpoint year.
  */
 function reconcileRangeEndAfterTypedStartCorrection(
   start: ParsedDateComponent,
@@ -211,26 +210,30 @@ function reconcileRangeEndAfterTypedStartCorrection(
     };
   }
 
-  const endYearExplicitInHeader =
-    originalEvidence.yearSource === "header" &&
-    originalEvidence.end.year !== undefined &&
-    originalEvidence.start.year !== undefined;
+  const canInferEndYear = !originalEvidence.endYearExplicit;
 
   if (isCrossYearRangePattern(start, reconciledEnd)) {
     const nextYear = start.year + 1;
-    if (reconciledEnd.year !== nextYear) {
+    if (canInferEndYear && reconciledEnd.year !== nextYear) {
       reconciledEnd = { ...reconciledEnd, year: nextYear };
       ambiguities.push(
         `Range spans a year boundary; end date assigned to ${nextYear}`,
       );
     }
-  } else if (
-    !endYearExplicitInHeader &&
-    reconciledEnd.year !== undefined &&
-    reconciledEnd.year !== start.year
-  ) {
-    reconciledEnd = { ...reconciledEnd, year: start.year };
-    if (end.year !== start.year) {
+  } else if (canInferEndYear) {
+    if (
+      reconciledEnd.year === undefined &&
+      originalEvidence.yearSource !== "unresolved"
+    ) {
+      reconciledEnd = { ...reconciledEnd, year: start.year };
+      ambiguities.push(
+        `Range end year inferred as ${start.year} to match typed Excel start date`,
+      );
+    } else if (
+      reconciledEnd.year !== undefined &&
+      reconciledEnd.year !== start.year
+    ) {
+      reconciledEnd = { ...reconciledEnd, year: start.year };
       ambiguities.push(
         `Range end year normalized to ${start.year} to match typed Excel start date`,
       );
@@ -310,6 +313,8 @@ function applyTypedDateMetadata(
         start,
         end: reconciled.end,
         yearSource: "typed_metadata",
+        startYearExplicit: true,
+        endYearExplicit: evidence.endYearExplicit,
         ambiguities,
         isCalendarValid: calendarValidForEvidence({
           kind: "range",
@@ -343,6 +348,8 @@ function applyTypedDateMetadata(
       start,
       end: start,
       yearSource: "typed_metadata",
+      startYearExplicit: true,
+      endYearExplicit: true,
       ambiguities,
       isCalendarValid: calendarValidForEvidence({ kind: "snapshot", start, end: start }),
     },
@@ -428,15 +435,18 @@ function demoteConfidenceIfRangeInverted(
   startsAtISO: string | null,
   endsAtISO: string | null,
 ): PeriodMappingProposal["confidence"] {
-  if (
-    (confidence === "high" || confidence === "medium") &&
-    dateEvidence.kind === "range" &&
-    startsAtISO &&
-    endsAtISO &&
-    endsAtISO < startsAtISO
-  ) {
+  if (confidence !== "high" && confidence !== "medium") {
+    return confidence;
+  }
+
+  if (dateEvidence.kind !== "range") {
+    return confidence;
+  }
+
+  if (!startsAtISO || !endsAtISO || endsAtISO < startsAtISO) {
     return "low";
   }
+
   return confidence;
 }
 
@@ -635,6 +645,30 @@ export function buildPeriodMappingReview(
         reviewReason: "range_chronology_conflict",
         detail:
           "Typed Excel start date conflicts with the range end; chronology could not be safely resolved",
+        warnings: collectColumnWarnings(colEvidence),
+        hasTypedDateHeader: Boolean(typedDateMeta),
+        typedDateFormattedText: typedDateMeta?.formattedText,
+      });
+      candidateColumns.push(colEvidence);
+      continue;
+    }
+
+    if (
+      evidence.kind === "range" &&
+      (evidence.start.year === undefined || evidence.end.year === undefined)
+    ) {
+      reviewableColumns.push({
+        columnIndex: h.columnIndex,
+        headerAddress: h.headerAddress,
+        headerText: h.headerText,
+        tableRegionId,
+        parsedDate: evidence,
+        proposedMetricName,
+        reviewReason: "unresolved_year",
+        detail:
+          evidence.end.year === undefined
+            ? "Range end year could not be determined; please confirm the period window"
+            : "Year could not be determined; please confirm the year for this period",
         warnings: collectColumnWarnings(colEvidence),
         hasTypedDateHeader: Boolean(typedDateMeta),
         typedDateFormattedText: typedDateMeta?.formattedText,

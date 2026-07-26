@@ -11,6 +11,10 @@ export type ParsedDateEvidence = {
   start: ParsedDateComponent;
   end: ParsedDateComponent;
   yearSource: YearSource;
+  /** True when the start endpoint year was written explicitly in the header text. */
+  startYearExplicit: boolean;
+  /** True when the range end endpoint year was written explicitly in the header text. */
+  endYearExplicit: boolean;
   ambiguities: string[];
   /** True when M/D shorthand could mean either month/day order (e.g. 3/4). */
   isLocaleAmbiguous: boolean;
@@ -180,6 +184,8 @@ function resolveYears(
   start: ParsedDateComponent;
   end: ParsedDateComponent;
   yearSource: YearSource;
+  startYearExplicit: boolean;
+  endYearExplicit: boolean;
   ambiguities: string[];
 } {
   const ambiguities: string[] = [];
@@ -190,9 +196,18 @@ function resolveYears(
 
   const startHasYear = start.year !== undefined;
   const endHasYear = end.year !== undefined;
+  const startYearExplicit = startHasYear;
+  const endYearExplicit = endHasYear;
 
   if (startHasYear && endHasYear) {
-    return { start, end, yearSource: "header", ambiguities };
+    return {
+      start,
+      end,
+      yearSource: "header",
+      startYearExplicit,
+      endYearExplicit,
+      ambiguities,
+    };
   }
 
   if (sheetYear !== null) {
@@ -221,14 +236,28 @@ function resolveYears(
       );
     }
 
-    return { start, end, yearSource, ambiguities };
+    return {
+      start,
+      end,
+      yearSource,
+      startYearExplicit,
+      endYearExplicit,
+      ambiguities,
+    };
   }
 
   yearSource = "unresolved";
   ambiguities.push(
     "Year could not be determined; please confirm the year for this period",
   );
-  return { start, end, yearSource, ambiguities };
+  return {
+    start,
+    end,
+    yearSource,
+    startYearExplicit,
+    endYearExplicit,
+    ambiguities,
+  };
 }
 
 function resolveSnapshotYear(
@@ -237,12 +266,14 @@ function resolveSnapshotYear(
 ): {
   component: ParsedDateComponent;
   yearSource: YearSource;
+  yearExplicit: boolean;
   ambiguities: string[];
 } {
   if (parsed.year !== undefined) {
     return {
       component: parsed,
       yearSource: "header",
+      yearExplicit: true,
       ambiguities: [],
     };
   }
@@ -251,6 +282,7 @@ function resolveSnapshotYear(
     return {
       component: { ...parsed, year: sheetYear },
       yearSource: "sheet_name",
+      yearExplicit: false,
       ambiguities: [
         `Year missing in header; inferred ${sheetYear} from worksheet name`,
       ],
@@ -260,6 +292,7 @@ function resolveSnapshotYear(
   return {
     component: parsed,
     yearSource: "unresolved",
+    yearExplicit: false,
     ambiguities: [
       "Year could not be determined; please confirm the year for this period",
     ],
@@ -271,6 +304,8 @@ function buildDateEvidence(
   start: ParsedDateComponent,
   end: ParsedDateComponent,
   yearSource: YearSource,
+  startYearExplicit: boolean,
+  endYearExplicit: boolean,
   ambiguities: string[],
   isLocaleAmbiguous: boolean,
 ): ParsedDateEvidence {
@@ -298,6 +333,8 @@ function buildDateEvidence(
     start,
     end,
     yearSource,
+    startYearExplicit,
+    endYearExplicit,
     ambiguities: allAmbiguities,
     isLocaleAmbiguous,
     isCalendarValid,
@@ -347,6 +384,8 @@ export function parseDateHeader(
           resolved.start,
           resolved.end,
           resolved.yearSource,
+          resolved.startYearExplicit,
+          resolved.endYearExplicit,
           resolved.ambiguities,
           isLocaleAmbiguous,
         ),
@@ -385,6 +424,8 @@ export function parseDateHeader(
           resolved.component,
           resolved.component,
           resolved.yearSource,
+          resolved.yearExplicit,
+          resolved.yearExplicit,
           resolved.ambiguities,
           parsed.isLocaleAmbiguous,
         ),

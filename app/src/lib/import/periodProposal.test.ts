@@ -380,12 +380,72 @@ describe("buildPeriodMappingReview", () => {
     expect(review.mode).toBe("insufficient_evidence");
   });
 
+  it("retains yearless typed-start ranges as reviewable when end year stays unresolved", () => {
+    const decoded = { year: 2026, month: 3, day: 29 };
+    const review = buildPeriodMappingReview({
+      sheetName: "Sheet1",
+      headerRowIndex: 0,
+      cellDates: {
+        B1: {
+          address: "B1",
+          rowIndex: 0,
+          columnIndex: 1,
+          formattedText: "3/29",
+          isTypedDate: true,
+          rawNum: 46110,
+          decodedDate: decoded,
+        },
+      },
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills from 3/29-4/13", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.reviewableColumns).toHaveLength(1);
+    expect(review.reviewableColumns[0].reviewReason).toBe("unresolved_year");
+    expect(review.reviewableColumns[0].parsedDate.start.year).toBe(2026);
+    expect(review.reviewableColumns[0].parsedDate.end.year).toBeUndefined();
+    expect(review.proposals).toHaveLength(0);
+    expect(review.mode).toBe("insufficient_evidence");
+  });
+
+  it("preserves explicit cross-year end years instead of silently rolling them forward", () => {
+    const decoded = { year: 2026, month: 12, day: 29 };
+    const review = buildPeriodMappingReview({
+      sheetName: "Roster",
+      headerRowIndex: 0,
+      cellDates: {
+        B1: {
+          address: "B1",
+          rowIndex: 0,
+          columnIndex: 1,
+          formattedText: "12/29/2026",
+          isTypedDate: true,
+          rawNum: 46381,
+          decodedDate: decoded,
+        },
+      },
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills from 12/29/2026-1/13/2025", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.reviewableColumns).toHaveLength(1);
+    expect(review.reviewableColumns[0].reviewReason).toBe("range_chronology_conflict");
+    expect(review.reviewableColumns[0].parsedDate.end.year).toBe(2025);
+    expect(review.proposals.some((p) => p.endsAtISO === "2027-01-13")).toBe(false);
+  });
+
   it("formats reviewable range evidence with both endpoints visible", () => {
     const formatted = formatReviewableDateEvidence({
       kind: "range",
       start: { month: 3, day: 29 },
       end: { month: 4, day: 13 },
       yearSource: "unresolved",
+      startYearExplicit: false,
+      endYearExplicit: false,
       ambiguities: [],
       isLocaleAmbiguous: false,
       isCalendarValid: true,
@@ -450,12 +510,12 @@ function assertQualifyingProposalsAreChronologicallyOrdered(
 ): void {
   for (const proposal of review.proposals) {
     if (proposal.confidence === "low") continue;
-    if (
-      proposal.dateKind === "range" &&
-      proposal.startsAtISO &&
-      proposal.endsAtISO
-    ) {
-      expect(proposal.endsAtISO >= proposal.startsAtISO).toBe(true);
+    if (proposal.dateKind === "range") {
+      expect(proposal.startsAtISO).toBeTruthy();
+      expect(proposal.endsAtISO).toBeTruthy();
+      if (proposal.startsAtISO && proposal.endsAtISO) {
+        expect(proposal.endsAtISO >= proposal.startsAtISO).toBe(true);
+      }
     }
   }
 }
