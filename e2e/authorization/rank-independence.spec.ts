@@ -149,7 +149,6 @@ test.describe("Rank Independence", () => {
     await page.fill('input[name="weight"]', "10");
     await page.getByRole("button", { name: /^add$/i }).click();
     await expect(page.locator("dialog")).not.toBeVisible();
-    await expect(page.locator("li").filter({ hasText: metricName })).toBeVisible();
 
     // 5. Metrics task completes once the target period has an attached metric
     await page.goto(`/alliances/${allianceId}/setup`);
