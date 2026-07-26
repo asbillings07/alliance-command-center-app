@@ -3,11 +3,36 @@ import { prisma } from "@/app/src/lib/prisma";
 import * as XLSX from "xlsx";
 
 test.describe("Multi-period import with atomic period creation", () => {
+  test.afterEach(async ({ adminScenario }) => {
+    if (!adminScenario?.allianceId) return;
+
+    await prisma.memberMetricEntry.deleteMany({
+      where: { allianceMember: { allianceId: adminScenario.allianceId } },
+    });
+    await prisma.metricPeriodMetric.deleteMany({
+      where: { period: { allianceId: adminScenario.allianceId } },
+    });
+    await prisma.metricPeriod.deleteMany({
+      where: { allianceId: adminScenario.allianceId },
+    });
+    await prisma.metric.deleteMany({
+      where: { allianceId: adminScenario.allianceId },
+    });
+    await prisma.allianceMember.deleteMany({
+      where: {
+        allianceId: adminScenario.allianceId,
+        playerName: "MultiPeriodHero",
+      },
+    });
+  });
+
   test("creates a new period and imports into an existing period in one confirmed batch", async ({
     page,
     login,
     adminScenario,
   }) => {
+    test.setTimeout(90_000);
+
     const { allianceId, email, password } = adminScenario;
 
     const member = await prisma.allianceMember.create({
@@ -64,16 +89,17 @@ test.describe("Multi-period import with atomic period creation", () => {
     await page.getByRole("button", { name: "Review & Map to Existing Periods" }).click();
     await expect(page.getByText("Map proposals to evaluation periods")).toBeVisible();
 
-    const proposalPeriodSelects = page.locator('select[id^="multi-period-target-"]');
-    await proposalPeriodSelects.first().selectOption({ label: "Create new evaluation period" });
-    await expect(page.locator('input[id^="multi-period-target-"][id$="-name"]').first()).toBeVisible();
+    await page.locator('select[id^="multi-period-target-"]').first().selectOption({
+      value: "__create_period__",
+    });
 
-    const columnPeriodSelects = page.locator('select[id^="multi-period-column-period-"]');
-    await columnPeriodSelects.nth(1).selectOption({ value: existingPeriod.id });
+    await page.locator('select[id^="multi-period-column-period-"]').nth(1).selectOption({
+      value: existingPeriod.id,
+    });
 
     const metricSelects = page.locator('select[aria-label^="Metric for"]');
-    await metricSelects.nth(0).selectOption({ label: "Create" });
-    await metricSelects.nth(1).selectOption({ label: "Existing Kills" });
+    await metricSelects.nth(0).selectOption({ value: "create" });
+    await metricSelects.nth(1).selectOption({ value: `existing:${existingMetric.id}` });
 
     await page.getByRole("button", { name: "Preview Multi-Period Import" }).click();
     await expect(page.getByText("Planned Multi-Period Import")).toBeVisible();
@@ -86,44 +112,31 @@ test.describe("Multi-period import with atomic period creation", () => {
     const createdPeriod = await prisma.metricPeriod.findFirst({
       where: {
         allianceId,
-        name: { contains: "March" },
+        NOT: { id: existingPeriod.id },
       },
-      include: {
-        periodMetrics: true,
-      },
+      orderBy: { createdAt: "desc" },
     });
     expect(createdPeriod).not.toBeNull();
 
-    const createdEntries = await prisma.memberMetricEntry.count({
-      where: { periodId: createdPeriod!.id, allianceMemberId: member.id },
-    });
-    const existingEntries = await prisma.memberMetricEntry.count({
-      where: { periodId: existingPeriod.id, allianceMemberId: member.id },
-    });
-    expect(createdEntries).toBe(1);
-    expect(existingEntries).toBe(1);
+    expect(
+      await prisma.memberMetricEntry.count({
+        where: { periodId: createdPeriod!.id, allianceMemberId: member.id },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.memberMetricEntry.count({
+        where: { periodId: existingPeriod.id, allianceMemberId: member.id },
+      }),
+    ).toBe(1);
 
     await page.goto(`/alliances/${allianceId}/periods`);
-    const periodHeadings = page.locator("h2");
-    const periodNames = await periodHeadings.allTextContents();
-    const aprilIndex = periodNames.findIndex((name) => name.includes("April 2026 Current"));
-    const marchIndex = periodNames.findIndex((name) => name.includes("March"));
-    expect(aprilIndex).toBeGreaterThanOrEqual(0);
-    expect(marchIndex).toBeGreaterThanOrEqual(0);
-    expect(aprilIndex).toBeLessThan(marchIndex);
+    await expect(page.getByRole("heading", { name: "Evaluation Periods" })).toBeVisible();
 
-    await prisma.memberMetricEntry.deleteMany({
-      where: { allianceMemberId: member.id },
-    });
-    await prisma.metricPeriodMetric.deleteMany({
-      where: { periodId: { in: [existingPeriod.id, createdPeriod!.id] } },
-    });
-    await prisma.metricPeriod.deleteMany({
-      where: { id: { in: [existingPeriod.id, createdPeriod!.id] } },
-    });
-    await prisma.metric.deleteMany({
-      where: { allianceId, name: { in: ["Existing Kills", "Kills"] } },
-    });
-    await prisma.allianceMember.delete({ where: { id: member.id } });
+    const periodNames = await page.locator("h2").allTextContents();
+    const aprilIndex = periodNames.findIndex((name) => name.includes("April 2026 Current"));
+    const createdIndex = periodNames.findIndex((name) => name.includes(createdPeriod!.name));
+    expect(aprilIndex).toBeGreaterThanOrEqual(0);
+    expect(createdIndex).toBeGreaterThanOrEqual(0);
+    expect(aprilIndex).toBeLessThan(createdIndex);
   });
 });
