@@ -138,8 +138,10 @@ test.describe("Rank Independence", () => {
       new RegExp(`/alliances/${allianceId}/periods/[^/]+$`),
     );
 
-    await page.getByRole("link", { name: /create more metrics/i }).click();
-    await expect(page).toHaveURL(`/alliances/${allianceId}/metrics`);
+    await page.getByRole("link", { name: /create a metric in the metrics library/i }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/alliances/${allianceId}/metrics\\?returnTo=`),
+    );
     await page.getByRole("button", { name: /create metric/i }).first().click();
     await page.waitForSelector('input[name="name"]', { state: "visible" });
 
@@ -149,14 +151,12 @@ test.describe("Rank Independence", () => {
       'textarea[name="description"]',
       "Metric created by ADMIN to verify setup progression",
     );
-    await page.getByRole("button", { name: /create/i }).last().click();
-    await expect(page.getByText(metricName)).toBeVisible();
-
-    await page.goto(`/alliances/${allianceId}/setup`);
-    await page.getByRole("link", { name: /configure metrics/i }).click();
+    await page.getByRole("button", { name: /create metric/i }).last().click();
+    await page.getByRole("link", { name: /continue configuring this period/i }).click();
     await expect(page).toHaveURL(
       new RegExp(`/alliances/${allianceId}/periods/[^/]+$`),
     );
+
     await page.getByRole("button", { name: "Add Metric" }).click();
     await page.selectOption('select[name="metricId"]', { label: metricName });
     await page.fill('input[name="weight"]', "10");

@@ -18,9 +18,16 @@ type PeriodMetricListProps = {
     readOnly?: boolean;
 };
 
+function buildMetricsLibraryHref(allianceId: string, periodId: string): string {
+    const returnTo = `/alliances/${allianceId}/periods/${periodId}`;
+    return `/alliances/${allianceId}/metrics?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
 export function PeriodMetricList({ metrics, periodId, allianceId, periodMetrics, readOnly = false }: PeriodMetricListProps) {
     const assignedMetricIds = new Set(periodMetrics.map((pm) => pm.metricId));
     const availableMetrics = metrics.filter((m) => !assignedMetricIds.has(m.id));
+    const libraryEmpty = metrics.length === 0;
+    const metricsLibraryHref = buildMetricsLibraryHref(allianceId, periodId);
 
     if (readOnly) {
         return (
@@ -51,7 +58,11 @@ export function PeriodMetricList({ metrics, periodId, allianceId, periodMetrics,
     return (
         <div className="flex flex-col gap-4 w-full max-w-md items-center">
             {periodMetrics.length === 0 ? (
-                <p className="text-text-muted">No metrics have been configured yet. Add the metrics you want leaders to evaluate during this period.</p>
+                <p className="text-text-muted">
+                    {libraryEmpty
+                        ? "No metrics are available yet. Create one in the Metrics Library, then attach it to this period."
+                        : "No metrics have been configured for this period yet. Add a metric below."}
+                </p>
             ) : (
                 <ul className="flex flex-col gap-2 w-full">
                     {periodMetrics.map((pm) => (
@@ -88,16 +99,23 @@ export function PeriodMetricList({ metrics, periodId, allianceId, periodMetrics,
                     mode="create"
                     onClose={() => {}}
                 />
+            ) : libraryEmpty ? (
+                <Link
+                    href={metricsLibraryHref}
+                    className="text-primary-light hover:text-primary underline text-sm"
+                >
+                    Create a metric in the Metrics Library
+                </Link>
             ) : (
                 <p className="text-text-muted text-sm">
-                    All metrics have been assigned to this period.{' '}
+                    All metrics in the library are already assigned to this period.{" "}
                     <Link
-                        href={`/alliances/${allianceId}/metrics`}
+                        href={metricsLibraryHref}
                         className="text-primary-light hover:text-primary underline"
                     >
                         Create more metrics
-                    </Link>{' '}
-                    in the Metrics Library to add them here.
+                    </Link>{" "}
+                    to add them here.
                 </p>
             )}
         </div>

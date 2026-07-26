@@ -1,21 +1,28 @@
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
+import { validateSetupPeriodReturnTo } from "@/app/src/lib/setup/validateSetupPeriodReturnTo";
 import { MetricCard } from "./metricCard";
 import { PageLayout, EmptyState } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 
 type Params = {
     params: Promise<{
         allianceId: string;
-    }>
+    }>;
+    searchParams: Promise<{
+        returnTo?: string;
+    }>;
 }
 
-export default async function MetricsPage({ params }: Params) {
+export default async function MetricsPage({ params, searchParams }: Params) {
     const { allianceId } = await params;
+    const { returnTo: rawReturnTo } = await searchParams;
     await requireAllianceAccess({
         allianceId,
         requiredPermission: Permissions.CONFIGURE_METRICS,
     });
+    const returnTo = validateSetupPeriodReturnTo(rawReturnTo, allianceId);
     const metrics = await prisma.metric.findMany({
         where: {
             allianceId: allianceId,
@@ -34,9 +41,16 @@ export default async function MetricsPage({ params }: Params) {
             title="Metrics Library"
             description="Define the metrics you track for your alliance"
             maxWidth="3xl"
+            action={
+                returnTo ? (
+                    <Button variant="secondary" href={returnTo}>
+                        Continue configuring this period
+                    </Button>
+                ) : undefined
+            }
         >
             <div className="flex flex-col gap-4">
-                <MetricCard allianceId={allianceId} mode="create" />
+                <MetricCard allianceId={allianceId} mode="create" returnTo={returnTo ?? undefined} />
                 {metrics.length === 0 ? (
                     <EmptyState
                         title="No metrics configured"
