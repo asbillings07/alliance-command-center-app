@@ -221,6 +221,12 @@ export const test = base.extend<TestFixtures>({
     await use({ email, password, allianceId: alliance.id, userId: user.id });
 
     // Cleanup: FK-ordered deletion
+    await prisma.memberMetricEntry.deleteMany({
+      where: { allianceMember: { allianceId: alliance.id } },
+    });
+    await prisma.metricPeriodMetric.deleteMany({
+      where: { period: { allianceId: alliance.id } },
+    });
     await prisma.metric.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.metricPeriod.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMember.deleteMany({ where: { allianceId: alliance.id } });
@@ -269,8 +275,14 @@ export const test = base.extend<TestFixtures>({
     await use({ email, password, allianceId: alliance.id, userId: user.id });
 
     // Cleanup: FK-ordered deletion
-    await prisma.metricPeriod.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.memberMetricEntry.deleteMany({
+      where: { allianceMember: { allianceId: alliance.id } },
+    });
+    await prisma.metricPeriodMetric.deleteMany({
+      where: { period: { allianceId: alliance.id } },
+    });
     await prisma.metric.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.metricPeriod.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMember.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.invitation.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMembership.deleteMany({ where: { allianceId: alliance.id } });
