@@ -269,6 +269,7 @@ describe("getAllianceSetupStatus", () => {
       blockedReason:
         "An Admin or Owner must import members before you can import evaluation results.",
     });
+    expect(status.recommendedTask).toBeNull();
   });
 
   it("surfaces archived-only periods for restore/select/create guidance", async () => {
@@ -449,6 +450,27 @@ describe("getAllianceSetupStatus", () => {
     expect(status.isComplete).toBe(true);
     expect(status.requiredTotal).toBe(4);
     expect(status.requiredComplete).toBe(4);
+  });
+
+  it("targets the active evaluation period for configure metrics href", async () => {
+    mockPrisma.metric.count.mockResolvedValue(1);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(0);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+    mockPrisma.metricPeriod.findFirst.mockResolvedValue({
+      id: "period-attach",
+      name: "Season 7",
+      periodMetrics: [],
+    });
+
+    const status = await getAllianceSetupStatus("alliance-1");
+    const metricsTask = status.tasks.find((t) => t.id === "metrics");
+
+    expect(metricsTask?.href).toBe(
+      "/alliances/alliance-1/periods/period-attach",
+    );
   });
 
   it("targets the active evaluation period directly for evaluation results import href", async () => {

@@ -131,30 +131,51 @@ test.describe("Rank Independence", () => {
     expect(progressAfterPeriod).toMatch(/1 of 4 complete/);
     await expect(page.locator("text=Create Evaluation Period").first()).toHaveClass(/text-text-muted/);
 
-    // 4. Metrics requires an attached metric on the target period (not just a library metric)
-    await page.goto(`/alliances/${allianceId}/metrics`);
+    // 4. Metrics requires an attached metric on the target period — start from the task link
+    await page.goto(`/alliances/${allianceId}/setup`);
+    await page.getByRole("link", { name: /configure metrics/i }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/alliances/${allianceId}/periods/[^/]+$`),
+    );
+
+    await page.getByRole("link", { name: /create more metrics/i }).click();
+    await expect(page).toHaveURL(`/alliances/${allianceId}/metrics`);
     await page.getByRole("button", { name: /create metric/i }).first().click();
     await page.waitForSelector('input[name="name"]', { state: "visible" });
 
     const metricName = `E2E Admin Metric ${Date.now()}`;
     await page.fill('input[name="name"]', metricName);
-    await page.fill('textarea[name="description"]', "Metric created by ADMIN to verify setup progression");
+    await page.fill(
+      'textarea[name="description"]',
+      "Metric created by ADMIN to verify setup progression",
+    );
     await page.getByRole("button", { name: /create/i }).last().click();
     await expect(page.getByText(metricName)).toBeVisible();
 
-    await page.goto(`/alliances/${allianceId}/periods`);
-    await page.getByRole("link", { name: "Manage Period Metrics" }).first().click();
+    await page.goto(`/alliances/${allianceId}/setup`);
+    await page.getByRole("link", { name: /configure metrics/i }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/alliances/${allianceId}/periods/[^/]+$`),
+    );
     await page.getByRole("button", { name: "Add Metric" }).click();
     await page.selectOption('select[name="metricId"]', { label: metricName });
     await page.fill('input[name="weight"]', "10");
     await page.getByRole("button", { name: /^add$/i }).click();
     await expect(page.locator("dialog")).not.toBeVisible();
 
-    // 5. Metrics task completes once the target period has an attached metric
-    await page.goto(`/alliances/${allianceId}/setup`);
-    const progressAfterMetrics = await page.locator('text=/\\d+ of \\d+ complete/').textContent();
-    expect(progressAfterMetrics).toMatch(/2 of 4 complete/);
-    await expect(page.locator("text=Configure Metrics").first()).toHaveClass(/text-text-muted/);
+    // 5. Warm client navigation: dashboard reflects updated setup progress without page.goto()
+    await page.getByRole("link", { name: "Dashboard" }).click();
+    await expect(page).toHaveURL(`/alliances/${allianceId}`);
+    await expect(page.getByText(/2 of \d+ complete/i)).toBeVisible();
+    await expect(
+      page.getByText(/Next step:.*Configure Metrics/i),
+    ).not.toBeVisible();
+
+    await page.getByRole("link", { name: /continue setup/i }).click();
+    await expect(page).toHaveURL(`/alliances/${allianceId}/setup`);
+    await expect(page.locator("text=Configure Metrics").first()).toHaveClass(
+      /text-text-muted/,
+    );
 
     // 6. Negative assertion: ADMIN cannot manage leadership
     await page.goto(`/alliances/${allianceId}/settings/invitations`);

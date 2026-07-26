@@ -277,6 +277,14 @@ export async function getAllianceSetupStatus(
       counts,
     );
 
+    if (definition.id === "metrics") {
+      if (targetPeriod) {
+        href = `/alliances/${allianceId}/periods/${targetPeriod.id}`;
+      } else {
+        href = `/alliances/${allianceId}/periods`;
+      }
+    }
+
     if (definition.id === "data" && targetPeriod) {
       const hasAssignedMetrics = targetPeriod.periodMetrics.length > 0;
       const canProvisionMetrics = Boolean(
@@ -304,7 +312,8 @@ export async function getAllianceSetupStatus(
 
   const completedCount = tasks.filter((t) => t.completed).length;
   const totalCount = tasks.length;
-  const recommendedTask = tasks.find((t) => !t.completed) ?? null;
+  const recommendedTask =
+    tasks.find((t) => !t.completed && t.actionable) ?? null;
 
   return {
     tasks,
