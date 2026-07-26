@@ -1,6 +1,7 @@
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
+import { validateSetupImportReturnTo } from "@/app/src/lib/setup/validateSetupImportReturnTo";
 import { RosterImportForm } from "./RosterImportForm";
 import { PageLayout, Card, BackToSetupLink } from "@/app/src/components";
 import { TourAutoStart } from "@/app/src/components/client";
@@ -9,14 +10,20 @@ type Params = {
     params: Promise<{
         allianceId: string;
     }>;
+    searchParams: Promise<{
+        returnTo?: string;
+    }>;
 };
 
-export default async function MemberImportPage({ params }: Params) {
+export default async function MemberImportPage({ params, searchParams }: Params) {
     const { allianceId } = await params;
+    const { returnTo: rawReturnTo } = await searchParams;
     await requireAllianceAccess({
         allianceId,
         requiredPermission: Permissions.IMPORT_MEMBERS,
     });
+
+    const returnTo = validateSetupImportReturnTo(rawReturnTo, allianceId);
 
     const existingMembersRaw = await prisma.allianceMember.findMany({
         where: { allianceId },
@@ -51,6 +58,7 @@ export default async function MemberImportPage({ params }: Params) {
                     <RosterImportForm
                         allianceId={allianceId}
                         existingMembers={existingMembers}
+                        returnTo={returnTo ?? undefined}
                     />
                 </Card.Body>
             </Card>
