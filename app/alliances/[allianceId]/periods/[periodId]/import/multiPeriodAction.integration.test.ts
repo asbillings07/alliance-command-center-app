@@ -133,7 +133,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
       allianceId: alliance.id,
       groups: [
         {
-          targetPeriodId: periodA.id,
+          target: { kind: "existing", periodId: periodA.id },
           mappings: [
             {
               sourceColumnName: "Kills on 3/29",
@@ -143,7 +143,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
           ],
         },
         {
-          targetPeriodId: periodB.id,
+          target: { kind: "existing", periodId: periodB.id },
           mappings: [
             {
               sourceColumnName: "Kills on 4/13",
@@ -176,7 +176,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
         allianceId: setup2.alliance.id,
         groups: [
           {
-            targetPeriodId: setup1.periodA.id,
+            target: { kind: "existing", periodId: setup1.periodA.id },
             mappings: [
               {
                 sourceColumnName: "Kills",
@@ -218,7 +218,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
         allianceId: alliance.id,
         groups: [
           {
-            targetPeriodId: periodA.id,
+            target: { kind: "existing", periodId: periodA.id },
             mappings: [
               {
                 sourceColumnName: "Attached",
@@ -228,7 +228,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
             ],
           },
           {
-            targetPeriodId: periodB.id,
+            target: { kind: "existing", periodId: periodB.id },
             mappings: [
               {
                 sourceColumnName: "Also Attached",
@@ -254,7 +254,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
         allianceId: setup1.alliance.id,
         groups: [
           {
-            targetPeriodId: setup1.periodA.id,
+            target: { kind: "existing", periodId: setup1.periodA.id },
             mappings: [
               {
                 sourceColumnName: "Kills A",
@@ -264,7 +264,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
             ],
           },
           {
-            targetPeriodId: setup1.periodB.id,
+            target: { kind: "existing", periodId: setup1.periodB.id },
             mappings: [
               {
                 sourceColumnName: "Kills B",
@@ -309,7 +309,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
         allianceId: alliance.id,
         groups: [
           {
-            targetPeriodId: periodA.id,
+            target: { kind: "existing", periodId: periodA.id },
             mappings: [
               {
                 sourceColumnName: "Kills A",
@@ -319,7 +319,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
             ],
           },
           {
-            targetPeriodId: periodB.id,
+            target: { kind: "existing", periodId: periodB.id },
             mappings: [
               {
                 sourceColumnName: "Kills B",
@@ -344,7 +344,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
         allianceId: alliance.id,
         groups: [
           {
-            targetPeriodId: periodA.id,
+            target: { kind: "existing", periodId: periodA.id },
             mappings: [
               {
                 sourceColumnName: "Col 1",
@@ -354,7 +354,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
             ],
           },
           {
-            targetPeriodId: periodA.id,
+            target: { kind: "existing", periodId: periodA.id },
             mappings: [
               {
                 sourceColumnName: "Col 2",
@@ -366,5 +366,271 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
         ],
       }),
     ).rejects.toThrow(/only appear once/i);
+  });
+
+  it("creates two new periods and imports into one existing period atomically", async () => {
+    const { alliance, member, periodA, killsA } = await makeTestSetup();
+
+    const result = await importMultiPeriodMetrics({
+      allianceId: alliance.id,
+      groups: [
+        {
+          target: {
+            kind: "create",
+            name: "March 2026",
+            startsAt: "2026-03-01",
+            endsAt: "2026-03-31",
+          },
+          mappings: [
+            {
+              sourceColumnName: "Kills on 3/29",
+              target: { kind: "create", name: "March Kills" },
+              entries: [{ memberId: member.id, rawValue: "100" }],
+            },
+          ],
+        },
+        {
+          target: {
+            kind: "create",
+            name: "April 2026",
+            startsAt: "2026-04-01",
+            endsAt: null,
+          },
+          mappings: [
+            {
+              sourceColumnName: "Kills on 4/13",
+              target: { kind: "create", name: "April Kills" },
+              entries: [{ memberId: member.id, rawValue: "200" }],
+            },
+          ],
+        },
+        {
+          target: { kind: "existing", periodId: periodA.id },
+          mappings: [
+            {
+              sourceColumnName: "Existing period kills",
+              target: { kind: "existing", metricId: killsA.id },
+              entries: [{ memberId: member.id, rawValue: "300" }],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.periods).toHaveLength(3);
+    expect(result.totalCount).toBe(3);
+
+    const createdPeriods = await prisma.metricPeriod.findMany({
+      where: {
+        allianceId: alliance.id,
+        name: { in: ["March 2026", "April 2026"] },
+      },
+    });
+    expect(createdPeriods).toHaveLength(2);
+
+    expect(await prisma.memberMetricEntry.count({ where: { periodId: periodA.id } })).toBe(1);
+    expect(
+      await prisma.memberMetricEntry.count({
+        where: { periodId: { in: createdPeriods.map((period) => period.id) } },
+      }),
+    ).toBe(2);
+  });
+
+  it("rolls back newly-created period rows when a later group fails inside the transaction", async () => {
+    const { alliance, member, periodA, killsA } = await makeTestSetup();
+    const { prisma } = await import("@/app/src/lib/prisma");
+
+    let createManyCalls = 0;
+    const originalTransaction = prisma.$transaction.bind(prisma);
+    vi.spyOn(prisma, "$transaction").mockImplementation(async (fn) =>
+      originalTransaction(async (tx) => {
+        const originalCreateMany = tx.memberMetricEntry.createMany.bind(tx.memberMetricEntry);
+        vi.spyOn(tx.memberMetricEntry, "createMany").mockImplementation((async (args) => {
+          createManyCalls += 1;
+          if (createManyCalls > 1) {
+            throw new Error("Simulated in-transaction insert failure");
+          }
+          return originalCreateMany(args!);
+        }) as typeof tx.memberMetricEntry.createMany);
+        return fn(tx);
+      }),
+    );
+
+    await expect(
+      importMultiPeriodMetrics({
+        allianceId: alliance.id,
+        groups: [
+          {
+            target: {
+              kind: "create",
+              name: "Rollback Period",
+              startsAt: "2026-05-01",
+              endsAt: null,
+            },
+            mappings: [
+              {
+                sourceColumnName: "First group",
+                target: { kind: "create", name: "Rollback Metric" },
+                entries: [{ memberId: member.id, rawValue: "10" }],
+              },
+            ],
+          },
+          {
+            target: { kind: "existing", periodId: periodA.id },
+            mappings: [
+              {
+                sourceColumnName: "Second group",
+                target: { kind: "existing", metricId: killsA.id },
+                entries: [{ memberId: member.id, rawValue: "20" }],
+              },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow();
+
+    expect(
+      await prisma.metricPeriod.count({
+        where: { allianceId: alliance.id, name: "Rollback Period" },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.memberMetricEntry.count({
+        where: { allianceMember: { allianceId: alliance.id } },
+      }),
+    ).toBe(0);
+  });
+
+  it("requires CONFIGURE_PERIODS when creating a period in any group", async () => {
+    const { alliance, member } = await makeTestSetup();
+
+    vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
+      user: { id: "integration-test-user", email: "test@local" },
+      permissions: {
+        canImportMetrics: true,
+        canConfigurePeriods: false,
+        canConfigureMetrics: true,
+      } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["permissions"],
+      membership: { role: "LEADER" } as unknown as Awaited<
+        ReturnType<typeof requireAllianceAccess>
+      >["membership"],
+    });
+
+    await expect(
+      importMultiPeriodMetrics({
+        allianceId: alliance.id,
+        groups: [
+          {
+            target: {
+              kind: "create",
+              name: "Needs Configure Periods",
+              startsAt: null,
+              endsAt: null,
+            },
+            mappings: [
+              {
+                sourceColumnName: "Kills",
+                target: { kind: "create", name: "Kills" },
+                entries: [{ memberId: member.id, rawValue: "1" }],
+              },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/permission to create or attach metrics/i);
+
+    expect(
+      await prisma.metricPeriod.count({
+        where: { allianceId: alliance.id, name: "Needs Configure Periods" },
+      }),
+    ).toBe(0);
+  });
+
+  it("rejects invalid create period fields server-side", async () => {
+    const { alliance, member } = await makeTestSetup();
+
+    await expect(
+      importMultiPeriodMetrics({
+        allianceId: alliance.id,
+        groups: [
+          {
+            target: { kind: "create", name: "   ", startsAt: null, endsAt: null },
+            mappings: [
+              {
+                sourceColumnName: "Kills",
+                target: { kind: "create", name: "Kills" },
+                entries: [{ memberId: member.id, rawValue: "1" }],
+              },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/name is required/i);
+
+    await expect(
+      importMultiPeriodMetrics({
+        allianceId: alliance.id,
+        groups: [
+          {
+            target: {
+              kind: "create",
+              name: "Bad Dates",
+              startsAt: "not-a-date",
+              endsAt: null,
+            },
+            mappings: [
+              {
+                sourceColumnName: "Kills",
+                target: { kind: "create", name: "Kills" },
+                entries: [{ memberId: member.id, rawValue: "1" }],
+              },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/invalid start date/i);
+  });
+
+  it("rejects duplicate create period names in one submission", async () => {
+    const { alliance, member } = await makeTestSetup();
+
+    await expect(
+      importMultiPeriodMetrics({
+        allianceId: alliance.id,
+        groups: [
+          {
+            target: {
+              kind: "create",
+              name: "Same Name",
+              startsAt: "2026-03-01",
+              endsAt: null,
+            },
+            mappings: [
+              {
+                sourceColumnName: "Col 1",
+                target: { kind: "create", name: "Metric A" },
+                entries: [{ memberId: member.id, rawValue: "1" }],
+              },
+            ],
+          },
+          {
+            target: {
+              kind: "create",
+              name: " same name ",
+              startsAt: "2026-04-01",
+              endsAt: null,
+            },
+            mappings: [
+              {
+                sourceColumnName: "Col 2",
+                target: { kind: "create", name: "Metric B" },
+                entries: [{ memberId: member.id, rawValue: "2" }],
+              },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/new period name may only appear once/i);
   });
 });
