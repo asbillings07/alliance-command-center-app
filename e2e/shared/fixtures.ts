@@ -169,13 +169,7 @@ export const test = base.extend<TestFixtures>({
     });
 
     for (const membership of memberships) {
-      // Delete alliance-owned data (FK-ordered, same as adminScenario)
-      await prisma.memberMetricEntry.deleteMany({
-        where: { allianceMember: { allianceId: membership.allianceId } },
-      });
-      await prisma.metricPeriodMetric.deleteMany({
-        where: { period: { allianceId: membership.allianceId } },
-      });
+      // Delete alliance-owned data
       await prisma.allianceMember.deleteMany({ where: { allianceId: membership.allianceId } });
       await prisma.metric.deleteMany({ where: { allianceId: membership.allianceId } });
       await prisma.metricPeriod.deleteMany({ where: { allianceId: membership.allianceId } });
@@ -189,8 +183,8 @@ export const test = base.extend<TestFixtures>({
   },
 
   /**
-   * Database-backed fixture: Creates an alliance with an ADMIN membership and zero periods/metrics.
-   * Used to test period-first setup progression for ADMIN.
+   * Database-backed fixture: Creates an alliance with an ADMIN membership and zero metrics.
+   * Used to test that ADMIN can complete the "Configure Metrics" setup task.
    */
   adminScenario: async ({}, use, testInfo) => {
     const suffix = `${Date.now()}-${testInfo.retry}-${Math.random().toString(36).slice(2, 8)}`;
@@ -227,12 +221,6 @@ export const test = base.extend<TestFixtures>({
     await use({ email, password, allianceId: alliance.id, userId: user.id });
 
     // Cleanup: FK-ordered deletion
-    await prisma.memberMetricEntry.deleteMany({
-      where: { allianceMember: { allianceId: alliance.id } },
-    });
-    await prisma.metricPeriodMetric.deleteMany({
-      where: { period: { allianceId: alliance.id } },
-    });
     await prisma.metric.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.metricPeriod.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMember.deleteMany({ where: { allianceId: alliance.id } });
@@ -281,14 +269,8 @@ export const test = base.extend<TestFixtures>({
     await use({ email, password, allianceId: alliance.id, userId: user.id });
 
     // Cleanup: FK-ordered deletion
-    await prisma.memberMetricEntry.deleteMany({
-      where: { allianceMember: { allianceId: alliance.id } },
-    });
-    await prisma.metricPeriodMetric.deleteMany({
-      where: { period: { allianceId: alliance.id } },
-    });
-    await prisma.metric.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.metricPeriod.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.metric.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMember.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.invitation.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMembership.deleteMany({ where: { allianceId: alliance.id } });

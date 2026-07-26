@@ -1,24 +1,23 @@
 import { prisma } from "./prisma";
 import { type PermissionSet } from "./auth/permissions";
 import { CREATE_PERIOD_TOUR_ID, IMPORT_MEMBERS_TOUR_ID } from "./tours";
-import {
-  resolveTargetPeriod,
-  type TargetPeriod,
-} from "./periods/resolveTargetPeriod";
+import { metricPeriodChronologicalOrderBy } from "./metricPeriodOrdering";
 
 /**
  * Alliance setup represents the readiness of the alliance,
  * not the progress of an individual user.
  *
  * Setup tasks are divided into:
- * - Required: Period, Metrics, Members, and Data must be complete before setup
- *   is considered done
- * - Optional: Team invitation is a "next step" that does not block usage
+ * - Required: Must be completed before the owner can use the dashboard
+ * - Optional: "Next steps" that enhance the alliance but don't block usage
+ *
+ * This separation ensures owners can get started quickly while still
+ * seeing what's left to do.
  */
 
 /**
  * Typical persona completing each setup task.
- *
+ * 
  * "Founding Operator" is an onboarding persona label (not an ACC role).
  * "Admin" and "Leader" refer to ACC authorization roles.
  * The actual authorization is based on the required permission.
@@ -46,8 +45,6 @@ export type SetupTask = {
   href: string;
   typicallyCompletedBy: TypicalRole;
   required: boolean;
-  actionable: boolean;
-  blockedReason?: string;
 };
 
 export type AllianceSetupStatus = {
@@ -60,18 +57,10 @@ export type AllianceSetupStatus = {
   requiredComplete: number;
   requiredTotal: number;
   /**
-   * Latest active evaluation period, or null when none exist (including
-   * archived-only). Consumers can use this with hasArchivedPeriodsOnly to
-   * offer restore/select/create guidance.
-   */
-  targetPeriodId: string | null;
-  /** True when periods exist but none are active. */
-  hasArchivedPeriodsOnly: boolean;
-  /**
    * The single task we recommend the user tackle next: the first applicable
-   * (permission-filtered) incomplete task in definition order. Null when the
-   * user has no remaining applicable tasks. Consumers should use this rather
-   * than re-deriving "what's next" from `tasks`.
+   * (permission-filtered) incomplete task, required tasks first by definition
+   * order. Null when the user has no remaining applicable tasks. Consumers
+   * should use this rather than re-deriving "what's next" from `tasks`.
    */
   recommendedTask: SetupTask | null;
 };
@@ -84,9 +73,6 @@ type SetupCounts = {
   members: number;
   metricEntries: number;
 };
-
-const DATA_BLOCKED_BY_MEMBERS_REASON =
-  "An Admin or Owner must import members before you can import evaluation results.";
 
 /**
  * Fetch all setup-relevant counts in a single database round-trip.
@@ -116,49 +102,41 @@ async function getSetupCounts(allianceId: string): Promise<SetupCounts> {
   return { metrics, periods, memberships, invitations, members, metricEntries };
 }
 
-function buildCompletionByTask(
-  counts: SetupCounts,
-  targetPeriod: TargetPeriod | null,
-  targetPeriodHasEntries: boolean,
-): Record<SetupTaskId, boolean> {
-  return {
-    period: targetPeriod !== null,
-    metrics: (targetPeriod?.periodMetrics.length ?? 0) > 0,
-    members: counts.members > 0,
-    data: targetPeriodHasEntries,
-    team: counts.invitations > 0 || counts.memberships > 1,
-  };
-}
-
-function getTaskActionability(
+function evaluateTaskCompletion(
   taskId: SetupTaskId,
-  counts: SetupCounts,
-): Pick<SetupTask, "actionable" | "blockedReason"> {
-  if (taskId === "data" && counts.members === 0) {
-    return {
-      actionable: false,
-      blockedReason: DATA_BLOCKED_BY_MEMBERS_REASON,
-    };
+  counts: SetupCounts
+): boolean {
+  switch (taskId) {
+    case "metrics":
+      return counts.metrics > 0;
+    case "period":
+      return counts.periods > 0;
+    case "team":
+      // Complete when a pending invitation exists OR a collaborator has joined
+      // Pending = not cancelled, not expired, not yet accepted
+      // memberships > 1 covers accepted invitations (owner + at least one collaborator)
+      return counts.invitations > 0 || counts.memberships > 1;
+    case "members":
+      return counts.members > 0;
+    case "data":
+      return counts.metricEntries > 0;
   }
-  return { actionable: true };
 }
 
 /**
  * Declarative setup task definitions.
  *
- * Tasks are ordered: required setup first (period through data), then optional
- * team invitation last.
+ * Tasks are ordered: required owner tasks first, then optional next steps.
+ *
+ * Required tasks (metrics, period, team) must be completed before the
+ * owner can access the dashboard. Optional tasks (members, data) are
+ * "next steps" that don't block usage.
+ *
+ * Adding future tasks (Discord bot, billing, API keys) requires adding
+ * to this array and updating evaluateTaskCompletion().
  */
 export const SETUP_TASKS: SetupTaskDefinition[] = [
-  {
-    id: "period",
-    label: "Create Evaluation Period",
-    description: "Set up a time-boxed period to track member performance",
-    typicallyCompletedBy: "Founding Operator",
-    href: (id) => `/alliances/${id}/periods`,
-    requiredPermission: "canConfigurePeriods",
-    required: true,
-  },
+  // Required: Core setup that must be done before using the app
   {
     id: "metrics",
     label: "Configure Metrics",
@@ -169,21 +147,12 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
     required: true,
   },
   {
-    id: "members",
-    label: "Import Members",
-    description: "Upload a spreadsheet to add or restore members",
-    typicallyCompletedBy: "Admin",
-    href: (id) => `/alliances/${id}/members/import`,
-    requiredPermission: "canImportMembers",
-    required: true,
-  },
-  {
-    id: "data",
-    label: "Import Evaluation Results",
-    description: "Add member values for metrics in a specific evaluation period",
-    typicallyCompletedBy: "Leader",
+    id: "period",
+    label: "Create Evaluation Period",
+    description: "Set up a time-boxed period to track member performance",
+    typicallyCompletedBy: "Founding Operator",
     href: (id) => `/alliances/${id}/periods`,
-    requiredPermission: "canImportMetrics",
+    requiredPermission: "canConfigurePeriods",
     required: true,
   },
   {
@@ -193,6 +162,25 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
     typicallyCompletedBy: "Founding Operator",
     href: (id) => `/alliances/${id}/settings/invitations`,
     requiredPermission: "canInviteCollaborators",
+    required: true,
+  },
+  // Optional: Next steps that enhance the alliance
+  {
+    id: "members",
+    label: "Import Members",
+    description: "Upload a spreadsheet to add or restore members",
+    typicallyCompletedBy: "Admin",
+    href: (id) => `/alliances/${id}/members/import`,
+    requiredPermission: "canImportMembers",
+    required: false,
+  },
+  {
+    id: "data",
+    label: "Import Evaluation Results",
+    description: "Add member values for metrics in a specific evaluation period",
+    typicallyCompletedBy: "Leader",
+    href: (id) => `/alliances/${id}/periods`,
+    requiredPermission: "canImportMetrics",
     required: false,
   },
 ];
@@ -232,11 +220,44 @@ export const SETUP_TASK_TOURS: Partial<Record<SetupTaskId, string>> = {
  */
 export async function getAllianceSetupStatus(
   allianceId: string,
-  permissions?: PermissionSet,
+  permissions?: PermissionSet
 ): Promise<AllianceSetupStatus> {
   const counts = await getSetupCounts(allianceId);
-  const targetPeriod = await resolveTargetPeriod(allianceId);
-  const hasArchivedPeriodsOnly = targetPeriod === null && counts.periods > 0;
+
+  // Compute actual alliance-wide completion status from ALL tasks
+  // This is independent of what the current user can see/do
+  const allRequiredTasks = SETUP_TASKS.filter((t) => t.required);
+  const allRequiredComplete = allRequiredTasks.filter((t) =>
+    evaluateTaskCompletion(t.id, counts)
+  ).length;
+  const allRequiredTotal = allRequiredTasks.length;
+
+  // Resolve target evaluation period for dynamic task links (e.g. data import)
+  const activePeriod = await prisma.metricPeriod.findFirst({
+    where: { allianceId, active: true },
+    orderBy: metricPeriodChronologicalOrderBy,
+    select: {
+      id: true,
+      periodMetrics: {
+        where: { active: true, metric: { active: true } },
+        select: { metricId: true },
+      },
+    },
+  });
+
+  const targetPeriod =
+    activePeriod ??
+    (await prisma.metricPeriod.findFirst({
+      where: { allianceId },
+      orderBy: metricPeriodChronologicalOrderBy,
+      select: {
+        id: true,
+        periodMetrics: {
+          where: { active: true, metric: { active: true } },
+          select: { metricId: true },
+        },
+      },
+    }));
 
   let targetPeriodHasEntries = false;
   if (targetPeriod) {
@@ -253,39 +274,28 @@ export async function getAllianceSetupStatus(
     }
   }
 
-  const completionByTask = buildCompletionByTask(
-    counts,
-    targetPeriod,
-    targetPeriodHasEntries,
-  );
-
-  const allRequiredTasks = SETUP_TASKS.filter((t) => t.required);
-  const allRequiredComplete = allRequiredTasks.filter(
-    (t) => completionByTask[t.id],
-  ).length;
-  const allRequiredTotal = allRequiredTasks.length;
-
+  // Filter to tasks the user can complete, if permissions provided
+  // This is for display purposes only
   const applicableTasks = permissions
     ? SETUP_TASKS.filter((t) => permissions[t.requiredPermission])
     : SETUP_TASKS;
 
   const tasks: SetupTask[] = applicableTasks.map((definition) => {
     let href = definition.href(allianceId);
-    const completed = completionByTask[definition.id];
-    const { actionable, blockedReason } = getTaskActionability(
-      definition.id,
-      counts,
-    );
+    let completed = evaluateTaskCompletion(definition.id, counts);
 
-    if (definition.id === "data" && targetPeriod) {
-      const hasAssignedMetrics = targetPeriod.periodMetrics.length > 0;
-      const canProvisionMetrics = Boolean(
-        permissions?.canConfigureMetrics || permissions?.canConfigurePeriods,
-      );
-      if (hasAssignedMetrics || canProvisionMetrics) {
-        href = `/alliances/${allianceId}/periods/${targetPeriod.id}/import`;
-      } else {
-        href = `/alliances/${allianceId}/periods/${targetPeriod.id}`;
+    if (definition.id === "data") {
+      if (targetPeriod) {
+        completed = targetPeriodHasEntries;
+        const hasAssignedMetrics = targetPeriod.periodMetrics.length > 0;
+        const canProvisionMetrics = Boolean(
+          permissions?.canConfigureMetrics || permissions?.canConfigurePeriods
+        );
+        if (hasAssignedMetrics || canProvisionMetrics) {
+          href = `/alliances/${allianceId}/periods/${targetPeriod.id}/import`;
+        } else {
+          href = `/alliances/${allianceId}/periods/${targetPeriod.id}`;
+        }
       }
     }
 
@@ -297,24 +307,24 @@ export async function getAllianceSetupStatus(
       href,
       typicallyCompletedBy: definition.typicallyCompletedBy,
       required: definition.required,
-      actionable,
-      blockedReason,
     };
   });
 
   const completedCount = tasks.filter((t) => t.completed).length;
   const totalCount = tasks.length;
+
+  // First applicable incomplete task in definition order (required first).
   const recommendedTask = tasks.find((t) => !t.completed) ?? null;
 
   return {
     tasks,
+    // Setup is complete when ALL required tasks (alliance-wide) are done
     isComplete: allRequiredComplete === allRequiredTotal,
     completedCount,
     totalCount,
+    // These reflect alliance-wide required task status, not user-filtered
     requiredComplete: allRequiredComplete,
     requiredTotal: allRequiredTotal,
-    targetPeriodId: targetPeriod?.id ?? null,
-    hasArchivedPeriodsOnly,
     recommendedTask,
   };
 }

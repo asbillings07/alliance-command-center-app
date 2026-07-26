@@ -15,7 +15,6 @@ import type {
   PeriodMappingReview,
   ColumnPeriodEvidence,
 } from "@/app/src/lib/import/periodProposal";
-import { qualifyingProposals } from "@/app/src/lib/import/periodProposal";
 import {
   buildPlannedMultiPeriodTranslationSummary,
   buildCommittedMultiPeriodTranslationSummary,
@@ -41,7 +40,6 @@ type MetricOption = { id: string; name: string };
 
 import {
   sortAlliancePeriods,
-  pickSuggestedAlliancePeriod,
   type AlliancePeriodOption,
 } from "@/app/src/lib/import/multiPeriodImportUi";
 
@@ -78,7 +76,7 @@ type DuplicateSelections = Record<number, Record<string, number>>;
 
 type MultiPeriodImportFlowProps = {
   allianceId: string;
-  routePeriodId?: string | null;
+  routePeriodId: string;
   alliancePeriods: AlliancePeriodOption[];
   /** Full active alliance metric library — attachable subsets are derived per target period. */
   allianceLibraryMetrics: MetricOption[];
@@ -87,8 +85,6 @@ type MultiPeriodImportFlowProps = {
   canConfigurePeriods: boolean;
   members: MemberOption[];
   review: PeriodMappingReview;
-  /** When provided, overrides qualifyingProposals(review) — used by the guided setup route. */
-  resolvedProposals?: PeriodMappingProposal[];
   parsedWorkbook: ParsedWorkbook;
   selectedSheetIndex: number;
   tableBounds: TableBoundsResult | null;
@@ -397,72 +393,40 @@ function buildColumnMappingsForProposal(
   });
 }
 
-function defaultPeriodTargetForProposal(
-  proposal: PeriodMappingProposal,
-  sortedPeriods: AlliancePeriodOption[],
-  routePeriodId: string | null | undefined,
-): PeriodTargetState {
-  const routePeriod = routePeriodId
-    ? sortedPeriods.find((period) => period.id === routePeriodId)
-    : null;
-  const suggestedPeriod = routePeriod ?? pickSuggestedAlliancePeriod(sortedPeriods);
-
-  if (suggestedPeriod) {
-    return { mode: "existing", periodId: suggestedPeriod.id };
-  }
-
-  if (proposal.source === "manual_fallback") {
-    return { mode: "create", name: "", startsAt: "", endsAt: "" };
-  }
-
-  return createPeriodTargetFromProposal(proposal);
-}
-
 function initialProposalStates(
   proposals: PeriodMappingProposal[],
   sortedPeriods: AlliancePeriodOption[],
-  routePeriodId: string | null | undefined,
+  routePeriodId: string,
   allianceLibraryMetrics: MetricOption[],
   canAttachMetrics: boolean,
   canCreateMetrics: boolean,
 ): ProposalMappingState[] {
-  return proposals.map((proposal) => {
-    const periodTarget = defaultPeriodTargetForProposal(
-      proposal,
-      sortedPeriods,
-      routePeriodId,
-    );
+  const defaultPeriodId =
+    sortedPeriods.find((period) => period.id === routePeriodId)?.id ?? sortedPeriods[0]?.id ?? "";
+  const defaultPeriodTarget: PeriodTargetState = defaultPeriodId
+    ? { mode: "existing", periodId: defaultPeriodId }
+    : { mode: "create", name: "", startsAt: "", endsAt: "" };
 
-    return {
-      proposalId: proposal.proposalId,
-      proposalName: proposal.proposedPeriodName || "Manual import",
-      excluded: false,
-      periodTarget,
-      columnMappings: buildColumnMappingsForProposal(
-        proposal.columns,
-        periodTarget,
-        sortedPeriods,
-        allianceLibraryMetrics,
-        canAttachMetrics,
-        canCreateMetrics,
-      ),
-    };
-  });
+  return proposals.map((proposal) => ({
+    proposalId: proposal.proposalId,
+    proposalName: proposal.proposedPeriodName,
+    excluded: false,
+    periodTarget: defaultPeriodTarget,
+    columnMappings: buildColumnMappingsForProposal(
+      proposal.columns,
+      defaultPeriodTarget,
+      sortedPeriods,
+      allianceLibraryMetrics,
+      canAttachMetrics,
+      canCreateMetrics,
+    ),
+  }));
 }
 
-function requiresConfigurePeriodsPermission(
-  proposals: PeriodMappingProposal[],
-  sortedPeriods: AlliancePeriodOption[],
-  routePeriodId: string | null | undefined,
-): boolean {
-  if (sortedPeriods.length === 0) {
-    return true;
-  }
-
-  return proposals.some((proposal) => {
-    const target = defaultPeriodTargetForProposal(proposal, sortedPeriods, routePeriodId);
-    return target.mode === "create";
-  });
+function qualifyingProposals(review: PeriodMappingReview): PeriodMappingProposal[] {
+  return review.proposals.filter(
+    (p) => p.confidence === "high" || p.confidence === "medium",
+  );
 }
 
 function allActiveColumnMappings(states: ProposalMappingState[]): ColumnMetricMapping[] {
@@ -471,7 +435,7 @@ function allActiveColumnMappings(states: ProposalMappingState[]): ColumnMetricMa
 
 export function MultiPeriodImportFlow({
   allianceId,
-  routePeriodId = null,
+  routePeriodId,
   alliancePeriods,
   allianceLibraryMetrics,
   canCreateMetrics,
@@ -479,7 +443,6 @@ export function MultiPeriodImportFlow({
   canConfigurePeriods,
   members,
   review,
-  resolvedProposals,
   parsedWorkbook,
   selectedSheetIndex,
   tableBounds,
@@ -488,10 +451,7 @@ export function MultiPeriodImportFlow({
 }: MultiPeriodImportFlowProps) {
   const router = useRouter();
   const sortedPeriods = useMemo(() => sortAlliancePeriods(alliancePeriods), [alliancePeriods]);
-  const proposals = useMemo(
-    () => resolvedProposals ?? qualifyingProposals(review),
-    [resolvedProposals, review],
-  );
+  const proposals = useMemo(() => qualifyingProposals(review), [review]);
   const [step, setStep] = useState<FlowStep>("map");
   const [proposalStates, setProposalStates] = useState<ProposalMappingState[]>(() =>
     initialProposalStates(
@@ -988,14 +948,8 @@ export function MultiPeriodImportFlow({
     );
   const hasBlockingDiagnostics = blockingCellIssues.length > 0;
 
-  const blockedByPeriodPermission =
-    !canConfigurePeriods &&
-    requiresConfigurePeriodsPermission(proposals, sortedPeriods, routePeriodId);
-
   if (step === "complete" && importResult) {
     const committed = buildCommittedMultiPeriodTranslationSummary({ result: importResult });
-    const committedPeriods = importResult.periods;
-
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
         <div className="p-6 rounded-lg bg-success/10 border border-success/30 space-y-4">
@@ -1025,78 +979,20 @@ export function MultiPeriodImportFlow({
             </div>
           ))}
         </div>
-        <div className="flex flex-wrap gap-3 justify-end">
-          {committedPeriods.length === 1 ? (
-            <>
-              <Link
-                href={`/alliances/${allianceId}/members?periodId=${committedPeriods[0]!.periodId}`}
-                className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover text-sm font-medium"
-              >
-                View Member Results
-              </Link>
-              <Link
-                href={`/alliances/${allianceId}/periods/${committedPeriods[0]!.periodId}`}
-                className="px-4 py-2 rounded-md border border-border text-text-primary hover:bg-surface-secondary text-sm font-medium"
-              >
-                View Evaluation Period
-              </Link>
-            </>
-          ) : (
-            <>
-              {committedPeriods.map((period) => (
-                <Link
-                  key={period.periodId}
-                  href={`/alliances/${allianceId}/members?periodId=${period.periodId}`}
-                  className="px-4 py-2 rounded-md border border-border text-text-primary hover:bg-surface-secondary text-sm font-medium"
-                >
-                  View Results — {period.periodName}
-                </Link>
-              ))}
-              <Link
-                href={`/alliances/${allianceId}/members`}
-                className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover text-sm font-medium"
-              >
-                View Members
-              </Link>
-              <Link
-                href={`/alliances/${allianceId}/periods`}
-                className="px-4 py-2 rounded-md border border-primary/40 bg-primary/10 text-primary-light hover:bg-primary/20 text-sm font-medium"
-              >
-                View Evaluation Periods
-              </Link>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (blockedByPeriodPermission) {
-    return (
-      <div className="w-full max-w-2xl flex flex-col gap-5">
-        <div className="p-6 rounded-lg bg-surface-secondary border border-border space-y-3">
-          <h3 className="text-lg font-semibold text-text-primary">
-            Evaluation period configuration required
-          </h3>
-          <p className="text-sm text-text-secondary">
-            This import needs a new evaluation period, but your role cannot create or configure
-            periods. Ask an Admin or Owner to create an evaluation period first, or import into an
-            existing period if one is available.
-          </p>
-          {sortedPeriods.length === 0 && (
-            <p className="text-sm text-text-muted">
-              No active evaluation periods exist for this alliance yet.
-            </p>
-          )}
-        </div>
         <div className="flex gap-3 justify-end">
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 rounded-md border border-border cursor-pointer"
+            className="px-4 py-2 rounded-md border border-border text-text-primary hover:bg-surface-secondary cursor-pointer"
           >
-            Back
+            Done
           </button>
+          <Link
+            href={`/alliances/${allianceId}`}
+            className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover text-sm font-medium"
+          >
+            View Dashboard
+          </Link>
         </div>
       </div>
     );
