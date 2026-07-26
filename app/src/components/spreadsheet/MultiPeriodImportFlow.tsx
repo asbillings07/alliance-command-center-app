@@ -585,21 +585,35 @@ export function MultiPeriodImportFlow({
     field: "name" | "startsAt" | "endsAt",
     value: string,
   ) => {
-    updateProposalState(proposalId, (state) => ({
-      ...state,
-      columnMappings: state.columnMappings.map((mapping) => {
-        if (mapping.columnIndex !== columnIndex || mapping.periodTarget.mode !== "create") {
-          return mapping;
-        }
-        return {
-          ...mapping,
-          periodTarget: {
-            ...mapping.periodTarget,
-            [field]: value,
-          },
-        };
-      }),
-    }));
+    updateProposalState(proposalId, (state) => {
+      const owner = state.columnMappings.find((mapping) => mapping.columnIndex === columnIndex);
+      if (!owner || owner.periodTarget.mode !== "create") {
+        return state;
+      }
+
+      const preEditGroupKey = periodTargetGroupKey(owner.periodTarget);
+      const nextTarget: PeriodTargetState = {
+        ...owner.periodTarget,
+        [field]: value,
+      };
+
+      return {
+        ...state,
+        columnMappings: state.columnMappings.map((mapping) => {
+          if (
+            mapping.periodTarget.mode !== "create" ||
+            !mapping.periodTargetExplicit ||
+            periodTargetGroupKey(mapping.periodTarget) !== preEditGroupKey
+          ) {
+            return mapping;
+          }
+          return {
+            ...mapping,
+            periodTarget: nextTarget,
+          };
+        }),
+      };
+    });
   };
 
   const setColumnTarget = (

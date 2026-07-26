@@ -1954,7 +1954,30 @@ describe("ImportForm [component]", () => {
         expect(previewBtn.disabled).toBe(true);
     });
 
-    it("shows one column create form when two columns explicitly choose create with the same prefilled target", async () => {
+    it("keeps explicit columns in one create group after editing the shared owner form", async () => {
+        const editedPeriodName = "Edited March Period";
+        (importMultiPeriodMetrics as ReturnType<typeof vi.fn>).mockResolvedValue({
+            success: true,
+            totalCount: 2,
+            periods: [
+                {
+                    periodId: "created-period-id",
+                    periodName: editedPeriodName,
+                    totalCount: 2,
+                    perMetric: [
+                        { metricId: "new-kills", name: "Kills", count: 1 },
+                        { metricId: "new-power", name: "Hero Power", count: 1 },
+                    ],
+                    created: [
+                        { metricId: "new-kills", name: "Kills" },
+                        { metricId: "new-power", name: "Hero Power" },
+                    ],
+                    attached: [],
+                    reused: [],
+                },
+            ],
+        });
+
         await act(async () => {
             root.render(
                 createElement(ImportForm, {
@@ -1982,7 +2005,7 @@ describe("ImportForm [component]", () => {
         const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
 
         await act(async () => {
-            fireFileUpload(xlsxBuf, "multi_period_duplicate_create_forms.xlsx");
+            fireFileUpload(xlsxBuf, "multi_period_shared_create_group.xlsx");
             await new Promise((r) => setTimeout(r, 50));
         });
 
@@ -2018,9 +2041,64 @@ describe("ImportForm [component]", () => {
             await new Promise((r) => setTimeout(r, 50));
         });
 
-        const columnCreateNameInputs = Array.from(
+        expect(
             container.querySelectorAll('input[id^="multi-period-column-period-"][id$="-name"]'),
-        );
-        expect(columnCreateNameInputs).toHaveLength(1);
+        ).toHaveLength(1);
+
+        const sharedNameInput = container.querySelector(
+            'input[id^="multi-period-column-period-"][id$="-name"]',
+        ) as HTMLInputElement;
+        await act(async () => {
+            setInputValue(sharedNameInput, editedPeriodName);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(
+            container.querySelectorAll('input[id^="multi-period-column-period-"][id$="-name"]'),
+        ).toHaveLength(1);
+
+        const metricSelects = Array.from(container.querySelectorAll("select")).filter((s) =>
+            s.getAttribute("aria-label")?.startsWith("Metric for"),
+        ) as HTMLSelectElement[];
+        expect(metricSelects.length).toBeGreaterThanOrEqual(2);
+        await act(async () => {
+            for (const select of metricSelects) {
+                if (select.value !== "create") {
+                    selectOptionValue(select, "create");
+                }
+            }
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Multi-Period Import"),
+        ) as HTMLButtonElement;
+        expect(previewBtn.disabled).toBe(false);
+
+        await act(async () => {
+            previewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Planned Multi-Period Import");
+        expect(container.textContent).toContain(editedPeriodName);
+
+        const confirmBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Confirm Multi-Period Import"),
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            confirmBtn.click();
+            await new Promise((r) => setTimeout(r, 100));
+        });
+
+        expect(importMultiPeriodMetrics).toHaveBeenCalledTimes(1);
+        const payload = (importMultiPeriodMetrics as ReturnType<typeof vi.fn>).mock.calls[0][0];
+        expect(payload.groups).toHaveLength(1);
+        expect(payload.groups[0].target).toMatchObject({
+            kind: "create",
+            name: editedPeriodName,
+        });
+        expect(payload.groups[0].mappings).toHaveLength(2);
     });
 });
