@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
+import { metricPeriodChronologicalOrderBy } from "@/app/src/lib/metricPeriodOrdering";
 import { PageLayout, Card, Badge, SetupProgressCard } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 
@@ -37,10 +38,7 @@ export default async function AlliancePage({ params }: Params) {
           allianceId,
           active: true,
         },
-        orderBy: [
-          { createdAt: "desc" },
-          { id: "desc" },
-        ],
+        orderBy: metricPeriodChronologicalOrderBy,
         include: {
           periodMetrics: {
             where: {

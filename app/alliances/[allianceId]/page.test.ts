@@ -49,6 +49,7 @@ vi.mock("@/app/src/lib/prisma", () => ({
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import AlliancePage from "./page";
+import { metricPeriodChronologicalOrderBy } from "@/app/src/lib/metricPeriodOrdering";
 
 describe("AllianceDashboardPage", () => {
   beforeEach(() => {
@@ -163,10 +164,7 @@ describe("AllianceDashboardPage", () => {
         allianceId: "all_1",
         active: true,
       },
-      orderBy: [
-        { createdAt: "desc" },
-        { id: "desc" },
-      ],
+      orderBy: metricPeriodChronologicalOrderBy,
       include: {
         periodMetrics: {
           where: {

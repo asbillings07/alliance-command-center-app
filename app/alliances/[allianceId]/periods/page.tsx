@@ -5,6 +5,7 @@ import { MetricPeriodCard } from "./metricPeriodCard";
 import { PageLayout, EmptyState, BackToSetupLink } from "@/app/src/components";
 import { TourButton, TourAutoStart } from "@/app/src/components/client";
 import { createPeriodTour } from "@/app/src/lib/tours";
+import { metricPeriodChronologicalOrderBy } from "@/app/src/lib/metricPeriodOrdering";
 
 type Params = {
     params: Promise<{
@@ -23,9 +24,7 @@ export default async function PeriodsPage({ params }: Params) {
         where: {
             allianceId: allianceId,
         },
-        orderBy: {
-            createdAt: "desc",
-        },
+        orderBy: metricPeriodChronologicalOrderBy,
         include: {
             periodMetrics: {
                 include: {
