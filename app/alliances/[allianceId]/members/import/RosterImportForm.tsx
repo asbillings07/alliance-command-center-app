@@ -44,6 +44,7 @@ type ExistingMember = {
 type RosterImportFormProps = {
   allianceId: string;
   existingMembers: ExistingMember[];
+  returnTo?: string;
 };
 
 type ImportStep = "upload" | "preview" | "complete";
@@ -77,7 +78,7 @@ function validateMemberThp(rawThp: string): { parsedThp?: number; thpError?: str
   return { parsedThp: parsed.value, thpError: undefined };
 }
 
-export function RosterImportForm({ allianceId, existingMembers }: RosterImportFormProps) {
+export function RosterImportForm({ allianceId, existingMembers, returnTo }: RosterImportFormProps) {
   const router = useRouter();
   const [step, setStep] = useState<ImportStep>("upload");
   const [error, setError] = useState<string | null>(null);
@@ -972,6 +973,14 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
           >
             Import More Members
           </button>
+          {returnTo && (
+            <Link
+              href={returnTo}
+              className="px-4 py-2 rounded-md border border-primary text-primary hover:bg-primary/10 inline-block text-center font-medium"
+            >
+              Continue Setup
+            </Link>
+          )}
           <Link
             href={`/alliances/${allianceId}/members`}
             className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover inline-block text-center font-medium"
