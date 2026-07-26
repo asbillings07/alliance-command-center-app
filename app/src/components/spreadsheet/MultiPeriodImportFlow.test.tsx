@@ -1,0 +1,413 @@
+/** @vitest-environment jsdom */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import {
+  MultiPeriodImportFlow,
+  CREATE_PERIOD_SELECT_VALUE,
+} from "./MultiPeriodImportFlow";
+import {
+  buildManualFallbackProposal,
+  buildPeriodMappingReview,
+  resolveImportProposals,
+  type PeriodMappingReview,
+} from "@/app/src/lib/import/periodProposal";
+import type { ParsedWorkbook } from "@/app/src/lib/workbookParser";
+import type { TableBoundsResult } from "@/app/src/lib/memberMatcher";
+import { detectTableBounds, analyzeRows, cellAddress } from "@/app/src/lib/memberMatcher";
+
+const mockRefresh = vi.fn();
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    refresh: mockRefresh,
+  }),
+}));
+
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...props
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) =>
+    createElement("a", { href, ...props }, children),
+}));
+
+vi.mock(
+  "@/app/alliances/[allianceId]/periods/[periodId]/import/multiPeriodAction",
+  () => ({
+    importMultiPeriodMetrics: vi.fn(),
+  }),
+);
+
+(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+let container: HTMLDivElement;
+let root: Root;
+
+beforeEach(() => {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  vi.clearAllMocks();
+});
+
+afterEach(async () => {
+  await act(async () => {
+    root.unmount();
+  });
+  container.remove();
+});
+
+const allianceId = "alliance-1";
+const members = [
+  { id: "m1", playerName: "Dragon" },
+  { id: "m2", playerName: "Phoenix" },
+];
+const allianceLibraryMetrics = [
+  { id: "lib-kills", name: "Kills" },
+  { id: "met1", name: "Kill Points" },
+];
+
+function buildWorkbookFromRows(rows: string[][]): ParsedWorkbook {
+  return {
+    fileName: "test.xlsx",
+    format: "xlsx",
+    date1904: false,
+    defaultSheetIndex: 0,
+    sheets: [
+      {
+        name: "March 2026",
+        index: 0,
+        visibility: "visible",
+        rows,
+        cellDates: {},
+        issues: [],
+      },
+    ],
+  };
+}
+
+function buildMultiPeriodReview(): PeriodMappingReview {
+  return buildPeriodMappingReview({
+    sheetName: "March 2026",
+    headerRowIndex: 0,
+    headers: [
+      {
+        columnIndex: 0,
+        headerText: "Player",
+        headerAddress: "A1",
+        isPlayerColumn: true,
+      },
+      {
+        columnIndex: 1,
+        headerText: "Kills on 3/29",
+        headerAddress: "B1",
+        isNumeric: true,
+      },
+      {
+        columnIndex: 2,
+        headerText: "Kills on 4/13",
+        headerAddress: "C1",
+        isNumeric: true,
+      },
+    ],
+  });
+}
+
+function buildTableContext(workbook: ParsedWorkbook) {
+  const sheet = workbook.sheets[0]!;
+  const bounds = detectTableBounds(sheet.rows);
+  const analyzed = analyzeRows(sheet.rows, bounds, 0);
+  return {
+    tableBounds: analyzed.tableBounds ?? bounds,
+    playerColumnIndex: analyzed.columns.find((c) => c.name === "Player")?.index ?? 0,
+  };
+}
+
+async function selectOptionValue(select: HTMLSelectElement, nextValue: string) {
+  await act(async () => {
+    const nativeSelectValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLSelectElement.prototype,
+      "value",
+    )?.set;
+    nativeSelectValueSetter?.call(select, nextValue);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 10));
+  });
+}
+
+function renderFlow(props: Partial<React.ComponentProps<typeof MultiPeriodImportFlow>> & {
+  review: PeriodMappingReview;
+  parsedWorkbook: ParsedWorkbook;
+  tableBounds: TableBoundsResult;
+  playerColumnIndex: number;
+}) {
+  const defaults = {
+    allianceId,
+    routePeriodId: null,
+    alliancePeriods: [],
+    allianceLibraryMetrics,
+    canCreateMetrics: true,
+    canAttachMetrics: true,
+    canConfigurePeriods: true,
+    members,
+    selectedSheetIndex: 0,
+    onCancel: vi.fn(),
+  };
+  return act(async () => {
+    root.render(createElement(MultiPeriodImportFlow, { ...defaults, ...props }));
+    await new Promise((r) => setTimeout(r, 20));
+  });
+}
+
+describe("MultiPeriodImportFlow [component]", () => {
+  it("defaults each proposal to distinct create targets when no alliance periods exist", async () => {
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Kills on 3/29", "Kills on 4/13"],
+      ["Dragon", "1500", "2000"],
+    ]);
+    const review = buildMultiPeriodReview();
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    const nameInputs = Array.from(
+      container.querySelectorAll('input[id^="multi-period-target-"][id$="-name"]'),
+    ) as HTMLInputElement[];
+    expect(nameInputs.length).toBeGreaterThanOrEqual(2);
+    const names = nameInputs.map((input) => input.value.trim()).filter(Boolean);
+    expect(new Set(names).size).toBe(2);
+    expect(names.some((name) => name.includes("Mar 29"))).toBe(true);
+    expect(names.some((name) => name.includes("Apr 13"))).toBe(true);
+  });
+
+  it("pre-fills suggested existing period but keeps it editable", async () => {
+    const existingPeriodId = "period-existing";
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Kills on 3/29"],
+      ["Dragon", "1500"],
+    ]);
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: "A1",
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "Kills on 3/29",
+          headerAddress: "B1",
+          isNumeric: true,
+        },
+      ],
+    });
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      alliancePeriods: [
+        {
+          id: "older-period",
+          name: "Older Period",
+          startsAt: "2026-01-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [],
+        },
+        {
+          id: existingPeriodId,
+          name: "Latest Period",
+          startsAt: "2026-03-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [],
+        },
+      ],
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    const periodSelect = container.querySelector(
+      'select[id^="multi-period-target-"]',
+    ) as HTMLSelectElement;
+    expect(periodSelect.value).toBe(existingPeriodId);
+
+    await selectOptionValue(periodSelect, CREATE_PERIOD_SELECT_VALUE);
+    const nameInput = container.querySelector(
+      'input[id^="multi-period-target-"][id$="-name"]',
+    ) as HTMLInputElement;
+    expect(nameInput.value.trim().length).toBeGreaterThan(0);
+  });
+
+  it("synthesizes manual_fallback proposal with low confidence and classified columns", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "Results",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: cellAddress(0, 0),
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "Kill Points",
+          headerAddress: cellAddress(0, 1),
+          isNumeric: true,
+        },
+        {
+          columnIndex: 2,
+          headerText: "% Change",
+          headerAddress: cellAddress(0, 2),
+          isNumeric: true,
+        },
+      ],
+    });
+
+    expect(review.mode).toBe("insufficient_evidence");
+    const resolved = resolveImportProposals(review);
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]!.source).toBe("manual_fallback");
+    expect(resolved[0]!.confidence).toBe("low");
+    expect(resolved[0]!.dateKind).toBe("unspecified");
+    expect(resolved[0]!.startsAtISO).toBeNull();
+    expect(resolved[0]!.columns.map((c) => c.headerText)).toEqual(["Kill Points"]);
+  });
+
+  it("blocks leaders without CONFIGURE_PERIODS before mapping when a new period is required", async () => {
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Kill Points"],
+      ["Dragon", "1500"],
+    ]);
+    const review = buildPeriodMappingReview({
+      sheetName: "Results",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: "A1",
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "Kill Points",
+          headerAddress: "B1",
+          isNumeric: true,
+        },
+      ],
+    });
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      canConfigurePeriods: false,
+      canCreateMetrics: true,
+      canAttachMetrics: false,
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    expect(container.textContent).toContain("Evaluation period configuration required");
+    expect(container.textContent).toContain("Ask an Admin or Owner");
+    expect(container.querySelector('select[aria-label^="Metric for"]')).toBeNull();
+  });
+
+  it("allows import-capable roles to map into an existing period without CONFIGURE_PERIODS", async () => {
+    const existingPeriodId = "period-existing";
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Kills on 3/29"],
+      ["Dragon", "1500"],
+    ]);
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: "A1",
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "Kills on 3/29",
+          headerAddress: "B1",
+          isNumeric: true,
+        },
+      ],
+    });
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      canConfigurePeriods: false,
+      canCreateMetrics: false,
+      canAttachMetrics: false,
+      alliancePeriods: [
+        {
+          id: existingPeriodId,
+          name: "Existing Period",
+          startsAt: "2026-03-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [{ id: "met1", name: "Kill Points" }],
+        },
+      ],
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    expect(container.textContent).not.toContain("Evaluation period configuration required");
+    expect(container.querySelector('select[id^="multi-period-target-"]')).not.toBeNull();
+  });
+});
+
+describe("buildManualFallbackProposal", () => {
+  it("keeps derived columns out of the fallback proposal", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "Results",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: cellAddress(0, 0),
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "VS Score",
+          headerAddress: cellAddress(0, 1),
+          isNumeric: true,
+        },
+        {
+          columnIndex: 2,
+          headerText: "Rank #",
+          headerAddress: cellAddress(0, 2),
+          isNumeric: true,
+        },
+      ],
+    });
+
+    const fallback = buildManualFallbackProposal(review);
+    expect(fallback.columns.map((c) => c.headerText)).toEqual(["VS Score"]);
+  });
+});
