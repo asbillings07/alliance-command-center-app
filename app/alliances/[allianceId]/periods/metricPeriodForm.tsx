@@ -2,9 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { createMetricPeriod, editMetricPeriod } from "./action";
-import { MetricPeriodFields } from "./MetricPeriodFields";
 import { Card } from "@/app/src/components";
-import { Button } from "@/app/src/components/client";
+import { Button, Input, Label } from "@/app/src/components/client";
 
 type MetricPeriodFormProps = {
   allianceId: string;
@@ -14,7 +13,6 @@ type MetricPeriodFormProps = {
   startsAt?: string;
   endsAt?: string;
   onCancel: () => void;
-  onSuccess?: (periodId: string) => void;
 };
 
 function formatDateForInput(date: string | null | undefined): string {
@@ -26,17 +24,13 @@ export function MetricPeriodForm({
   allianceId,
   mode,
   periodId,
-  name: initialName = "",
-  startsAt: initialStartsAt,
-  endsAt: initialEndsAt,
+  name = "",
+  startsAt,
+  endsAt,
   onCancel,
-  onSuccess,
 }: MetricPeriodFormProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [name, setName] = useState(initialName);
-  const [startsAt, setStartsAt] = useState(formatDateForInput(initialStartsAt));
-  const [endsAt, setEndsAt] = useState(formatDateForInput(initialEndsAt));
 
   const submitLabel = mode === "create" ? "Create Period" : "Update Period";
   const pendingLabel = mode === "create" ? "Creating..." : "Updating...";
@@ -47,20 +41,10 @@ export function MetricPeriodForm({
     const formData = new FormData(e.currentTarget);
 
     startTransition(async () => {
-      if (mode === "create") {
-        const result = await createMetricPeriod(formData);
-        if (!result.success) {
-          setError(result.error);
-        } else if (onSuccess) {
-          onSuccess(result.periodId);
-        } else {
-          onCancel();
-        }
-        return;
-      }
+      const action = mode === "create" ? createMetricPeriod : editMetricPeriod;
+      const result = await action(formData);
 
-      const result = await editMetricPeriod(formData);
-      if (!result.success) {
+      if (result.error) {
         setError(result.error);
       } else {
         onCancel();
@@ -86,15 +70,42 @@ export function MetricPeriodForm({
             </div>
           )}
 
-          <MetricPeriodFields
-            name={name}
-            startsAt={startsAt}
-            endsAt={endsAt}
-            onNameChange={setName}
-            onStartsAtChange={setStartsAt}
-            onEndsAtChange={setEndsAt}
-            disabled={isPending}
-          />
+          <div>
+            <Label htmlFor="name" required>Name</Label>
+            <Input
+              id="name"
+              name="name"
+              type="text"
+              defaultValue={name}
+              disabled={isPending}
+              placeholder="e.g., Season 7, Q1 2026"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="startsAt">Start Date (optional)</Label>
+              <Input
+                id="startsAt"
+                name="startsAt"
+                type="date"
+                defaultValue={formatDateForInput(startsAt)}
+                disabled={isPending}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="endsAt">End Date (optional)</Label>
+              <Input
+                id="endsAt"
+                name="endsAt"
+                type="date"
+                defaultValue={formatDateForInput(endsAt)}
+                disabled={isPending}
+              />
+            </div>
+          </div>
 
           <div className="flex gap-2 justify-end">
             <Button
