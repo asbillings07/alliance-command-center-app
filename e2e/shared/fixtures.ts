@@ -183,8 +183,8 @@ export const test = base.extend<TestFixtures>({
   },
 
   /**
-   * Database-backed fixture: Creates an alliance with an ADMIN membership and zero metrics.
-   * Used to test that ADMIN can complete the "Configure Metrics" setup task.
+   * Database-backed fixture: Creates an alliance with an ADMIN membership and zero periods/metrics.
+   * Used to test period-first setup progression for ADMIN.
    */
   adminScenario: async ({}, use, testInfo) => {
     const suffix = `${Date.now()}-${testInfo.retry}-${Math.random().toString(36).slice(2, 8)}`;
