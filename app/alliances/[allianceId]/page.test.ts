@@ -165,12 +165,15 @@ describe("AllianceDashboardPage", () => {
         active: true,
       },
       orderBy: metricPeriodChronologicalOrderBy,
-      include: {
+      select: {
+        id: true,
+        name: true,
         periodMetrics: {
           where: {
             active: true,
             metric: { active: true },
           },
+          select: { metricId: true },
         },
       },
     });
