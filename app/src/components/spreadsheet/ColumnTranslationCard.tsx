@@ -107,7 +107,7 @@ export function ColumnTranslationCard({
                 Period-like Column Detected (&quot;{translation.sourceColumnName}&quot;)
               </p>
               <p className="text-amber-800/80 dark:text-amber-200/80">
-                This header resembles an evaluation period name. Single-period import imports metrics into the current active period.
+                This header resembles an evaluation period name. Single-period import imports metrics into the selected destination period.
               </p>
               <div className="flex items-center space-x-2 pt-1">
                 <button

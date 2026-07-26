@@ -72,7 +72,7 @@ export function SpreadsheetDataShapeGuide({ type, periodName }: SpreadsheetDataS
           <p className="leading-relaxed">
             {type === "metrics" ? (
               <>
-                Alliance Command Center expects a tabular sheet with a column for player names (auto-detected from headers like <strong>Player</strong>, <strong>Member</strong>, <strong>Name</strong>, or <strong>IGN</strong>) and numeric metric result columns for the active period.
+                Alliance Command Center expects a tabular sheet with a column for player names (auto-detected from headers like <strong>Player</strong>, <strong>Member</strong>, <strong>Name</strong>, or <strong>IGN</strong>) and numeric metric result columns for the selected destination period.
               </>
             ) : (
               <>
