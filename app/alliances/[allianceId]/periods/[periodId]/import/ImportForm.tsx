@@ -40,6 +40,10 @@ import { ColumnTranslationCard } from "@/app/src/components/spreadsheet/ColumnTr
 import { SpreadsheetTranslationSummary } from "@/app/src/components/spreadsheet/SpreadsheetTranslationSummary";
 import { PeriodProposalReview } from "@/app/src/components/spreadsheet/PeriodProposalReview";
 import {
+  MultiPeriodImportFlow,
+  type AlliancePeriodOption,
+} from "@/app/src/components/spreadsheet/MultiPeriodImportFlow";
+import {
   type ColumnTarget,
   type ColumnTranslation,
   extractColumnSamples,
@@ -68,6 +72,7 @@ type ImportFormProps = {
   members: MemberOption[];
   metrics: MetricOption[];
   libraryMetrics: MetricOption[];
+  alliancePeriods: AlliancePeriodOption[];
   canCreateMetrics: boolean;
   canAttachMetrics: boolean;
 };
@@ -243,9 +248,10 @@ function ValueIssueNotice({
   );
 }
 
-export function ImportForm({ periodId, periodName, allianceId, members, metrics, libraryMetrics, canCreateMetrics, canAttachMetrics }: ImportFormProps) {
+export function ImportForm({ periodId, periodName, allianceId, members, metrics, libraryMetrics, alliancePeriods, canCreateMetrics, canAttachMetrics }: ImportFormProps) {
   const router = useRouter();
   const [step, setStep] = useState<ImportStep>("upload");
+  const [multiPeriodFlowActive, setMultiPeriodFlowActive] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [showNumbersGuide, setShowNumbersGuide] = useState(false);
   const [parseErrorCode, setParseErrorCode] = useState<SpreadsheetParseErrorCode | null>(null);
@@ -942,6 +948,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     setParseErrors([]);
     setError(null);
     setImportResult(null);
+    setMultiPeriodFlowActive(false);
   };
 
   const handleBack = () => {
@@ -954,6 +961,33 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       setError(null);
     }
   };
+
+  // Multi-period mapping flow (PR 2)
+  if (
+    multiPeriodFlowActive &&
+    periodProposalReview &&
+    parsedWorkbook &&
+    autoDetectedPlayerColumn &&
+    step === "select"
+  ) {
+    return (
+      <MultiPeriodImportFlow
+        allianceId={allianceId}
+        routePeriodId={periodId}
+        alliancePeriods={alliancePeriods}
+        libraryMetrics={libraryMetrics}
+        canCreateMetrics={canCreateMetrics}
+        canAttachMetrics={canAttachMetrics}
+        members={members}
+        review={periodProposalReview}
+        parsedWorkbook={parsedWorkbook}
+        selectedSheetIndex={selectedSheetIndex}
+        tableBounds={tableBounds}
+        playerColumnIndex={autoDetectedPlayerColumn.index}
+        onCancel={() => setMultiPeriodFlowActive(false)}
+      />
+    );
+  }
 
   // Complete step
   if (step === "complete" && importResult) {
@@ -1269,6 +1303,11 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
               destinationPeriodName={periodName}
               onDecline={() => setDeclinedMultiPeriod(true)}
               onDismissSuggestion={() => setDismissedPeriodSuggestion(true)}
+              onAcceptReview={
+                periodProposalReview.mode === "multi_period" && alliancePeriods.length > 0
+                  ? () => setMultiPeriodFlowActive(true)
+                  : undefined
+              }
             />
           )}
 

@@ -309,7 +309,7 @@ export function PeriodProposalReview({
             onClick={onAcceptReview}
             className="px-3 py-1.5 bg-primary text-white hover:bg-primary-hover rounded-md font-medium transition-colors cursor-pointer"
           >
-            Review Multi-Period Mappings
+            Review & Map to Existing Periods
           </button>
         </div>
       )}

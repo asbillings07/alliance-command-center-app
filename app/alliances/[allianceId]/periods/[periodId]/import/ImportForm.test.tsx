@@ -22,7 +22,12 @@ vi.mock("./action", () => ({
     importMemberMetrics: vi.fn(),
 }));
 
+vi.mock("./multiPeriodAction", () => ({
+    importMultiPeriodMetrics: vi.fn(),
+}));
+
 import { importMemberMetrics } from "./action";
+import { importMultiPeriodMetrics } from "./multiPeriodAction";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -100,6 +105,15 @@ describe("ImportForm [component]", () => {
     const metrics = [
         { id: "met1", name: "Kill Points" },
     ];
+    const alliancePeriods = [
+        {
+            id: periodId,
+            name: periodName,
+            startsAt: null,
+            endsAt: null,
+            metrics,
+        },
+    ];
 
     it("displays persistent destination period banner, scope notice, and sr-only accessible file input", async () => {
         await act(async () => {
@@ -111,6 +125,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
                 })
@@ -150,6 +165,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
                 })
@@ -212,6 +228,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
                 })
@@ -246,6 +263,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
                 })
@@ -281,6 +299,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
                 })
@@ -318,6 +337,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
                 })
@@ -376,6 +396,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
                 })
@@ -417,6 +438,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
                 })
@@ -468,6 +490,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
                 })
@@ -497,6 +520,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
                 })
@@ -540,6 +564,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: false,
                 })
@@ -590,6 +615,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: false,
                 })
@@ -633,6 +659,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics: [{ id: "m-vs", name: "VS Score" }],
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: false,
                 })
@@ -681,6 +708,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: false,
                 })
@@ -731,6 +759,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
                 })
@@ -776,6 +805,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
                 })
@@ -852,6 +882,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
                 })
@@ -918,6 +949,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
                 })
@@ -966,6 +998,267 @@ describe("ImportForm [component]", () => {
         expect(container.textContent).toContain("Destination Period: Week 28 Evaluation");
     });
 
+    it("opens multi-period mapping flow only for multi_period mode", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    alliancePeriods,
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kills on 3/29", "Kills on 4/13", "% Change"],
+            ["Dragon", "1500", "2000", "33%"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "multi_period_flow.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const reviewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Review & Map to Existing Periods"),
+        ) as HTMLButtonElement;
+        expect(reviewBtn).not.toBeUndefined();
+
+        await act(async () => {
+            reviewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Map proposals to existing evaluation periods");
+        expect(container.textContent).toContain("Target evaluation period");
+        expect(container.textContent).toContain("Preview Multi-Period Import");
+    });
+
+    it("previews multi-period import grouped by period and confirms with grouped server payload", async () => {
+        const secondPeriodId = "period-2";
+        const secondPeriodName = "Week 29 Evaluation";
+        const twoAlliancePeriods = [
+            {
+                id: periodId,
+                name: periodName,
+                startsAt: "2026-03-29T00:00:00.000Z",
+                endsAt: "2026-04-05T00:00:00.000Z",
+                metrics,
+            },
+            {
+                id: secondPeriodId,
+                name: secondPeriodName,
+                startsAt: "2026-04-06T00:00:00.000Z",
+                endsAt: "2026-04-13T00:00:00.000Z",
+                metrics,
+            },
+        ];
+
+        (importMultiPeriodMetrics as ReturnType<typeof vi.fn>).mockResolvedValue({
+            success: true,
+            totalCount: 4,
+            periods: [
+                {
+                    periodId,
+                    periodName,
+                    totalCount: 2,
+                    perMetric: [{ metricId: "new-kills", name: "Kills on 3/29", count: 2 }],
+                    created: [{ metricId: "new-kills", name: "Kills on 3/29" }],
+                    attached: [],
+                    reused: [],
+                },
+                {
+                    periodId: secondPeriodId,
+                    periodName: secondPeriodName,
+                    totalCount: 2,
+                    perMetric: [{ metricId: "new-kills-2", name: "Kills on 4/13", count: 2 }],
+                    created: [{ metricId: "new-kills-2", name: "Kills on 4/13" }],
+                    attached: [],
+                    reused: [],
+                },
+            ],
+        });
+
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    alliancePeriods: twoAlliancePeriods,
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kills on 3/29", "Kills on 4/13"],
+            ["Dragon", "1500", "2000"],
+            ["Phoenix", "2300", "3000"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "multi_period_confirm.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const reviewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Review & Map to Existing Periods"),
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            reviewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const periodSelects = Array.from(container.querySelectorAll("select")).filter(
+            (s) => !s.getAttribute("aria-label")?.startsWith("Metric for"),
+        );
+        expect(periodSelects.length).toBeGreaterThanOrEqual(2);
+
+        await act(async () => {
+            (periodSelects[1] as HTMLSelectElement).value = secondPeriodId;
+            periodSelects[1].dispatchEvent(new Event("change", { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const metricSelects = Array.from(container.querySelectorAll("select")).filter((s) =>
+            s.getAttribute("aria-label")?.startsWith("Metric for"),
+        ) as HTMLSelectElement[];
+        expect(metricSelects.length).toBeGreaterThanOrEqual(2);
+
+        await act(async () => {
+            for (const select of metricSelects) {
+                select.value = "create";
+                select.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Multi-Period Import"),
+        ) as HTMLButtonElement;
+        expect(previewBtn.disabled).toBe(false);
+
+        await act(async () => {
+            previewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Planned Multi-Period Import");
+        expect(container.textContent).toContain("no database changes until you confirm");
+        expect(container.textContent).toContain(periodName);
+        expect(container.textContent).toContain(secondPeriodName);
+
+        const confirmBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Confirm Multi-Period Import"),
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            confirmBtn.click();
+            await new Promise((r) => setTimeout(r, 100));
+        });
+
+        expect(importMultiPeriodMetrics).toHaveBeenCalledTimes(1);
+        const payload = (importMultiPeriodMetrics as ReturnType<typeof vi.fn>).mock.calls[0][0];
+        expect(payload.allianceId).toBe(allianceId);
+        expect(payload.groups).toHaveLength(2);
+        expect(payload.groups.map((g: { targetPeriodId: string }) => g.targetPeriodId).sort()).toEqual(
+            [periodId, secondPeriodId].sort(),
+        );
+        expect(container.textContent).toContain("Multi-Period Import Complete");
+    });
+
+    it("allows excluding one proposal and previewing the remaining mapped proposal", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    alliancePeriods,
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kills on 3/29", "Kills on 4/13"],
+            ["Dragon", "1500", "2000"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "multi_period_exclude_proposal.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const reviewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Review & Map to Existing Periods"),
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            reviewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const excludeCheckboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')).filter(
+            (input) => input.closest("label")?.textContent?.includes("Exclude this proposal"),
+        );
+        expect(excludeCheckboxes.length).toBeGreaterThanOrEqual(2);
+
+        await act(async () => {
+            (excludeCheckboxes[1] as HTMLInputElement).click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const metricSelect = container.querySelector(
+            'select[aria-label="Metric for Kills on 3/29"]',
+        ) as HTMLSelectElement;
+        expect(metricSelect).not.toBeNull();
+
+        await act(async () => {
+            metricSelect.value = "create";
+            metricSelect.dispatchEvent(new Event("change", { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Multi-Period Import"),
+        ) as HTMLButtonElement;
+        expect(previewBtn.disabled).toBe(false);
+
+        await act(async () => {
+            previewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Planned Multi-Period Import");
+        expect(container.textContent).toContain("1 periods");
+    });
+
     it("blocks fixed-period mapping until multi-period proposal is explicitly declined", async () => {
         await act(async () => {
             root.render(
@@ -976,6 +1269,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
                 })
@@ -1009,6 +1303,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
                 })
@@ -1042,6 +1337,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
                 })
@@ -1069,6 +1365,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
                 })

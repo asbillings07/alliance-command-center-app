@@ -60,6 +60,34 @@ export default async function ImportPage({ params }: Params) {
     canConfigureMetrics ||
     (canConfigurePeriods && attachableLibraryMetrics.length > 0);
 
+  const alliancePeriodsRaw = await prisma.metricPeriod.findMany({
+    where: { allianceId, active: true },
+    select: {
+      id: true,
+      name: true,
+      startsAt: true,
+      endsAt: true,
+      periodMetrics: {
+        where: { active: true },
+        select: {
+          metric: { select: { id: true, name: true } },
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const alliancePeriods = alliancePeriodsRaw.map((p) => ({
+    id: p.id,
+    name: p.name,
+    startsAt: p.startsAt?.toISOString() ?? null,
+    endsAt: p.endsAt?.toISOString() ?? null,
+    metrics: p.periodMetrics.map((pm) => ({
+      id: pm.metric.id,
+      name: pm.metric.name,
+    })),
+  }));
+
   const alliance = await prisma.alliance.findUnique({
     where: { id: allianceId },
     select: {
@@ -152,6 +180,7 @@ export default async function ImportPage({ params }: Params) {
             members={alliance.allianceMembers}
             metrics={metrics}
             libraryMetrics={attachableLibraryMetrics}
+            alliancePeriods={alliancePeriods}
             canCreateMetrics={canConfigureMetrics}
             canAttachMetrics={canConfigurePeriods}
           />
