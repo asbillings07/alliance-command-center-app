@@ -7,7 +7,7 @@ import {
   isLocaleAmbiguousShorthand,
 } from "./dateHeaderParser";
 import { analyzeDerivedColumn } from "./derivedColumnDetector";
-import { buildPeriodMappingReview } from "./periodProposal";
+import { buildPeriodMappingReview, formatReviewableDateEvidence } from "./periodProposal";
 import { cellAddress } from "@/app/src/lib/memberMatcher";
 import { decodeExcelSerialDate } from "@/app/src/lib/workbookParser";
 
@@ -227,6 +227,114 @@ describe("buildPeriodMappingReview", () => {
     expect(review.proposals[0].startsAtISO).toBe("2026-03-29");
     expect(review.proposals[0].columns[0].parsedDate?.yearSource).toBe("typed_metadata");
     expect(review.mode).toBe("single_period_suggestion");
+  });
+
+  it("prefers typed decoded date over conflicting sheet-name year with visible warning", () => {
+    const decoded = { year: 2026, month: 3, day: 29 };
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2025",
+      headerRowIndex: 0,
+      cellDates: {
+        B1: {
+          address: "B1",
+          rowIndex: 0,
+          columnIndex: 1,
+          formattedText: "3/29",
+          isTypedDate: true,
+          rawNum: 46110,
+          decodedDate: decoded,
+        },
+      },
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills on 3/29", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.proposals).toHaveLength(1);
+    expect(review.proposals[0].startsAtISO).toBe("2026-03-29");
+    expect(review.proposals[0].columns[0].parsedDate?.yearSource).toBe("typed_metadata");
+    expect(
+      review.proposals[0].warnings.some((w) =>
+        w.includes("disagrees with the year inferred from worksheet name \"March 2025\""),
+      ),
+    ).toBe(true);
+  });
+
+  it("preserves typed leap-day date instead of corrupting it with a non-leap sheet year", () => {
+    const decoded = { year: 2028, month: 2, day: 29 };
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex: 0,
+      cellDates: {
+        B1: {
+          address: "B1",
+          rowIndex: 0,
+          columnIndex: 1,
+          formattedText: "2/29",
+          isTypedDate: true,
+          rawNum: 46812,
+          decodedDate: decoded,
+        },
+      },
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills on 2/29", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.proposals).toHaveLength(1);
+    expect(review.proposals[0].startsAtISO).toBe("2028-02-29");
+    expect(review.excludedColumns.some((c) => c.reason === "invalid_date")).toBe(false);
+  });
+
+  it("applies typed metadata to range start only and leaves the parsed end untouched", () => {
+    const decoded = { year: 2026, month: 3, day: 29 };
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2025",
+      headerRowIndex: 0,
+      cellDates: {
+        B1: {
+          address: "B1",
+          rowIndex: 0,
+          columnIndex: 1,
+          formattedText: "3/29",
+          isTypedDate: true,
+          rawNum: 46110,
+          decodedDate: decoded,
+        },
+      },
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills from 3/29-4/13", { isNumeric: true }),
+        header(2, "Kills on 4/13", { isNumeric: true }),
+      ],
+    });
+
+    const rangeProposal = review.proposals.find((p) => p.dateKind === "range");
+    expect(rangeProposal).toBeDefined();
+    expect(rangeProposal?.startsAtISO).toBe("2026-03-29");
+    expect(rangeProposal?.endsAtISO).toBe("2025-04-13");
+    expect(rangeProposal?.columns[0].parsedDate?.end).toEqual({
+      month: 4,
+      day: 13,
+      year: 2025,
+    });
+  });
+
+  it("formats reviewable range evidence with both endpoints visible", () => {
+    const formatted = formatReviewableDateEvidence({
+      kind: "range",
+      start: { month: 3, day: 29 },
+      end: { month: 4, day: 13 },
+      yearSource: "unresolved",
+      ambiguities: [],
+      isLocaleAmbiguous: false,
+      isCalendarValid: true,
+      isReversedRange: false,
+    });
+
+    expect(formatted).toBe("3/29 – 4/13 (year unknown)");
   });
 
   it("keeps locale-ambiguous dates reviewable and invalid dates hard-excluded", () => {

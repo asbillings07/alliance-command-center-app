@@ -1,7 +1,9 @@
 import {
   parseDateHeader,
+  isValidCalendarDate,
   type ParsedDateEvidence,
   type DateHeaderParseResult,
+  type ParsedDateComponent,
 } from "./dateHeaderParser";
 import {
   analyzeDerivedColumn,
@@ -138,9 +140,56 @@ function findTypedDateForHeader(
   );
 }
 
+function formatTypedDateLabel(decoded: { year: number; month: number; day: number }): string {
+  return `${decoded.year}-${String(decoded.month).padStart(2, "0")}-${String(decoded.day).padStart(2, "0")}`;
+}
+
+function weakerYearFromEvidence(evidence: ParsedDateEvidence): number | undefined {
+  if (evidence.yearSource === "header" || evidence.yearSource === "sheet_name") {
+    return evidence.start.year;
+  }
+  return undefined;
+}
+
+function buildTypedConflictWarning(
+  decoded: { year: number; month: number; day: number },
+  evidence: ParsedDateEvidence,
+  sheetName?: string,
+): string | null {
+  const weakerYear = weakerYearFromEvidence(evidence);
+  if (weakerYear === undefined || weakerYear === decoded.year) {
+    return null;
+  }
+
+  if (evidence.yearSource === "sheet_name" && sheetName) {
+    return `Typed Excel date (${formatTypedDateLabel(decoded)}) disagrees with the year inferred from worksheet name "${sheetName}" (${weakerYear}); using the typed Excel date as authoritative.`;
+  }
+
+  if (evidence.yearSource === "header") {
+    return `Typed Excel date (${formatTypedDateLabel(decoded)}) disagrees with the year in the header text (${weakerYear}); using the typed Excel date as authoritative.`;
+  }
+
+  return null;
+}
+
+function calendarValidForEvidence(
+  evidence: Pick<ParsedDateEvidence, "kind" | "start" | "end">,
+): boolean {
+  if (!isValidCalendarDate(evidence.start)) return false;
+  if (evidence.kind === "range" && !isValidCalendarDate(evidence.end)) return false;
+  return true;
+}
+
+/**
+ * Typed Excel header metadata represents one concrete calendar date from the
+ * workbook's date system. For snapshots, that serial is authoritative for the
+ * snapshot date. For ranges, a single typed serial may only correct the start
+ * endpoint when its month/day match the typed date — never both endpoints.
+ */
 function applyTypedDateMetadata(
   dateResult: DateHeaderParseResult,
   typedMeta?: CellDateMetadata,
+  options?: { sheetName?: string },
 ): DateHeaderParseResult {
   if (!typedMeta?.decodedDate || !dateResult.dateEvidence) {
     return dateResult;
@@ -148,45 +197,95 @@ function applyTypedDateMetadata(
 
   const decoded = typedMeta.decodedDate;
   const evidence = dateResult.dateEvidence;
-  const start = {
-    ...evidence.start,
-    year: evidence.start.year ?? decoded.year,
-    month: evidence.start.year === undefined ? decoded.month : evidence.start.month,
-    day: evidence.start.year === undefined ? decoded.day : evidence.start.day,
-  };
-  const end = {
-    ...evidence.end,
-    year: evidence.end.year ?? decoded.year,
-    month: evidence.end.year === undefined ? decoded.month : evidence.end.month,
-    day: evidence.end.year === undefined ? decoded.day : evidence.end.day,
-  };
-
   const ambiguities = evidence.ambiguities.filter(
-    (a) => !a.includes("Year could not be determined"),
+    (a) =>
+      !a.includes("Year could not be determined") &&
+      !a.includes("inferred") &&
+      !a.includes("Year missing in header"),
   );
 
-  let yearSource = evidence.yearSource;
-  if (evidence.yearSource === "unresolved") {
-    yearSource = "typed_metadata";
+  if (evidence.kind === "range") {
+    const startMatchesTyped =
+      evidence.start.month === decoded.month && evidence.start.day === decoded.day;
+
+    if (!startMatchesTyped) {
+      return dateResult;
+    }
+
+    const conflict = buildTypedConflictWarning(decoded, evidence, options?.sheetName);
+    if (conflict) ambiguities.push(conflict);
+
+    const start: ParsedDateComponent = {
+      month: decoded.month,
+      day: decoded.day,
+      year: decoded.year,
+    };
+    const end = { ...evidence.end };
+
+    return {
+      ...dateResult,
+      dateEvidence: {
+        ...evidence,
+        start,
+        end,
+        yearSource: "typed_metadata",
+        ambiguities,
+        isCalendarValid: calendarValidForEvidence({ kind: "range", start, end }),
+      },
+    };
+  }
+
+  const conflict = buildTypedConflictWarning(decoded, evidence, options?.sheetName);
+  if (conflict) {
+    ambiguities.push(conflict);
+  } else if (evidence.yearSource === "unresolved") {
     ambiguities.push(
       `Year resolved from Excel typed-date cell metadata (${decoded.year})`,
     );
   }
+
+  const start: ParsedDateComponent = {
+    month: decoded.month,
+    day: decoded.day,
+    year: decoded.year,
+  };
 
   return {
     ...dateResult,
     dateEvidence: {
       ...evidence,
       start,
-      end,
-      yearSource,
+      end: start,
+      yearSource: "typed_metadata",
       ambiguities,
-      isCalendarValid:
-        evidence.isCalendarValid &&
-        formatISODate(start) !== null &&
-        (evidence.kind === "snapshot" || formatISODate(end) !== null),
+      isCalendarValid: calendarValidForEvidence({ kind: "snapshot", start, end: start }),
     },
   };
+}
+
+/** Formats reviewable partial date evidence for leader-facing UI. */
+export function formatReviewableDateEvidence(parsedDate: ParsedDateEvidence): string {
+  const formatComponent = (c: ParsedDateComponent): string => {
+    if (c.year !== undefined) {
+      return `${c.month}/${c.day}/${c.year}`;
+    }
+    return `${c.month}/${c.day}`;
+  };
+
+  if (parsedDate.kind === "range") {
+    const startStr = formatComponent(parsedDate.start);
+    const endStr = formatComponent(parsedDate.end);
+    const yearUnknown =
+      parsedDate.start.year === undefined && parsedDate.end.year === undefined;
+    return yearUnknown
+      ? `${startStr} – ${endStr} (year unknown)`
+      : `${startStr} – ${endStr}`;
+  }
+
+  const startStr = formatComponent(parsedDate.start);
+  return parsedDate.start.year !== undefined
+    ? startStr
+    : `${startStr} (year unknown)`;
 }
 
 function collectColumnWarnings(
@@ -313,6 +412,7 @@ export function buildPeriodMappingReview(
     const dateResult = applyTypedDateMetadata(
       parseDateHeader(h.headerText, { sheetName }),
       typedDateMeta,
+      { sheetName },
     );
 
     if (derived.isDerived) {

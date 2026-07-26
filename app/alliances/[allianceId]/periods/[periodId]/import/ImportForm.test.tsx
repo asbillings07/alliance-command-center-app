@@ -1032,6 +1032,33 @@ describe("ImportForm [component]", () => {
         expect(previewBtn).not.toBeUndefined();
     });
 
+    it("shows both endpoints for reviewable range evidence in the confirmation card", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const csvContent = `Player,Kills from 3/29-4/13\nDragon,1500\nPhoenix,2300`;
+
+        await act(async () => {
+            fireFileUpload(csvContent, "reviewable_range.csv");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Columns needing confirmation");
+        expect(container.textContent).toContain("3/29 – 4/13 (year unknown)");
+    });
+
     it("uses detected header row for source addresses when a title row precedes headers", async () => {
         await act(async () => {
             root.render(

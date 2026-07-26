@@ -1,9 +1,10 @@
 "use client";
 
-import type {
-  PeriodMappingReview,
-  ExcludedColumnEvidence,
-  ReviewableColumnEvidence,
+import {
+  formatReviewableDateEvidence,
+  type PeriodMappingReview,
+  type ExcludedColumnEvidence,
+  type ReviewableColumnEvidence,
 } from "@/app/src/lib/import/periodProposal";
 
 type PeriodProposalReviewProps = {
@@ -50,14 +51,6 @@ const REVIEWABLE_REASON_LABELS: Record<
   unresolved_year: "Needs year confirmation",
   locale_ambiguous: "Ambiguous date order",
 };
-
-function formatPartialDate(parsedDate: ReviewableColumnEvidence["parsedDate"]): string {
-  const start = parsedDate.start;
-  if (start.year !== undefined) {
-    return `${start.month}/${start.day}/${start.year}`;
-  }
-  return `${start.month}/${start.day} (year unknown)`;
-}
 
 export function PeriodProposalReview({
   review,
@@ -236,7 +229,7 @@ export function PeriodProposalReview({
                   </span>
                 </div>
                 <p className="text-text-muted mt-1 pl-1">
-                  Detected date: {formatPartialDate(col.parsedDate)} — {col.detail}
+                  Detected date: {formatReviewableDateEvidence(col.parsedDate)} — {col.detail}
                 </p>
                 {col.warnings.length > 0 && (
                   <ul className="mt-1 pl-3 space-y-0.5 text-text-muted">
