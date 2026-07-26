@@ -1,12 +1,49 @@
 "use client";
 
-import type { PeriodMappingReview } from "@/app/src/lib/import/periodProposal";
+import type {
+  PeriodMappingReview,
+  ExcludedColumnEvidence,
+} from "@/app/src/lib/import/periodProposal";
 
 type PeriodProposalReviewProps = {
   review: PeriodMappingReview;
   destinationPeriodName: string;
   onDecline: () => void;
   onAcceptReview?: () => void;
+};
+
+const CONFIDENCE_STYLES: Record<
+  "high" | "medium" | "low",
+  { label: string; className: string }
+> = {
+  high: {
+    label: "High confidence",
+    className:
+      "bg-success/10 text-success border-success/30",
+  },
+  medium: {
+    label: "Medium confidence",
+    className:
+      "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+  },
+  low: {
+    label: "Low confidence",
+    className:
+      "bg-surface-secondary text-text-muted border-border",
+  },
+};
+
+const EXCLUSION_REASON_LABELS: Record<
+  ExcludedColumnEvidence["reason"],
+  string
+> = {
+  derived: "Derived column",
+  non_numeric: "Non-numeric column",
+  no_date_evidence: "No date evidence",
+  invalid_date: "Invalid calendar date",
+  locale_ambiguous: "Locale-ambiguous date",
+  unresolved_year: "Unresolved year",
+  player_column: "Player column",
 };
 
 export function PeriodProposalReview({
@@ -29,7 +66,10 @@ export function PeriodProposalReview({
               Multi-Period Spreadsheet Detected
             </h4>
             <p className="text-[11px] text-text-muted mt-0.5">
-              Worksheet &quot;{review.sheetName}&quot; appears to contain date-stamped metric results for multiple periods.
+              Worksheet &quot;{review.sheetName}&quot;
+              {review.tableRegionId ? ` · region ${review.tableRegionId}` : ""}
+              {" · "}
+              header row {review.headerRowIndex + 1}
             </p>
           </div>
         </div>
@@ -38,82 +78,123 @@ export function PeriodProposalReview({
         </span>
       </div>
 
-      <div className="bg-surface-secondary/40 p-3 rounded-lg border border-border/40 space-y-1 text-[11px]">
-        <p className="font-medium text-text-primary">{review.evidenceSummary}</p>
-        <p className="text-text-muted">
-          ACC suggests what the spreadsheet means, but leaders decide what it becomes. No changes are saved to the database during proposal review.
+      <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg space-y-1 text-[11px]">
+        <p className="font-medium text-amber-200">{review.evidenceSummary}</p>
+        <p className="text-amber-300/90">
+          ACC suggests what the spreadsheet means, but you decide what it becomes.
+          The fixed-period import controls below are disabled until you explicitly
+          choose how to proceed.
         </p>
       </div>
 
-      {/* Proposal Cards List */}
       <div className="space-y-3">
-        {review.proposals.map((prop) => (
-          <div
-            key={prop.proposalId}
-            className="bg-surface-secondary/20 border border-border/60 rounded-lg p-3 space-y-2 text-xs"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <span className="font-semibold text-text-primary text-sm">
-                  {prop.proposedPeriodName}
-                </span>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-                    prop.dateKind === "snapshot"
-                      ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20"
-                      : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-                  }`}
-                >
-                  {prop.dateKind === "snapshot" ? "Snapshot (Single Date)" : "Range (Window)"}
-                </span>
-              </div>
-              <span className="text-[11px] font-mono text-text-muted">
-                {prop.startsAtISO === prop.endsAtISO
-                  ? prop.startsAtISO
-                  : `${prop.startsAtISO} to ${prop.endsAtISO}`}
-              </span>
-            </div>
-
-            {/* Mapped columns */}
-            <div className="space-y-1 pt-1">
-              <span className="text-[11px] text-text-muted font-medium block">
-                Proposed Metric Columns ({prop.columns.length}):
-              </span>
-              <div className="flex flex-wrap gap-1.5 text-[11px]">
-                {prop.columns.map((col) => (
-                  <span
-                    key={col.columnIndex}
-                    className="bg-surface-secondary px-2 py-0.5 rounded border border-border/40 text-text-primary font-mono"
-                  >
-                    &quot;{col.headerText}&quot; → <strong>{col.proposedMetricName}</strong>
+        {review.proposals.map((prop) => {
+          const conf = CONFIDENCE_STYLES[prop.confidence];
+          return (
+            <div
+              key={prop.proposalId}
+              className="bg-surface-secondary/20 border border-border/60 rounded-lg p-3 space-y-2 text-xs"
+            >
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center space-x-2 flex-wrap gap-1">
+                  <span className="font-semibold text-text-primary text-sm">
+                    {prop.proposedPeriodName}
                   </span>
-                ))}
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                      prop.dateKind === "snapshot"
+                        ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20"
+                        : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                    }`}
+                  >
+                    {prop.dateKind === "snapshot" ? "Snapshot" : "Range"}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${conf.className}`}
+                  >
+                    {conf.label}
+                  </span>
+                </div>
+                <span className="text-[11px] font-mono text-text-muted">
+                  {prop.startsAtISO && prop.endsAtISO
+                    ? prop.startsAtISO === prop.endsAtISO
+                      ? prop.startsAtISO
+                      : `${prop.startsAtISO} to ${prop.endsAtISO}`
+                    : "Dates require year confirmation"}
+                </span>
               </div>
-            </div>
 
-            {/* Warnings */}
-            {prop.warnings.length > 0 && (
-              <div className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 p-2 rounded border border-amber-500/20 space-y-0.5">
-                {prop.warnings.map((w, idx) => (
-                  <p key={idx}>⚠️ {w}</p>
-                ))}
+              <div className="space-y-1 pt-1">
+                <span className="text-[11px] text-text-muted font-medium block">
+                  Proposed metric columns ({prop.columns.length}):
+                </span>
+                <ul className="space-y-1">
+                  {prop.columns.map((col) => (
+                    <li
+                      key={col.columnIndex}
+                      className="text-[11px] text-text-primary bg-surface-secondary/60 px-2 py-1 rounded border border-border/40"
+                    >
+                      <span className="font-mono text-text-muted">
+                        {col.headerAddress ?? `col ${col.columnIndex + 1}`}
+                      </span>
+                      {" · "}
+                      &quot;{col.headerText}&quot; → <strong>{col.proposedMetricName}</strong>
+                      {col.hasTypedDateHeader && col.typedDateFormattedText && (
+                        <span className="text-text-muted">
+                          {" "}
+                          (Excel typed date: {col.typedDateFormattedText})
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </div>
-            )}
-          </div>
-        ))}
+
+              {prop.warnings.length > 0 && (
+                <div className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 p-2 rounded border border-amber-500/20 space-y-0.5">
+                  {prop.warnings.map((w, idx) => (
+                    <p key={idx}>⚠️ {w}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Derived columns notice */}
-      {review.hasDerivedColumns && (
-        <div className="bg-surface-secondary/30 p-2.5 rounded-lg border border-border/30 text-[11px] text-text-muted">
-          ℹ️ {review.excludedDerivedColumnsCount} derived column{review.excludedDerivedColumnsCount === 1 ? "" : "s"} (% change, rank, delta) were detected and excluded by default.
+      {review.excludedColumns.length > 0 && (
+        <div className="bg-surface-secondary/30 p-3 rounded-lg border border-border/40 space-y-2">
+          <p className="text-[11px] font-medium text-text-primary">
+            Excluded columns ({review.excludedColumns.length})
+          </p>
+          <ul className="space-y-1 max-h-40 overflow-y-auto">
+            {review.excludedColumns.map((col) => (
+              <li
+                key={`${col.columnIndex}-${col.reason}`}
+                className="text-[11px] text-text-secondary flex flex-col gap-0.5 border-b border-border/30 last:border-0 pb-1 last:pb-0"
+              >
+                <span>
+                  <span className="font-mono text-text-muted">
+                    {col.headerAddress ?? `col ${col.columnIndex + 1}`}
+                  </span>
+                  {" · "}
+                  <strong className="text-text-primary">&quot;{col.headerText}&quot;</strong>
+                  {" · "}
+                  <span className="text-text-muted">
+                    {EXCLUSION_REASON_LABELS[col.reason]}
+                    {col.derivedReason ? ` (${col.derivedReason})` : ""}
+                  </span>
+                </span>
+                <span className="text-text-muted pl-2">{col.detail}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
-      {/* Action buttons */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
         <p className="text-[11px] text-text-muted">
-          Want to import into <strong>{destinationPeriodName}</strong> instead?
+          To import into <strong>{destinationPeriodName}</strong> instead, explicitly decline this proposal review.
         </p>
         <div className="flex items-center space-x-2">
           <button

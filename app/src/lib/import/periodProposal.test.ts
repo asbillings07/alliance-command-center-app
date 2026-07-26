@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { parseDateHeader, extractYearFromSheetName } from "./dateHeaderParser";
+import {
+  parseDateHeader,
+  extractYearFromSheetName,
+  isValidCalendarDate,
+  isLocaleAmbiguousShorthand,
+} from "./dateHeaderParser";
 import { analyzeDerivedColumn } from "./derivedColumnDetector";
 import { buildPeriodMappingReview } from "./periodProposal";
+import { cellAddress } from "@/app/src/lib/memberMatcher";
 
 describe("dateHeaderParser", () => {
   it("extracts year from sheet name", () => {
@@ -10,104 +16,229 @@ describe("dateHeaderParser", () => {
     expect(extractYearFromSheetName("Roster Data")).toBeNull();
   });
 
-  it("parses single-date snapshot headers", () => {
-    const res1 = parseDateHeader("Kills on 3/29", { sheetName: "March 2026" });
-    expect(res1.hasDateEvidence).toBe(true);
-    expect(res1.metricStem).toBe("Kills");
-    expect(res1.dateEvidence?.kind).toBe("snapshot");
-    expect(res1.dateEvidence?.start).toEqual({ month: 3, day: 29, year: 2026 });
-    expect(res1.dateEvidence?.yearSource).toBe("sheet_name");
-
-    const res2 = parseDateHeader("Hero Power as of 2026-07-18");
-    expect(res2.hasDateEvidence).toBe(true);
-    expect(res2.metricStem).toBe("Hero Power");
-    expect(res2.dateEvidence?.kind).toBe("snapshot");
-    expect(res2.dateEvidence?.start).toEqual({ month: 7, day: 18, year: 2026 });
-    expect(res2.dateEvidence?.yearSource).toBe("header");
-  });
-
-  it("parses date-range headers", () => {
-    const res = parseDateHeader("Total Kills from 3/29-4/13", { sheetName: "April 2026" });
+  it("parses single-date snapshot headers with sheet-name year inference", () => {
+    const res = parseDateHeader("Kills on 3/29", { sheetName: "March 2026" });
     expect(res.hasDateEvidence).toBe(true);
-    expect(res.metricStem).toBe("Total Kills");
-    expect(res.dateEvidence?.kind).toBe("range");
+    expect(res.metricStem).toBe("Kills");
+    expect(res.dateEvidence?.kind).toBe("snapshot");
     expect(res.dateEvidence?.start).toEqual({ month: 3, day: 29, year: 2026 });
-    expect(res.dateEvidence?.end).toEqual({ month: 4, day: 13, year: 2026 });
+    expect(res.dateEvidence?.yearSource).toBe("sheet_name");
+    expect(res.dateEvidence?.isLocaleAmbiguous).toBe(false);
   });
 
-  it("returns no date evidence for plain or non-date headers", () => {
-    const res = parseDateHeader("VS Score");
-    expect(res.hasDateEvidence).toBe(false);
-    expect(res.dateEvidence).toBeNull();
+  it("parses explicit-year snapshot headers as header year source", () => {
+    const res = parseDateHeader("Hero Power as of 2026-07-18");
+    expect(res.hasDateEvidence).toBe(true);
+    expect(res.dateEvidence?.yearSource).toBe("header");
+    expect(res.dateEvidence?.start).toEqual({ month: 7, day: 18, year: 2026 });
+  });
+
+  it("marks yearless headers without sheet context as unresolved (not current year)", () => {
+    const res = parseDateHeader("Kills on 3/29");
+    expect(res.dateEvidence?.yearSource).toBe("unresolved");
+    expect(res.dateEvidence?.start.year).toBeUndefined();
+    expect(res.dateEvidence?.ambiguities).toContainEqual(
+      "Year could not be determined; please confirm the year for this period",
+    );
+  });
+
+  it("rejects impossible calendar dates", () => {
+    expect(parseDateHeader("Kills on 2/30").hasDateEvidence).toBe(false);
+    expect(parseDateHeader("Kills on 13/1").hasDateEvidence).toBe(false);
+    expect(parseDateHeader("Kills on 4/31").hasDateEvidence).toBe(false);
+    expect(isValidCalendarDate({ month: 2, day: 30, year: 2026 })).toBe(false);
+  });
+
+  it("flags locale-ambiguous shorthand like 3/4", () => {
+    expect(isLocaleAmbiguousShorthand(3, 4)).toBe(true);
+    const res = parseDateHeader("Kills on 3/4", { sheetName: "March 2026" });
+    expect(res.dateEvidence?.isLocaleAmbiguous).toBe(true);
+  });
+
+  it("parses date-range headers and supports cross-year ranges from sheet context", () => {
+    const res = parseDateHeader("Total Kills from 12/15-1/15", { sheetName: "January 2026" });
+    expect(res.dateEvidence?.kind).toBe("range");
+    expect(res.dateEvidence?.start).toEqual({ month: 12, day: 15, year: 2026 });
+    expect(res.dateEvidence?.end).toEqual({ month: 1, day: 15, year: 2027 });
+  });
+
+  it("flags reversed ranges when end precedes start", () => {
+    const res = parseDateHeader("Kills from 4/13-3/29", { sheetName: "March 2026" });
+    expect(res.dateEvidence?.isReversedRange).toBe(true);
+  });
+
+  it("returns no date evidence for plain headers", () => {
+    expect(parseDateHeader("VS Score").hasDateEvidence).toBe(false);
   });
 });
 
 describe("derivedColumnDetector", () => {
-  it("detects percentage columns", () => {
-    const res = analyzeDerivedColumn("% Change");
-    expect(res.isDerived).toBe(true);
-    expect(res.reason).toBe("percentage");
-  });
-
-  it("detects rank columns", () => {
-    const res = analyzeDerivedColumn("Alliance Rank #");
-    expect(res.isDerived).toBe(true);
-    expect(res.reason).toBe("rank");
-  });
-
-  it("detects delta and WoW columns", () => {
-    const res = analyzeDerivedColumn("Weekly WoW Change");
-    expect(res.isDerived).toBe(true);
-    expect(res.reason).toBe("delta");
-  });
-
-  it("returns non-derived for normal metric names", () => {
-    const res = analyzeDerivedColumn("VS Kills");
-    expect(res.isDerived).toBe(false);
+  it("detects percentage, rank, delta, and aggregate_range columns with reasons", () => {
+    expect(analyzeDerivedColumn("% Change").reason).toBe("percentage");
+    expect(analyzeDerivedColumn("Alliance Rank #").reason).toBe("rank");
+    expect(analyzeDerivedColumn("Weekly WoW Change").reason).toBe("delta");
+    expect(analyzeDerivedColumn("Total Kills from 3/29 to 4/13").reason).toBe("aggregate_range");
   });
 });
 
-describe("periodProposal (Golden Workbook Fixture Tests)", () => {
-  it("builds multi-period proposal for synthetic golden workbook with snapshots, ranges, and derived columns", () => {
+describe("buildPeriodMappingReview", () => {
+  const headerRowIndex = 2;
+
+  function header(
+    columnIndex: number,
+    headerText: string,
+    opts?: { isPlayerColumn?: boolean; isNumeric?: boolean },
+  ) {
+    return {
+      columnIndex,
+      headerText,
+      headerAddress: cellAddress(headerRowIndex, columnIndex),
+      isPlayerColumn: opts?.isPlayerColumn,
+      isNumeric: opts?.isNumeric,
+    };
+  }
+
+  it("builds multi_period for golden workbook with snapshots, ranges, and derived columns", () => {
     const review = buildPeriodMappingReview({
       sheetName: "March 2026",
+      tableRegionId: "region-0",
+      headerRowIndex,
       headers: [
-        { columnIndex: 0, headerText: "Player", isPlayerColumn: true },
-        { columnIndex: 1, headerText: "Kills on 3/29", isNumeric: true },
-        { columnIndex: 2, headerText: "Hero Power on 3/29", isNumeric: true },
-        { columnIndex: 3, headerText: "Kills on 4/13", isNumeric: true },
-        { columnIndex: 4, headerText: "Kills from 3/29-4/13", isNumeric: true },
-        { columnIndex: 5, headerText: "% Change", isNumeric: true },
-        { columnIndex: 6, headerText: "Rank #", isNumeric: true },
+        header(0, "Player", { isPlayerColumn: true, isNumeric: false }),
+        header(1, "Kills on 3/29", { isNumeric: true }),
+        header(2, "Hero Power on 3/29", { isNumeric: true }),
+        header(3, "Kills on 4/13", { isNumeric: true }),
+        header(4, "Kills from 3/29-4/13", { isNumeric: true }),
+        header(5, "% Change", { isNumeric: true }),
+        header(6, "Rank #", { isNumeric: true }),
       ],
     });
 
     expect(review.mode).toBe("multi_period");
-    expect(review.hasDerivedColumns).toBe(true);
-    expect(review.excludedDerivedColumnsCount).toBe(2);
-
-    // Expect 2 distinct proposals: 1 snapshot group (3/29) and 1 range group (3/29..4/13)
-    // Note: Kills on 4/13 is a different snapshot group (4/13) -> total 3 proposals!
+    expect(review.tableRegionId).toBe("region-0");
+    expect(review.headerRowIndex).toBe(headerRowIndex);
     expect(review.proposals.length).toBeGreaterThanOrEqual(2);
+    expect(review.excludedColumns.some((c) => c.reason === "derived" && c.derivedReason === "percentage")).toBe(true);
+    expect(review.excludedColumns.some((c) => c.reason === "derived" && c.derivedReason === "rank")).toBe(true);
+    expect(review.proposals.every((p) => p.confidence === "medium")).toBe(true);
+    expect(review.proposals[0].columns[0].headerAddress).toBe("B3");
+  });
 
-    const snapshot29 = review.proposals.find((p) => p.startsAtISO === "2026-03-29" && p.dateKind === "snapshot");
-    expect(snapshot29).toBeDefined();
-    expect(snapshot29?.columns).toHaveLength(2); // Kills on 3/29 and Hero Power on 3/29
-    expect(snapshot29?.proposedPeriodName).toContain("Mar 29, 2026 Evaluation");
+  it("does not declare multi_period for a single temporal group at medium confidence", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex: 0,
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills on 3/29", { isNumeric: true }),
+        header(2, "Hero Power on 3/29", { isNumeric: true }),
+      ],
+    });
 
-    const rangeProposal = review.proposals.find((p) => p.dateKind === "range");
-    expect(rangeProposal).toBeDefined();
-    expect(rangeProposal?.startsAtISO).toBe("2026-03-29");
-    expect(rangeProposal?.endsAtISO).toBe("2026-04-13");
+    expect(review.proposals).toHaveLength(1);
+    expect(review.proposals[0].confidence).toBe("medium");
+    expect(review.mode).toBe("insufficient_evidence");
+  });
+
+  it("allows single-group multi_period only at high confidence with explicit header year", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "Roster Data",
+      headerRowIndex: 0,
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills on 3/29/2026", { isNumeric: true }),
+        header(2, "Hero Power on 3/29/2026", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.proposals).toHaveLength(1);
+    expect(review.proposals[0].confidence).toBe("high");
+    expect(review.mode).toBe("multi_period");
+  });
+
+  it("excludes non-numeric columns with date-like headers", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex: 0,
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Notes on 3/29", { isNumeric: false }),
+        header(2, "Kills on 3/29", { isNumeric: true }),
+        header(3, "Kills on 4/13", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.excludedColumns.some((c) => c.reason === "non_numeric")).toBe(true);
+    expect(review.mode).toBe("multi_period");
+  });
+
+  it("excludes locale-ambiguous and invalid dates from proposals", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex: 0,
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills on 3/4", { isNumeric: true }),
+        header(2, "Kills on 2/30", { isNumeric: true }),
+        header(3, "Kills on 3/29", { isNumeric: true }),
+        header(4, "Kills on 4/13", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.excludedColumns.some((c) => c.reason === "locale_ambiguous")).toBe(true);
+    expect(review.excludedColumns.some((c) => c.reason === "invalid_date")).toBe(true);
+    expect(review.mode).toBe("multi_period");
+  });
+
+  it("excludes yearless columns without sheet year context and stays insufficient_evidence", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "Sheet1",
+      headerRowIndex: 0,
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills on 3/29", { isNumeric: true }),
+        header(2, "Kills on 4/13", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.excludedColumns.every((c) => c.reason === "unresolved_year" || c.reason === "player_column")).toBe(true);
+    expect(review.proposals).toHaveLength(0);
+    expect(review.mode).toBe("insufficient_evidence");
+  });
+
+  it("uses typed date header metadata for high confidence and evidence warnings", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "Roster",
+      headerRowIndex: 0,
+      cellDates: {
+        B1: {
+          address: "B1",
+          rowIndex: 0,
+          columnIndex: 1,
+          formattedText: "3/29/2026",
+          isTypedDate: true,
+        },
+      },
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills on 3/29/2026", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.proposals[0].confidence).toBe("high");
+    expect(review.proposals[0].columns[0].hasTypedDateHeader).toBe(true);
+    expect(review.proposals[0].warnings.some((w) => w.includes("Excel typed-date"))).toBe(true);
+    expect(review.mode).toBe("multi_period");
   });
 
   it("returns insufficient_evidence when headers lack date evidence", () => {
     const review = buildPeriodMappingReview({
       sheetName: "Sheet1",
+      headerRowIndex: 0,
       headers: [
-        { columnIndex: 0, headerText: "Player", isPlayerColumn: true },
-        { columnIndex: 1, headerText: "VS Kills", isNumeric: true },
-        { columnIndex: 2, headerText: "Hero Power", isNumeric: true },
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "VS Kills", { isNumeric: true }),
+        header(2, "Hero Power", { isNumeric: true }),
       ],
     });
 
