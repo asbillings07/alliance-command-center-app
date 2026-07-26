@@ -590,6 +590,29 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
         ],
       }),
     ).rejects.toThrow(/invalid start date/i);
+
+    await expect(
+      importMultiPeriodMetrics({
+        allianceId: alliance.id,
+        groups: [
+          {
+            target: {
+              kind: "create",
+              name: "Reversed Range",
+              startsAt: "2026-04-13",
+              endsAt: "2026-03-29",
+            },
+            mappings: [
+              {
+                sourceColumnName: "Kills",
+                target: { kind: "create", name: "Kills" },
+                entries: [{ memberId: member.id, rawValue: "1" }],
+              },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/on or before end date/i);
   });
 
   it("rejects duplicate create period names in one submission", async () => {

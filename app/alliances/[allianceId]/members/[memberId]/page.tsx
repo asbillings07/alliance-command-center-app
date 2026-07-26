@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
+import { metricPeriodChronologicalOrderBy, pickCurrentMetricPeriod } from "@/app/src/lib/metricPeriodOrdering";
 import { formatPower } from "@/app/src/lib/formatPower";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
@@ -42,14 +43,13 @@ export default async function MemberPage({ params, searchParams }: Params) {
 
     const allPeriods = await prisma.metricPeriod.findMany({
         where: { allianceId },
-        orderBy: [
-            { createdAt: "desc" },
-            { id: "desc" },
-        ],
+        orderBy: metricPeriodChronologicalOrderBy,
         select: {
             id: true,
             name: true,
             active: true,
+            startsAt: true,
+            createdAt: true,
         },
     });
 
@@ -59,7 +59,8 @@ export default async function MemberPage({ params, searchParams }: Params) {
 
     const selectedPeriodHeader = requestedPeriodId
         ? allPeriods.find((p) => p.id === requestedPeriodId)
-        : allPeriods.find((p) => p.active) ?? allPeriods[0] ?? null;
+        : pickCurrentMetricPeriod(allPeriods.filter((p) => p.active))
+            ?? pickCurrentMetricPeriod(allPeriods);
 
     const selectedPeriod = selectedPeriodHeader
         ? await prisma.metricPeriod.findUnique({

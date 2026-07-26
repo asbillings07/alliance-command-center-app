@@ -119,6 +119,26 @@ describe("validateMultiPeriodImportGroups", () => {
         ),
       ]),
     ).toThrow(/invalid start date/i);
+
+    expect(() =>
+      validateMultiPeriodImportGroups([
+        group(
+          {
+            kind: "create",
+            name: "Reversed Range",
+            startsAt: "2026-04-13",
+            endsAt: "2026-03-29",
+          },
+          [
+            {
+              sourceColumnName: "Kills",
+              target: { kind: "create", name: "Kills" },
+              entries: [{ memberId: "mem1", rawValue: "1" }],
+            },
+          ],
+        ),
+      ]),
+    ).toThrow(/on or before end date/i);
   });
 
   it("rejects groups with no mappings", () => {

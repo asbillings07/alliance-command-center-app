@@ -44,6 +44,7 @@ export function revalidateAllianceData(params: RevalidateAllianceDataParams): vo
   }
 
   if (domainsSet.has("evaluation-results") && periodId) {
+    revalidatePath(`/alliances/${allianceId}/periods`);
     revalidatePath(`/alliances/${allianceId}/periods/${periodId}`);
     revalidatePath(`/alliances/${allianceId}/periods/${periodId}/record`);
     revalidatePath(`/alliances/${allianceId}/periods/${periodId}/import`);

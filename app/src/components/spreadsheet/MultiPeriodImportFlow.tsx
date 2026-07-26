@@ -195,6 +195,19 @@ function parsePeriodSelectValue(
   return { mode: "existing", periodId: value };
 }
 
+function shouldShowColumnCreateFields(
+  proposalTarget: PeriodTargetState,
+  columnTarget: PeriodTargetState,
+): boolean {
+  if (columnTarget.mode !== "create") {
+    return false;
+  }
+  if (proposalTarget.mode !== "create") {
+    return true;
+  }
+  return periodTargetGroupKey(columnTarget) !== periodTargetGroupKey(proposalTarget);
+}
+
 function mappingTargetToToken(mapping: ColumnMetricMapping): string {
   if (mapping.confirmationStatus === "unconfirmed") {
     return UNCONFIRMED_TARGET_TOKEN;
@@ -1183,6 +1196,11 @@ export function MultiPeriodImportFlow({
                     );
                     const columnPeriodSelectId = `multi-period-column-period-${state.proposalId}-${mapping.columnIndex}`;
                     const { periodMetrics, attachableLibrary } = periodContext;
+                    const columnCreateTarget =
+                      mapping.periodTarget.mode === "create" &&
+                      shouldShowColumnCreateFields(state.periodTarget, mapping.periodTarget)
+                        ? mapping.periodTarget
+                        : null;
 
                     return (
                       <div
@@ -1228,7 +1246,7 @@ export function MultiPeriodImportFlow({
                           </select>
                         </div>
 
-                        {mapping.periodTarget.mode === "create" && (
+                        {columnCreateTarget && (
                           <div className="grid gap-3 sm:grid-cols-3">
                             <div className="sm:col-span-3">
                               <label
@@ -1240,7 +1258,7 @@ export function MultiPeriodImportFlow({
                               <input
                                 id={`${columnPeriodSelectId}-name`}
                                 type="text"
-                                value={mapping.periodTarget.name}
+                                value={columnCreateTarget.name}
                                 onChange={(e) =>
                                   handleColumnCreatePeriodFieldChange(
                                     state.proposalId,
@@ -1251,7 +1269,7 @@ export function MultiPeriodImportFlow({
                                 }
                                 className="w-full rounded-md border border-border p-2 text-sm bg-surface"
                               />
-                              {!mapping.periodTarget.name.trim() && (
+                              {!columnCreateTarget.name.trim() && (
                                 <p className="text-xs text-warning mt-1">Name is required.</p>
                               )}
                             </div>
@@ -1265,7 +1283,7 @@ export function MultiPeriodImportFlow({
                               <input
                                 id={`${columnPeriodSelectId}-starts-at`}
                                 type="date"
-                                value={mapping.periodTarget.startsAt}
+                                value={columnCreateTarget.startsAt}
                                 onChange={(e) =>
                                   handleColumnCreatePeriodFieldChange(
                                     state.proposalId,
@@ -1287,7 +1305,7 @@ export function MultiPeriodImportFlow({
                               <input
                                 id={`${columnPeriodSelectId}-ends-at`}
                                 type="date"
-                                value={mapping.periodTarget.endsAt}
+                                value={columnCreateTarget.endsAt}
                                 onChange={(e) =>
                                   handleColumnCreatePeriodFieldChange(
                                     state.proposalId,

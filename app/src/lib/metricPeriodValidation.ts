@@ -43,6 +43,10 @@ export function validateMetricPeriodFields(
     throw new Error("Invalid end date");
   }
 
+  if (startsAt && endsAt && startsAt > endsAt) {
+    throw new Error("Start date must be on or before end date");
+  }
+
   return { name, startsAt, endsAt };
 }
 
