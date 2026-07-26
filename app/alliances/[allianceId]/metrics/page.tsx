@@ -4,7 +4,6 @@ import { Permissions } from "@/app/src/lib/auth/permissions";
 import { validateSetupPeriodReturnTo } from "@/app/src/lib/setup/validateSetupPeriodReturnTo";
 import { MetricCard } from "./metricCard";
 import { PageLayout, EmptyState } from "@/app/src/components";
-import { Button } from "@/app/src/components/client";
 
 type Params = {
     params: Promise<{
@@ -41,13 +40,6 @@ export default async function MetricsPage({ params, searchParams }: Params) {
             title="Metrics Library"
             description="Define the metrics you track for your alliance"
             maxWidth="3xl"
-            action={
-                returnTo ? (
-                    <Button variant="secondary" href={returnTo}>
-                        Continue configuring this period
-                    </Button>
-                ) : undefined
-            }
         >
             <div className="flex flex-col gap-4">
                 <MetricCard allianceId={allianceId} mode="create" returnTo={returnTo ?? undefined} />

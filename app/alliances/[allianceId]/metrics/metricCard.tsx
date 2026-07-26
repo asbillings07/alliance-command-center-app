@@ -89,8 +89,11 @@ export function MetricCard({ allianceId, mode, metric, returnTo }: MetricCardPro
         {cardState === "created" && returnTo ? (
           <>
             <div className="rounded-md border border-success/30 bg-success/10 p-4 text-sm text-text-primary">
-              Metric created. Use <strong>Continue configuring this period</strong> above to attach it to your evaluation period.
+              Metric created. Attach it to your evaluation period to complete setup.
             </div>
+            <Button variant="primary" href={returnTo}>
+              Continue configuring this period
+            </Button>
             <button
               type="button"
               onClick={() => setCardState("form")}
