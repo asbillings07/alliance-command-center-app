@@ -284,6 +284,58 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
     ).toBe(0);
   });
 
+  it("rolls back first period entries when a later group fails inside the transaction", async () => {
+    const { alliance, member, periodA, periodB, killsA, killsB } = await makeTestSetup();
+    const { prisma } = await import("@/app/src/lib/prisma");
+
+    let createManyCalls = 0;
+    const originalTransaction = prisma.$transaction.bind(prisma);
+    vi.spyOn(prisma, "$transaction").mockImplementation(async (fn) =>
+      originalTransaction(async (tx) => {
+        const originalCreateMany = tx.memberMetricEntry.createMany.bind(tx.memberMetricEntry);
+        vi.spyOn(tx.memberMetricEntry, "createMany").mockImplementation((async (args) => {
+          createManyCalls += 1;
+          if (createManyCalls > 1) {
+            throw new Error("Simulated in-transaction insert failure");
+          }
+          return originalCreateMany(args!);
+        }) as typeof tx.memberMetricEntry.createMany);
+        return fn(tx);
+      }),
+    );
+
+    await expect(
+      importMultiPeriodMetrics({
+        allianceId: alliance.id,
+        groups: [
+          {
+            targetPeriodId: periodA.id,
+            mappings: [
+              {
+                sourceColumnName: "Kills A",
+                target: { kind: "existing", metricId: killsA.id },
+                entries: [{ memberId: member.id, rawValue: "10" }],
+              },
+            ],
+          },
+          {
+            targetPeriodId: periodB.id,
+            mappings: [
+              {
+                sourceColumnName: "Kills B",
+                target: { kind: "existing", metricId: killsB.id },
+                entries: [{ memberId: member.id, rawValue: "20" }],
+              },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/Simulated in-transaction insert failure/i);
+
+    expect(await prisma.memberMetricEntry.count({ where: { periodId: periodA.id } })).toBe(0);
+    expect(await prisma.memberMetricEntry.count({ where: { periodId: periodB.id } })).toBe(0);
+  });
+
   it("rejects duplicate target period ids in one submission", async () => {
     const { alliance, member, periodA, killsA } = await makeTestSetup();
 

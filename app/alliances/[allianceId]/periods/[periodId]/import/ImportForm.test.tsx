@@ -105,6 +105,10 @@ describe("ImportForm [component]", () => {
     const metrics = [
         { id: "met1", name: "Kill Points" },
     ];
+    const allianceLibraryMetrics = [
+        { id: "lib-kills", name: "Kills" },
+        ...metrics,
+    ];
     const alliancePeriods = [
         {
             id: periodId,
@@ -125,6 +129,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
@@ -165,6 +170,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
@@ -228,6 +234,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
@@ -263,6 +270,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
@@ -299,6 +307,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
@@ -337,6 +346,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
@@ -396,6 +406,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
@@ -438,6 +449,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
@@ -490,6 +502,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
@@ -520,6 +533,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
@@ -564,6 +578,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: false,
@@ -615,6 +630,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: false,
@@ -659,6 +675,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics: [{ id: "m-vs", name: "VS Score" }],
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: false,
@@ -708,6 +725,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: false,
@@ -759,6 +777,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
@@ -805,6 +824,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
@@ -882,6 +902,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
@@ -949,6 +970,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
@@ -1008,6 +1030,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
@@ -1039,7 +1062,7 @@ describe("ImportForm [component]", () => {
         });
 
         expect(container.textContent).toContain("Map proposals to existing evaluation periods");
-        expect(container.textContent).toContain("Target evaluation period");
+        expect(container.textContent).toContain("Default target evaluation period");
         expect(container.textContent).toContain("Preview Multi-Period Import");
     });
 
@@ -1097,6 +1120,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods: twoAlliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
@@ -1127,14 +1151,14 @@ describe("ImportForm [component]", () => {
             await new Promise((r) => setTimeout(r, 50));
         });
 
-        const periodSelects = Array.from(container.querySelectorAll("select")).filter(
-            (s) => !s.getAttribute("aria-label")?.startsWith("Metric for"),
-        );
-        expect(periodSelects.length).toBeGreaterThanOrEqual(2);
+        const columnPeriodSelects = Array.from(
+            container.querySelectorAll('select[id^="multi-period-column-period-"]'),
+        ) as HTMLSelectElement[];
+        expect(columnPeriodSelects.length).toBeGreaterThanOrEqual(2);
 
         await act(async () => {
-            (periodSelects[1] as HTMLSelectElement).value = secondPeriodId;
-            periodSelects[1].dispatchEvent(new Event("change", { bubbles: true }));
+            columnPeriodSelects[1].value = secondPeriodId;
+            columnPeriodSelects[1].dispatchEvent(new Event("change", { bubbles: true }));
             await new Promise((r) => setTimeout(r, 50));
         });
 
@@ -1150,6 +1174,8 @@ describe("ImportForm [component]", () => {
             }
             await new Promise((r) => setTimeout(r, 50));
         });
+
+        expect(container.textContent).toContain("Detected metric: Kills");
 
         const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
             b.textContent?.includes("Preview Multi-Period Import"),
@@ -1182,6 +1208,11 @@ describe("ImportForm [component]", () => {
         expect(payload.groups.map((g: { targetPeriodId: string }) => g.targetPeriodId).sort()).toEqual(
             [periodId, secondPeriodId].sort(),
         );
+        for (const group of payload.groups) {
+            for (const mapping of group.mappings) {
+                expect(mapping.target).toEqual({ kind: "create", name: "Kills" });
+            }
+        }
         expect(container.textContent).toContain("Multi-Period Import Complete");
     });
 
@@ -1195,6 +1226,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
@@ -1269,6 +1301,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
@@ -1303,6 +1336,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
@@ -1337,6 +1371,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
@@ -1365,6 +1400,7 @@ describe("ImportForm [component]", () => {
                     members,
                     metrics,
                     libraryMetrics: [],
+                    allianceLibraryMetrics,
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
@@ -1387,5 +1423,281 @@ describe("ImportForm [component]", () => {
         });
 
         expect(container.textContent).toContain("header row 2");
+    });
+
+    it("blocks multi-period preview until every included column is explicitly confirmed or skipped", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    allianceLibraryMetrics,
+                    alliancePeriods,
+                    canCreateMetrics: false,
+                    canAttachMetrics: false,
+                })
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kills on 3/29", "Kills on 4/13"],
+            ["Dragon", "1500", "2000"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "multi_period_unconfirmed.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const reviewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Review & Map to Existing Periods"),
+        ) as HTMLButtonElement;
+        await act(async () => {
+            reviewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Multi-Period Import"),
+        ) as HTMLButtonElement;
+        expect(previewBtn.disabled).toBe(true);
+
+        const metricSelect = container.querySelector(
+            'select[aria-label="Metric for Kills on 3/29"]',
+        ) as HTMLSelectElement;
+
+        await act(async () => {
+            metricSelect.value = "";
+            metricSelect.dispatchEvent(new Event("change", { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(previewBtn.disabled).toBe(true);
+
+        await act(async () => {
+            const secondMetricSelect = container.querySelector(
+                'select[aria-label="Metric for Kills on 4/13"]',
+            ) as HTMLSelectElement;
+            secondMetricSelect.value = `existing:${metrics[0].id}`;
+            secondMetricSelect.dispatchEvent(new Event("change", { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(previewBtn.disabled).toBe(false);
+    });
+
+    it("allows two proposals to target the same evaluation period", async () => {
+        const secondPeriodId = "period-2";
+        const twoAlliancePeriods = [
+            {
+                id: periodId,
+                name: periodName,
+                startsAt: "2026-03-29T00:00:00.000Z",
+                endsAt: "2026-04-05T00:00:00.000Z",
+                metrics,
+            },
+            {
+                id: secondPeriodId,
+                name: "Week 29 Evaluation",
+                startsAt: "2026-04-06T00:00:00.000Z",
+                endsAt: "2026-04-13T00:00:00.000Z",
+                metrics: [{ id: "met2", name: "Hero Power" }],
+            },
+        ];
+
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    allianceLibraryMetrics,
+                    alliancePeriods: twoAlliancePeriods,
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kills on 3/29", "Hero Power on 4/13"],
+            ["Dragon", "1500", "2000"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "same_period_two_proposals.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const reviewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Review & Map to Existing Periods"),
+        ) as HTMLButtonElement;
+        await act(async () => {
+            reviewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const metricSelects = Array.from(container.querySelectorAll("select")).filter((s) =>
+            s.getAttribute("aria-label")?.startsWith("Metric for"),
+        ) as HTMLSelectElement[];
+
+        await act(async () => {
+            for (const select of metricSelects) {
+                if (select.value === "") {
+                    select.value = "create";
+                    select.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+            }
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Multi-Period Import"),
+        ) as HTMLButtonElement;
+        expect(previewBtn.disabled).toBe(false);
+
+        await act(async () => {
+            previewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("1 periods");
+    });
+
+    it("offers attachable alliance metrics for a non-route target period", async () => {
+        const secondPeriodId = "period-2";
+        const killsOnPeriodA = { id: "lib-kills", name: "Kills" };
+        const twoAlliancePeriods = [
+            {
+                id: periodId,
+                name: periodName,
+                startsAt: "2026-03-29T00:00:00.000Z",
+                endsAt: "2026-04-05T00:00:00.000Z",
+                metrics: [killsOnPeriodA],
+            },
+            {
+                id: secondPeriodId,
+                name: "Week 29 Evaluation",
+                startsAt: "2026-04-06T00:00:00.000Z",
+                endsAt: "2026-04-13T00:00:00.000Z",
+                metrics: [],
+            },
+        ];
+
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics: [killsOnPeriodA],
+                    libraryMetrics: [],
+                    allianceLibraryMetrics: [killsOnPeriodA],
+                    alliancePeriods: twoAlliancePeriods,
+                    canCreateMetrics: false,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kills on 3/29", "Kills on 4/13"],
+            ["Dragon", "1500", "2000"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "attach_on_period_b.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const reviewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Review & Map to Existing Periods"),
+        ) as HTMLButtonElement;
+        await act(async () => {
+            reviewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const columnPeriodSelects = Array.from(
+            container.querySelectorAll('select[id^="multi-period-column-period-"]'),
+        ) as HTMLSelectElement[];
+        await act(async () => {
+            columnPeriodSelects[1].value = secondPeriodId;
+            columnPeriodSelects[1].dispatchEvent(new Event("change", { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const metricSelect = container.querySelector(
+            'select[aria-label="Metric for Kills on 4/13"]',
+        ) as HTMLSelectElement;
+        const attachOption = Array.from(metricSelect.options).find((o) =>
+            o.value.startsWith("attach:lib-kills"),
+        );
+        expect(attachOption).not.toBeUndefined();
+    });
+
+    it("associates default proposal period selectors with visible labels", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    allianceLibraryMetrics,
+                    alliancePeriods,
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kills on 3/29", "Kills on 4/13"],
+            ["Dragon", "1500", "2000"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "multi_period_a11y.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const reviewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Review & Map to Existing Periods"),
+        ) as HTMLButtonElement;
+        await act(async () => {
+            reviewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const periodSelect = container.querySelector(
+            'select[id^="multi-period-target-"]',
+        ) as HTMLSelectElement;
+        expect(periodSelect).not.toBeNull();
+        expect(periodSelect.id).toBeTruthy();
+        const label = container.querySelector(`label[for="${periodSelect.id}"]`);
+        expect(label?.textContent).toContain("Default target evaluation period");
     });
 });
