@@ -56,7 +56,7 @@ test.describe("Import Discoverability & Navigation Bridge", () => {
     await expect(importBtn).toBeVisible();
     await importBtn.click();
 
-    await expect(page.getByRole("heading", { name: "Members Imported" })).toBeVisible();
+    await expect(page.getByText("Committed Alliance Member Translation")).toBeVisible();
 
     // Step 5: Click View Members action link (Client Link transition)
     await page.getByRole("link", { name: "View Members" }).click();
@@ -125,10 +125,14 @@ test.describe("Import Discoverability & Navigation Bridge", () => {
     await expect(page.getByRole("button", { name: "Preview Import" })).toBeEnabled();
     await page.getByRole("button", { name: "Preview Import" }).click();
 
+    // Verify planned translation summary and source column translation card
+    await expect(page.getByText("Planned Metric Translation")).toBeVisible();
+    await expect(page.getByText("Source Column Translations")).toBeVisible();
+
     await expect(page.getByRole("button", { name: /Import/i })).toBeVisible();
     await page.getByRole("button", { name: /Import/i }).click();
 
-    await expect(page.getByRole("heading", { name: "Evaluation Results Imported" })).toBeVisible();
+    await expect(page.getByText("Committed Metric Translation")).toBeVisible();
 
     // Step 4: Click View Evaluation Period (Client Link)
     await page.getByRole("link", { name: "View Evaluation Period" }).click();

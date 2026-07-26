@@ -121,8 +121,8 @@ describe("ImportForm [component]", () => {
         expect(container.textContent).toContain("Destination Period: Week 28 Evaluation");
 
         // Scope notice check
-        expect(container.textContent).toContain("Evaluation Results Import Scope");
-        expect(container.textContent).toContain("This workflow does not create members.");
+        expect(container.textContent).toContain("Destination: Week 28 Evaluation");
+        expect(container.textContent).toContain("Expected Metric Spreadsheet Format (Week 28 Evaluation)");
 
         // Accessible input check
         const fileInput = container.querySelector<HTMLInputElement>("#csv-upload");
@@ -756,5 +756,155 @@ describe("ImportForm [component]", () => {
         // Must NOT silently assign "VS 7" to unrelated metric "Kill Points"
         expect(container.textContent).toContain("requires metric configuration permission");
         expect(container.textContent).not.toContain("New metric");
+    });
+
+    it("displays pre-upload data shape guide, all-column translation cards with sample values, and planned/committed summaries", async () => {
+        (importMemberMetrics as ReturnType<typeof vi.fn>).mockResolvedValue({
+            perMetric: [{ metricId: "met1", name: "Kill Points", count: 2 }],
+            totalCount: 2,
+            created: [],
+            attached: [],
+            reused: [{ metricId: "met1", name: "Kill Points" }],
+        });
+
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        // 1. Pre-upload format guide
+        expect(container.textContent).toContain("Expected Metric Spreadsheet Format (Week 28 Evaluation)");
+        expect(container.textContent).toContain("Copy Sample CSV");
+        expect(container.textContent).toContain("Download .csv Template");
+
+        const csvContent = `Player,Kill Points,Freeform Notes,Empty Col\nDragon,1500,Good run,\nPhoenix,2300,Great effort,`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Click Preview Import
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            previewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // 2. Planned Metric Translation Summary and Column Translation Cards
+        expect(container.textContent).toContain("Planned Metric Translation");
+        expect(container.textContent).toContain("Source Column Translations");
+
+        // Column translation status badges
+        expect(container.textContent).toContain("Mapped: Member Identity");
+        expect(container.textContent).toContain("Mapped: Existing Metric");
+        expect(container.textContent).toContain("Excluded: Free-form text / unsupported non-numeric column");
+        expect(container.textContent).toContain("Ignored: No values in column");
+
+        // Sample values displayed
+        expect(container.textContent).toContain('"Dragon"');
+        expect(container.textContent).toContain('"1500"');
+        expect(container.textContent).toContain('"Good run"');
+
+        // 3. Complete step with committed metric summary
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import All")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            importBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Committed Metric Translation");
+        expect(container.textContent).toContain("Total Entries Committed");
+        expect(container.textContent).toContain("Reused / Attached Metrics");
+    });
+
+    it("updates previews and server payload when changing a column target after entering preview", async () => {
+        (importMemberMetrics as ReturnType<typeof vi.fn>).mockResolvedValue({
+            perMetric: [{ metricId: "met1", name: "Kill Points", count: 2 }],
+            totalCount: 2,
+            created: [],
+            attached: [],
+            reused: [{ metricId: "met1", name: "Kill Points" }],
+        });
+
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        // Upload CSV with Player, Kill Points and Hero Power (both match existing metrics met1 and met2)
+        const csvContent = `Player,Kill Points,Hero Power\nDragon,1500,200\nPhoenix,2300,400`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Click Preview Import
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            previewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Verify initially in Preview step
+        expect(container.textContent).toContain("Planned Metric Translation");
+
+        // Change Action dropdown for Hero Power (value: "create") to "skip" while in preview step
+        const selects = Array.from(container.querySelectorAll("select"));
+        const heroPowerSelect = selects.find((s) => s.value === "create") as HTMLSelectElement;
+        expect(heroPowerSelect).not.toBeUndefined();
+
+        await act(async () => {
+            heroPowerSelect.value = "skip";
+            heroPowerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Click Import All
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import All")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            importBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Assert importMemberMetrics was called with ONLY Kill Points (Hero Power was skipped!)
+        expect(importMemberMetrics).toHaveBeenCalledTimes(1);
+        const payload = (importMemberMetrics as ReturnType<typeof vi.fn>).mock.calls[0][0];
+        expect(payload.mappings).toHaveLength(1);
+        expect(payload.mappings[0].sourceColumnName).toBe("Kill Points");
+        expect(payload.mappings[0].target).toEqual({ kind: "existing", metricId: "met1" });
     });
 });

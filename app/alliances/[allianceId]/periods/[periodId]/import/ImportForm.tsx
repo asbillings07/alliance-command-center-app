@@ -9,6 +9,7 @@ import {
   matchMetricName,
   detectTableBounds,
   isPlayerColumn,
+  columnIndexToLabel,
   type MatchSummary,
   type ColumnInfo,
   type TableBoundsResult,
@@ -33,6 +34,16 @@ import { SpreadsheetUpload } from "@/app/src/components/spreadsheet/SpreadsheetU
 import { WorkbookSheetSelector } from "@/app/src/components/spreadsheet/WorkbookSheetSelector";
 import { NumbersExportGuide } from "@/app/src/components/spreadsheet/NumbersExportGuide";
 import { WorkbookParseError } from "@/app/src/components/spreadsheet/WorkbookParseError";
+import { SpreadsheetDataShapeGuide } from "@/app/src/components/spreadsheet/SpreadsheetDataShapeGuide";
+import { ColumnTranslationCard } from "@/app/src/components/spreadsheet/ColumnTranslationCard";
+import { SpreadsheetTranslationSummary } from "@/app/src/components/spreadsheet/SpreadsheetTranslationSummary";
+import {
+  type ColumnTarget,
+  type ColumnTranslation,
+  extractColumnSamples,
+  buildPlannedMetricTranslationSummary,
+  buildCommittedMetricTranslationSummary,
+} from "@/app/src/lib/importTranslation";
 
 type MemberOption = {
   id: string;
@@ -56,12 +67,6 @@ type ImportFormProps = {
 };
 
 type ImportStep = "upload" | "select" | "preview" | "complete";
-
-type ColumnTarget =
-  | { kind: "skip" }
-  | { kind: "existing"; metricId: string }
-  | { kind: "attach"; metricId: string }
-  | { kind: "create"; name: string };
 
 export type ColumnConfirmationStatus =
   | "unconfirmed"
@@ -466,9 +471,93 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     analyzeWorkbookSheet(parsedWorkbook, sheetIndex);
   };
 
-  const setColumnTarget = (columnIndex: number, token: string, columnName: string) => {
+  const displayNameFor = (target: ColumnTarget, columnName: string): string => {
+    if (target.kind === "existing" || target.kind === "attach") {
+      return metricNameById.get(target.metricId) ?? columnName;
+    }
+    if (target.kind === "create") return target.name;
+    return columnName;
+  };
+
+  const rebuildPreviews = (
+    newMappings: ColumnMetricMapping[],
+    currentSelections: DuplicateSelections = duplicateSelections,
+  ): MetricImportPreview[] => {
+    if (!autoDetectedPlayerColumn || !parsedWorkbook) return [];
+
+    const currentSheet = parsedWorkbook.sheets[selectedSheetIndex];
+    if (!currentSheet) return [];
+
+    const mapped = newMappings.filter((m) => m.target.kind !== "skip");
+    if (mapped.length === 0) {
+      setPreviews([]);
+      setStep("select");
+      setError("All columns were skipped. Map at least one column to preview import.");
+      return [];
+    }
+
+    const nextPreviews: MetricImportPreview[] = [];
+    const nextSelections: DuplicateSelections = {};
+    const aggregatedErrors: string[] = [];
+
+    for (const mapping of mapped) {
+      const metricDisplayName = displayNameFor(mapping.target, mapping.columnName);
+      const parseResult = parseMetricRows(currentSheet.rows, {
+        nameColumn: autoDetectedPlayerColumn.index,
+        valueColumn: mapping.columnIndex,
+        hasHeader: true,
+        tableBounds: tableBounds ?? undefined,
+        metricName: metricDisplayName,
+      });
+
+      parseResult.errors.forEach((err) => aggregatedErrors.push(`${mapping.columnName}: ${err}`));
+
+      const summary = matchEntriesToMembers(parseResult.entries, members);
+      const selections: Record<string, number> = currentSelections[mapping.columnIndex]
+        ? { ...currentSelections[mapping.columnIndex] }
+        : {};
+
+      summary.results.forEach((result, index) => {
+        if ((result.status === "matched" || result.status === "duplicate") && result.memberId) {
+          if (!(result.memberId in selections)) selections[result.memberId] = index;
+        }
+      });
+
+      nextPreviews.push({
+        columnIndex: mapping.columnIndex,
+        columnName: mapping.columnName,
+        displayName: metricDisplayName,
+        disposition: mapping.target.kind === "skip" ? "existing" : mapping.target.kind,
+        target: mapping.target,
+        summary,
+        skippedBlankCells: parseResult.skippedBlankCells,
+        invalidValueIssues: parseResult.invalidValueIssues,
+        missingIdentityIssues: parseResult.missingIdentityIssues,
+      });
+      nextSelections[mapping.columnIndex] = selections;
+    }
+
+    setPreviews(nextPreviews);
+    setDuplicateSelections(nextSelections);
+    setParseErrors(aggregatedErrors);
+    return nextPreviews;
+  };
+
+  const updateColumnMappings = (
+    updater: (prev: ColumnMetricMapping[]) => ColumnMetricMapping[],
+  ) => {
     setError(null);
-    setColumnMappings((prev) =>
+    setColumnMappings((prev) => {
+      const updated = updater(prev);
+      if (step === "preview") {
+        rebuildPreviews(updated);
+      }
+      return updated;
+    });
+  };
+
+  const setColumnTarget = (columnIndex: number, token: string, columnName: string) => {
+    updateColumnMappings((prev) =>
       prev.map((m) => {
         if (m.columnIndex !== columnIndex) return m;
         const target = tokenToTarget(token, columnName);
@@ -488,8 +577,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     const onPeriod = matchMetricName(columnName, metrics);
     if (onPeriod.status === "matched" && onPeriod.metricId) {
       const metricId = onPeriod.metricId;
-      setError(null);
-      setColumnMappings((prev) =>
+      updateColumnMappings((prev) =>
         prev.map((m) =>
           m.columnIndex === columnIndex
             ? { ...m, target: { kind: "existing", metricId }, confirmationStatus: "confirmed_metric" }
@@ -503,8 +591,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       const inLibrary = matchMetricName(columnName, libraryMetrics);
       if (inLibrary.status === "matched" && inLibrary.metricId) {
         const metricId = inLibrary.metricId;
-        setError(null);
-        setColumnMappings((prev) =>
+        updateColumnMappings((prev) =>
           prev.map((m) =>
             m.columnIndex === columnIndex
               ? { ...m, target: { kind: "attach", metricId }, confirmationStatus: "confirmed_metric" }
@@ -516,8 +603,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     }
 
     if (canCreateMetrics) {
-      setError(null);
-      setColumnMappings((prev) =>
+      updateColumnMappings((prev) =>
         prev.map((m) =>
           m.columnIndex === columnIndex
             ? { ...m, target: { kind: "create", name: columnName }, confirmationStatus: "confirmed_metric" }
@@ -533,22 +619,13 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   };
 
   const handleConfirmColumnAsSkip = (columnIndex: number) => {
-    setError(null);
-    setColumnMappings((prev) =>
+    updateColumnMappings((prev) =>
       prev.map((m) =>
         m.columnIndex === columnIndex
           ? { ...m, target: { kind: "skip" }, confirmationStatus: "confirmed_skip" }
           : m,
       ),
     );
-  };
-
-  const displayNameFor = (target: ColumnTarget, columnName: string): string => {
-    if (target.kind === "existing" || target.kind === "attach") {
-      return metricNameById.get(target.metricId) ?? columnName;
-    }
-    if (target.kind === "create") return target.name;
-    return columnName;
   };
 
   const handleSelectComplete = () => {
@@ -726,6 +803,79 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   const hasBlockingDiagnostics = blockingCellIssues.length > 0;
   const hasValueIssuesBeforePreview = valueIssuesBeforePreview.length > 0;
 
+  const columnTranslations: ColumnTranslation[] = useMemo(() => {
+    if (!currentSheet || !tableBounds) return [];
+    const row0 = currentSheet.rows[tableBounds.headerRowIndex] ?? [];
+    const totalCols = row0.length;
+    const playerColIdx = autoDetectedPlayerColumn?.index ?? -1;
+
+    const mappingByColIndex = new Map(columnMappings.map((m) => [m.columnIndex, m]));
+
+    const translations: ColumnTranslation[] = [];
+    for (let c = 0; c < totalCols; c++) {
+      const headerName = row0[c]?.trim() || `Column ${columnIndexToLabel(c)}`;
+      const samples = extractColumnSamples(
+        currentSheet.rows,
+        c,
+        tableBounds.dataStartIndex,
+        tableBounds.dataEndIndex
+      );
+
+      if (c === playerColIdx) {
+        translations.push({
+          kind: "identity",
+          sourceColumnName: headerName,
+          columnIndex: c,
+          samples,
+          targetLabel: "Member Identity",
+          status: "mapped",
+        });
+        continue;
+      }
+
+      const mapping = mappingByColIndex.get(c);
+      if (mapping) {
+        translations.push({
+          kind: "metric",
+          sourceColumnName: headerName,
+          columnIndex: c,
+          samples,
+          target: mapping.target,
+          classification: mapping.classification,
+          confirmationStatus: mapping.confirmationStatus,
+          status:
+            mapping.target.kind === "skip"
+              ? mapping.confirmationStatus === "unconfirmed"
+                ? "unconfirmed"
+                : "skipped"
+              : "mapped",
+        });
+        continue;
+      }
+
+      if (samples.length === 0) {
+        translations.push({
+          kind: "empty",
+          sourceColumnName: headerName,
+          columnIndex: c,
+          samples: [],
+          reason: "No values in column",
+          status: "ignored",
+        });
+      } else {
+        translations.push({
+          kind: "unsupported",
+          sourceColumnName: headerName,
+          columnIndex: c,
+          samples,
+          reason: "Free-form text / unsupported non-numeric column",
+          status: "excluded",
+        });
+      }
+    }
+    return translations;
+  }, [currentSheet, tableBounds, autoDetectedPlayerColumn, columnMappings]);
+
   const handleImport = () => {
     const mappings: WireMapping[] = previews
       .map((preview) => ({
@@ -781,6 +931,11 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
   // Complete step
   if (step === "complete" && importResult) {
+    const committedMetricSummary = buildCommittedMetricTranslationSummary({
+      periodName,
+      result: importResult,
+    });
+
     const unmatchedRawNamesMap = new Map<string, { rawName: string; rows: number[] }>();
     for (const preview of previews) {
       for (const res of preview.summary.results) {
@@ -817,9 +972,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
-        <div className="w-full p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium text-center">
-          Destination Period: {periodName}
-        </div>
+        <SpreadsheetTranslationSummary mode="committed_metrics" summary={committedMetricSummary} />
 
         <div className="w-full p-6 rounded-lg bg-success/10 border border-success/30 flex flex-col gap-4">
           <div className="text-center">
@@ -1289,6 +1442,25 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     );
     const hasBlockingDiagnostics = blockingCellIssues.length > 0;
 
+    const distinctMatchedMemberIds = new Set<string>();
+    previews.forEach((p) => {
+      const selections = duplicateSelections[p.columnIndex];
+      const selectedIndices = selections ? new Set(Object.values(selections)) : null;
+      p.summary.results.forEach((r, idx) => {
+        const isSelected = selectedIndices ? selectedIndices.has(idx) : true;
+        if (r.status !== "unmatched" && r.memberId && isSelected) {
+          distinctMatchedMemberIds.add(r.memberId);
+        }
+      });
+    });
+
+    const plannedSummary = buildPlannedMetricTranslationSummary({
+      periodName,
+      translations: columnTranslations,
+      matchedMembersCount: distinctMatchedMemberIds.size,
+      totalEntriesCount: totalToImport,
+    });
+
     return (
       <div className="w-full max-w-2xl flex flex-col gap-5">
         {parsedWorkbook && (
@@ -1300,9 +1472,44 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           />
         )}
 
-        <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium">
-          Destination Period: {periodName}
-        </div>
+        <SpreadsheetTranslationSummary mode="planned_metrics" summary={plannedSummary} />
+
+        {columnTranslations.length > 0 && (
+          <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
+            <h3 className="font-semibold text-text-primary text-sm">Source Column Translations</h3>
+            <div className="space-y-2">
+              {columnTranslations.map((t) => (
+                <ColumnTranslationCard
+                  key={t.columnIndex}
+                  translation={t}
+                  metricOptions={metrics}
+                  libraryMetricOptions={libraryMetrics}
+                  canCreateMetrics={canCreateMetrics}
+                  canAttachMetrics={canAttachMetrics}
+                  onTargetChange={(columnIndex, target) => {
+                    if (target.kind === "skip") {
+                      setColumnTarget(columnIndex, "skip", "");
+                    } else if (target.kind === "create") {
+                      setColumnTarget(columnIndex, "create", target.name);
+                    } else if (target.kind === "existing") {
+                      setColumnTarget(columnIndex, `existing:${target.metricId}`, "");
+                    } else if (target.kind === "attach") {
+                      setColumnTarget(columnIndex, `attach:${target.metricId}`, "");
+                    }
+                  }}
+                  onConfirmMetric={(columnIndex) => {
+                    const mapping = columnMappings.find((m) => m.columnIndex === columnIndex);
+                    if (mapping) {
+                      handleConfirmPeriodColumnAsMetric(columnIndex, mapping.columnName);
+                    }
+                  }}
+                  onConfirmSkip={handleConfirmColumnAsSkip}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-text-primary">Review &amp; Confirm Import</h3>
           <button onClick={handleBack} className="text-sm text-text-muted hover:text-text-primary cursor-pointer">
@@ -1376,10 +1583,13 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         <span>Destination Period: {periodName}</span>
         <TourButton tour={smartImportTour} />
       </div>
+
+      <SpreadsheetDataShapeGuide type="metrics" periodName={periodName} />
+
       <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary">
-        <p className="font-medium text-text-primary">Evaluation Results Import Scope</p>
+        <p className="font-medium text-text-primary">Destination: {periodName}</p>
         <p className="mt-0.5 text-text-secondary">
-          Importing results for destination period &apos;{periodName}&apos;. This matches existing active members in your member list; unmatched names are skipped. During mapping, authorized users may attach an existing metric or create a new one. This workflow does not create members.
+          Importing metric results directly into active evaluation period &apos;{periodName}&apos;. Member names are matched against active alliance members. Authorized leaders can map columns to existing metrics, attach library metrics, or create new metrics.
         </p>
       </div>
 
