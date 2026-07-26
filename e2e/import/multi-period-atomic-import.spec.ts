@@ -103,11 +103,11 @@ test.describe("Multi-period import with atomic period creation", () => {
 
     await page.getByRole("button", { name: "Preview Multi-Period Import" }).click();
     await expect(page.getByText("Planned Multi-Period Import")).toBeVisible();
-    await expect(page.getByText(existingPeriod.name)).toBeVisible();
+    await expect(page.getByRole("strong", { name: existingPeriod.name })).toBeVisible();
 
     await page.getByRole("button", { name: /Confirm Multi-Period Import/i }).click();
     await expect(page.getByText("Multi-Period Import Complete")).toBeVisible();
-    await expect(page.getByText(existingPeriod.name)).toBeVisible();
+    await expect(page.getByRole("heading", { name: existingPeriod.name })).toBeVisible();
 
     const createdPeriod = await prisma.metricPeriod.findFirst({
       where: {
