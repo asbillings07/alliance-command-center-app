@@ -65,6 +65,17 @@ describe("revalidateAllianceData", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/alliances/[allianceId]/members/[memberId]", "page");
     expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123");
     expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/setup");
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/setup/import");
     expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods/per_456");
+  });
+
+  it("revalidating setup also covers the guided import route", () => {
+    revalidateAllianceData({
+      allianceId: "all_123",
+      domains: ["setup"],
+    });
+
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/setup");
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/setup/import");
   });
 });

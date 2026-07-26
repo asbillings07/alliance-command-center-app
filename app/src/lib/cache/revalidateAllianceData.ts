@@ -22,7 +22,7 @@ export type RevalidateAllianceDataParams = {
   * Domain Mappings:
   * - "members": Exact list page (/alliances/[id]/members) + member detail route pattern (/alliances/[allianceId]/members/[memberId])
   * - "evaluation-results": Period detail (/alliances/[id]/periods/[periodId]), record page, and import page
-  * - "setup": Alliance onboarding setup checklist (/alliances/[id]/setup)
+  * - "setup": Alliance onboarding setup checklist (/alliances/[id]/setup) and guided import (/alliances/[id]/setup/import)
   * - "dashboard": Alliance overview dashboard (/alliances/[id])
   */
 export function revalidateAllianceData(params: RevalidateAllianceDataParams): void {
@@ -52,6 +52,7 @@ export function revalidateAllianceData(params: RevalidateAllianceDataParams): vo
 
   if (domainsSet.has("setup")) {
     revalidatePath(`/alliances/${allianceId}/setup`);
+    revalidatePath(`/alliances/${allianceId}/setup/import`);
   }
 
   if (domainsSet.has("dashboard")) {
