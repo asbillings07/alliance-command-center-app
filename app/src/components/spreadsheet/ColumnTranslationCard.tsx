@@ -27,27 +27,27 @@ export function ColumnTranslationCard({
   const colLetter = columnIndexToLabel(translation.columnIndex);
 
   return (
-    <div className="bg-card border border-border rounded-lg p-3 space-y-2 text-xs">
+    <div className="bg-surface border border-border rounded-lg p-3 space-y-2 text-xs">
       <div className="flex items-start justify-between gap-2">
         <div className="space-y-1">
           <div className="flex items-center space-x-2">
-            <span className="font-mono bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-semibold text-[11px]">
+            <span className="font-mono bg-surface-secondary text-text-muted px-1.5 py-0.5 rounded font-semibold text-[11px]">
               Column {colLetter}
             </span>
-            <span className="font-semibold text-foreground text-sm">
+            <span className="font-semibold text-text-primary text-sm">
               &quot;{translation.sourceColumnName}&quot;
             </span>
           </div>
 
           {/* Sample values */}
-          <div className="text-muted-foreground text-[11px] flex items-center space-x-1">
-            <span className="font-medium text-foreground/80">Samples:</span>
+          <div className="text-text-muted text-[11px] flex items-center space-x-1">
+            <span className="font-medium text-text-primary/80">Samples:</span>
             {translation.samples.length > 0 ? (
-              <span className="font-mono bg-muted/40 px-1.5 py-0.5 rounded border border-border/40">
+              <span className="font-mono bg-surface-secondary/40 px-1.5 py-0.5 rounded border border-border/40">
                 {translation.samples.map((s) => `"${s}"`).join(", ")}
               </span>
             ) : (
-              <span className="italic text-muted-foreground/60">(none / empty column)</span>
+              <span className="italic text-text-muted/60">(none / empty column)</span>
             )}
           </div>
         </div>
@@ -113,14 +113,14 @@ export function ColumnTranslationCard({
                 <button
                   type="button"
                   onClick={() => onConfirmMetric?.(translation.columnIndex)}
-                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium transition-colors"
+                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500"
                 >
                   Keep as Metric Name
                 </button>
                 <button
                   type="button"
                   onClick={() => onConfirmSkip?.(translation.columnIndex)}
-                  className="px-2.5 py-1 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded font-medium transition-colors"
+                  className="px-2.5 py-1 bg-surface-secondary text-text-primary hover:bg-surface-secondary/80 rounded font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   Skip Column
                 </button>
@@ -130,24 +130,24 @@ export function ColumnTranslationCard({
 
           {translation.classification.intent === "unsure" && (
             <div className="bg-slate-500/10 border border-slate-500/20 p-2 rounded text-[11px] space-y-1.5">
-              <p className="font-semibold text-foreground">
+              <p className="font-semibold text-text-primary">
                 Ambiguous Column Header (&quot;{translation.sourceColumnName}&quot;)
               </p>
-              <p className="text-muted-foreground">
+              <p className="text-text-muted">
                 This header does not match known metrics or library metrics. Please choose whether to import this as a metric or skip it.
               </p>
               <div className="flex items-center space-x-2 pt-1">
                 <button
                   type="button"
                   onClick={() => onConfirmMetric?.(translation.columnIndex)}
-                  className="px-2.5 py-1 bg-primary text-primary-foreground hover:bg-primary/90 rounded font-medium transition-colors"
+                  className="px-2.5 py-1 bg-primary text-white hover:bg-primary-hover rounded font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   Import as Metric
                 </button>
                 <button
                   type="button"
                   onClick={() => onConfirmSkip?.(translation.columnIndex)}
-                  className="px-2.5 py-1 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded font-medium transition-colors"
+                  className="px-2.5 py-1 bg-surface-secondary text-text-primary hover:bg-surface-secondary/80 rounded font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   Skip Column
                 </button>
@@ -158,7 +158,7 @@ export function ColumnTranslationCard({
           {/* Action selection dropdowns if confirmed or likely_metric */}
           {translation.confirmationStatus !== "unconfirmed" && onTargetChange && (
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <label className="text-muted-foreground font-medium">Action:</label>
+              <label className="text-text-muted font-medium">Action:</label>
               <select
                 value={
                   translation.target.kind === "skip"
@@ -190,7 +190,7 @@ export function ColumnTranslationCard({
                     });
                   }
                 }}
-                className="px-2 py-1 bg-background border border-input rounded text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                className="px-2 py-1 bg-surface-secondary border border-border rounded text-xs text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
               >
                 <option value="skip">Skip column</option>
 

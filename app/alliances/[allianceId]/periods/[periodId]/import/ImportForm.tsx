@@ -471,9 +471,93 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     analyzeWorkbookSheet(parsedWorkbook, sheetIndex);
   };
 
-  const setColumnTarget = (columnIndex: number, token: string, columnName: string) => {
+  const displayNameFor = (target: ColumnTarget, columnName: string): string => {
+    if (target.kind === "existing" || target.kind === "attach") {
+      return metricNameById.get(target.metricId) ?? columnName;
+    }
+    if (target.kind === "create") return target.name;
+    return columnName;
+  };
+
+  const rebuildPreviews = (
+    newMappings: ColumnMetricMapping[],
+    currentSelections: DuplicateSelections = duplicateSelections,
+  ): MetricImportPreview[] => {
+    if (!autoDetectedPlayerColumn || !parsedWorkbook) return [];
+
+    const currentSheet = parsedWorkbook.sheets[selectedSheetIndex];
+    if (!currentSheet) return [];
+
+    const mapped = newMappings.filter((m) => m.target.kind !== "skip");
+    if (mapped.length === 0) {
+      setPreviews([]);
+      setStep("select");
+      setError("All columns were skipped. Map at least one column to preview import.");
+      return [];
+    }
+
+    const nextPreviews: MetricImportPreview[] = [];
+    const nextSelections: DuplicateSelections = {};
+    const aggregatedErrors: string[] = [];
+
+    for (const mapping of mapped) {
+      const metricDisplayName = displayNameFor(mapping.target, mapping.columnName);
+      const parseResult = parseMetricRows(currentSheet.rows, {
+        nameColumn: autoDetectedPlayerColumn.index,
+        valueColumn: mapping.columnIndex,
+        hasHeader: true,
+        tableBounds: tableBounds ?? undefined,
+        metricName: metricDisplayName,
+      });
+
+      parseResult.errors.forEach((err) => aggregatedErrors.push(`${mapping.columnName}: ${err}`));
+
+      const summary = matchEntriesToMembers(parseResult.entries, members);
+      const selections: Record<string, number> = currentSelections[mapping.columnIndex]
+        ? { ...currentSelections[mapping.columnIndex] }
+        : {};
+
+      summary.results.forEach((result, index) => {
+        if ((result.status === "matched" || result.status === "duplicate") && result.memberId) {
+          if (!(result.memberId in selections)) selections[result.memberId] = index;
+        }
+      });
+
+      nextPreviews.push({
+        columnIndex: mapping.columnIndex,
+        columnName: mapping.columnName,
+        displayName: metricDisplayName,
+        disposition: mapping.target.kind === "skip" ? "existing" : mapping.target.kind,
+        target: mapping.target,
+        summary,
+        skippedBlankCells: parseResult.skippedBlankCells,
+        invalidValueIssues: parseResult.invalidValueIssues,
+        missingIdentityIssues: parseResult.missingIdentityIssues,
+      });
+      nextSelections[mapping.columnIndex] = selections;
+    }
+
+    setPreviews(nextPreviews);
+    setDuplicateSelections(nextSelections);
+    setParseErrors(aggregatedErrors);
+    return nextPreviews;
+  };
+
+  const updateColumnMappings = (
+    updater: (prev: ColumnMetricMapping[]) => ColumnMetricMapping[],
+  ) => {
     setError(null);
-    setColumnMappings((prev) =>
+    setColumnMappings((prev) => {
+      const updated = updater(prev);
+      if (step === "preview") {
+        rebuildPreviews(updated);
+      }
+      return updated;
+    });
+  };
+
+  const setColumnTarget = (columnIndex: number, token: string, columnName: string) => {
+    updateColumnMappings((prev) =>
       prev.map((m) => {
         if (m.columnIndex !== columnIndex) return m;
         const target = tokenToTarget(token, columnName);
@@ -493,8 +577,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     const onPeriod = matchMetricName(columnName, metrics);
     if (onPeriod.status === "matched" && onPeriod.metricId) {
       const metricId = onPeriod.metricId;
-      setError(null);
-      setColumnMappings((prev) =>
+      updateColumnMappings((prev) =>
         prev.map((m) =>
           m.columnIndex === columnIndex
             ? { ...m, target: { kind: "existing", metricId }, confirmationStatus: "confirmed_metric" }
@@ -508,8 +591,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       const inLibrary = matchMetricName(columnName, libraryMetrics);
       if (inLibrary.status === "matched" && inLibrary.metricId) {
         const metricId = inLibrary.metricId;
-        setError(null);
-        setColumnMappings((prev) =>
+        updateColumnMappings((prev) =>
           prev.map((m) =>
             m.columnIndex === columnIndex
               ? { ...m, target: { kind: "attach", metricId }, confirmationStatus: "confirmed_metric" }
@@ -521,8 +603,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     }
 
     if (canCreateMetrics) {
-      setError(null);
-      setColumnMappings((prev) =>
+      updateColumnMappings((prev) =>
         prev.map((m) =>
           m.columnIndex === columnIndex
             ? { ...m, target: { kind: "create", name: columnName }, confirmationStatus: "confirmed_metric" }
@@ -538,22 +619,13 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   };
 
   const handleConfirmColumnAsSkip = (columnIndex: number) => {
-    setError(null);
-    setColumnMappings((prev) =>
+    updateColumnMappings((prev) =>
       prev.map((m) =>
         m.columnIndex === columnIndex
           ? { ...m, target: { kind: "skip" }, confirmationStatus: "confirmed_skip" }
           : m,
       ),
     );
-  };
-
-  const displayNameFor = (target: ColumnTarget, columnName: string): string => {
-    if (target.kind === "existing" || target.kind === "attach") {
-      return metricNameById.get(target.metricId) ?? columnName;
-    }
-    if (target.kind === "create") return target.name;
-    return columnName;
   };
 
   const handleSelectComplete = () => {
@@ -1370,10 +1442,22 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     );
     const hasBlockingDiagnostics = blockingCellIssues.length > 0;
 
+    const distinctMatchedMemberIds = new Set<string>();
+    previews.forEach((p) => {
+      const selections = duplicateSelections[p.columnIndex];
+      const selectedIndices = selections ? new Set(Object.values(selections)) : null;
+      p.summary.results.forEach((r, idx) => {
+        const isSelected = selectedIndices ? selectedIndices.has(idx) : true;
+        if (r.status !== "unmatched" && r.memberId && isSelected) {
+          distinctMatchedMemberIds.add(r.memberId);
+        }
+      });
+    });
+
     const plannedSummary = buildPlannedMetricTranslationSummary({
       periodName,
       translations: columnTranslations,
-      matchedMembersCount: previews.reduce((acc, p) => acc + p.summary.matched, 0),
+      matchedMembersCount: distinctMatchedMemberIds.size,
       totalEntriesCount: totalToImport,
     });
 
@@ -1391,8 +1475,8 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         <SpreadsheetTranslationSummary mode="planned_metrics" summary={plannedSummary} />
 
         {columnTranslations.length > 0 && (
-          <div className="bg-card border border-border rounded-xl p-4 space-y-3">
-            <h3 className="font-semibold text-foreground text-sm">Source Column Translations</h3>
+          <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
+            <h3 className="font-semibold text-text-primary text-sm">Source Column Translations</h3>
             <div className="space-y-2">
               {columnTranslations.map((t) => (
                 <ColumnTranslationCard

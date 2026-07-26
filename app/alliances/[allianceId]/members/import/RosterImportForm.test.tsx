@@ -122,7 +122,7 @@ describe("RosterImportForm [component]", () => {
         // Scope notice check
         expect(container.textContent).toContain("Scope: Alliance Members");
         expect(container.textContent).toContain("This workflow updates details for Alliance Members");
-        expect(container.textContent).toContain("Expected Alliance Roster Format");
+        expect(container.textContent).toContain("Expected Alliance Member Format");
 
         // Accessible file input check
         const fileInput = container.querySelector<HTMLInputElement>("#roster-file");
@@ -595,7 +595,7 @@ Candidate B,-10`;
         });
 
         // 1. Data shape guide on upload step
-        expect(container.textContent).toContain("Expected Alliance Roster Format");
+        expect(container.textContent).toContain("Expected Alliance Member Format");
         expect(container.textContent).toContain("Copy Sample CSV");
         expect(container.textContent).toContain("Download .csv Template");
 

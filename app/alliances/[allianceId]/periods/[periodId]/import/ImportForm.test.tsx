@@ -833,4 +833,78 @@ describe("ImportForm [component]", () => {
         expect(container.textContent).toContain("Total Entries Committed");
         expect(container.textContent).toContain("Reused / Attached Metrics");
     });
+
+    it("updates previews and server payload when changing a column target after entering preview", async () => {
+        (importMemberMetrics as ReturnType<typeof vi.fn>).mockResolvedValue({
+            perMetric: [{ metricId: "met1", name: "Kill Points", count: 2 }],
+            totalCount: 2,
+            created: [],
+            attached: [],
+            reused: [{ metricId: "met1", name: "Kill Points" }],
+        });
+
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        // Upload CSV with Player, Kill Points and Hero Power (both match existing metrics met1 and met2)
+        const csvContent = `Player,Kill Points,Hero Power\nDragon,1500,200\nPhoenix,2300,400`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Click Preview Import
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Import")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            previewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Verify initially in Preview step
+        expect(container.textContent).toContain("Planned Metric Translation");
+
+        // Change Action dropdown for Hero Power (value: "create") to "skip" while in preview step
+        const selects = Array.from(container.querySelectorAll("select"));
+        const heroPowerSelect = selects.find((s) => s.value === "create") as HTMLSelectElement;
+        expect(heroPowerSelect).not.toBeUndefined();
+
+        await act(async () => {
+            heroPowerSelect.value = "skip";
+            heroPowerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Click Import All
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import All")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            importBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Assert importMemberMetrics was called with ONLY Kill Points (Hero Power was skipped!)
+        expect(importMemberMetrics).toHaveBeenCalledTimes(1);
+        const payload = (importMemberMetrics as ReturnType<typeof vi.fn>).mock.calls[0][0];
+        expect(payload.mappings).toHaveLength(1);
+        expect(payload.mappings[0].sourceColumnName).toBe("Kill Points");
+        expect(payload.mappings[0].target).toEqual({ kind: "existing", metricId: "met1" });
+    });
 });
