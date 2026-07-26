@@ -6,11 +6,10 @@ import Link from "next/link";
 import {
   parseMetricRows,
   matchEntriesToMembers,
-  type MatchSummary,
   type TableBoundsResult,
 } from "@/app/src/lib/memberMatcher";
 import { classifyColumn, type ColumnClassification } from "@/app/src/lib/columnClassifier";
-import type { ParsedWorkbook } from "@/app/src/lib/workbookParser";
+import type { ParsedWorkbook, WorkbookIssue } from "@/app/src/lib/workbookParser";
 import type {
   PeriodMappingProposal,
   PeriodMappingReview,
@@ -21,25 +20,34 @@ import {
   buildCommittedMultiPeriodTranslationSummary,
   type ColumnTarget,
 } from "@/app/src/lib/importTranslation";
+import {
+  getPreviewEntries,
+  dispositionForTarget,
+  type MetricImportPreviewData,
+} from "@/app/src/lib/import/importPreviewHelpers";
+import { MetricPreviewSection } from "@/app/src/components/spreadsheet/MetricPreviewSection";
+import {
+  ValueIssueNotice,
+  WorkbookIssueNotice,
+} from "@/app/src/components/spreadsheet/ImportDiagnosticNotices";
 import { importMultiPeriodMetrics } from "@/app/alliances/[allianceId]/periods/[periodId]/import/multiPeriodAction";
 import type { MultiPeriodImportMetricsResult } from "@/app/alliances/[allianceId]/periods/[periodId]/import/multiPeriodAction";
 
 type MemberOption = { id: string; playerName: string };
 type MetricOption = { id: string; name: string };
 
-export type AlliancePeriodOption = {
-  id: string;
-  name: string;
-  startsAt: string | null;
-  endsAt: string | null;
-  metrics: MetricOption[];
-};
+import {
+  sortAlliancePeriods,
+  type AlliancePeriodOption,
+} from "@/app/src/lib/import/multiPeriodImportUi";
 
 type ColumnConfirmationStatus = "unconfirmed" | "confirmed_skip" | "confirmed_metric";
 
 type ColumnMetricMapping = {
   columnIndex: number;
   columnName: string;
+  proposedMetricName: string;
+  targetPeriodId: string;
   classification: ColumnClassification;
   target: ColumnTarget;
   confirmationStatus: ColumnConfirmationStatus;
@@ -53,22 +61,20 @@ type ProposalMappingState = {
   columnMappings: ColumnMetricMapping[];
 };
 
-type MetricImportPreview = {
+type MultiPeriodMetricPreview = MetricImportPreviewData & {
   proposalId: string;
   periodId: string;
   periodName: string;
-  columnIndex: number;
-  columnName: string;
-  displayName: string;
-  target: ColumnTarget;
-  summary: MatchSummary;
 };
+
+type DuplicateSelections = Record<number, Record<string, number>>;
 
 type MultiPeriodImportFlowProps = {
   allianceId: string;
   routePeriodId: string;
   alliancePeriods: AlliancePeriodOption[];
-  libraryMetrics: MetricOption[];
+  /** Full active alliance metric library — attachable subsets are derived per target period. */
+  allianceLibraryMetrics: MetricOption[];
   canCreateMetrics: boolean;
   canAttachMetrics: boolean;
   members: MemberOption[];
@@ -82,6 +88,10 @@ type MultiPeriodImportFlowProps = {
 
 type FlowStep = "map" | "preview" | "complete";
 
+function metricIdentity(col: ColumnPeriodEvidence): string {
+  return col.proposedMetricName || col.headerText;
+}
+
 function formatPeriodLabel(period: AlliancePeriodOption): string {
   const dates =
     period.startsAt && period.endsAt
@@ -90,6 +100,16 @@ function formatPeriodLabel(period: AlliancePeriodOption): string {
         ? `from ${period.startsAt.slice(0, 10)}`
         : null;
   return dates ? `${period.name} (${dates})` : period.name;
+}
+
+function attachableLibraryForPeriod(
+  periodId: string,
+  alliancePeriods: AlliancePeriodOption[],
+  allianceLibraryMetrics: MetricOption[],
+): MetricOption[] {
+  const period = alliancePeriods.find((p) => p.id === periodId);
+  const attachedIds = new Set(period?.metrics.map((m) => m.id) ?? []);
+  return allianceLibraryMetrics.filter((m) => !attachedIds.has(m.id));
 }
 
 function targetToToken(target: ColumnTarget): string {
@@ -105,9 +125,9 @@ function targetToToken(target: ColumnTarget): string {
   }
 }
 
-function tokenToTarget(token: string, columnName: string): ColumnTarget {
+function tokenToTarget(token: string, proposedMetricName: string): ColumnTarget {
   if (token === "") return { kind: "skip" };
-  if (token === "create") return { kind: "create", name: columnName };
+  if (token === "create") return { kind: "create", name: proposedMetricName };
   const [kind, metricId] = token.split(":");
   if (kind === "existing" && metricId) return { kind: "existing", metricId };
   if (kind === "attach" && metricId) return { kind: "attach", metricId };
@@ -124,20 +144,60 @@ function toWireTarget(
   throw new Error("Cannot send a skipped column");
 }
 
+function resolveMetricCollisionKey(target: ColumnTarget): string | null {
+  if (target.kind === "skip") return null;
+  if (target.kind === "create") return `create:${target.name.trim().toLowerCase()}`;
+  return `metric:${target.metricId}`;
+}
+
+function findPeriodMetricCollisions(
+  mappings: ColumnMetricMapping[],
+  metricNameById: Map<string, string>,
+): string | null {
+  const byPeriod = new Map<string, Map<string, string>>();
+
+  for (const mapping of mappings) {
+    if (mapping.confirmationStatus !== "confirmed_metric" || mapping.target.kind === "skip") {
+      continue;
+    }
+    const key = resolveMetricCollisionKey(mapping.target);
+    if (!key) continue;
+
+    const periodCollisions = byPeriod.get(mapping.targetPeriodId) ?? new Map<string, string>();
+    if (periodCollisions.has(key)) {
+      const metricLabel =
+        mapping.target.kind === "create"
+          ? mapping.proposedMetricName
+          : metricNameById.get(
+              mapping.target.kind === "existing" || mapping.target.kind === "attach"
+                ? mapping.target.metricId
+                : "",
+            ) ?? mapping.proposedMetricName;
+      return `${metricLabel} is already mapped for this period from ${periodCollisions.get(key)}`;
+    }
+    periodCollisions.set(key, mapping.columnName);
+    byPeriod.set(mapping.targetPeriodId, periodCollisions);
+  }
+
+  return null;
+}
+
 function buildColumnMappingsForProposal(
   columns: ColumnPeriodEvidence[],
+  targetPeriodId: string,
   periodMetrics: MetricOption[],
-  libraryMetrics: MetricOption[],
+  attachableLibrary: MetricOption[],
   canAttachMetrics: boolean,
   canCreateMetrics: boolean,
 ): ColumnMetricMapping[] {
   const usedMetricIds = new Set<string>();
   return columns.map((col) => {
+    const proposedMetricName = metricIdentity(col);
     const classification = classifyColumn({
       columnIndex: col.columnIndex,
-      columnName: col.headerText,
+      columnName: proposedMetricName,
       periodMetrics,
-      libraryMetrics,
+      libraryMetrics: attachableLibrary,
     });
 
     if (
@@ -149,6 +209,8 @@ function buildColumnMappingsForProposal(
       return {
         columnIndex: col.columnIndex,
         columnName: col.headerText,
+        proposedMetricName,
+        targetPeriodId,
         classification,
         target: { kind: "existing", metricId: classification.matchedMetricId },
         confirmationStatus: "confirmed_metric",
@@ -165,6 +227,8 @@ function buildColumnMappingsForProposal(
       return {
         columnIndex: col.columnIndex,
         columnName: col.headerText,
+        proposedMetricName,
+        targetPeriodId,
         classification,
         target: { kind: "attach", metricId: classification.matchedMetricId },
         confirmationStatus: "confirmed_metric",
@@ -175,8 +239,10 @@ function buildColumnMappingsForProposal(
       return {
         columnIndex: col.columnIndex,
         columnName: col.headerText,
+        proposedMetricName,
+        targetPeriodId,
         classification,
-        target: { kind: "create", name: col.proposedMetricName || col.headerText },
+        target: { kind: "create", name: proposedMetricName },
         confirmationStatus: "confirmed_metric",
       };
     }
@@ -184,6 +250,8 @@ function buildColumnMappingsForProposal(
     return {
       columnIndex: col.columnIndex,
       columnName: col.headerText,
+      proposedMetricName,
+      targetPeriodId,
       classification,
       target: { kind: "skip" },
       confirmationStatus: "unconfirmed",
@@ -193,20 +261,22 @@ function buildColumnMappingsForProposal(
 
 function initialProposalStates(
   proposals: PeriodMappingProposal[],
-  alliancePeriods: AlliancePeriodOption[],
+  sortedPeriods: AlliancePeriodOption[],
   routePeriodId: string,
-  libraryMetrics: MetricOption[],
+  allianceLibraryMetrics: MetricOption[],
   canAttachMetrics: boolean,
   canCreateMetrics: boolean,
 ): ProposalMappingState[] {
   const defaultPeriodId =
-    alliancePeriods.find((p) => p.id === routePeriodId)?.id ?? alliancePeriods[0]?.id ?? "";
+    sortedPeriods.find((p) => p.id === routePeriodId)?.id ?? sortedPeriods[0]?.id ?? "";
 
   return proposals.map((proposal) => {
-    const period = alliancePeriods.find((p) => p.id === defaultPeriodId) ?? alliancePeriods[0];
+    const period = sortedPeriods.find((p) => p.id === defaultPeriodId) ?? sortedPeriods[0];
     const periodMetrics = period?.metrics ?? [];
-    const attachableLibrary = libraryMetrics.filter(
-      (m) => !periodMetrics.some((pm) => pm.id === m.id),
+    const attachableLibrary = attachableLibraryForPeriod(
+      period?.id ?? defaultPeriodId,
+      sortedPeriods,
+      allianceLibraryMetrics,
     );
 
     return {
@@ -216,6 +286,7 @@ function initialProposalStates(
       targetPeriodId: period?.id ?? defaultPeriodId,
       columnMappings: buildColumnMappingsForProposal(
         proposal.columns,
+        period?.id ?? defaultPeriodId,
         periodMetrics,
         attachableLibrary,
         canAttachMetrics,
@@ -231,11 +302,15 @@ function qualifyingProposals(review: PeriodMappingReview): PeriodMappingProposal
   );
 }
 
+function allActiveColumnMappings(states: ProposalMappingState[]): ColumnMetricMapping[] {
+  return states.filter((s) => !s.excluded).flatMap((s) => s.columnMappings);
+}
+
 export function MultiPeriodImportFlow({
   allianceId,
   routePeriodId,
   alliancePeriods,
-  libraryMetrics,
+  allianceLibraryMetrics,
   canCreateMetrics,
   canAttachMetrics,
   members,
@@ -247,33 +322,45 @@ export function MultiPeriodImportFlow({
   onCancel,
 }: MultiPeriodImportFlowProps) {
   const router = useRouter();
+  const sortedPeriods = useMemo(() => sortAlliancePeriods(alliancePeriods), [alliancePeriods]);
   const proposals = useMemo(() => qualifyingProposals(review), [review]);
   const [step, setStep] = useState<FlowStep>("map");
   const [proposalStates, setProposalStates] = useState<ProposalMappingState[]>(() =>
     initialProposalStates(
       proposals,
-      alliancePeriods,
+      sortedPeriods,
       routePeriodId,
-      libraryMetrics,
+      allianceLibraryMetrics,
       canAttachMetrics,
       canCreateMetrics,
     ),
   );
-  const [previews, setPreviews] = useState<MetricImportPreview[]>([]);
+  const [previews, setPreviews] = useState<MultiPeriodMetricPreview[]>([]);
+  const [duplicateSelections, setDuplicateSelections] = useState<DuplicateSelections>({});
+  const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<MultiPeriodImportMetricsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const metricNameById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const period of alliancePeriods) {
+    for (const period of sortedPeriods) {
       period.metrics.forEach((m) => map.set(m.id, m.name));
     }
-    libraryMetrics.forEach((m) => map.set(m.id, m.name));
+    allianceLibraryMetrics.forEach((m) => map.set(m.id, m.name));
     return map;
-  }, [alliancePeriods, libraryMetrics]);
+  }, [sortedPeriods, allianceLibraryMetrics]);
 
   const activeStates = proposalStates.filter((s) => !s.excluded);
+  const activeColumnMappings = useMemo(
+    () => allActiveColumnMappings(proposalStates),
+    [proposalStates],
+  );
+
+  const periodMetricCollision = useMemo(
+    () => findPeriodMetricCollisions(activeColumnMappings, metricNameById),
+    [activeColumnMappings, metricNameById],
+  );
 
   const updateProposalState = (
     proposalId: string,
@@ -285,10 +372,12 @@ export function MultiPeriodImportFlow({
   };
 
   const handlePeriodChange = (proposalId: string, targetPeriodId: string) => {
-    const period = alliancePeriods.find((p) => p.id === targetPeriodId);
+    const period = sortedPeriods.find((p) => p.id === targetPeriodId);
     if (!period) return;
-    const attachableLibrary = libraryMetrics.filter(
-      (m) => !period.metrics.some((pm) => pm.id === m.id),
+    const attachableLibrary = attachableLibraryForPeriod(
+      targetPeriodId,
+      sortedPeriods,
+      allianceLibraryMetrics,
     );
     const proposal = proposals.find((p) => p.proposalId === proposalId);
     if (!proposal) return;
@@ -298,6 +387,7 @@ export function MultiPeriodImportFlow({
       targetPeriodId,
       columnMappings: buildColumnMappingsForProposal(
         proposal.columns,
+        targetPeriodId,
         period.metrics,
         attachableLibrary,
         canAttachMetrics,
@@ -306,54 +396,126 @@ export function MultiPeriodImportFlow({
     }));
   };
 
-  const setColumnTarget = (
+  const handleColumnPeriodChange = (
     proposalId: string,
     columnIndex: number,
-    token: string,
-    columnName: string,
+    targetPeriodId: string,
   ) => {
+    const period = sortedPeriods.find((p) => p.id === targetPeriodId);
+    if (!period) return;
+    const attachableLibrary = attachableLibraryForPeriod(
+      targetPeriodId,
+      sortedPeriods,
+      allianceLibraryMetrics,
+    );
+    const proposal = proposals.find((p) => p.proposalId === proposalId);
+    const col = proposal?.columns.find((c) => c.columnIndex === columnIndex);
+    if (!col) return;
+
     updateProposalState(proposalId, (state) => ({
       ...state,
-      columnMappings: state.columnMappings.map((m) => {
-        if (m.columnIndex !== columnIndex) return m;
-        const target = tokenToTarget(token, columnName);
+      columnMappings: state.columnMappings.map((mapping) => {
+        if (mapping.columnIndex !== columnIndex) return mapping;
+        const rebuilt = buildColumnMappingsForProposal(
+          [col],
+          targetPeriodId,
+          period.metrics,
+          attachableLibrary,
+          canAttachMetrics,
+          canCreateMetrics,
+        )[0];
         return {
-          ...m,
-          target,
+          ...rebuilt,
+          targetPeriodId,
           confirmationStatus:
-            target.kind === "skip" ? m.confirmationStatus : "confirmed_metric",
+            mapping.confirmationStatus === "confirmed_skip"
+              ? "confirmed_skip"
+              : rebuilt.confirmationStatus,
+          target:
+            mapping.confirmationStatus === "confirmed_skip"
+              ? { kind: "skip" as const }
+              : rebuilt.target,
         };
       }),
     }));
   };
 
+  const setColumnTarget = (
+    proposalId: string,
+    columnIndex: number,
+    token: string,
+    proposedMetricName: string,
+  ) => {
+    updateProposalState(proposalId, (state) => ({
+      ...state,
+      columnMappings: state.columnMappings.map((m) => {
+        if (m.columnIndex !== columnIndex) return m;
+        const target = tokenToTarget(token, proposedMetricName);
+        const confirmationStatus: ColumnConfirmationStatus =
+          target.kind === "skip" ? "confirmed_skip" : "confirmed_metric";
+        return { ...m, target, confirmationStatus };
+      }),
+    }));
+  };
+
+  const getUsedMetricIdsForPeriod = (periodId: string, excludeColumnIndex: number) =>
+    new Set(
+      activeColumnMappings
+        .filter(
+          (m) =>
+            m.targetPeriodId === periodId &&
+            m.columnIndex !== excludeColumnIndex &&
+            m.confirmationStatus === "confirmed_metric" &&
+            (m.target.kind === "existing" || m.target.kind === "attach"),
+        )
+        .flatMap((m) =>
+          m.target.kind === "existing" || m.target.kind === "attach" ? [m.target.metricId] : [],
+        ),
+    );
+
+  const allColumnsConfirmed = activeStates.every((state) =>
+    state.columnMappings.every(
+      (m) => m.confirmationStatus === "confirmed_metric" || m.confirmationStatus === "confirmed_skip",
+    ),
+  );
+
+  const hasConfirmedMetricImport = activeColumnMappings.some(
+    (m) => m.confirmationStatus === "confirmed_metric" && m.target.kind !== "skip",
+  );
+
   const canProceedToPreview =
     activeStates.length > 0 &&
-    activeStates.every((state) => {
-      const mapped = state.columnMappings.filter((m) => m.target.kind !== "skip");
-      return mapped.length > 0 && state.targetPeriodId;
-    }) &&
-    new Set(activeStates.map((s) => s.targetPeriodId)).size === activeStates.length;
+    allColumnsConfirmed &&
+    hasConfirmedMetricImport &&
+    !periodMetricCollision;
 
-  const buildPreviews = (): MetricImportPreview[] => {
+  const displayNameFor = (target: ColumnTarget, proposedMetricName: string): string => {
+    if (target.kind === "existing" || target.kind === "attach") {
+      return metricNameById.get(target.metricId) ?? proposedMetricName;
+    }
+    if (target.kind === "create") return target.name;
+    return proposedMetricName;
+  };
+
+  const buildPreviews = (): {
+    previews: MultiPeriodMetricPreview[];
+    selections: DuplicateSelections;
+  } => {
     const sheet = parsedWorkbook.sheets[selectedSheetIndex];
-    if (!sheet) return [];
+    if (!sheet) return { previews: [], selections: duplicateSelections };
 
-    const built: MetricImportPreview[] = [];
+    const built: MultiPeriodMetricPreview[] = [];
+    const nextSelections: DuplicateSelections = { ...duplicateSelections };
+    const aggregatedErrors: string[] = [];
+
     for (const state of activeStates) {
-      const period = alliancePeriods.find((p) => p.id === state.targetPeriodId);
-      if (!period) continue;
+      for (const mapping of state.columnMappings.filter(
+        (m) => m.confirmationStatus === "confirmed_metric" && m.target.kind !== "skip",
+      )) {
+        const period = sortedPeriods.find((p) => p.id === mapping.targetPeriodId);
+        if (!period) continue;
 
-      for (const mapping of state.columnMappings.filter((m) => m.target.kind !== "skip")) {
-        const displayName =
-          mapping.target.kind === "create"
-            ? mapping.target.name
-            : metricNameById.get(
-                mapping.target.kind === "existing" || mapping.target.kind === "attach"
-                  ? mapping.target.metricId
-                  : "",
-              ) ?? mapping.columnName;
-
+        const displayName = displayNameFor(mapping.target, mapping.proposedMetricName);
         const parseResult = parseMetricRows(sheet.rows, {
           nameColumn: playerColumnIndex,
           valueColumn: mapping.columnIndex,
@@ -361,32 +523,97 @@ export function MultiPeriodImportFlow({
           tableBounds: tableBounds ?? undefined,
           metricName: displayName,
         });
+
+        parseResult.errors.forEach((err) =>
+          aggregatedErrors.push(`${mapping.columnName}: ${err}`),
+        );
+
         const summary = matchEntriesToMembers(parseResult.entries, members);
+        const selections: Record<string, number> = nextSelections[mapping.columnIndex]
+          ? { ...nextSelections[mapping.columnIndex] }
+          : {};
+
+        summary.results.forEach((result, index) => {
+          if ((result.status === "matched" || result.status === "duplicate") && result.memberId) {
+            if (!(result.memberId in selections)) selections[result.memberId] = index;
+          }
+        });
 
         built.push({
           proposalId: state.proposalId,
-          periodId: state.targetPeriodId,
+          periodId: mapping.targetPeriodId,
           periodName: period.name,
           columnIndex: mapping.columnIndex,
           columnName: mapping.columnName,
+          proposedMetricName: mapping.proposedMetricName,
           displayName,
+          disposition: dispositionForTarget(mapping.target),
           target: mapping.target,
           summary,
+          skippedBlankCells: parseResult.skippedBlankCells,
+          invalidValueIssues: parseResult.invalidValueIssues,
+          missingIdentityIssues: parseResult.missingIdentityIssues,
         });
+        nextSelections[mapping.columnIndex] = selections;
       }
     }
-    return built;
+
+    setParseErrors(aggregatedErrors);
+    return { previews: built, selections: nextSelections };
   };
 
   const handlePreview = () => {
     setError(null);
-    const nextPreviews = buildPreviews();
+    if (periodMetricCollision) {
+      setError(periodMetricCollision);
+      return;
+    }
+
+    const { previews: nextPreviews, selections: nextSelections } = buildPreviews();
+    setDuplicateSelections(nextSelections);
+    const totalMatched = nextPreviews.reduce(
+      (sum, p) => sum + getPreviewEntries(p, nextSelections[p.columnIndex]).length,
+      0,
+    );
+    const totalMissingIdentity = nextPreviews.reduce(
+      (sum, p) => sum + p.missingIdentityIssues.length,
+      0,
+    );
+    const totalInvalidValues = nextPreviews.reduce(
+      (sum, p) => sum + p.invalidValueIssues.length,
+      0,
+    );
+
     if (nextPreviews.length === 0) {
       setError("Map at least one column in an included proposal to preview import.");
       return;
     }
+    if (totalMissingIdentity > 0) {
+      setError(
+        `Cannot preview: ${totalMissingIdentity} ${totalMissingIdentity === 1 ? "cell contains" : "cells contain"} metric values but missing player names.`,
+      );
+      return;
+    }
+    if (totalInvalidValues > 0) {
+      setError(
+        `Cannot preview: ${totalInvalidValues} ${totalInvalidValues === 1 ? "cell contains" : "cells contain"} invalid non-whole-number values.`,
+      );
+      return;
+    }
+    if (totalMatched === 0) {
+      setError("No rows matched any of your alliance members for the mapped columns.");
+      return;
+    }
+
     setPreviews(nextPreviews);
     setStep("preview");
+  };
+
+  const handleDuplicateSelection = (columnIndex: number, memberId: string, resultIndex: number) => {
+    setDuplicateSelections((prev) => ({
+      ...prev,
+      [columnIndex]: { ...(prev[columnIndex] ?? {}), [memberId]: resultIndex },
+    }));
   };
 
   const handleImport = () => {
@@ -399,17 +626,12 @@ export function MultiPeriodImportFlow({
     >();
 
     for (const preview of previews) {
+      const entries = getPreviewEntries(preview, duplicateSelections[preview.columnIndex]);
+      if (entries.length === 0) continue;
+
       if (!groupsMap.has(preview.periodId)) {
         groupsMap.set(preview.periodId, { targetPeriodId: preview.periodId, mappings: [] });
       }
-      const entries = preview.summary.results
-        .filter(
-          (r): r is typeof r & { memberId: string; rawValue: string } =>
-            Boolean(r.memberId) && r.status !== "invalid_value" && Boolean(r.rawValue),
-        )
-        .map((r) => ({ memberId: r.memberId, rawValue: r.rawValue }));
-
-      if (entries.length === 0) continue;
 
       groupsMap.get(preview.periodId)!.mappings.push({
         sourceColumnName: preview.columnName,
@@ -435,6 +657,72 @@ export function MultiPeriodImportFlow({
       }
     });
   };
+
+  const currentSheet = parsedWorkbook.sheets[selectedSheetIndex];
+  const mappedColumnIndices = new Set([
+    playerColumnIndex,
+    ...activeColumnMappings
+      .filter((m) => m.confirmationStatus === "confirmed_metric" && m.target.kind !== "skip")
+      .map((m) => m.columnIndex),
+  ]);
+
+  const activeDataStart = tableBounds ? tableBounds.dataStartIndex : 0;
+  const activeDataEnd = tableBounds ? tableBounds.dataEndIndex : (currentSheet?.rows.length ?? 0);
+  const selectedRegion = tableBounds?.tableRegions[0];
+  const activeStartCol = selectedRegion ? selectedRegion.startColumn : 0;
+  const activeEndCol = selectedRegion ? selectedRegion.endColumn : 999;
+
+  const blockingCellIssues: WorkbookIssue[] = [];
+  const warningCellIssues: WorkbookIssue[] = [];
+
+  if (currentSheet?.issues) {
+    for (const issue of currentSheet.issues) {
+      if (!mappedColumnIndices.has(issue.columnIndex)) continue;
+      if (issue.rowIndex < activeDataStart || issue.rowIndex >= activeDataEnd) continue;
+      if (issue.columnIndex < activeStartCol || issue.columnIndex > activeEndCol) continue;
+
+      if (
+        issue.severity === "blocking" ||
+        issue.code === "formula_missing_cached_value" ||
+        issue.code === "cell_error"
+      ) {
+        blockingCellIssues.push(issue);
+      } else if (issue.severity === "warning") {
+        warningCellIssues.push(issue);
+      }
+    }
+  }
+
+  const columnNameByIndex = new Map<number, string>();
+  activeColumnMappings.forEach((m) => columnNameByIndex.set(m.columnIndex, m.columnName));
+  columnNameByIndex.set(playerColumnIndex, "Player");
+
+  const previewValueIssues = previews.flatMap((preview) => [
+    ...preview.invalidValueIssues.map((issue) => ({
+      columnName: preview.columnName,
+      error: `${issue.address}: ${issue.error}`,
+    })),
+    ...preview.missingIdentityIssues.map((issue) => ({
+      columnName: preview.columnName,
+      error: `${issue.address} (Value "${issue.rawValue}"): ${issue.error}`,
+    })),
+  ]);
+
+  const totalToImport = useMemo(
+    () =>
+      previews.reduce(
+        (sum, p) => sum + getPreviewEntries(p, duplicateSelections[p.columnIndex]).length,
+        0,
+      ),
+    [previews, duplicateSelections],
+  );
+
+  const hasBlockingParseErrors =
+    parseErrors.length > 0 ||
+    previews.some((preview) =>
+      preview.summary.results.some((r) => r.status === "invalid_value" || !!r.error),
+    );
+  const hasBlockingDiagnostics = blockingCellIssues.length > 0;
 
   if (step === "complete" && importResult) {
     const committed = buildCommittedMultiPeriodTranslationSummary({ result: importResult });
@@ -489,8 +777,8 @@ export function MultiPeriodImportFlow({
   if (step === "preview") {
     const distinctMembers = new Set<string>();
     previews.forEach((p) => {
-      p.summary.results.forEach((r) => {
-        if (r.memberId && r.status !== "invalid_value") distinctMembers.add(r.memberId);
+      getPreviewEntries(p, duplicateSelections[p.columnIndex]).forEach((entry) => {
+        distinctMembers.add(entry.memberId);
       });
     });
 
@@ -505,10 +793,7 @@ export function MultiPeriodImportFlow({
             .filter((x) => x.periodId === p.periodId)
             .reduce(
               (sum, preview) =>
-                sum +
-                preview.summary.results.filter(
-                  (r) => r.memberId && r.status !== "invalid_value" && r.rawValue,
-                ).length,
+                sum + getPreviewEntries(preview, duplicateSelections[preview.columnIndex]).length,
               0,
             ),
         },
@@ -541,23 +826,42 @@ export function MultiPeriodImportFlow({
           </ul>
         </div>
 
+        <WorkbookIssueNotice
+          issues={blockingCellIssues}
+          tone="blocking"
+          columnNameForIssue={(columnIndex) =>
+            columnNameByIndex.get(columnIndex) ?? `Column ${columnIndex + 1}`
+          }
+        />
+        <WorkbookIssueNotice
+          issues={warningCellIssues}
+          tone="warning"
+          columnNameForIssue={(columnIndex) =>
+            columnNameByIndex.get(columnIndex) ?? `Column ${columnIndex + 1}`
+          }
+        />
+        <ValueIssueNotice issues={previewValueIssues} phase="preview" />
+
+        {hasBlockingParseErrors && (
+          <ValueIssueNotice
+            issues={parseErrors.map((err) => {
+              const separatorIndex = err.indexOf(": ");
+              return separatorIndex > 0
+                ? { columnName: err.slice(0, separatorIndex), error: err.slice(separatorIndex + 2) }
+                : { columnName: "Spreadsheet", error: err };
+            })}
+            phase="import"
+          />
+        )}
+
         {previews.map((preview) => (
-          <div
+          <MetricPreviewSection
             key={`${preview.periodId}-${preview.columnIndex}`}
-            className="border border-border rounded-lg p-4 bg-surface-secondary/30"
-          >
-            <p className="text-sm font-semibold text-text-primary">
-              {preview.periodName} · {preview.columnName} → {preview.displayName}
-            </p>
-            <p className="text-xs text-text-muted mt-1">
-              {
-                preview.summary.results.filter(
-                  (r) => r.memberId && r.status !== "invalid_value" && r.rawValue,
-                ).length
-              }{" "}
-              matched entries
-            </p>
-          </div>
+            preview={preview}
+            selections={duplicateSelections[preview.columnIndex]}
+            onDuplicateSelection={handleDuplicateSelection}
+            contextLabel={preview.periodName}
+          />
         ))}
 
         {error && (
@@ -575,10 +879,12 @@ export function MultiPeriodImportFlow({
           <button
             type="button"
             onClick={handleImport}
-            disabled={isPending}
+            disabled={isPending || totalToImport === 0 || hasBlockingParseErrors || hasBlockingDiagnostics}
             className="px-4 py-2 rounded-md bg-success text-white cursor-pointer disabled:opacity-50"
           >
-            {isPending ? "Importing..." : "Confirm Multi-Period Import"}
+            {isPending
+              ? "Importing..."
+              : `Confirm Multi-Period Import (${totalToImport} ${totalToImport === 1 ? "entry" : "entries"})`}
           </button>
         </div>
       </div>
@@ -590,20 +896,16 @@ export function MultiPeriodImportFlow({
       <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm">
         <p className="font-medium text-text-primary">Map proposals to existing evaluation periods</p>
         <p className="text-text-secondary text-xs mt-1">
-          Choose an existing period for each detected date group, map columns to metrics, or exclude a
-          group. Each target period may only appear once — combine columns in one group if they share a
-          destination.
+          Choose an existing period for each detected date group, map columns to metrics using the
+          detected metric identity, exclude columns explicitly, or move individual columns to a
+          different target period. Multiple proposals may target the same evaluation period.
         </p>
       </div>
 
       {proposalStates.map((state) => {
         const proposal = proposals.find((p) => p.proposalId === state.proposalId);
         if (!proposal) return null;
-        const period = alliancePeriods.find((p) => p.id === state.targetPeriodId);
-        const periodMetrics = period?.metrics ?? [];
-        const attachableLibrary = libraryMetrics.filter(
-          (m) => !periodMetrics.some((pm) => pm.id === m.id),
-        );
+        const periodSelectId = `multi-period-target-${state.proposalId}`;
 
         return (
           <div
@@ -633,15 +935,19 @@ export function MultiPeriodImportFlow({
             {!state.excluded && (
               <>
                 <div>
-                  <label className="text-xs font-medium text-text-primary block mb-1">
-                    Target evaluation period
+                  <label
+                    htmlFor={periodSelectId}
+                    className="text-xs font-medium text-text-primary block mb-1"
+                  >
+                    Default target evaluation period
                   </label>
                   <select
+                    id={periodSelectId}
                     value={state.targetPeriodId}
                     onChange={(e) => handlePeriodChange(state.proposalId, e.target.value)}
                     className="w-full rounded-md border border-border p-2 text-sm bg-surface"
                   >
-                    {alliancePeriods.map((p) => (
+                    {sortedPeriods.map((p) => (
                       <option key={p.id} value={p.id}>
                         {formatPeriodLabel(p)}
                       </option>
@@ -651,24 +957,58 @@ export function MultiPeriodImportFlow({
 
                 <div className="space-y-2">
                   {state.columnMappings.map((mapping) => {
-                    const usedElsewhere = new Set(
-                      state.columnMappings
-                        .filter((m) => m.columnIndex !== mapping.columnIndex)
-                        .flatMap((m) =>
-                          m.target.kind === "existing" || m.target.kind === "attach"
-                            ? [m.target.metricId]
-                            : [],
-                        ),
+                    const period = sortedPeriods.find((p) => p.id === mapping.targetPeriodId);
+                    const periodMetrics = period?.metrics ?? [];
+                    const attachableLibrary = attachableLibraryForPeriod(
+                      mapping.targetPeriodId,
+                      sortedPeriods,
+                      allianceLibraryMetrics,
                     );
+                    const usedElsewhere = getUsedMetricIdsForPeriod(
+                      mapping.targetPeriodId,
+                      mapping.columnIndex,
+                    );
+                    const columnPeriodSelectId = `multi-period-column-period-${state.proposalId}-${mapping.columnIndex}`;
 
                     return (
                       <div
                         key={mapping.columnIndex}
-                        className="p-3 rounded-md border border-border bg-surface-secondary/30"
+                        className="p-3 rounded-md border border-border bg-surface-secondary/30 space-y-2"
                       >
-                        <p className="text-sm font-medium text-text-primary mb-2">
-                          {mapping.columnName}
-                        </p>
+                        <div>
+                          <p className="text-sm font-medium text-text-primary">{mapping.columnName}</p>
+                          <p className="text-xs text-text-muted">
+                            Detected metric: <strong>{mapping.proposedMetricName}</strong>
+                          </p>
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor={columnPeriodSelectId}
+                            className="text-xs font-medium text-text-primary block mb-1"
+                          >
+                            Target period for this column
+                          </label>
+                          <select
+                            id={columnPeriodSelectId}
+                            value={mapping.targetPeriodId}
+                            onChange={(e) =>
+                              handleColumnPeriodChange(
+                                state.proposalId,
+                                mapping.columnIndex,
+                                e.target.value,
+                              )
+                            }
+                            className="w-full rounded-md border border-border p-2 text-sm bg-surface"
+                          >
+                            {sortedPeriods.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {formatPeriodLabel(p)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
                         <select
                           aria-label={`Metric for ${mapping.columnName}`}
                           value={targetToToken(mapping.target)}
@@ -677,7 +1017,7 @@ export function MultiPeriodImportFlow({
                               state.proposalId,
                               mapping.columnIndex,
                               e.target.value,
-                              mapping.columnName,
+                              mapping.proposedMetricName,
                             )
                           }
                           className="w-full rounded-md border border-border p-2 text-sm bg-surface"
@@ -711,10 +1051,15 @@ export function MultiPeriodImportFlow({
                           )}
                           {canCreateMetrics && (
                             <option value="create">
-                              Create &ldquo;{mapping.columnName}&rdquo;
+                              Create &ldquo;{mapping.proposedMetricName}&rdquo;
                             </option>
                           )}
                         </select>
+                        {mapping.confirmationStatus === "unconfirmed" && (
+                          <p className="text-xs text-warning">
+                            Choose a metric or explicitly select Do not import.
+                          </p>
+                        )}
                       </div>
                     );
                   })}
@@ -724,6 +1069,12 @@ export function MultiPeriodImportFlow({
           </div>
         );
       })}
+
+      {periodMetricCollision && (
+        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger text-sm">
+          {periodMetricCollision}
+        </div>
+      )}
 
       {error && (
         <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>

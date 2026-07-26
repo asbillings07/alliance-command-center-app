@@ -41,8 +41,8 @@ import { SpreadsheetTranslationSummary } from "@/app/src/components/spreadsheet/
 import { PeriodProposalReview } from "@/app/src/components/spreadsheet/PeriodProposalReview";
 import {
   MultiPeriodImportFlow,
-  type AlliancePeriodOption,
 } from "@/app/src/components/spreadsheet/MultiPeriodImportFlow";
+import type { AlliancePeriodOption } from "@/app/src/lib/import/multiPeriodImportUi";
 import {
   type ColumnTarget,
   type ColumnTranslation,
@@ -71,7 +71,10 @@ type ImportFormProps = {
   allianceId: string;
   members: MemberOption[];
   metrics: MetricOption[];
+  /** Route-period attachable library metrics for single-period import. */
   libraryMetrics: MetricOption[];
+  /** Full active alliance metric library for multi-period attachable derivation. */
+  allianceLibraryMetrics: MetricOption[];
   alliancePeriods: AlliancePeriodOption[];
   canCreateMetrics: boolean;
   canAttachMetrics: boolean;
@@ -248,7 +251,7 @@ function ValueIssueNotice({
   );
 }
 
-export function ImportForm({ periodId, periodName, allianceId, members, metrics, libraryMetrics, alliancePeriods, canCreateMetrics, canAttachMetrics }: ImportFormProps) {
+export function ImportForm({ periodId, periodName, allianceId, members, metrics, libraryMetrics, allianceLibraryMetrics, alliancePeriods, canCreateMetrics, canAttachMetrics }: ImportFormProps) {
   const router = useRouter();
   const [step, setStep] = useState<ImportStep>("upload");
   const [multiPeriodFlowActive, setMultiPeriodFlowActive] = useState(false);
@@ -975,7 +978,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         allianceId={allianceId}
         routePeriodId={periodId}
         alliancePeriods={alliancePeriods}
-        libraryMetrics={libraryMetrics}
+        allianceLibraryMetrics={allianceLibraryMetrics}
         canCreateMetrics={canCreateMetrics}
         canAttachMetrics={canAttachMetrics}
         members={members}

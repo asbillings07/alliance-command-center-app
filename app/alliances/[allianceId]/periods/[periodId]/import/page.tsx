@@ -74,7 +74,7 @@ export default async function ImportPage({ params }: Params) {
         },
       },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ startsAt: "asc" }, { name: "asc" }],
   });
 
   const alliancePeriods = alliancePeriodsRaw.map((p) => ({
@@ -180,6 +180,7 @@ export default async function ImportPage({ params }: Params) {
             members={alliance.allianceMembers}
             metrics={metrics}
             libraryMetrics={attachableLibraryMetrics}
+            allianceLibraryMetrics={libraryMetrics}
             alliancePeriods={alliancePeriods}
             canCreateMetrics={canConfigureMetrics}
             canAttachMetrics={canConfigurePeriods}
