@@ -95,6 +95,23 @@ export type CommittedMetricTranslationSummary = {
   perMetricCounts: { metricId: string; name: string; count: number }[];
 };
 
+export type PlannedMultiPeriodTranslationSummary = {
+  targetPeriodCount: number;
+  totalEntriesCount: number;
+  matchedMembersCount: number;
+  periods: {
+    periodId: string;
+    periodName: string;
+    mappedColumnsCount: number;
+    totalEntriesCount: number;
+  }[];
+};
+
+export type CommittedMultiPeriodTranslationSummary = {
+  totalValuesCommitted: number;
+  periods: CommittedMetricTranslationSummary[];
+};
+
 export type PlannedRosterTranslationSummary = {
   membersToCreateCount: number;
   archivedMembersToRestoreCount: number;
@@ -174,6 +191,50 @@ export function buildCommittedMetricTranslationSummary(params: {
     createdMetrics: result.created ?? [],
     totalValuesCommitted: result.totalCount,
     perMetricCounts: result.perMetric ?? [],
+  };
+}
+
+export function buildPlannedMultiPeriodTranslationSummary(params: {
+  matchedMembersCount: number;
+  periods: PlannedMultiPeriodTranslationSummary["periods"];
+}): PlannedMultiPeriodTranslationSummary {
+  return {
+    targetPeriodCount: params.periods.length,
+    totalEntriesCount: params.periods.reduce((sum, p) => sum + p.totalEntriesCount, 0),
+    matchedMembersCount: params.matchedMembersCount,
+    periods: params.periods,
+  };
+}
+
+export function buildCommittedMultiPeriodTranslationSummary(params: {
+  result: {
+    totalCount: number;
+    periods: {
+      periodId: string;
+      periodName: string;
+      totalCount: number;
+      perMetric: { metricId: string; name: string; count: number }[];
+      created: { metricId: string; name: string }[];
+      attached: { metricId: string; name: string }[];
+      reused: { metricId: string; name: string }[];
+    }[];
+  };
+}): CommittedMultiPeriodTranslationSummary {
+  return {
+    totalValuesCommitted: params.result.totalCount,
+    periods: params.result.periods.map((period) =>
+      buildCommittedMetricTranslationSummary({
+        periodName: period.periodName,
+        result: {
+          success: true,
+          totalCount: period.totalCount,
+          perMetric: period.perMetric,
+          created: period.created,
+          attached: period.attached,
+          reused: period.reused,
+        },
+      }),
+    ),
   };
 }
 
