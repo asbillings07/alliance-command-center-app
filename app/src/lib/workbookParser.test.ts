@@ -448,7 +448,7 @@ describe("workbookParser", () => {
       }
     });
 
-    it("preserves formatted display text for formatted numbers and date cells", async () => {
+    it("preserves formatted display text for formatted numbers and date cells and collects cellDates metadata", async () => {
       const bytes = createXlsxBuffer(
         [
           {
@@ -464,7 +464,7 @@ describe("workbookParser", () => {
             ws["B2"].z = "$#,##0.00";
           }
           if (ws["C2"]) {
-            ws["C2"].z = "yyyy-mm-dd";
+            ws["C2"] = { t: "n", v: 46227, z: "yyyy-mm-dd", w: "2026-07-24" };
           }
         }
       );
@@ -478,6 +478,9 @@ describe("workbookParser", () => {
       if (result.kind === "workbook") {
         expect(result.workbook.sheets[0].rows[1][0]).toBe("Bob");
         expect(result.workbook.sheets[0].rows[1][1]).toMatch(/1,?234,?567/);
+        expect(result.workbook.sheets[0].cellDates).toBeDefined();
+        expect(result.workbook.sheets[0].cellDates?.["C2"]).toBeDefined();
+        expect(result.workbook.sheets[0].cellDates?.["C2"].isTypedDate).toBe(true);
       }
     });
   });

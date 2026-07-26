@@ -37,6 +37,7 @@ import { WorkbookParseError } from "@/app/src/components/spreadsheet/WorkbookPar
 import { SpreadsheetDataShapeGuide } from "@/app/src/components/spreadsheet/SpreadsheetDataShapeGuide";
 import { ColumnTranslationCard } from "@/app/src/components/spreadsheet/ColumnTranslationCard";
 import { SpreadsheetTranslationSummary } from "@/app/src/components/spreadsheet/SpreadsheetTranslationSummary";
+import { PeriodProposalReview } from "@/app/src/components/spreadsheet/PeriodProposalReview";
 import {
   type ColumnTarget,
   type ColumnTranslation,
@@ -44,6 +45,10 @@ import {
   buildPlannedMetricTranslationSummary,
   buildCommittedMetricTranslationSummary,
 } from "@/app/src/lib/importTranslation";
+import {
+  buildPeriodMappingReview,
+  type PeriodMappingReview,
+} from "@/app/src/lib/import/periodProposal";
 
 type MemberOption = {
   id: string;
@@ -257,6 +262,8 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   const [previews, setPreviews] = useState<MetricImportPreview[]>([]);
   const [duplicateSelections, setDuplicateSelections] = useState<DuplicateSelections>({});
   const [parseErrors, setParseErrors] = useState<string[]>([]);
+  const [periodProposalReview, setPeriodProposalReview] = useState<PeriodMappingReview | null>(null);
+  const [declinedMultiPeriod, setDeclinedMultiPeriod] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -442,10 +449,23 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       };
     });
 
+    const proposalReview = buildPeriodMappingReview({
+      sheetName: sheet.name,
+      headers: result.columns.map((c) => ({
+        columnIndex: c.index,
+        headerText: c.name,
+        headerAddress: `${columnIndexToLabel(c.index)}${overrideHeaderRowIndex !== undefined ? overrideHeaderRowIndex + 1 : 1}`,
+        isPlayerColumn: playerCol?.index === c.index,
+        isNumeric: numCols.some((nc) => nc.index === c.index),
+      })),
+    });
+
     setRowCount(result.rowCount);
     setAutoDetectedPlayerColumn(playerCol);
     setNumericColumns(numCols);
     setColumnMappings(mappings);
+    setPeriodProposalReview(proposalReview);
+    setDeclinedMultiPeriod(false);
     setError(null);
     setStep("select");
   };
@@ -1219,6 +1239,16 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             </p>
           </div>
         )}
+
+        {periodProposalReview &&
+          periodProposalReview.mode === "multi_period" &&
+          !declinedMultiPeriod && (
+            <PeriodProposalReview
+              review={periodProposalReview}
+              destinationPeriodName={periodName}
+              onDecline={() => setDeclinedMultiPeriod(true)}
+            />
+          )}
 
         <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium">
           Destination Period: {periodName}

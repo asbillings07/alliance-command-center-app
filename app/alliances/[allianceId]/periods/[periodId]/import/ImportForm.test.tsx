@@ -907,4 +907,49 @@ describe("ImportForm [component]", () => {
         expect(payload.mappings[0].sourceColumnName).toBe("Kill Points");
         expect(payload.mappings[0].target).toEqual({ kind: "existing", metricId: "met1" });
     });
+
+    it("displays read-only multi-period proposal review when date-stamped columns are uploaded and lets leader decline", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                })
+            );
+        });
+
+        // CSV with date-stamped columns and derived column
+        const csvContent = `Player,Kills on 3/29,Kills on 4/13,% Change\nDragon,1500,2000,33%\nPhoenix,2300,3000,30%`;
+
+        await act(async () => {
+            fireFileUpload(csvContent, "multi_period_results.csv");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // 1. Verify Multi-Period Proposal Banner is rendered
+        expect(container.textContent).toContain("Multi-Period Spreadsheet Detected");
+        expect(container.textContent).toContain("Decline & Use Selected Period Instead");
+        expect(container.textContent).toContain("derived column");
+
+        // 2. Click Decline & Use Selected Period Instead
+        const declineBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Decline & Use Selected Period Instead")
+        ) as HTMLButtonElement;
+        expect(declineBtn).not.toBeUndefined();
+
+        await act(async () => {
+            declineBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // 3. Verify proposal review banner is hidden and single-period import UI remains
+        expect(container.textContent).not.toContain("Multi-Period Spreadsheet Detected");
+        expect(container.textContent).toContain("Destination Period: Week 28 Evaluation");
+    });
 });

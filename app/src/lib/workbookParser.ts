@@ -20,12 +20,22 @@ export type WorkbookIssue = {
 
 export type SheetVisibility = "visible" | "hidden" | "very_hidden";
 
+export type CellDateMetadata = {
+  address: string;
+  rowIndex: number;
+  columnIndex: number;
+  formattedText: string;
+  isTypedDate: boolean;
+  rawNum?: number;
+};
+
 export type WorkbookSheet = {
   index: number;
   name: string;
   rows: string[][];
   issues: WorkbookIssue[];
   visibility: SheetVisibility;
+  cellDates?: Record<string, CellDateMetadata>;
 };
 
 export type ParsedWorkbook = {
@@ -244,6 +254,7 @@ export async function parseWorkbookBytes(
 
     const sheetRows: string[][] = [];
     const sheetIssues: WorkbookIssue[] = [];
+    const sheetCellDates: Record<string, CellDateMetadata> = {};
 
     for (let r = range.s.r; r <= range.e.r; r++) {
       const rowData: string[] = [];
@@ -268,6 +279,24 @@ export async function parseWorkbookBytes(
 
         const rawVal = cell.v;
         const formattedText = cell.w !== undefined ? String(cell.w) : rawVal !== undefined && rawVal !== null ? String(rawVal) : "";
+
+        // Collect typed date metadata if cell is date-formatted in Excel
+        const isDateType = cell.t === "d";
+        const isDateNum =
+          cell.t === "n" &&
+          typeof rawVal === "number" &&
+          ((cell.z !== undefined && /[ymd]/i.test(String(cell.z))) ||
+            (cell.w !== undefined && /^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}$/.test(String(cell.w))));
+        if (isDateType || isDateNum) {
+          sheetCellDates[address] = {
+            address,
+            rowIndex: r - range.s.r,
+            columnIndex: c - range.s.c,
+            formattedText,
+            isTypedDate: true,
+            rawNum: typeof rawVal === "number" ? rawVal : undefined,
+          };
+        }
 
         if (hasBinaryGarbage(formattedText)) {
           detectedBinaryGarbage = true;
@@ -360,6 +389,7 @@ export async function parseWorkbookBytes(
       rows: sheetRows,
       issues: sheetIssues,
       visibility,
+      cellDates: Object.keys(sheetCellDates).length > 0 ? sheetCellDates : undefined,
     });
   }
 
