@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ImportForm } from "./ImportForm";
-import { UNCONFIRMED_TARGET_TOKEN } from "@/app/src/components/spreadsheet/MultiPeriodImportFlow";
+import { UNCONFIRMED_TARGET_TOKEN, CREATE_PERIOD_SELECT_VALUE } from "@/app/src/components/spreadsheet/MultiPeriodImportFlow";
 
 const mockRefresh = vi.fn();
 
@@ -140,6 +140,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -181,6 +182,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -245,6 +247,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -281,6 +284,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -318,6 +322,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -357,6 +362,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -417,6 +423,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -460,6 +467,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -513,6 +521,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -544,6 +553,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -589,6 +599,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -641,6 +652,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -686,6 +698,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -736,6 +749,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -788,6 +802,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -835,6 +850,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -913,6 +929,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -981,6 +998,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -1041,6 +1059,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -1068,7 +1087,7 @@ describe("ImportForm [component]", () => {
             await new Promise((r) => setTimeout(r, 50));
         });
 
-        expect(container.textContent).toContain("Map proposals to existing evaluation periods");
+        expect(container.textContent).toContain("Map proposals to evaluation periods");
         expect(container.textContent).toContain("Default target evaluation period");
         expect(container.textContent).toContain("Preview Multi-Period Import");
     });
@@ -1131,6 +1150,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods: twoAlliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -1212,9 +1232,11 @@ describe("ImportForm [component]", () => {
         const payload = (importMultiPeriodMetrics as ReturnType<typeof vi.fn>).mock.calls[0][0];
         expect(payload.allianceId).toBe(allianceId);
         expect(payload.groups).toHaveLength(2);
-        expect(payload.groups.map((g: { targetPeriodId: string }) => g.targetPeriodId).sort()).toEqual(
-            [periodId, secondPeriodId].sort(),
-        );
+        expect(
+            payload.groups.map((group: { target: { kind: string; periodId?: string } }) =>
+                group.target.kind === "existing" ? group.target.periodId : group.target.kind,
+            ).sort(),
+        ).toEqual([periodId, secondPeriodId].sort());
         for (const group of payload.groups) {
             for (const mapping of group.mappings) {
                 expect(mapping.target).toEqual({ kind: "create", name: "Kills" });
@@ -1237,6 +1259,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -1312,6 +1335,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -1347,6 +1371,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -1382,6 +1407,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -1411,6 +1437,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -1446,6 +1473,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: false,
+                    canConfigurePeriods: false,
                 })
             );
         });
@@ -1540,6 +1568,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods: twoAlliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -1625,6 +1654,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods: twoAlliancePeriods,
                     canCreateMetrics: false,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -1682,6 +1712,7 @@ describe("ImportForm [component]", () => {
                     alliancePeriods,
                     canCreateMetrics: true,
                     canAttachMetrics: true,
+                    canConfigurePeriods: true,
                 })
             );
         });
@@ -1714,5 +1745,119 @@ describe("ImportForm [component]", () => {
         expect(periodSelect.id).toBeTruthy();
         const label = container.querySelector(`label[for="${periodSelect.id}"]`);
         expect(label?.textContent).toContain("Default target evaluation period");
+    });
+
+    it("supports creating a new period with editable prefilled fields and sends create target payload", async () => {
+        const createdPeriodName = "March 2026";
+        (importMultiPeriodMetrics as ReturnType<typeof vi.fn>).mockResolvedValue({
+            success: true,
+            totalCount: 2,
+            periods: [
+                {
+                    periodId: "created-period-id",
+                    periodName: createdPeriodName,
+                    totalCount: 2,
+                    perMetric: [{ metricId: "new-kills", name: "Kills", count: 2 }],
+                    created: [{ metricId: "new-kills", name: "Kills" }],
+                    attached: [],
+                    reused: [],
+                },
+            ],
+        });
+
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    allianceLibraryMetrics,
+                    alliancePeriods,
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                    canConfigurePeriods: true,
+                }),
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kills on 3/29", "Kills on 4/13"],
+            ["Dragon", "1500", "2000"],
+            ["Phoenix", "2300", "3000"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "multi_period_create.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const reviewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Review & Map to Existing Periods"),
+        ) as HTMLButtonElement;
+        await act(async () => {
+            reviewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const excludeCheckboxes = Array.from(
+            container.querySelectorAll('input[type="checkbox"]'),
+        ).filter((input) =>
+            input.closest("label")?.textContent?.includes("Exclude this proposal"),
+        ) as HTMLInputElement[];
+        await act(async () => {
+            excludeCheckboxes[1]?.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const periodSelect = container.querySelector(
+            'select[id^="multi-period-target-"]',
+        ) as HTMLSelectElement;
+        selectOptionValue(periodSelect, CREATE_PERIOD_SELECT_VALUE);
+
+        const nameInput = container.querySelector(
+            'input[id^="multi-period-target-"][id$="-name"]',
+        ) as HTMLInputElement;
+        expect(nameInput.value.trim().length).toBeGreaterThan(0);
+
+        await act(async () => {
+            nameInput.value = createdPeriodName;
+            nameInput.dispatchEvent(new Event("change", { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const metricSelect = container.querySelector(
+            'select[aria-label^="Metric for"]',
+        ) as HTMLSelectElement;
+        selectOptionValue(metricSelect, "create");
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Multi-Period Import"),
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            previewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const confirmBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Confirm Multi-Period Import"),
+        ) as HTMLButtonElement;
+        await act(async () => {
+            confirmBtn.click();
+            await new Promise((r) => setTimeout(r, 100));
+        });
+
+        expect(importMultiPeriodMetrics).toHaveBeenCalledTimes(1);
+        const payload = (importMultiPeriodMetrics as ReturnType<typeof vi.fn>).mock.calls[0][0];
+        expect(payload.groups).toHaveLength(1);
+        expect(payload.groups[0].target.kind).toBe("create");
+        expect(payload.groups[0].target.name).toBeTruthy();
+        expect(payload.groups[0].mappings).toHaveLength(1);
     });
 });

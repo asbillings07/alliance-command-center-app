@@ -78,6 +78,7 @@ type ImportFormProps = {
   alliancePeriods: AlliancePeriodOption[];
   canCreateMetrics: boolean;
   canAttachMetrics: boolean;
+  canConfigurePeriods: boolean;
 };
 
 type ImportStep = "upload" | "select" | "preview" | "complete";
@@ -251,7 +252,7 @@ function ValueIssueNotice({
   );
 }
 
-export function ImportForm({ periodId, periodName, allianceId, members, metrics, libraryMetrics, allianceLibraryMetrics, alliancePeriods, canCreateMetrics, canAttachMetrics }: ImportFormProps) {
+export function ImportForm({ periodId, periodName, allianceId, members, metrics, libraryMetrics, allianceLibraryMetrics, alliancePeriods, canCreateMetrics, canAttachMetrics, canConfigurePeriods }: ImportFormProps) {
   const router = useRouter();
   const [step, setStep] = useState<ImportStep>("upload");
   const [multiPeriodFlowActive, setMultiPeriodFlowActive] = useState(false);
@@ -981,6 +982,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         allianceLibraryMetrics={allianceLibraryMetrics}
         canCreateMetrics={canCreateMetrics}
         canAttachMetrics={canAttachMetrics}
+        canConfigurePeriods={canConfigurePeriods}
         members={members}
         review={periodProposalReview}
         parsedWorkbook={parsedWorkbook}
