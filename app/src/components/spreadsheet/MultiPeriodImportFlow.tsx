@@ -88,6 +88,10 @@ type MultiPeriodImportFlowProps = {
 
 type FlowStep = "map" | "preview" | "complete";
 
+/** Distinct from confirmed skip (`skip`) so native change events fire from the initial state. */
+export const UNCONFIRMED_TARGET_TOKEN = "__unconfirmed__";
+const SKIP_TARGET_TOKEN = "skip";
+
 function metricIdentity(col: ColumnPeriodEvidence): string {
   return col.proposedMetricName || col.headerText;
 }
@@ -112,10 +116,17 @@ function attachableLibraryForPeriod(
   return allianceLibraryMetrics.filter((m) => !attachedIds.has(m.id));
 }
 
+function mappingTargetToToken(mapping: ColumnMetricMapping): string {
+  if (mapping.confirmationStatus === "unconfirmed") {
+    return UNCONFIRMED_TARGET_TOKEN;
+  }
+  return targetToToken(mapping.target);
+}
+
 function targetToToken(target: ColumnTarget): string {
   switch (target.kind) {
     case "skip":
-      return "";
+      return SKIP_TARGET_TOKEN;
     case "existing":
       return `existing:${target.metricId}`;
     case "attach":
@@ -126,7 +137,10 @@ function targetToToken(target: ColumnTarget): string {
 }
 
 function tokenToTarget(token: string, proposedMetricName: string): ColumnTarget {
-  if (token === "") return { kind: "skip" };
+  if (token === UNCONFIRMED_TARGET_TOKEN) {
+    return { kind: "skip" };
+  }
+  if (token === SKIP_TARGET_TOKEN) return { kind: "skip" };
   if (token === "create") return { kind: "create", name: proposedMetricName };
   const [kind, metricId] = token.split(":");
   if (kind === "existing" && metricId) return { kind: "existing", metricId };
@@ -450,6 +464,7 @@ export function MultiPeriodImportFlow({
       ...state,
       columnMappings: state.columnMappings.map((m) => {
         if (m.columnIndex !== columnIndex) return m;
+        if (token === UNCONFIRMED_TARGET_TOKEN) return m;
         const target = tokenToTarget(token, proposedMetricName);
         const confirmationStatus: ColumnConfirmationStatus =
           target.kind === "skip" ? "confirmed_skip" : "confirmed_metric";
@@ -1011,7 +1026,7 @@ export function MultiPeriodImportFlow({
 
                         <select
                           aria-label={`Metric for ${mapping.columnName}`}
-                          value={targetToToken(mapping.target)}
+                          value={mappingTargetToToken(mapping)}
                           onChange={(e) =>
                             setColumnTarget(
                               state.proposalId,
@@ -1022,7 +1037,8 @@ export function MultiPeriodImportFlow({
                           }
                           className="w-full rounded-md border border-border p-2 text-sm bg-surface"
                         >
-                          <option value="">Do not import</option>
+                          <option value={UNCONFIRMED_TARGET_TOKEN}>Choose an action...</option>
+                          <option value={SKIP_TARGET_TOKEN}>Do not import</option>
                           {periodMetrics.length > 0 && (
                             <optgroup label="On target period">
                               {periodMetrics.map((metric) => (

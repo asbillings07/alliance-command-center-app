@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ImportForm } from "./ImportForm";
+import { UNCONFIRMED_TARGET_TOKEN } from "@/app/src/components/spreadsheet/MultiPeriodImportFlow";
 
 const mockRefresh = vi.fn();
 
@@ -92,6 +93,12 @@ function fireFileUpload(fileContent: string | ArrayBuffer, fileName = "results.c
 
     const event = new Event("change", { bubbles: true });
     fileInput.dispatchEvent(event);
+}
+
+function selectOptionValue(select: HTMLSelectElement, nextValue: string) {
+    expect(select.value).not.toBe(nextValue);
+    select.value = nextValue;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 describe("ImportForm [component]", () => {
@@ -1472,21 +1479,29 @@ describe("ImportForm [component]", () => {
         const metricSelect = container.querySelector(
             'select[aria-label="Metric for Kills on 3/29"]',
         ) as HTMLSelectElement;
+        const secondMetricSelect = container.querySelector(
+            'select[aria-label="Metric for Kills on 4/13"]',
+        ) as HTMLSelectElement;
+
+        expect(metricSelect.value).toBe(UNCONFIRMED_TARGET_TOKEN);
+        expect(secondMetricSelect.value).toBe(UNCONFIRMED_TARGET_TOKEN);
+        expect(
+            Array.from(metricSelect.options).some((o) => o.value === UNCONFIRMED_TARGET_TOKEN),
+        ).toBe(true);
+        expect(
+            Array.from(metricSelect.options).some((o) => o.value === "skip" && o.textContent?.includes("Do not import")),
+        ).toBe(true);
 
         await act(async () => {
-            metricSelect.value = "";
-            metricSelect.dispatchEvent(new Event("change", { bubbles: true }));
+            selectOptionValue(metricSelect, "skip");
             await new Promise((r) => setTimeout(r, 50));
         });
 
+        expect(metricSelect.value).toBe("skip");
         expect(previewBtn.disabled).toBe(true);
 
         await act(async () => {
-            const secondMetricSelect = container.querySelector(
-                'select[aria-label="Metric for Kills on 4/13"]',
-            ) as HTMLSelectElement;
-            secondMetricSelect.value = `existing:${metrics[0].id}`;
-            secondMetricSelect.dispatchEvent(new Event("change", { bubbles: true }));
+            selectOptionValue(secondMetricSelect, `existing:${metrics[0].id}`);
             await new Promise((r) => setTimeout(r, 50));
         });
 
