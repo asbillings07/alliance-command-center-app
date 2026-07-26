@@ -120,8 +120,9 @@ describe("RosterImportForm [component]", () => {
         });
 
         // Scope notice check
-        expect(container.textContent).toContain("Member Import Scope");
-        expect(container.textContent).toContain("This page imports member details: Name, Total Hero Power (THP), and Role. It does not import evaluation results.");
+        expect(container.textContent).toContain("Scope: Alliance Members");
+        expect(container.textContent).toContain("This workflow updates details for Alliance Members");
+        expect(container.textContent).toContain("Expected Alliance Roster Format");
 
         // Accessible file input check
         const fileInput = container.querySelector<HTMLInputElement>("#roster-file");
@@ -147,7 +148,7 @@ describe("RosterImportForm [component]", () => {
 
         // Check completion copy
         expect(mockRefresh).toHaveBeenCalledTimes(1);
-        expect(container.textContent).toContain("Members Imported");
+        expect(container.textContent).toContain("Committed Alliance Member Translation");
         expect(container.textContent).toContain("Import More Members");
     });
 
@@ -568,5 +569,71 @@ Candidate B,-10`;
             b.textContent?.includes("Import")
         ) as HTMLButtonElement;
         expect(importBtn).toBeUndefined();
+    });
+
+    it("displays pre-upload data shape guide, translation cards for all source columns, and planned/committed summaries", async () => {
+        (importMembers as ReturnType<typeof vi.fn>).mockResolvedValue({
+            created: 1,
+            restored: 1,
+            skippedExisting: 1,
+            skippedDuplicates: 0,
+            skippedEmptyNames: 0,
+            skippedUnselected: 0,
+            errors: [],
+        });
+
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [
+                        { id: "m1", playerName: "Existing Active One", archivedAt: null },
+                        { id: "m2", playerName: "Existing Archived One", archivedAt: "2026-01-01T00:00:00.000Z" },
+                    ],
+                })
+            );
+        });
+
+        // 1. Data shape guide on upload step
+        expect(container.textContent).toContain("Expected Alliance Roster Format");
+        expect(container.textContent).toContain("Copy Sample CSV");
+        expect(container.textContent).toContain("Download .csv Template");
+
+        const csvContent = `Player,THP,Role,Freeform Notes,Empty Col
+New Player A,50000,R4,Some note,
+Existing Archived One,60000,R3,Another note,`;
+
+        await act(async () => {
+            fireFileUpload(csvContent);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // 2. Planned Roster Summary and Translation Cards in Preview Step
+        expect(container.textContent).toContain("Planned Alliance Member Translation");
+        expect(container.textContent).toContain("Source Column Translations");
+
+        // Source column translations for mapped, unsupported, and empty
+        expect(container.textContent).toContain("Mapped: Member Identity");
+        expect(container.textContent).toContain("Mapped: Total Hero Power (THP)");
+        expect(container.textContent).toContain("Mapped: Role (Game Rank)");
+        expect(container.textContent).toContain("Excluded: Unsupported member property");
+        expect(container.textContent).toContain("Ignored: No values in column");
+
+        // Samples displayed
+        expect(container.textContent).toContain('"New Player A"');
+        expect(container.textContent).toContain('"50000"');
+
+        // 3. Submit and verify Committed Roster Summary
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            importBtn.click();
+        });
+
+        expect(container.textContent).toContain("Committed Alliance Member Translation");
+        expect(container.textContent).toContain("New Members Created");
+        expect(container.textContent).toContain("Archived Members Restored");
     });
 });

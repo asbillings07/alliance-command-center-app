@@ -3,7 +3,7 @@
 import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { analyzeRows, normalizeName, detectTableBounds, TableBoundsResult } from "@/app/src/lib/memberMatcher";
+import { analyzeRows, normalizeName, detectTableBounds, columnIndexToLabel, TableBoundsResult } from "@/app/src/lib/memberMatcher";
 import {
   PLAYER_COLUMN_NAMES,
   THP_COLUMN_NAMES,
@@ -25,6 +25,15 @@ import { SpreadsheetUpload } from "@/app/src/components/spreadsheet/SpreadsheetU
 import { WorkbookSheetSelector } from "@/app/src/components/spreadsheet/WorkbookSheetSelector";
 import { NumbersExportGuide } from "@/app/src/components/spreadsheet/NumbersExportGuide";
 import { WorkbookParseError } from "@/app/src/components/spreadsheet/WorkbookParseError";
+import { SpreadsheetDataShapeGuide } from "@/app/src/components/spreadsheet/SpreadsheetDataShapeGuide";
+import { ColumnTranslationCard } from "@/app/src/components/spreadsheet/ColumnTranslationCard";
+import { SpreadsheetTranslationSummary } from "@/app/src/components/spreadsheet/SpreadsheetTranslationSummary";
+import {
+  extractColumnSamples,
+  buildPlannedRosterTranslationSummary,
+  buildCommittedRosterTranslationSummary,
+  type ColumnTranslation,
+} from "@/app/src/lib/importTranslation";
 
 type ExistingMember = {
   id: string;
@@ -320,6 +329,73 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     ].filter((idx): idx is number => idx !== null)
   );
 
+  const columnTranslations: ColumnTranslation[] = React.useMemo(() => {
+    if (!currentSheet || !tableBounds) return [];
+    const row0 = currentSheet.rows[tableBounds.headerRowIndex] ?? [];
+    const totalCols = row0.length;
+
+    const translations: ColumnTranslation[] = [];
+    for (let c = 0; c < totalCols; c++) {
+      const headerName = row0[c]?.trim() || `Column ${columnIndexToLabel(c)}`;
+      const samples = extractColumnSamples(
+        currentSheet.rows,
+        c,
+        tableBounds.dataStartIndex,
+        tableBounds.dataEndIndex
+      );
+
+      if (c === mappedColumnIndices.playerColIndex) {
+        translations.push({
+          kind: "identity",
+          sourceColumnName: headerName,
+          columnIndex: c,
+          samples,
+          targetLabel: "Member Identity",
+          status: "mapped",
+        });
+      } else if (c === mappedColumnIndices.thpColIndex) {
+        translations.push({
+          kind: "member_property",
+          sourceColumnName: headerName,
+          columnIndex: c,
+          samples,
+          property: "thp",
+          targetLabel: "Total Hero Power (THP)",
+          status: "mapped",
+        });
+      } else if (c === mappedColumnIndices.roleColIndex) {
+        translations.push({
+          kind: "member_property",
+          sourceColumnName: headerName,
+          columnIndex: c,
+          samples,
+          property: "role",
+          targetLabel: "Role (Game Rank)",
+          status: "mapped",
+        });
+      } else if (samples.length === 0) {
+        translations.push({
+          kind: "empty",
+          sourceColumnName: headerName,
+          columnIndex: c,
+          samples: [],
+          reason: "No values in column",
+          status: "ignored",
+        });
+      } else {
+        translations.push({
+          kind: "unsupported",
+          sourceColumnName: headerName,
+          columnIndex: c,
+          samples,
+          reason: "Unsupported member property",
+          status: "excluded",
+        });
+      }
+    }
+    return translations;
+  }, [currentSheet, tableBounds, mappedColumnIndices]);
+
   const blockingCellIssues: WorkbookIssue[] = [];
   const warningCellIssues: WorkbookIssue[] = [];
 
@@ -396,6 +472,9 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
           isOpen={showNumbersGuide}
           onClose={() => setShowNumbersGuide(false)}
         />
+
+        <SpreadsheetDataShapeGuide type="roster" />
+
         <div className="bg-surface border border-border rounded-lg p-6">
           <div className="flex items-start justify-between gap-4 mb-4">
             <h2 className="text-lg font-semibold text-text-primary">Upload Member Spreadsheet</h2>
@@ -403,9 +482,9 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
           </div>
 
           <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary mb-4">
-            <p className="font-medium text-text-primary">Member Import Scope</p>
+            <p className="font-medium text-text-primary">Scope: Alliance Members</p>
             <p className="mt-0.5 text-text-secondary">
-              This page imports member details: Name, Total Hero Power (THP), and Role. It does not import evaluation results. Existing active members are identified and skipped. Blank THP or Role values are treated as &quot;Not provided&quot; and can be set later.
+              This workflow updates details for <strong>Alliance Members</strong> (Name, Total Hero Power, Role / Game Rank). It does not import evaluation metrics. Existing active members are identified and left unchanged.
             </p>
           </div>
 
@@ -478,6 +557,15 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
     const someSelectableSelected = selectableMembers.some((m) => m.selected);
     const allExistingActive = selectableMembers.length === 0;
 
+    const plannedRosterSummary = buildPlannedRosterTranslationSummary({
+      membersToCreateCount: selectedNewMembers.length,
+      archivedMembersToRestoreCount: selectedRestoreMembers.length,
+      existingActiveMembersUnchangedCount: parsedMembers.filter((m) => m.isExisting).length,
+      unsupportedColumnsCount: columnTranslations.filter((t) => t.kind === "unsupported").length,
+      emptyColumnsCount: columnTranslations.filter((t) => t.kind === "empty").length,
+      totalRowsProcessed: parsedMembers.length,
+    });
+
     return (
       <div className="flex flex-col gap-6">
         {parsedWorkbook && (
@@ -487,6 +575,19 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
             onSelectSheet={handleSelectSheet}
             disabled={isPending}
           />
+        )}
+
+        <SpreadsheetTranslationSummary mode="planned_roster" summary={plannedRosterSummary} />
+
+        {columnTranslations.length > 0 && (
+          <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+            <h3 className="font-semibold text-foreground text-sm">Source Column Translations</h3>
+            <div className="space-y-2">
+              {columnTranslations.map((t) => (
+                <ColumnTranslationCard key={t.columnIndex} translation={t} />
+              ))}
+            </div>
+          </div>
         )}
 
         {hasBlockingDiagnostics && (
@@ -789,24 +890,13 @@ export function RosterImportForm({ allianceId, existingMembers }: RosterImportFo
 
   // Complete step
   if (step === "complete" && importResult) {
+    const committedRosterSummary = buildCommittedRosterTranslationSummary({
+      result: importResult,
+    });
+
     return (
       <div className="flex flex-col gap-6">
-        <div className="bg-success/10 border border-success/30 rounded-lg p-6 text-center">
-          <svg
-            className="w-12 h-12 text-success mx-auto mb-3"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M5 13l4 4L19 7"
-            />
-          </svg>
-          <h2 className="text-xl font-bold text-success">Members Imported</h2>
-        </div>
+        <SpreadsheetTranslationSummary mode="committed_roster" summary={committedRosterSummary} />
 
         <div className="space-y-4">
           <div className="bg-surface border border-border rounded-lg p-4">
