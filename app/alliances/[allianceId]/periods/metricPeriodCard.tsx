@@ -50,7 +50,7 @@ export function MetricPeriodCard({
 
     startTransition(async () => {
       const result = await archiveMetricPeriod(formData);
-      if (result.error) {
+      if (!result.success) {
         setError(result.error);
       } else {
         router.refresh();
@@ -66,7 +66,7 @@ export function MetricPeriodCard({
 
     startTransition(async () => {
       const result = await restoreMetricPeriod(formData);
-      if (result.error) {
+      if (!result.success) {
         setError(result.error);
       } else {
         router.refresh();

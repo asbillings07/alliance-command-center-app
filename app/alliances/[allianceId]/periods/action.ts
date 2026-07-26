@@ -2,12 +2,16 @@
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
+import { validateMetricPeriodFields } from "@/app/src/lib/metricPeriodValidation";
 import { revalidatePath } from "next/cache";
 
-export type PeriodActionResult = {
-  error?: string;
-  success?: boolean;
-};
+export type CreatePeriodResult =
+  | { success: true; periodId: string }
+  | { success: false; error: string };
+
+export type EditPeriodResult =
+  | { success: true }
+  | { success: false; error: string };
 
 type CreateFormData = {
   name: string;
@@ -18,34 +22,41 @@ type CreateFormData = {
 
 type EditFormData = CreateFormData & { periodId: string };
 
+function parseOptionalDateField(value: FormDataEntryValue | null): string | null {
+  if (typeof value === "string" && value) {
+    return value;
+  }
+  return null;
+}
+
 function validateCreateFormData(
-  formData: FormData
+  formData: FormData,
 ): { data: CreateFormData } | { error: string } {
   const name = formData.get("name");
-  if (typeof name !== "string" || !name.trim()) {
-    return { error: "Name is required" };
-  }
-
-  const rawStartsAt = formData.get("startsAt");
-  const startsAt =
-    typeof rawStartsAt === "string" && rawStartsAt
-      ? new Date(rawStartsAt)
-      : null;
-
-  const rawEndsAt = formData.get("endsAt");
-  const endsAt =
-    typeof rawEndsAt === "string" && rawEndsAt ? new Date(rawEndsAt) : null;
+  const startsAt = parseOptionalDateField(formData.get("startsAt"));
+  const endsAt = parseOptionalDateField(formData.get("endsAt"));
 
   const allianceId = formData.get("allianceId");
   if (typeof allianceId !== "string" || !allianceId) {
     return { error: "Alliance is required" };
   }
 
-  return { data: { name, startsAt, endsAt, allianceId } };
+  try {
+    const validated = validateMetricPeriodFields({
+      name: typeof name === "string" ? name : "",
+      startsAt,
+      endsAt,
+    });
+    return { data: { ...validated, allianceId } };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Invalid period fields",
+    };
+  }
 }
 
 function validateEditFormData(
-  formData: FormData
+  formData: FormData,
 ): { data: EditFormData } | { error: string } {
   const baseResult = validateCreateFormData(formData);
   if ("error" in baseResult) {
@@ -76,12 +87,19 @@ function validateArchiveRestoreFormData(formData: FormData):
   return { data: { periodId, allianceId } };
 }
 
+function revalidatePeriodPaths(allianceId: string): void {
+  revalidatePath(`/alliances/${allianceId}/periods`);
+  revalidatePath(`/alliances/${allianceId}/setup`);
+  revalidatePath(`/alliances/${allianceId}/setup/import`);
+  revalidatePath(`/alliances/${allianceId}`);
+}
+
 export async function createMetricPeriod(
-  formData: FormData
-): Promise<PeriodActionResult> {
+  formData: FormData,
+): Promise<CreatePeriodResult> {
   const validated = validateCreateFormData(formData);
   if ("error" in validated) {
-    return { error: validated.error };
+    return { success: false, error: validated.error };
   }
 
   const { name, startsAt, endsAt, allianceId } = validated.data;
@@ -92,89 +110,85 @@ export async function createMetricPeriod(
   });
 
   try {
-    await prisma.metricPeriod.create({
+    const period = await prisma.metricPeriod.create({
       data: {
         allianceId,
-        name: name.trim(),
+        name,
         startsAt,
         endsAt,
       },
     });
+
+    revalidatePeriodPaths(allianceId);
+    return { success: true, periodId: period.id };
   } catch (err) {
     console.error("Failed to create period:", err);
-    return { error: "Failed to create period" };
+    return { success: false, error: "Failed to create period" };
   }
-
-  revalidatePath(`/alliances/${allianceId}/periods`);
-  return { success: true };
 }
 
 export async function editMetricPeriod(
-  formData: FormData
-): Promise<PeriodActionResult> {
+  formData: FormData,
+): Promise<EditPeriodResult> {
   const validated = validateEditFormData(formData);
   if ("error" in validated) {
-    return { error: validated.error };
+    return { success: false, error: validated.error };
   }
 
   const { name, startsAt, endsAt, allianceId, periodId } = validated.data;
 
-  // Authorize before any DB lookup
   await requireAllianceAccess({
     allianceId,
     requiredPermission: Permissions.CONFIGURE_PERIODS,
   });
 
-  // Query scoped by both id and allianceId for safety
   const period = await prisma.metricPeriod.findFirst({
     where: { id: periodId, allianceId },
   });
 
   if (!period) {
-    return { error: "Period not found" };
+    return { success: false, error: "Period not found" };
   }
 
   try {
     await prisma.metricPeriod.update({
       where: { id: periodId },
       data: {
-        name: name.trim(),
+        name,
         startsAt,
         endsAt,
       },
     });
   } catch (err) {
     console.error("Failed to update period:", err);
-    return { error: "Failed to update period" };
+    return { success: false, error: "Failed to update period" };
   }
 
-  revalidatePath(`/alliances/${allianceId}/periods`);
+  revalidatePeriodPaths(allianceId);
   return { success: true };
 }
 
 export async function archiveMetricPeriod(
-  formData: FormData
-): Promise<PeriodActionResult> {
+  formData: FormData,
+): Promise<EditPeriodResult> {
   const validated = validateArchiveRestoreFormData(formData);
   if ("error" in validated) {
-    return { error: validated.error };
+    return { success: false, error: validated.error };
   }
 
   const { periodId, allianceId } = validated.data;
 
-  // Authorize before any DB lookup to prevent ID enumeration
   await requireAllianceAccess({
     allianceId,
     requiredPermission: Permissions.CONFIGURE_PERIODS,
   });
 
-  // Query scoped by both id and allianceId for safety
   const period = await prisma.metricPeriod.findFirst({
     where: { id: periodId, allianceId },
   });
 
   if (!period) {
-    return { error: "Period not found" };
+    return { success: false, error: "Period not found" };
   }
 
   try {
@@ -184,36 +198,34 @@ export async function archiveMetricPeriod(
     });
   } catch (err) {
     console.error("Failed to archive period:", err);
-    return { error: "Failed to archive period" };
+    return { success: false, error: "Failed to archive period" };
   }
 
-  revalidatePath(`/alliances/${allianceId}/periods`);
+  revalidatePeriodPaths(allianceId);
   return { success: true };
 }
 
 export async function restoreMetricPeriod(
-  formData: FormData
-): Promise<PeriodActionResult> {
+  formData: FormData,
+): Promise<EditPeriodResult> {
   const validated = validateArchiveRestoreFormData(formData);
   if ("error" in validated) {
-    return { error: validated.error };
+    return { success: false, error: validated.error };
   }
 
   const { periodId, allianceId } = validated.data;
 
-  // Authorize before any DB lookup to prevent ID enumeration
   await requireAllianceAccess({
     allianceId,
     requiredPermission: Permissions.CONFIGURE_PERIODS,
   });
 
-  // Query scoped by both id and allianceId for safety
   const period = await prisma.metricPeriod.findFirst({
     where: { id: periodId, allianceId },
   });
 
   if (!period) {
-    return { error: "Period not found" };
+    return { success: false, error: "Period not found" };
   }
 
   try {
@@ -223,9 +235,9 @@ export async function restoreMetricPeriod(
     });
   } catch (err) {
     console.error("Failed to restore period:", err);
-    return { error: "Failed to restore period" };
+    return { success: false, error: "Failed to restore period" };
   }
 
-  revalidatePath(`/alliances/${allianceId}/periods`);
+  revalidatePeriodPaths(allianceId);
   return { success: true };
 }
