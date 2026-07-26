@@ -1,6 +1,8 @@
 import {
   parseDateHeader,
   isValidCalendarDate,
+  isCrossYearRangePattern,
+  computeIsReversedRange,
   type ParsedDateEvidence,
   type DateHeaderParseResult,
   type ParsedDateComponent,
@@ -18,7 +20,10 @@ export type ColumnExclusionReason =
   | "invalid_date"
   | "player_column";
 
-export type ReviewableColumnReason = "unresolved_year" | "locale_ambiguous";
+export type ReviewableColumnReason =
+  | "unresolved_year"
+  | "locale_ambiguous"
+  | "range_chronology_conflict";
 
 export type ExcludedColumnEvidence = {
   columnIndex: number;
@@ -181,10 +186,78 @@ function calendarValidForEvidence(
 }
 
 /**
+ * After typed metadata corrects a range start, reconcile the end year using the
+ * same cross-year semantics as header parsing: Dec→Jan spans get end.year =
+ * start.year + 1; otherwise the end follows the corrected start year when it
+ * still reflects the pre-correction weaker inference context.
+ */
+function reconcileRangeEndAfterTypedStartCorrection(
+  start: ParsedDateComponent,
+  end: ParsedDateComponent,
+  originalEvidence: ParsedDateEvidence,
+): {
+  end: ParsedDateComponent;
+  ambiguities: string[];
+  isReversedRange: boolean;
+} {
+  const ambiguities: string[] = [];
+  let reconciledEnd = { ...end };
+
+  if (start.year === undefined) {
+    return {
+      end: reconciledEnd,
+      ambiguities,
+      isReversedRange: computeIsReversedRange("range", start, reconciledEnd),
+    };
+  }
+
+  const endYearExplicitInHeader =
+    originalEvidence.yearSource === "header" &&
+    originalEvidence.end.year !== undefined &&
+    originalEvidence.start.year !== undefined;
+
+  if (isCrossYearRangePattern(start, reconciledEnd)) {
+    const nextYear = start.year + 1;
+    if (reconciledEnd.year !== nextYear) {
+      reconciledEnd = { ...reconciledEnd, year: nextYear };
+      ambiguities.push(
+        `Range spans a year boundary; end date assigned to ${nextYear}`,
+      );
+    }
+  } else if (
+    !endYearExplicitInHeader &&
+    reconciledEnd.year !== undefined &&
+    reconciledEnd.year !== start.year
+  ) {
+    reconciledEnd = { ...reconciledEnd, year: start.year };
+    if (end.year !== start.year) {
+      ambiguities.push(
+        `Range end year normalized to ${start.year} to match typed Excel start date`,
+      );
+    }
+  }
+
+  const isReversedRange = computeIsReversedRange("range", start, reconciledEnd);
+  if (isReversedRange) {
+    ambiguities.push(
+      "Range end date is before start date; verify the intended period window",
+    );
+  }
+
+  return {
+    end: reconciledEnd,
+    ambiguities,
+    isReversedRange,
+  };
+}
+
+/**
  * Typed Excel header metadata represents one concrete calendar date from the
  * workbook's date system. For snapshots, that serial is authoritative for the
  * snapshot date. For ranges, a single typed serial may only correct the start
  * endpoint when its month/day match the typed date — never both endpoints.
+ * After correcting the start, end-year context and chronological ordering are
+ * recomputed (same-year normalization or Dec→Jan cross-year semantics).
  */
 function applyTypedDateMetadata(
   dateResult: DateHeaderParseResult,
@@ -201,7 +274,9 @@ function applyTypedDateMetadata(
     (a) =>
       !a.includes("Year could not be determined") &&
       !a.includes("inferred") &&
-      !a.includes("Year missing in header"),
+      !a.includes("Year missing in header") &&
+      !a.includes("Range end date is before start date") &&
+      !a.includes("Range spans a year boundary"),
   );
 
   if (evidence.kind === "range") {
@@ -220,17 +295,28 @@ function applyTypedDateMetadata(
       day: decoded.day,
       year: decoded.year,
     };
-    const end = { ...evidence.end };
+
+    const reconciled = reconcileRangeEndAfterTypedStartCorrection(
+      start,
+      evidence.end,
+      evidence,
+    );
+    ambiguities.push(...reconciled.ambiguities);
 
     return {
       ...dateResult,
       dateEvidence: {
         ...evidence,
         start,
-        end,
+        end: reconciled.end,
         yearSource: "typed_metadata",
         ambiguities,
-        isCalendarValid: calendarValidForEvidence({ kind: "range", start, end }),
+        isCalendarValid: calendarValidForEvidence({
+          kind: "range",
+          start,
+          end: reconciled.end,
+        }),
+        isReversedRange: reconciled.isReversedRange,
       },
     };
   }
@@ -334,6 +420,24 @@ function scoreProposalConfidence(
 
 function isQualifyingProposal(proposal: PeriodMappingProposal): boolean {
   return proposal.confidence === "high" || proposal.confidence === "medium";
+}
+
+function demoteConfidenceIfRangeInverted(
+  confidence: PeriodMappingProposal["confidence"],
+  dateEvidence: ParsedDateEvidence,
+  startsAtISO: string | null,
+  endsAtISO: string | null,
+): PeriodMappingProposal["confidence"] {
+  if (
+    (confidence === "high" || confidence === "medium") &&
+    dateEvidence.kind === "range" &&
+    startsAtISO &&
+    endsAtISO &&
+    endsAtISO < startsAtISO
+  ) {
+    return "low";
+  }
+  return confidence;
 }
 
 /**
@@ -515,6 +619,30 @@ export function buildPeriodMappingReview(
       continue;
     }
 
+    if (
+      evidence.kind === "range" &&
+      evidence.isReversedRange &&
+      evidence.yearSource === "typed_metadata" &&
+      typedDateMeta?.decodedDate
+    ) {
+      reviewableColumns.push({
+        columnIndex: h.columnIndex,
+        headerAddress: h.headerAddress,
+        headerText: h.headerText,
+        tableRegionId,
+        parsedDate: evidence,
+        proposedMetricName,
+        reviewReason: "range_chronology_conflict",
+        detail:
+          "Typed Excel start date conflicts with the range end; chronology could not be safely resolved",
+        warnings: collectColumnWarnings(colEvidence),
+        hasTypedDateHeader: Boolean(typedDateMeta),
+        typedDateFormattedText: typedDateMeta?.formattedText,
+      });
+      candidateColumns.push(colEvidence);
+      continue;
+    }
+
     if (evidence.yearSource === "unresolved") {
       reviewableColumns.push({
         columnIndex: h.columnIndex,
@@ -563,15 +691,23 @@ export function buildPeriodMappingReview(
       });
     });
 
-    const confidence = scoreProposalConfidence(dateEvidence, cols);
+    const startsAtISO = formatISODate(dateEvidence.start);
+    const endsAtISO = formatISODate(dateEvidence.end);
+    const scoredConfidence = scoreProposalConfidence(dateEvidence, cols);
+    const confidence = demoteConfidenceIfRangeInverted(
+      scoredConfidence,
+      dateEvidence,
+      startsAtISO,
+      endsAtISO,
+    );
 
     proposals.push({
       proposalId: `proposal-${proposalCounter++}`,
       groupingKey,
       proposedPeriodName: generatePeriodName(dateEvidence),
       dateKind: dateEvidence.kind,
-      startsAtISO: formatISODate(dateEvidence.start),
-      endsAtISO: formatISODate(dateEvidence.end),
+      startsAtISO,
+      endsAtISO,
       confidence,
       columns: cols,
       warnings,

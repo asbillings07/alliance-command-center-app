@@ -288,7 +288,7 @@ describe("buildPeriodMappingReview", () => {
     expect(review.excludedColumns.some((c) => c.reason === "invalid_date")).toBe(false);
   });
 
-  it("applies typed metadata to range start only and leaves the parsed end untouched", () => {
+  it("normalizes range end year after typed start correction and recomputes chronology", () => {
     const decoded = { year: 2026, month: 3, day: 29 };
     const review = buildPeriodMappingReview({
       sheetName: "March 2025",
@@ -314,12 +314,70 @@ describe("buildPeriodMappingReview", () => {
     const rangeProposal = review.proposals.find((p) => p.dateKind === "range");
     expect(rangeProposal).toBeDefined();
     expect(rangeProposal?.startsAtISO).toBe("2026-03-29");
-    expect(rangeProposal?.endsAtISO).toBe("2025-04-13");
+    expect(rangeProposal?.endsAtISO).toBe("2026-04-13");
+    expect(rangeProposal?.confidence).toBe("high");
     expect(rangeProposal?.columns[0].parsedDate?.end).toEqual({
       month: 4,
       day: 13,
-      year: 2025,
+      year: 2026,
     });
+    expect(rangeProposal?.columns[0].parsedDate?.isReversedRange).toBe(false);
+  });
+
+  it("preserves Dec→Jan cross-year ranges after typed start correction", () => {
+    const decoded = { year: 2025, month: 12, day: 29 };
+    const review = buildPeriodMappingReview({
+      sheetName: "January 2026",
+      headerRowIndex: 0,
+      cellDates: {
+        B1: {
+          address: "B1",
+          rowIndex: 0,
+          columnIndex: 1,
+          formattedText: "12/29",
+          isTypedDate: true,
+          rawNum: 46019,
+          decodedDate: decoded,
+        },
+      },
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills from 12/29-1/13", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.proposals).toHaveLength(1);
+    expect(review.proposals[0].startsAtISO).toBe("2025-12-29");
+    expect(review.proposals[0].endsAtISO).toBe("2026-01-13");
+    expect(review.proposals[0].columns[0].parsedDate?.isReversedRange).toBe(false);
+  });
+
+  it("retains typed range chronology conflicts as reviewable evidence", () => {
+    const decoded = { year: 2026, month: 3, day: 29 };
+    const review = buildPeriodMappingReview({
+      sheetName: "Roster",
+      headerRowIndex: 0,
+      cellDates: {
+        B1: {
+          address: "B1",
+          rowIndex: 0,
+          columnIndex: 1,
+          formattedText: "3/29/2026",
+          isTypedDate: true,
+          rawNum: 46110,
+          decodedDate: decoded,
+        },
+      },
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills from 3/29/2026-4/13/2025", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.reviewableColumns).toHaveLength(1);
+    expect(review.reviewableColumns[0].reviewReason).toBe("range_chronology_conflict");
+    expect(review.proposals.some((p) => p.dateKind === "range")).toBe(false);
+    expect(review.mode).toBe("insufficient_evidence");
   });
 
   it("formats reviewable range evidence with both endpoints visible", () => {
@@ -384,5 +442,96 @@ describe("buildPeriodMappingReview", () => {
 
     expect(review.mode).toBe("insufficient_evidence");
     expect(review.proposals).toHaveLength(0);
+  });
+});
+
+function assertQualifyingProposalsAreChronologicallyOrdered(
+  review: ReturnType<typeof buildPeriodMappingReview>,
+): void {
+  for (const proposal of review.proposals) {
+    if (proposal.confidence === "low") continue;
+    if (
+      proposal.dateKind === "range" &&
+      proposal.startsAtISO &&
+      proposal.endsAtISO
+    ) {
+      expect(proposal.endsAtISO >= proposal.startsAtISO).toBe(true);
+    }
+  }
+}
+
+describe("period proposal chronology invariants", () => {
+  const headerRowIndex = 0;
+
+  function header(
+    columnIndex: number,
+    headerText: string,
+    opts?: { isPlayerColumn?: boolean; isNumeric?: boolean },
+  ) {
+    return {
+      columnIndex,
+      headerText,
+      headerAddress: cellAddress(headerRowIndex, columnIndex),
+      isPlayerColumn: opts?.isPlayerColumn,
+      isNumeric: opts?.isNumeric,
+    };
+  }
+
+  it("never emits qualifying range proposals with endsAtISO before startsAtISO", () => {
+    const scenarios: Parameters<typeof buildPeriodMappingReview>[0][] = [
+      {
+        sheetName: "March 2026",
+        headerRowIndex: 0,
+        headers: [
+          header(0, "Player", { isPlayerColumn: true }),
+          header(1, "Kills on 3/29", { isNumeric: true }),
+          header(2, "Kills on 4/13", { isNumeric: true }),
+          header(3, "Kills from 3/29-4/13", { isNumeric: true }),
+        ],
+      },
+      {
+        sheetName: "March 2025",
+        headerRowIndex: 0,
+        cellDates: {
+          B1: {
+            address: "B1",
+            rowIndex: 0,
+            columnIndex: 1,
+            formattedText: "3/29",
+            isTypedDate: true,
+            rawNum: 46110,
+            decodedDate: { year: 2026, month: 3, day: 29 },
+          },
+        },
+        headers: [
+          header(0, "Player", { isPlayerColumn: true }),
+          header(1, "Kills from 3/29-4/13", { isNumeric: true }),
+          header(2, "Kills on 4/13", { isNumeric: true }),
+        ],
+      },
+      {
+        sheetName: "January 2026",
+        headerRowIndex: 0,
+        cellDates: {
+          B1: {
+            address: "B1",
+            rowIndex: 0,
+            columnIndex: 1,
+            formattedText: "12/29",
+            isTypedDate: true,
+            rawNum: 46019,
+            decodedDate: { year: 2025, month: 12, day: 29 },
+          },
+        },
+        headers: [
+          header(0, "Player", { isPlayerColumn: true }),
+          header(1, "Kills from 12/29-1/13", { isNumeric: true }),
+        ],
+      },
+    ];
+
+    for (const input of scenarios) {
+      assertQualifyingProposalsAreChronologicallyOrdered(buildPeriodMappingReview(input));
+    }
   });
 });

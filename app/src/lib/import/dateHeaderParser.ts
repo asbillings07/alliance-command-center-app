@@ -142,7 +142,7 @@ function parseDateStr(str: string): ParsedDateStrResult | null {
   return null;
 }
 
-function compareResolvedDates(
+export function compareResolvedDates(
   a: ParsedDateComponent,
   b: ParsedDateComponent,
 ): number {
@@ -151,6 +151,25 @@ function compareResolvedDates(
   if (yA !== yB) return yA - yB;
   if (a.month !== b.month) return a.month - b.month;
   return a.day - b.day;
+}
+
+/** Dec→Jan style ranges where end month rolls into the following calendar year. */
+export function isCrossYearRangePattern(
+  start: ParsedDateComponent,
+  end: ParsedDateComponent,
+): boolean {
+  return start.month > end.month && start.month >= 11 && end.month <= 3;
+}
+
+export function computeIsReversedRange(
+  kind: ParsedDateEvidence["kind"],
+  start: ParsedDateComponent,
+  end: ParsedDateComponent,
+): boolean {
+  if (kind !== "range") return false;
+  if (start.year === undefined || end.year === undefined) return false;
+  if (!isValidCalendarDate(start) || !isValidCalendarDate(end)) return false;
+  return compareResolvedDates(start, end) > 0;
 }
 
 function resolveYears(
@@ -259,19 +278,12 @@ function buildDateEvidence(
     isValidCalendarDate(start) &&
     (kind === "snapshot" || isValidCalendarDate(end));
 
-  let isReversedRange = false;
-  if (
-    kind === "range" &&
-    start.year !== undefined &&
-    end.year !== undefined &&
-    isCalendarValid
-  ) {
-    isReversedRange = compareResolvedDates(start, end) > 0;
-    if (isReversedRange) {
-      ambiguities.push(
-        "Range end date is before start date; verify the intended period window",
-      );
-    }
+  const isReversedRange =
+    isCalendarValid && computeIsReversedRange(kind, start, end);
+  if (isReversedRange) {
+    ambiguities.push(
+      "Range end date is before start date; verify the intended period window",
+    );
   }
 
   const allAmbiguities = [...ambiguities];

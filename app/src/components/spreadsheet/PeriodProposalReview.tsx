@@ -50,6 +50,7 @@ const REVIEWABLE_REASON_LABELS: Record<
 > = {
   unresolved_year: "Needs year confirmation",
   locale_ambiguous: "Ambiguous date order",
+  range_chronology_conflict: "Range chronology conflict",
 };
 
 export function PeriodProposalReview({
