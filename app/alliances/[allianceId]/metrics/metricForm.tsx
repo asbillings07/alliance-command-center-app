@@ -115,11 +115,6 @@ export function MetricForm({
           </div>
 
           <div className="flex gap-2 justify-end">
-            {returnTo && mode === "create" && (
-              <Button variant="secondary" href={returnTo}>
-                Continue configuring this period
-              </Button>
-            )}
             <Button
               type="button"
               variant="secondary"
