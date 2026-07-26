@@ -125,11 +125,11 @@ test.describe("Alliance Setup Flow", () => {
 
     await page.goto(`/alliances/${testAllianceId}/setup`);
 
-    // Click on Configure Metrics task
+    // Click on Configure Metrics task — routes to target period attachment when a period exists
     const metricsLink = page.getByRole("link", { name: /configure metrics/i });
     if (await metricsLink.isVisible()) {
       await metricsLink.click();
-      await expect(page).toHaveURL(/\/metrics/);
+      await expect(page).toHaveURL(/\/periods\//);
     }
   });
 
