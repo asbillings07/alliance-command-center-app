@@ -184,6 +184,7 @@ export default async function ImportPage({ params }: Params) {
             alliancePeriods={alliancePeriods}
             canCreateMetrics={canConfigureMetrics}
             canAttachMetrics={canConfigurePeriods}
+            canConfigurePeriods={canConfigurePeriods}
           />
         </Card.Body>
       </Card>

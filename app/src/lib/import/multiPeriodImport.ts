@@ -17,19 +17,36 @@ import {
   findDuplicateResolvedMetricId,
   type ClassifiedTarget,
 } from "@/app/src/lib/metricResolution";
-import type { Permission } from "@/app/src/lib/auth/permissions";
+import { Permissions, type Permission } from "@/app/src/lib/auth/permissions";
+import {
+  normalizeMetricPeriodName,
+  validateMetricPeriodFields,
+} from "@/app/src/lib/metricPeriodValidation";
+
+export type MultiPeriodGroupTarget =
+  | { kind: "existing"; periodId: string }
+  | { kind: "create"; name: string; startsAt: string | null; endsAt: string | null };
 
 export type MultiPeriodImportGroupInput = {
-  targetPeriodId: string;
+  target: MultiPeriodGroupTarget;
   mappings: ColumnTargetMapping[];
 };
 
 export type MultiPeriodImportGroupPlan = {
-  targetPeriodId: string;
+  groupKey: string;
+  target: MultiPeriodGroupTarget;
   validated: ValidatedColumnTargetMapping[];
   classified: ClassifiedTarget[];
   requiredPermissions: Permission[];
 };
+
+export function groupKeyForTarget(target: MultiPeriodGroupTarget): string {
+  if (target.kind === "existing") {
+    return `existing:${target.periodId}`;
+  }
+  const validated = validateMetricPeriodFields(target);
+  return `create:${normalizeMetricPeriodName(validated.name)}:${target.startsAt ?? ""}:${target.endsAt ?? ""}`;
+}
 
 export function validateMultiPeriodImportGroups(
   groups: MultiPeriodImportGroupInput[],
@@ -38,20 +55,42 @@ export function validateMultiPeriodImportGroups(
     throw new Error("At least one period group is required");
   }
 
-  const seenPeriodIds = new Set<string>();
+  const seenExistingPeriodIds = new Set<string>();
+  const seenCreateNames = new Set<string>();
+
   for (const group of groups) {
-    if (typeof group.targetPeriodId !== "string" || !group.targetPeriodId) {
+    if (!group.target || typeof group.target !== "object") {
       throw new Error("Each group requires a target period");
     }
 
-    // Leaders must combine proposals targeting the same period in the UI;
-    // do not silently merge duplicate target periods server-side.
-    if (seenPeriodIds.has(group.targetPeriodId)) {
-      throw new Error(
-        "Each target period may only appear once; combine columns for the same period in the mapping UI",
-      );
+    if (group.target.kind === "existing") {
+      if (typeof group.target.periodId !== "string" || !group.target.periodId) {
+        throw new Error("Each group requires a target period");
+      }
+
+      // Leaders must combine proposals targeting the same period in the UI;
+      // do not silently merge duplicate target periods server-side.
+      if (seenExistingPeriodIds.has(group.target.periodId)) {
+        throw new Error(
+          "Each target period may only appear once; combine columns for the same period in the mapping UI",
+        );
+      }
+      seenExistingPeriodIds.add(group.target.periodId);
+    } else if (group.target.kind === "create") {
+      validateMetricPeriodFields(group.target);
+
+      const normalizedName = normalizeMetricPeriodName(group.target.name);
+      // No DB uniqueness on (allianceId, name) exists today; reject duplicate
+      // create targets in one submission so leaders merge proposals or map to existing.
+      if (seenCreateNames.has(normalizedName)) {
+        throw new Error(
+          "Each new period name may only appear once in this import; map the second group to an existing period or merge proposals in the mapping UI",
+        );
+      }
+      seenCreateNames.add(normalizedName);
+    } else {
+      throw new Error("Each group requires a target period");
     }
-    seenPeriodIds.add(group.targetPeriodId);
 
     if (!Array.isArray(group.mappings) || group.mappings.length === 0) {
       throw new Error("Each period group requires at least one column mapping");
@@ -78,7 +117,8 @@ export function planMultiPeriodImportGroup(
   }
 
   return {
-    targetPeriodId: group.targetPeriodId,
+    groupKey: groupKeyForTarget(group.target),
+    target: group.target,
     validated,
     classified,
     requiredPermissions: deriveRequiredPermissions(classified),
@@ -87,12 +127,16 @@ export function planMultiPeriodImportGroup(
 
 export function aggregateRequiredPermissions(
   groupPlans: MultiPeriodImportGroupPlan[],
+  groups: MultiPeriodImportGroupInput[],
 ): Permission[] {
   const required = new Set<Permission>();
   for (const plan of groupPlans) {
     for (const permission of plan.requiredPermissions) {
       required.add(permission);
     }
+  }
+  if (groups.some((group) => group.target.kind === "create")) {
+    required.add(Permissions.CONFIGURE_PERIODS);
   }
   return [...required];
 }

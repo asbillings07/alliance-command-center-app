@@ -10,6 +10,7 @@ import {
 import { resolveMetricTargets } from "@/app/src/lib/metricResolution";
 import { classifyColumn } from "@/app/src/lib/columnClassifier";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
+import { validateMetricPeriodFields } from "@/app/src/lib/metricPeriodValidation";
 import {
   aggregateRequiredPermissions,
   planMultiPeriodImportGroup,
@@ -56,21 +57,27 @@ export async function importMultiPeriodMetrics(
     requiredPermission: Permissions.IMPORT_METRICS,
   });
 
-  const targetPeriodIds = groups.map((g) => g.targetPeriodId);
-  const periods = await prisma.metricPeriod.findMany({
-    where: {
-      id: { in: targetPeriodIds },
-      allianceId,
-      active: true,
-    },
-    select: { id: true, name: true },
-  });
+  const existingPeriodIds = groups
+    .filter((group) => group.target.kind === "existing")
+    .map((group) => (group.target as { kind: "existing"; periodId: string }).periodId);
 
-  if (periods.length !== targetPeriodIds.length) {
+  const existingPeriods =
+    existingPeriodIds.length > 0
+      ? await prisma.metricPeriod.findMany({
+          where: {
+            id: { in: existingPeriodIds },
+            allianceId,
+            active: true,
+          },
+          select: { id: true, name: true },
+        })
+      : [];
+
+  if (existingPeriods.length !== existingPeriodIds.length) {
     throw new Error("One or more target periods were not found for this alliance");
   }
 
-  const periodNameById = new Map(periods.map((p) => [p.id, p.name]));
+  const periodNameById = new Map(existingPeriods.map((period) => [period.id, period.name]));
 
   const [libraryMetrics, periodMetricsRows] = await Promise.all([
     prisma.metric.findMany({
@@ -78,16 +85,18 @@ export async function importMultiPeriodMetrics(
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
-    prisma.metricPeriodMetric.findMany({
-      where: {
-        periodId: { in: targetPeriodIds },
-        active: true,
-      },
-      select: { periodId: true, metricId: true },
-    }),
+    existingPeriodIds.length > 0
+      ? prisma.metricPeriodMetric.findMany({
+          where: {
+            periodId: { in: existingPeriodIds },
+            active: true,
+          },
+          select: { periodId: true, metricId: true },
+        })
+      : Promise.resolve([]),
   ]);
 
-  const libraryMetricIds = new Set(libraryMetrics.map((m) => m.id));
+  const libraryMetricIds = new Set(libraryMetrics.map((metric) => metric.id));
   const periodMetricIdsByPeriod = new Map<string, Set<string>>();
   for (const row of periodMetricsRows) {
     if (!periodMetricIdsByPeriod.has(row.periodId)) {
@@ -97,8 +106,14 @@ export async function importMultiPeriodMetrics(
   }
 
   const groupPlans = groups.map((group) => {
-    const periodMetricIds = [...(periodMetricIdsByPeriod.get(group.targetPeriodId) ?? new Set())];
-    const attachedMetricIds = periodMetricIdsByPeriod.get(group.targetPeriodId) ?? new Set();
+    const periodMetricIds =
+      group.target.kind === "existing"
+        ? [...(periodMetricIdsByPeriod.get(group.target.periodId) ?? new Set())]
+        : [];
+    const attachedMetricIds =
+      group.target.kind === "existing"
+        ? (periodMetricIdsByPeriod.get(group.target.periodId) ?? new Set())
+        : new Set<string>();
 
     const plan = planMultiPeriodImportGroup(group, {
       periodMetricIds,
@@ -117,7 +132,7 @@ export async function importMultiPeriodMetrics(
       const colClassification = classifyColumn({
         columnIndex: 0,
         columnName: sourceColumnName,
-        periodMetrics: libraryMetrics.filter((m) => attachedMetricIds.has(m.id)),
+        periodMetrics: libraryMetrics.filter((metric) => attachedMetricIds.has(metric.id)),
         libraryMetrics,
       });
 
@@ -138,7 +153,7 @@ export async function importMultiPeriodMetrics(
     return plan;
   });
 
-  for (const permission of aggregateRequiredPermissions(groupPlans)) {
+  for (const permission of aggregateRequiredPermissions(groupPlans, groups)) {
     if (!hasPermission(auth.permissions, permission)) {
       throw new Error(
         "You do not have permission to create or attach metrics during import",
@@ -149,7 +164,7 @@ export async function importMultiPeriodMetrics(
   const memberIds = [
     ...new Set(
       groupPlans.flatMap((plan) =>
-        plan.validated.flatMap((m) => m.entries.map((e) => e.memberId)),
+        plan.validated.flatMap((mapping) => mapping.entries.map((entry) => entry.memberId)),
       ),
     ),
   ];
@@ -158,7 +173,7 @@ export async function importMultiPeriodMetrics(
     where: { id: { in: memberIds }, allianceId },
     select: { id: true },
   });
-  const validMemberIds = new Set(validMembers.map((m) => m.id));
+  const validMemberIds = new Set(validMembers.map((member) => member.id));
   if (memberIds.some((id) => !validMemberIds.has(id))) {
     throw new Error("One or more members do not belong to this alliance");
   }
@@ -171,15 +186,34 @@ export async function importMultiPeriodMetrics(
     }> = [];
 
     for (const groupPlan of groupPlans) {
+      let periodId: string;
+
+      if (groupPlan.target.kind === "create") {
+        const validated = validateMetricPeriodFields(groupPlan.target);
+        const created = await tx.metricPeriod.create({
+          data: {
+            allianceId,
+            name: validated.name,
+            startsAt: validated.startsAt,
+            endsAt: validated.endsAt,
+            active: true,
+          },
+        });
+        periodId = created.id;
+        periodNameById.set(periodId, created.name);
+      } else {
+        periodId = groupPlan.target.periodId;
+      }
+
       const resolved = await resolveMetricTargets(tx, {
         allianceId,
-        periodId: groupPlan.targetPeriodId,
+        periodId,
         classified: groupPlan.classified,
       });
 
-      const finalMappings: MetricMapping[] = resolved.map((r, i) => ({
-        metricId: r.metricId,
-        entries: groupPlan.validated[i].entries,
+      const finalMappings: MetricMapping[] = resolved.map((resolvedTarget, index) => ({
+        metricId: resolvedTarget.metricId,
+        entries: groupPlan.validated[index].entries,
       }));
       const plan = buildMetricImportPlan(finalMappings);
 
@@ -187,7 +221,7 @@ export async function importMultiPeriodMetrics(
         await tx.memberMetricEntry.createMany({
           data: mapping.entries.map((entry) => ({
             allianceMemberId: entry.memberId,
-            periodId: groupPlan.targetPeriodId,
+            periodId,
             metricId: mapping.metricId,
             value: entry.value,
           })),
@@ -195,7 +229,7 @@ export async function importMultiPeriodMetrics(
       }
 
       results.push({
-        periodId: groupPlan.targetPeriodId,
+        periodId,
         plan,
         resolved,
       });
@@ -204,7 +238,8 @@ export async function importMultiPeriodMetrics(
     return results;
   });
 
-  for (const periodId of targetPeriodIds) {
+  const committedPeriodIds = [...new Set(transactionResults.map((result) => result.periodId))];
+  for (const periodId of committedPeriodIds) {
     revalidateAllianceData({
       allianceId,
       periodId,
@@ -218,14 +253,14 @@ export async function importMultiPeriodMetrics(
 
   const allMetricIds = [
     ...new Set(
-      transactionResults.flatMap((r) => r.resolved.map((item) => item.metricId)),
+      transactionResults.flatMap((result) => result.resolved.map((item) => item.metricId)),
     ),
   ];
   const summaryMetrics = await prisma.metric.findMany({
     where: { id: { in: allMetricIds } },
     select: { id: true, name: true },
   });
-  const nameById = new Map(summaryMetrics.map((m) => [m.id, m.name]));
+  const nameById = new Map(summaryMetrics.map((metric) => [metric.id, metric.name]));
   const nameFor = (metricId: string) => nameById.get(metricId) ?? "Metric";
 
   const dedupeSummaries = (metricIds: string[]): MetricSummary[] =>
@@ -239,15 +274,15 @@ export async function importMultiPeriodMetrics(
       periodId,
       periodName: periodNameById.get(periodId) ?? "Period",
       totalCount: plan.totalCount,
-      perMetric: plan.mappings.map((m) => ({
-        metricId: m.metricId,
-        name: nameFor(m.metricId),
-        count: m.entries.length,
+      perMetric: plan.mappings.map((mapping) => ({
+        metricId: mapping.metricId,
+        name: nameFor(mapping.metricId),
+        count: mapping.entries.length,
       })),
-      created: dedupeSummaries(resolved.filter((r) => r.created).map((r) => r.metricId)),
-      attached: dedupeSummaries(resolved.filter((r) => r.attached).map((r) => r.metricId)),
+      created: dedupeSummaries(resolved.filter((item) => item.created).map((item) => item.metricId)),
+      attached: dedupeSummaries(resolved.filter((item) => item.attached).map((item) => item.metricId)),
       reused: dedupeSummaries(
-        resolved.filter((r) => !r.created && !r.attached).map((r) => r.metricId),
+        resolved.filter((item) => !item.created && !item.attached).map((item) => item.metricId),
       ),
     }),
   );
@@ -255,6 +290,6 @@ export async function importMultiPeriodMetrics(
   return {
     success: true,
     periods: periodsResult,
-    totalCount: periodsResult.reduce((sum, p) => sum + p.totalCount, 0),
+    totalCount: periodsResult.reduce((sum, period) => sum + period.totalCount, 0),
   };
 }

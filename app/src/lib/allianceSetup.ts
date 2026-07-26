@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { type PermissionSet } from "./auth/permissions";
 import { CREATE_PERIOD_TOUR_ID, IMPORT_MEMBERS_TOUR_ID } from "./tours";
+import { metricPeriodChronologicalOrderBy } from "./metricPeriodOrdering";
 
 /**
  * Alliance setup represents the readiness of the alliance,
@@ -234,7 +235,7 @@ export async function getAllianceSetupStatus(
   // Resolve target evaluation period for dynamic task links (e.g. data import)
   const activePeriod = await prisma.metricPeriod.findFirst({
     where: { allianceId, active: true },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    orderBy: metricPeriodChronologicalOrderBy,
     select: {
       id: true,
       periodMetrics: {
@@ -248,7 +249,7 @@ export async function getAllianceSetupStatus(
     activePeriod ??
     (await prisma.metricPeriod.findFirst({
       where: { allianceId },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      orderBy: metricPeriodChronologicalOrderBy,
       select: {
         id: true,
         periodMetrics: {

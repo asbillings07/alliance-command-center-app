@@ -31,6 +31,7 @@ vi.mock("./prisma", () => ({
 }));
 
 import { prisma } from "./prisma";
+import { metricPeriodChronologicalOrderBy } from "./metricPeriodOrdering";
 
 const mockPrisma = prisma as unknown as {
   metric: { count: ReturnType<typeof vi.fn> };
@@ -507,7 +508,7 @@ describe("getAllianceSetupStatus", () => {
 
     expect(mockPrisma.metricPeriod.findFirst).toHaveBeenCalledWith({
       where: { allianceId: "alliance-1", active: true },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      orderBy: metricPeriodChronologicalOrderBy,
       select: expect.objectContaining({
         id: true,
         periodMetrics: expect.any(Object),

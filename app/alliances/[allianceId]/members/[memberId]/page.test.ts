@@ -165,4 +165,62 @@ describe("MemberPage (Server Page)", () => {
     expect(performanceSection).toBeDefined();
     expect(performanceSection?.props?.periodStatusLabel).toBe("Latest Period · Not active");
   });
+
+  it("auto-selects the chronologically current active period instead of the newest createdAt", async () => {
+    vi.mocked(prisma.allianceMember.findFirst).mockResolvedValue({
+      id: "mem_1",
+      allianceId: "all_1",
+      playerName: "Valkyrie",
+      userId: null,
+      role: null,
+      thp: null,
+      squadPower: null,
+      joinedAt: null,
+      archivedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as unknown as Awaited<ReturnType<typeof prisma.allianceMember.findFirst>>);
+
+    vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
+      {
+        id: "per_current",
+        name: "April 2026 Current",
+        active: true,
+        startsAt: new Date("2026-04-06T00:00:00.000Z"),
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+      {
+        id: "per_imported",
+        name: "March 2026 Imported",
+        active: true,
+        startsAt: new Date("2026-03-01T00:00:00.000Z"),
+        createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      },
+    ] as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findMany>>);
+
+    vi.mocked(prisma.metricPeriod.findUnique).mockResolvedValue({
+      id: "per_current",
+      name: "April 2026 Current",
+      active: true,
+      allianceId: "all_1",
+      startsAt: new Date("2026-04-06T00:00:00.000Z"),
+      endsAt: new Date("2026-04-13T00:00:00.000Z"),
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date(),
+      periodMetrics: [],
+    } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findUnique>>);
+
+    vi.mocked(prisma.leadershipNote.findMany).mockResolvedValue([]);
+
+    await MemberPage({
+      params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+      searchParams: Promise.resolve({}),
+    });
+
+    expect(prisma.metricPeriod.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "per_current" },
+      }),
+    );
+  });
 });
