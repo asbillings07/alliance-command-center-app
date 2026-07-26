@@ -101,6 +101,16 @@ function selectOptionValue(select: HTMLSelectElement, nextValue: string) {
     select.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+function setInputValue(input: HTMLInputElement, value: string) {
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+    )?.set;
+    nativeInputValueSetter?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 describe("ImportForm [component]", () => {
     const periodId = "period-1";
     const periodName = "Week 28 Evaluation";
@@ -1859,5 +1869,158 @@ describe("ImportForm [component]", () => {
         expect(payload.groups[0].target.kind).toBe("create");
         expect(payload.groups[0].target.name).toBeTruthy();
         expect(payload.groups[0].mappings).toHaveLength(1);
+    });
+
+    it("blocks preview when a create-period date range is reversed", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    allianceLibraryMetrics,
+                    alliancePeriods,
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                    canConfigurePeriods: true,
+                }),
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kills on 3/29", "Kills on 4/13"],
+            ["Dragon", "1500", "2000"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "multi_period_reversed_dates.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const reviewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Review & Map to Existing Periods"),
+        ) as HTMLButtonElement;
+        await act(async () => {
+            reviewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const excludeCheckboxes = Array.from(
+            container.querySelectorAll('input[type="checkbox"]'),
+        ).filter((input) =>
+            input.closest("label")?.textContent?.includes("Exclude this proposal"),
+        ) as HTMLInputElement[];
+        await act(async () => {
+            for (const checkbox of excludeCheckboxes.slice(1)) {
+                checkbox.click();
+            }
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const periodSelect = container.querySelector(
+            'select[id^="multi-period-target-"]',
+        ) as HTMLSelectElement;
+        selectOptionValue(periodSelect, CREATE_PERIOD_SELECT_VALUE);
+
+        const startsAtInput = container.querySelector(
+            'input[id^="multi-period-target-"][id$="-starts-at"]',
+        ) as HTMLInputElement;
+        const endsAtInput = container.querySelector(
+            'input[id^="multi-period-target-"][id$="-ends-at"]',
+        ) as HTMLInputElement;
+
+        await act(async () => {
+            setInputValue(startsAtInput, "2026-04-13");
+            setInputValue(endsAtInput, "2026-03-29");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const metricSelect = container.querySelector(
+            'select[aria-label^="Metric for"]',
+        ) as HTMLSelectElement;
+        selectOptionValue(metricSelect, "create");
+
+        expect(container.textContent).toMatch(/start date must be on or before end date/i);
+
+        const previewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Preview Multi-Period Import"),
+        ) as HTMLButtonElement;
+        expect(previewBtn.disabled).toBe(true);
+    });
+
+    it("shows one column create form when two columns explicitly choose create with the same prefilled target", async () => {
+        await act(async () => {
+            root.render(
+                createElement(ImportForm, {
+                    periodId,
+                    periodName,
+                    allianceId,
+                    members,
+                    metrics,
+                    libraryMetrics: [],
+                    allianceLibraryMetrics,
+                    alliancePeriods,
+                    canCreateMetrics: true,
+                    canAttachMetrics: true,
+                    canConfigurePeriods: true,
+                }),
+            );
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ["Player", "Kills on 3/29", "Hero Power on 3/29", "Kills on 4/13"],
+            ["Dragon", "1500", "2000", "2500"],
+        ]);
+        XLSX.utils.book_append_sheet(wb, ws, "March 2026");
+        const xlsxBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+        await act(async () => {
+            fireFileUpload(xlsxBuf, "multi_period_duplicate_create_forms.xlsx");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const reviewBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Review & Map to Existing Periods"),
+        ) as HTMLButtonElement;
+        await act(async () => {
+            reviewBtn.click();
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const excludeCheckboxes = Array.from(
+            container.querySelectorAll('input[type="checkbox"]'),
+        ).filter((input) =>
+            input.closest("label")?.textContent?.includes("Exclude this proposal"),
+        ) as HTMLInputElement[];
+        await act(async () => {
+            for (const checkbox of excludeCheckboxes.slice(1)) {
+                checkbox.click();
+            }
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const columnPeriodSelects = Array.from(
+            container.querySelectorAll('select[id^="multi-period-column-period-"]'),
+        ) as HTMLSelectElement[];
+        expect(columnPeriodSelects.length).toBeGreaterThanOrEqual(2);
+
+        await act(async () => {
+            for (const select of columnPeriodSelects) {
+                selectOptionValue(select, CREATE_PERIOD_SELECT_VALUE);
+            }
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const columnCreateNameInputs = Array.from(
+            container.querySelectorAll('input[id^="multi-period-column-period-"][id$="-name"]'),
+        );
+        expect(columnCreateNameInputs).toHaveLength(1);
     });
 });

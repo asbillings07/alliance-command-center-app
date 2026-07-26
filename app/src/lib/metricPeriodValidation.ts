@@ -53,3 +53,13 @@ export function validateMetricPeriodFields(
 export function normalizeMetricPeriodName(name: string): string {
   return name.trim().toLowerCase();
 }
+
+/** Client-safe wrapper — returns the first validation error message, if any. */
+export function getMetricPeriodFieldError(input: MetricPeriodFieldInput): string | null {
+  try {
+    validateMetricPeriodFields(input);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : "Invalid period fields";
+  }
+}

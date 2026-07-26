@@ -33,6 +33,7 @@ import {
 import { importMultiPeriodMetrics } from "@/app/alliances/[allianceId]/periods/[periodId]/import/multiPeriodAction";
 import type { MultiPeriodImportMetricsResult } from "@/app/alliances/[allianceId]/periods/[periodId]/import/multiPeriodAction";
 import type { MultiPeriodGroupTarget } from "@/app/src/lib/import/multiPeriodImport";
+import { getMetricPeriodFieldError } from "@/app/src/lib/metricPeriodValidation";
 
 type MemberOption = { id: string; playerName: string };
 type MetricOption = { id: string; name: string };
@@ -49,6 +50,8 @@ type ColumnMetricMapping = {
   columnName: string;
   proposedMetricName: string;
   periodTarget: PeriodTargetState;
+  /** True when the leader explicitly changed this column's period selector. */
+  periodTargetExplicit: boolean;
   classification: ColumnClassification;
   target: ColumnTarget;
   confirmationStatus: ColumnConfirmationStatus;
@@ -195,17 +198,33 @@ function parsePeriodSelectValue(
   return { mode: "existing", periodId: value };
 }
 
+function createTargetFieldInput(
+  target: Extract<PeriodTargetState, { mode: "create" }>,
+): { name: string; startsAt: string | null; endsAt: string | null } {
+  return {
+    name: target.name,
+    startsAt: target.startsAt || null,
+    endsAt: target.endsAt || null,
+  };
+}
+
 function shouldShowColumnCreateFields(
-  proposalTarget: PeriodTargetState,
-  columnTarget: PeriodTargetState,
+  mapping: ColumnMetricMapping,
+  columnMappings: ColumnMetricMapping[],
 ): boolean {
-  if (columnTarget.mode !== "create") {
+  if (mapping.periodTarget.mode !== "create" || !mapping.periodTargetExplicit) {
     return false;
   }
-  if (proposalTarget.mode !== "create") {
-    return true;
-  }
-  return periodTargetGroupKey(columnTarget) !== periodTargetGroupKey(proposalTarget);
+
+  const groupKey = periodTargetGroupKey(mapping.periodTarget);
+  const explicitCreatesInGroup = columnMappings.filter(
+    (item) =>
+      item.periodTarget.mode === "create" &&
+      item.periodTargetExplicit &&
+      periodTargetGroupKey(item.periodTarget) === groupKey,
+  );
+  const ownerColumnIndex = Math.min(...explicitCreatesInGroup.map((item) => item.columnIndex));
+  return mapping.columnIndex === ownerColumnIndex;
 }
 
 function mappingTargetToToken(mapping: ColumnMetricMapping): string {
@@ -322,6 +341,7 @@ function buildColumnMappingsForProposal(
         columnName: col.headerText,
         proposedMetricName,
         periodTarget,
+        periodTargetExplicit: false,
         classification,
         target: { kind: "existing", metricId: classification.matchedMetricId },
         confirmationStatus: "confirmed_metric",
@@ -340,6 +360,7 @@ function buildColumnMappingsForProposal(
         columnName: col.headerText,
         proposedMetricName,
         periodTarget,
+        periodTargetExplicit: false,
         classification,
         target: { kind: "attach", metricId: classification.matchedMetricId },
         confirmationStatus: "confirmed_metric",
@@ -352,6 +373,7 @@ function buildColumnMappingsForProposal(
         columnName: col.headerText,
         proposedMetricName,
         periodTarget,
+        periodTargetExplicit: false,
         classification,
         target: { kind: "create", name: proposedMetricName },
         confirmationStatus: "confirmed_metric",
@@ -363,6 +385,7 @@ function buildColumnMappingsForProposal(
       columnName: col.headerText,
       proposedMetricName,
       periodTarget,
+      periodTargetExplicit: false,
       classification,
       target: { kind: "skip" },
       confirmationStatus: "unconfirmed",
@@ -542,6 +565,7 @@ export function MultiPeriodImportFlow({
         return {
           ...rebuilt,
           periodTarget,
+          periodTargetExplicit: true,
           confirmationStatus:
             mapping.confirmationStatus === "confirmed_skip"
               ? "confirmed_skip"
@@ -622,6 +646,34 @@ export function MultiPeriodImportFlow({
       !mapping.periodTarget.name.trim(),
   );
 
+  const activeCreateTargets = useMemo(() => {
+    const byKey = new Map<string, Extract<PeriodTargetState, { mode: "create" }>>();
+    for (const mapping of activeColumnMappings) {
+      if (
+        mapping.confirmationStatus !== "confirmed_metric" ||
+        mapping.target.kind === "skip" ||
+        mapping.periodTarget.mode !== "create"
+      ) {
+        continue;
+      }
+      byKey.set(periodTargetGroupKey(mapping.periodTarget), mapping.periodTarget);
+    }
+    return [...byKey.values()];
+  }, [activeColumnMappings]);
+
+  const createTargetErrors = useMemo(
+    () =>
+      new Map(
+        activeCreateTargets.map((target) => [
+          periodTargetGroupKey(target),
+          getMetricPeriodFieldError(createTargetFieldInput(target)),
+        ]),
+      ),
+    [activeCreateTargets],
+  );
+
+  const hasInvalidCreatePeriodFields = [...createTargetErrors.values()].some(Boolean);
+
   const allColumnsConfirmed = activeStates.every((state) =>
     state.columnMappings.every(
       (m) => m.confirmationStatus === "confirmed_metric" || m.confirmationStatus === "confirmed_skip",
@@ -637,7 +689,8 @@ export function MultiPeriodImportFlow({
     allColumnsConfirmed &&
     hasConfirmedMetricImport &&
     !periodMetricCollision &&
-    !invalidCreatePeriodNames;
+    !invalidCreatePeriodNames &&
+    !hasInvalidCreatePeriodFields;
 
   const displayNameFor = (target: ColumnTarget, proposedMetricName: string): string => {
     if (target.kind === "existing" || target.kind === "attach") {
@@ -1180,6 +1233,11 @@ export function MultiPeriodImportFlow({
                         className="w-full rounded-md border border-border p-2 text-sm bg-surface"
                       />
                     </div>
+                    {createTargetErrors.get(periodTargetGroupKey(state.periodTarget)) && (
+                      <p className="text-xs text-warning sm:col-span-3">
+                        {createTargetErrors.get(periodTargetGroupKey(state.periodTarget))}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -1198,9 +1256,12 @@ export function MultiPeriodImportFlow({
                     const { periodMetrics, attachableLibrary } = periodContext;
                     const columnCreateTarget =
                       mapping.periodTarget.mode === "create" &&
-                      shouldShowColumnCreateFields(state.periodTarget, mapping.periodTarget)
+                      shouldShowColumnCreateFields(mapping, state.columnMappings)
                         ? mapping.periodTarget
                         : null;
+                    const columnCreateTargetError = columnCreateTarget
+                      ? createTargetErrors.get(periodTargetGroupKey(columnCreateTarget))
+                      : null;
 
                     return (
                       <div
@@ -1317,6 +1378,11 @@ export function MultiPeriodImportFlow({
                                 className="w-full rounded-md border border-border p-2 text-sm bg-surface"
                               />
                             </div>
+                            {columnCreateTargetError && (
+                              <p className="text-xs text-warning sm:col-span-3">
+                                {columnCreateTargetError}
+                              </p>
+                            )}
                           </div>
                         )}
 

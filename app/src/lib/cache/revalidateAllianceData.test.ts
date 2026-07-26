@@ -48,6 +48,7 @@ describe("revalidateAllianceData", () => {
       domains: ["evaluation-results"],
     });
 
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods");
     expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods/per_456");
     expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods/per_456/record");
     expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/periods/per_456/import");
