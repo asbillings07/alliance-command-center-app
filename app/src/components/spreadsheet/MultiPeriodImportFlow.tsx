@@ -15,12 +15,17 @@ import type {
   PeriodMappingReview,
   ColumnPeriodEvidence,
 } from "@/app/src/lib/import/periodProposal";
-import { qualifyingProposals } from "@/app/src/lib/import/periodProposal";
+import {
+  qualifyingProposals,
+  UNKNOWN_METRIC_IDENTITY,
+} from "@/app/src/lib/import/periodProposal";
+import { isDateLikeMetricIdentity } from "@/app/src/lib/import/dateHeaderParser";
 import {
   buildPlannedMultiPeriodTranslationSummary,
   buildCommittedMultiPeriodTranslationSummary,
   type ColumnTarget,
 } from "@/app/src/lib/importTranslation";
+import type { ImportMetricTarget } from "@/app/src/lib/metricResolution";
 import {
   getPreviewEntries,
   dispositionForTarget,
@@ -57,6 +62,8 @@ type ColumnMetricMapping = {
   classification: ColumnClassification;
   target: ColumnTarget;
   confirmationStatus: ColumnConfirmationStatus;
+  /** Set when a group period change invalidates a prior explicit choice. */
+  invalidReason?: string;
 };
 
 type ProposalMappingState = {
@@ -110,7 +117,146 @@ type PeriodTargetState =
   | { mode: "unconfirmed" };
 
 function metricIdentity(col: ColumnPeriodEvidence): string {
+  if (col.proposedMetricName === UNKNOWN_METRIC_IDENTITY) {
+    return UNKNOWN_METRIC_IDENTITY;
+  }
+  if (col.proposedMetricName && !isDateLikeMetricIdentity(col.proposedMetricName)) {
+    return col.proposedMetricName;
+  }
+  if (isDateLikeMetricIdentity(col.headerText)) {
+    return UNKNOWN_METRIC_IDENTITY;
+  }
   return col.proposedMetricName || col.headerText;
+}
+
+function requiresExplicitMetricConfirmation(proposedMetricName: string): boolean {
+  return (
+    proposedMetricName === UNKNOWN_METRIC_IDENTITY ||
+    isDateLikeMetricIdentity(proposedMetricName)
+  );
+}
+
+function requiresExplicitCreateMetricName(
+  proposedMetricName: string,
+  target: ColumnTarget,
+): boolean {
+  return target.kind === "create" && requiresExplicitMetricConfirmation(proposedMetricName);
+}
+
+function proposalRequiresExplicitMapping(
+  proposal: PeriodMappingProposal,
+  routePeriodId: string | null | undefined,
+): boolean {
+  return (
+    proposal.source === "unassigned" ||
+    (routePeriodId == null && proposal.source === "manual_fallback")
+  );
+}
+
+function reconcileColumnMappingForPeriodChange(
+  mapping: ColumnMetricMapping,
+  nextPeriodTarget: PeriodTargetState,
+  sortedPeriods: AlliancePeriodOption[],
+  allianceLibraryMetrics: MetricOption[],
+  canAttachMetrics: boolean,
+): ColumnMetricMapping {
+  const nextMapping: ColumnMetricMapping = {
+    ...mapping,
+    periodTarget: nextPeriodTarget,
+    invalidReason: undefined,
+  };
+
+  if (mapping.confirmationStatus === "unconfirmed") {
+    return nextMapping;
+  }
+
+  if (mapping.confirmationStatus === "confirmed_skip") {
+    return {
+      ...nextMapping,
+      confirmationStatus: "confirmed_skip",
+      target: { kind: "skip" },
+    };
+  }
+
+  const { periodMetrics, attachableLibrary } = resolvePeriodContext(
+    nextPeriodTarget,
+    sortedPeriods,
+    allianceLibraryMetrics,
+  );
+
+  if (mapping.target.kind === "create") {
+    if (!mapping.target.name.trim()) {
+      return {
+        ...nextMapping,
+        confirmationStatus: "unconfirmed",
+        target: mapping.target,
+      };
+    }
+    return {
+      ...nextMapping,
+      confirmationStatus: "confirmed_metric",
+      target: mapping.target,
+    };
+  }
+
+  if (mapping.target.kind === "existing") {
+    const existingTarget = mapping.target;
+    const stillAttached = periodMetrics.some((metric) => metric.id === existingTarget.metricId);
+    if (stillAttached) {
+      return {
+        ...nextMapping,
+        confirmationStatus: "confirmed_metric",
+        target: mapping.target,
+      };
+    }
+    const attachableOnNewPeriod =
+      canAttachMetrics &&
+      attachableLibrary.some((metric) => metric.id === existingTarget.metricId);
+    if (attachableOnNewPeriod) {
+      return {
+        ...nextMapping,
+        confirmationStatus: "confirmed_metric",
+        target: { kind: "attach", metricId: existingTarget.metricId },
+      };
+    }
+    return {
+      ...nextMapping,
+      confirmationStatus: "unconfirmed",
+      target: { kind: "skip" },
+      invalidReason:
+        "The previously selected metric is not attached to the new target period. Choose a metric again.",
+    };
+  }
+
+  if (mapping.target.kind === "attach") {
+    const attachTarget = mapping.target;
+    const alreadyOnPeriod = periodMetrics.some((metric) => metric.id === attachTarget.metricId);
+    if (alreadyOnPeriod) {
+      return {
+        ...nextMapping,
+        confirmationStatus: "confirmed_metric",
+        target: { kind: "existing", metricId: attachTarget.metricId },
+      };
+    }
+    const stillAttachable =
+      canAttachMetrics && attachableLibrary.some((metric) => metric.id === attachTarget.metricId);
+    if (stillAttachable) {
+      return {
+        ...nextMapping,
+        confirmationStatus: "confirmed_metric",
+        target: mapping.target,
+      };
+    }
+    return {
+      ...nextMapping,
+      confirmationStatus: "unconfirmed",
+      target: { kind: "skip" },
+      invalidReason:
+        "The previously selected library metric is not available for the new target period. Choose a metric again.",
+    };
+  }
+
+  return nextMapping;
 }
 
 function formatPeriodLabel(period: AlliancePeriodOption): string {
@@ -219,7 +365,7 @@ function parsePeriodSelectValue(
     return { mode: "unconfirmed" };
   }
   if (value === CREATE_PERIOD_SELECT_VALUE) {
-    if (proposal.source === "unassigned") {
+    if (proposal.source === "unassigned" || proposal.source === "manual_fallback") {
       return { mode: "create", name: "", startsAt: "", endsAt: "" };
     }
     return createPeriodTargetFromProposal(proposal);
@@ -257,6 +403,9 @@ function shouldShowColumnCreateFields(
 }
 
 function mappingTargetToToken(mapping: ColumnMetricMapping): string {
+  if (mapping.target.kind === "create") {
+    return "create";
+  }
   if (mapping.confirmationStatus === "unconfirmed") {
     return UNCONFIRMED_TARGET_TOKEN;
   }
@@ -281,20 +430,22 @@ function tokenToTarget(token: string, proposedMetricName: string): ColumnTarget 
     return { kind: "skip" };
   }
   if (token === SKIP_TARGET_TOKEN) return { kind: "skip" };
-  if (token === "create") return { kind: "create", name: proposedMetricName };
+  if (token === "create") {
+    return {
+      kind: "create",
+      name: requiresExplicitMetricConfirmation(proposedMetricName) ? "" : proposedMetricName,
+    };
+  }
   const [kind, metricId] = token.split(":");
   if (kind === "existing" && metricId) return { kind: "existing", metricId };
   if (kind === "attach" && metricId) return { kind: "attach", metricId };
   return { kind: "skip" };
 }
 
-function toWireTarget(
-  target: ColumnTarget,
-): { kind: "existing"; metricId: string } | { kind: "create"; name: string } {
+function toWireTarget(target: ColumnTarget): ImportMetricTarget {
   if (target.kind === "create") return { kind: "create", name: target.name };
-  if (target.kind === "existing" || target.kind === "attach") {
-    return { kind: "existing", metricId: target.metricId };
-  }
+  if (target.kind === "attach") return { kind: "attach", metricId: target.metricId };
+  if (target.kind === "existing") return { kind: "existing", metricId: target.metricId };
   throw new Error("Cannot send a skipped column");
 }
 
@@ -360,7 +511,7 @@ function buildColumnMappingsForProposal(
       libraryMetrics: attachableLibrary,
     });
 
-    if (!autoConfirmMetrics) {
+    if (!autoConfirmMetrics || requiresExplicitMetricConfirmation(proposedMetricName)) {
       return {
         columnIndex: col.columnIndex,
         columnName: col.headerText,
@@ -455,7 +606,10 @@ function defaultPeriodTargetForProposal(
   }
 
   // Supplemental mixed-confidence columns stay unassigned until the leader chooses.
-  if (proposal.source === "unassigned") {
+  if (
+    proposal.source === "unassigned" ||
+    (routePeriodId == null && proposal.source === "manual_fallback")
+  ) {
     return { mode: "unconfirmed" };
   }
 
@@ -498,7 +652,7 @@ function initialProposalStates(
         allianceLibraryMetrics,
         canAttachMetrics,
         canCreateMetrics,
-        proposal.source !== "unassigned",
+        !proposalRequiresExplicitMapping(proposal, routePeriodId),
       ),
     };
   });
@@ -601,14 +755,14 @@ export function MultiPeriodImportFlow({
     updateProposalState(proposalId, (state) => ({
       ...state,
       periodTarget,
-      columnMappings: buildColumnMappingsForProposal(
-        proposal.columns,
-        periodTarget,
-        sortedPeriods,
-        allianceLibraryMetrics,
-        canAttachMetrics,
-        canCreateMetrics,
-        proposal.source !== "unassigned",
+      columnMappings: state.columnMappings.map((mapping) =>
+        reconcileColumnMappingForPeriodChange(
+          mapping,
+          periodTarget,
+          sortedPeriods,
+          allianceLibraryMetrics,
+          canAttachMetrics,
+        ),
       ),
     }));
   };
@@ -656,7 +810,7 @@ export function MultiPeriodImportFlow({
           allianceLibraryMetrics,
           canAttachMetrics,
           canCreateMetrics,
-          proposal.source !== "unassigned",
+          !proposalRequiresExplicitMapping(proposal, routePeriodId),
         )[0];
         return {
           ...rebuilt,
@@ -722,11 +876,43 @@ export function MultiPeriodImportFlow({
       ...state,
       columnMappings: state.columnMappings.map((m) => {
         if (m.columnIndex !== columnIndex) return m;
-        if (token === UNCONFIRMED_TARGET_TOKEN) return m;
+        if (token === UNCONFIRMED_TARGET_TOKEN) {
+          return {
+            ...m,
+            target: { kind: "skip" as const },
+            confirmationStatus: "unconfirmed" as const,
+          };
+        }
         const target = tokenToTarget(token, proposedMetricName);
         const confirmationStatus: ColumnConfirmationStatus =
-          target.kind === "skip" ? "confirmed_skip" : "confirmed_metric";
-        return { ...m, target, confirmationStatus };
+          target.kind === "skip"
+            ? "confirmed_skip"
+            : target.kind === "create" && !target.name.trim()
+              ? "unconfirmed"
+              : "confirmed_metric";
+        return { ...m, target, confirmationStatus, invalidReason: undefined };
+      }),
+    }));
+  };
+
+  const handleColumnCreateMetricNameChange = (
+    proposalId: string,
+    columnIndex: number,
+    name: string,
+  ) => {
+    updateProposalState(proposalId, (state) => ({
+      ...state,
+      columnMappings: state.columnMappings.map((mapping) => {
+        if (mapping.columnIndex !== columnIndex || mapping.target.kind !== "create") {
+          return mapping;
+        }
+        const nextTarget = { ...mapping.target, name };
+        return {
+          ...mapping,
+          target: nextTarget,
+          confirmationStatus: name.trim() ? "confirmed_metric" : "unconfirmed",
+          invalidReason: undefined,
+        };
       }),
     }));
   };
@@ -754,6 +940,10 @@ export function MultiPeriodImportFlow({
       mapping.target.kind !== "skip" &&
       mapping.periodTarget.mode === "create" &&
       !mapping.periodTarget.name.trim(),
+  );
+
+  const hasBlankCreateMetricNames = activeColumnMappings.some(
+    (mapping) => mapping.target.kind === "create" && !mapping.target.name.trim(),
   );
 
   const activeCreateTargets = useMemo(() => {
@@ -805,7 +995,8 @@ export function MultiPeriodImportFlow({
     !periodMetricCollision &&
     !invalidCreatePeriodNames &&
     !hasInvalidCreatePeriodFields &&
-    !hasUnconfirmedPeriodTarget;
+    !hasUnconfirmedPeriodTarget &&
+    !hasBlankCreateMetricNames;
 
   const displayNameFor = (target: ColumnTarget, proposedMetricName: string): string => {
     if (target.kind === "existing" || target.kind === "attach") {
@@ -1349,7 +1540,8 @@ export function MultiPeriodImportFlow({
                     onChange={(e) => handlePeriodChange(state.proposalId, e.target.value)}
                     className="w-full rounded-md border border-border p-2 text-sm bg-surface"
                   >
-                    {proposal.source === "unassigned" && (
+                    {(proposal.source === "unassigned" ||
+                      (routePeriodId == null && proposal.source === "manual_fallback")) && (
                       <option value={UNCONFIRMED_PERIOD_SELECT_VALUE}>
                         Choose a target period...
                       </option>
@@ -1457,6 +1649,19 @@ export function MultiPeriodImportFlow({
                       ? createTargetErrors.get(periodTargetGroupKey(columnCreateTarget))
                       : null;
 
+                    const columnCreateMetricTarget =
+                      mapping.target.kind === "create" &&
+                      requiresExplicitCreateMetricName(
+                        mapping.proposedMetricName,
+                        mapping.target,
+                      )
+                        ? mapping.target
+                        : null;
+                    const metricNameIsBlank = columnCreateMetricTarget
+                      ? !columnCreateMetricTarget.name.trim()
+                      : false;
+                    const metricNameErrorId = `multi-period-metric-name-error-${state.proposalId}-${mapping.columnIndex}`;
+
                     return (
                       <div
                         key={mapping.columnIndex}
@@ -1488,7 +1693,9 @@ export function MultiPeriodImportFlow({
                             }
                             className="w-full rounded-md border border-border p-2 text-sm bg-surface"
                           >
-                            {proposal.source === "unassigned" && (
+                            {(proposal.source === "unassigned" ||
+                              (routePeriodId == null &&
+                                proposal.source === "manual_fallback")) && (
                               <option value={UNCONFIRMED_PERIOD_SELECT_VALUE}>
                                 Choose a target period...
                               </option>
@@ -1628,11 +1835,51 @@ export function MultiPeriodImportFlow({
                           )}
                           {canCreateMetrics && (
                             <option value="create">
-                              Create &ldquo;{mapping.proposedMetricName}&rdquo;
+                              {requiresExplicitMetricConfirmation(mapping.proposedMetricName)
+                                ? "Create new metric (enter name below)"
+                                : `Create "${mapping.proposedMetricName}"`}
                             </option>
                           )}
                         </select>
-                        {mapping.confirmationStatus === "unconfirmed" && (
+                        {columnCreateMetricTarget && (
+                          <div>
+                            <label
+                              htmlFor={`multi-period-metric-name-${state.proposalId}-${mapping.columnIndex}`}
+                              className="text-xs font-medium text-text-primary block mb-1"
+                            >
+                              New metric name
+                            </label>
+                            <input
+                              id={`multi-period-metric-name-${state.proposalId}-${mapping.columnIndex}`}
+                              type="text"
+                              required
+                              aria-required="true"
+                              aria-invalid={metricNameIsBlank}
+                              aria-describedby={metricNameIsBlank ? metricNameErrorId : undefined}
+                              value={columnCreateMetricTarget.name}
+                              onChange={(e) =>
+                                handleColumnCreateMetricNameChange(
+                                  state.proposalId,
+                                  mapping.columnIndex,
+                                  e.target.value,
+                                )
+                              }
+                              aria-label={`New metric name for ${mapping.columnName}`}
+                              className="w-full rounded-md border border-border p-2 text-sm bg-surface"
+                            />
+                            {metricNameIsBlank && (
+                              <p id={metricNameErrorId} className="text-xs text-warning mt-1">
+                                Metric name is required.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {mapping.invalidReason && (
+                          <p className="text-xs text-warning">{mapping.invalidReason}</p>
+                        )}
+                        {mapping.confirmationStatus === "unconfirmed" &&
+                          mapping.target.kind !== "create" &&
+                          !mapping.invalidReason && (
                           <p className="text-xs text-warning">
                             Choose a metric or explicitly select Do not import.
                           </p>

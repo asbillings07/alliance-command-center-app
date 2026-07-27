@@ -5,6 +5,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import {
   buildMetricImportPlan,
   validateColumnTargets,
+  assertImportMetricTargetBelongsToAlliance,
   type ColumnTargetMapping,
   type MetricMapping,
 } from "@/app/src/lib/metricImport";
@@ -88,13 +89,11 @@ export async function importMemberMetrics(
   // period. The latter covers metrics that were archived without being detached
   // - they still legitimately belong here and are offered by the import UI.
   for (const { target, sourceColumnName } of validated) {
-    if (
-      target.kind === "existing" &&
-      !libraryMetricIds.has(target.metricId) &&
-      !attachedMetricIds.has(target.metricId)
-    ) {
-      throw new Error("One or more metrics do not belong to this alliance");
-    }
+    assertImportMetricTargetBelongsToAlliance(
+      target,
+      libraryMetricIds,
+      attachedMetricIds,
+    );
 
     const colClassification = classifyColumn({
       columnIndex: 0,

@@ -146,6 +146,33 @@ function parseDateStr(str: string): ParsedDateStrResult | null {
   return null;
 }
 
+const NUMERIC_DATE_TOKEN = String.raw`\d{1,2}[-/.]\d{1,2}(?:[-/.](?:20\d{2}|\d{2}))?|\d{4}[-/.]\d{1,2}[-/.]\d{1,2}`;
+const NAMED_MONTH_DATE_TOKEN = String.raw`\b[a-z]+\s+\d{1,2}(?:[,\s]+20\d{2})?`;
+const DATE_TOKEN = `(?:${NUMERIC_DATE_TOKEN}|${NAMED_MONTH_DATE_TOKEN})`;
+
+/** Headers like "Jan 27 - Feb 1" that must not be misread as snapshot + metric stem. */
+const MONTH_NAME_RANGE_PATTERN = new RegExp(
+  String.raw`\b[a-z]+\s+\d{1,2}\s*(?:to|through|–|-|—)\s*(?:\b[a-z]+\s+\d{1,2}|${NUMERIC_DATE_TOKEN})\b`,
+  "i",
+);
+
+/**
+ * True when text is date evidence only (e.g. "Jan 27", "3/29") rather than a metric name.
+ */
+export function isDateLikeMetricIdentity(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  const parsed = parseDateHeader(trimmed);
+  if (!parsed.hasDateEvidence) return false;
+
+  if (parsed.metricStem && parsed.metricStem.trim().length > 0) {
+    return isDateLikeMetricIdentity(parsed.metricStem);
+  }
+
+  return true;
+}
+
 export function compareResolvedDates(
   a: ParsedDateComponent,
   b: ParsedDateComponent,
@@ -355,8 +382,10 @@ export function parseDateHeader(
     return { hasDateEvidence: false, metricStem: null, dateEvidence: null, rawHeader };
   }
 
-  const rangeRegex =
-    /^(.*?)(?:\bfrom\b|\bbetween\b|\()?[\s:]*(\d{1,2}[-/.]\d{1,2}(?:[-/.](?:20\d{2}|\d{2}))?|\d{4}[-/.]\d{1,2}[-/.]\d{1,2})\s*(?:to|through|–|-|—)\s*(\d{1,2}[-/.]\d{1,2}(?:[-/.](?:20\d{2}|\d{2}))?|\d{4}[-/.]\d{1,2}[-/.]\d{1,2})\)?$/i;
+  const rangeRegex = new RegExp(
+    String.raw`^(.*?)(?:\bfrom\b|\bbetween\b|\()?[\s:]*(${DATE_TOKEN})\s*(?:to|through|–|-|—)\s*(${DATE_TOKEN})\)?$`,
+    "i",
+  );
   const rangeMatch = rawHeader.match(rangeRegex);
 
   if (rangeMatch) {
@@ -404,6 +433,17 @@ export function parseDateHeader(
 
   const snapshotRegex =
     /^(.*?)(?:\bon\b|\bas of\b|\bat\b)?[\s:]*(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}(?:[-/.](?:20\d{2}|\d{2}))?|\b[a-z]+\s+\d{1,2}(?:[,\s]+20\d{2})?)\)?$/i;
+
+  if (MONTH_NAME_RANGE_PATTERN.test(rawHeader) && !rangeMatch) {
+    return {
+      hasDateEvidence: false,
+      metricStem: null,
+      dateEvidence: null,
+      rawHeader,
+      invalidDateAttempt: true,
+    };
+  }
+
   const snapshotMatch = rawHeader.match(snapshotRegex);
 
   if (snapshotMatch) {

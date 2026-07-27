@@ -64,35 +64,47 @@ function SetupTaskCard({ task }: { task: SetupTask }) {
   // after the task is done (revisiting the feature, onboarding a teammate), so
   // it is not gated on completion.
   const tourId = SETUP_TASK_TOURS[task.id];
+  const isBlocked = !task.completed && !task.actionable;
+
+  const taskBody = (
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5">
+        {task.completed ? <CheckIcon /> : <CircleIcon />}
+      </div>
+      <div className="flex-1">
+        <div
+          className={`font-medium ${
+            task.completed ? "text-text-muted" : "text-text-primary"
+          }`}
+        >
+          {task.label}
+        </div>
+        <div className="text-sm text-text-muted mt-1">{task.description}</div>
+        {isBlocked && task.blockedReason && (
+          <p className="text-sm text-text-secondary mt-2">{task.blockedReason}</p>
+        )}
+      </div>
+      {!task.completed && !isBlocked && <ChevronIcon />}
+    </div>
+  );
 
   return (
     <div
       className={`rounded-lg border transition-colors ${
         task.completed
           ? "bg-surface-secondary border-border"
-          : "bg-surface-secondary border-border hover:border-primary"
+          : isBlocked
+            ? "bg-surface-secondary border-border"
+            : "bg-surface-secondary border-border hover:border-primary"
       }`}
     >
-      <Link href={task.href} className="block p-4">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5">
-            {task.completed ? <CheckIcon /> : <CircleIcon />}
-          </div>
-          <div className="flex-1">
-            <div
-              className={`font-medium ${
-                task.completed ? "text-text-muted" : "text-text-primary"
-              }`}
-            >
-              {task.label}
-            </div>
-            <div className="text-sm text-text-muted mt-1">
-              {task.description}
-            </div>
-          </div>
-          {!task.completed && <ChevronIcon />}
-        </div>
-      </Link>
+      {isBlocked ? (
+        <div className="block p-4">{taskBody}</div>
+      ) : (
+        <Link href={task.href} className="block p-4">
+          {taskBody}
+        </Link>
+      )}
       {tourId && (
         <div className="px-4 pb-3 pl-11">
           <Link
@@ -163,6 +175,7 @@ export default async function AllianceSetupPage({ params }: Params) {
   // not just those visible to the current user. This prevents roles that
   // can't see any required tasks from incorrectly seeing "complete".
   const allRequiredComplete = status.isComplete;
+  const canStartSpreadsheetImport = auth.permissions.canImportMetrics;
 
   return (
     <PageLayout
@@ -170,6 +183,45 @@ export default async function AllianceSetupPage({ params }: Params) {
       description={`Get ${alliance.name} ready for your leadership team.`}
       maxWidth="2xl"
     >
+      <section
+        aria-labelledby="setup-entry-heading"
+        className="mb-8 p-6 bg-primary/10 border border-primary/20 rounded-lg"
+      >
+        <h2
+          id="setup-entry-heading"
+          className="text-lg font-medium text-text-primary"
+        >
+          How would you like to get started?
+        </h2>
+        <p className="text-sm text-text-muted mt-1">
+          Upload your existing spreadsheet to populate evaluation periods, metrics,
+          and results in one guided flow. Or walk through each step manually below.
+        </p>
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          {canStartSpreadsheetImport ? (
+            <Button
+              variant="primary"
+              size="lg"
+              href={`/alliances/${allianceId}/setup/import`}
+            >
+              Start with a spreadsheet
+            </Button>
+          ) : (
+            <p className="text-sm text-text-secondary">
+              Uploading evaluation results requires a Leader, Admin, or Owner role.
+              Ask alliance leadership to run the spreadsheet import, or continue with
+              manual setup below.
+            </p>
+          )}
+          <Link
+            href="#manual-setup"
+            className="text-sm font-medium text-primary-light hover:text-primary hover:underline text-center sm:text-left"
+          >
+            Set up manually
+          </Link>
+        </div>
+      </section>
+
       {!allRequiredComplete && (
         <ProgressBar
           completed={status.requiredComplete}
@@ -177,33 +229,35 @@ export default async function AllianceSetupPage({ params }: Params) {
         />
       )}
 
-      {/* Required Tasks */}
-      {requiredTasks.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-sm font-medium text-text-muted uppercase tracking-wide mb-3">
-            Required Setup
-          </h2>
-          <div className="space-y-3">
-            {requiredTasks.map((task) => (
-              <SetupTaskCard key={task.id} task={task} />
-            ))}
+      <div id="manual-setup" className="scroll-mt-6">
+        {/* Required Tasks */}
+        {requiredTasks.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-sm font-medium text-text-muted uppercase tracking-wide mb-3">
+              Required Setup
+            </h2>
+            <div className="space-y-3">
+              {requiredTasks.map((task) => (
+                <SetupTaskCard key={task.id} task={task} />
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Optional Tasks */}
-      {optionalTasks.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-sm font-medium text-text-muted uppercase tracking-wide mb-3">
-            Next Steps
-          </h2>
-          <div className="space-y-3">
-            {optionalTasks.map((task) => (
-              <SetupTaskCard key={task.id} task={task} />
-            ))}
+        {/* Optional Tasks */}
+        {optionalTasks.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-sm font-medium text-text-muted uppercase tracking-wide mb-3">
+              Next Steps
+            </h2>
+            <div className="space-y-3">
+              {optionalTasks.map((task) => (
+                <SetupTaskCard key={task.id} task={task} />
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="text-center pt-4 border-t border-border">
         {allRequiredComplete ? (

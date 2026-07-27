@@ -5,6 +5,7 @@ import { Permissions, hasPermission } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import {
   buildMetricImportPlan,
+  assertImportMetricTargetBelongsToAlliance,
   type MetricMapping,
 } from "@/app/src/lib/metricImport";
 import { resolveMetricTargets } from "@/app/src/lib/metricResolution";
@@ -121,13 +122,11 @@ export async function importMultiPeriodMetrics(
     });
 
     for (const { target, sourceColumnName } of plan.validated) {
-      if (
-        target.kind === "existing" &&
-        !libraryMetricIds.has(target.metricId) &&
-        !attachedMetricIds.has(target.metricId)
-      ) {
-        throw new Error("One or more metrics do not belong to this alliance");
-      }
+      assertImportMetricTargetBelongsToAlliance(
+        target,
+        libraryMetricIds,
+        attachedMetricIds,
+      );
 
       const colClassification = classifyColumn({
         columnIndex: 0,

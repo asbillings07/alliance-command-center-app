@@ -21,6 +21,7 @@ import { normalizeName } from "@/app/src/lib/memberMatcher";
 // asks for a metric by name (which the server may find already exists).
 export type ImportMetricTarget =
   | { kind: "existing"; metricId: string }
+  | { kind: "attach"; metricId: string }
   | { kind: "create"; name: string };
 
 // Server reality: how a target resolves once reconciled with the database.
@@ -74,6 +75,14 @@ export function classifyTargets(params: {
 
     return targets.map((target) => {
         if (target.kind === "existing") {
+            return {
+                disposition: attachedIds.has(target.metricId) ? "existing" : "attach",
+                metricId: target.metricId,
+                createName: null,
+            };
+        }
+
+        if (target.kind === "attach") {
             return {
                 disposition: attachedIds.has(target.metricId) ? "existing" : "attach",
                 metricId: target.metricId,

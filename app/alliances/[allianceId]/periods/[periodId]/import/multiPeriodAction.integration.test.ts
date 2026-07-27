@@ -195,6 +195,47 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
     expect(count).toBe(0);
   });
 
+  it("rejects when attach target references a metric from another alliance with zero writes", async () => {
+    const setup1 = await makeTestSetup();
+    const setup2 = await makeTestSetup();
+    const foreignLibraryMetric = await prisma.metric.create({
+      data: {
+        allianceId: setup2.alliance.id,
+        name: "Foreign Library Metric",
+        type: "NUMERIC",
+      },
+    });
+
+    await expect(
+      importMultiPeriodMetrics({
+        allianceId: setup1.alliance.id,
+        groups: [
+          {
+            target: { kind: "existing", periodId: setup1.periodA.id },
+            mappings: [
+              {
+                sourceColumnName: "Foreign Attach",
+                target: { kind: "attach", metricId: foreignLibraryMetric.id },
+                entries: [{ memberId: setup1.member.id, rawValue: "10" }],
+              },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow("One or more metrics do not belong to this alliance");
+
+    expect(
+      await prisma.metricPeriodMetric.count({
+        where: { periodId: setup1.periodA.id, metricId: foreignLibraryMetric.id },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.memberMetricEntry.count({
+        where: { periodId: setup1.periodA.id },
+      }),
+    ).toBe(0);
+  });
+
   it("requires CONFIGURE_PERIODS when attaching a library metric in any group", async () => {
     const { alliance, member, periodA, periodB } = await makeTestSetup();
     const libraryMetric = await prisma.metric.create({
