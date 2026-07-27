@@ -2,6 +2,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { validateSetupPeriodReturnTo } from "@/app/src/lib/setup/validateSetupPeriodReturnTo";
+import { resolveTargetPeriod } from "@/app/src/lib/periods/resolveTargetPeriod";
 import { MetricCard } from "./metricCard";
 import { PageLayout, EmptyState } from "@/app/src/components";
 
@@ -22,6 +23,7 @@ export default async function MetricsPage({ params, searchParams }: Params) {
         requiredPermission: Permissions.CONFIGURE_METRICS,
     });
     const returnTo = validateSetupPeriodReturnTo(rawReturnTo, allianceId);
+    const targetPeriod = await resolveTargetPeriod(allianceId);
     const metrics = await prisma.metric.findMany({
         where: {
             allianceId: allianceId,
@@ -42,7 +44,12 @@ export default async function MetricsPage({ params, searchParams }: Params) {
             maxWidth="3xl"
         >
             <div className="flex flex-col gap-4">
-                <MetricCard allianceId={allianceId} mode="create" returnTo={returnTo ?? undefined} />
+                <MetricCard
+                    allianceId={allianceId}
+                    mode="create"
+                    returnTo={returnTo ?? undefined}
+                    targetPeriodId={targetPeriod?.id ?? null}
+                />
                 {metrics.length === 0 ? (
                     <EmptyState
                         title="No metrics configured"

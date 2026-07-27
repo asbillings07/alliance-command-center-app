@@ -22,6 +22,7 @@ type MetricCardProps = {
   mode: "create" | "view";
   metric?: MetricData;
   returnTo?: string;
+  targetPeriodId?: string | null;
 };
 
 const METRIC_TYPE_VARIANTS: Record<Metric_Type, { label: string; variant: "info" | "success" }> = {
@@ -29,7 +30,13 @@ const METRIC_TYPE_VARIANTS: Record<Metric_Type, { label: string; variant: "info"
   [Metric_Type.BOOLEAN]: { label: "Boolean", variant: "success" },
 };
 
-export function MetricCard({ allianceId, mode, metric, returnTo }: MetricCardProps) {
+export function MetricCard({
+  allianceId,
+  mode,
+  metric,
+  returnTo,
+  targetPeriodId = null,
+}: MetricCardProps) {
   const router = useRouter();
   const [cardState, setCardState] = useState<"closed" | "form" | "view" | "created">(
     mode === "create" ? "closed" : "view"
@@ -86,14 +93,34 @@ export function MetricCard({ allianceId, mode, metric, returnTo }: MetricCardPro
 
     return (
       <div className="w-full flex flex-col gap-3">
-        {cardState === "created" && returnTo ? (
+        {cardState === "created" ? (
           <>
             <div className="rounded-md border border-success/30 bg-success/10 p-4 text-sm text-text-primary">
-              Metric created. Attach it to your evaluation period to complete setup.
+              {returnTo
+                ? "Metric created. Attach it to your evaluation period to complete setup."
+                : "Metric created. Attach it to an evaluation period to start recording results."}
             </div>
-            <Button variant="primary" href={returnTo}>
-              Continue configuring this period
-            </Button>
+            {returnTo ? (
+              <Button variant="primary" href={returnTo}>
+                Continue configuring this period
+              </Button>
+            ) : targetPeriodId ? (
+              <Button
+                variant="primary"
+                href={`/alliances/${allianceId}/periods/${targetPeriodId}`}
+              >
+                Attach to evaluation period
+              </Button>
+            ) : (
+              <>
+                <p className="text-sm text-text-secondary">
+                  Create an evaluation period first, then attach this metric to it.
+                </p>
+                <Button variant="primary" href={`/alliances/${allianceId}/periods`}>
+                  Go to Evaluation Periods
+                </Button>
+              </>
+            )}
             <button
               type="button"
               onClick={() => setCardState("form")}
@@ -110,11 +137,7 @@ export function MetricCard({ allianceId, mode, metric, returnTo }: MetricCardPro
             onCancel={() => setCardState("closed")}
             onSuccess={() => {
               router.refresh();
-              if (returnTo) {
-                setCardState("created");
-              } else {
-                setCardState("closed");
-              }
+              setCardState("created");
             }}
           />
         )}
