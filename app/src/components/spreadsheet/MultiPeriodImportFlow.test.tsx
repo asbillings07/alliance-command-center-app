@@ -938,6 +938,104 @@ describe("MultiPeriodImportFlow [component]", () => {
     });
   });
 
+  it("converts attach targets to existing when group period already contains the library metric", async () => {
+    const existingPeriodId = "period-existing";
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Kills on 3/29", "Kills on 4/13", "Hero Power", "Kills on 3/4"],
+      ["Dragon", "1500", "2000", "9000", "300"],
+    ]);
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: "A1",
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "Kills on 3/29",
+          headerAddress: "B1",
+          isNumeric: true,
+        },
+        {
+          columnIndex: 2,
+          headerText: "Kills on 4/13",
+          headerAddress: "C1",
+          isNumeric: true,
+        },
+        {
+          columnIndex: 3,
+          headerText: "Hero Power",
+          headerAddress: "D1",
+          isNumeric: true,
+        },
+        {
+          columnIndex: 4,
+          headerText: "Kills on 3/4",
+          headerAddress: "E1",
+          isNumeric: true,
+        },
+      ],
+    });
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      routePeriodId: null,
+      alliancePeriods: [
+        {
+          id: existingPeriodId,
+          name: "Latest Period",
+          startsAt: "2026-03-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [
+            { id: "met1", name: "Kill Points" },
+            { id: "lib-kills", name: "Kills" },
+          ],
+        },
+      ],
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    const unassignedPeriodSelect = container.querySelector(
+      'select[id="multi-period-target-unassigned-columns"]',
+    ) as HTMLSelectElement;
+    const heroPowerMetricSelect = container.querySelector(
+      'select[aria-label="Metric for Hero Power"]',
+    ) as HTMLSelectElement;
+    const killsMetricSelect = container.querySelector(
+      'select[aria-label="Metric for Kills on 3/4"]',
+    ) as HTMLSelectElement;
+    const previewButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Preview Multi-Period Import"),
+    ) as HTMLButtonElement;
+
+    await selectOptionValue(unassignedPeriodSelect, CREATE_PERIOD_SELECT_VALUE);
+    await selectOptionValue(heroPowerMetricSelect, "attach:lib-kills");
+    await selectOptionValue(killsMetricSelect, "attach:met1");
+
+    const createPeriodNameInput = container.querySelector(
+      'input[id="multi-period-target-unassigned-columns-name"]',
+    ) as HTMLInputElement;
+    await fillInputElement(createPeriodNameInput, "Supplemental Period");
+    expect(previewButton.disabled).toBe(false);
+
+    await selectOptionValue(unassignedPeriodSelect, existingPeriodId);
+
+    expect(heroPowerMetricSelect.value).toBe("existing:lib-kills");
+    expect(killsMetricSelect.value).toBe("existing:met1");
+    expect(container.textContent).not.toContain(
+      "The previously selected library metric is not available for the new target period.",
+    );
+    expect(previewButton.disabled).toBe(false);
+  });
+
   it("marks only invalidated columns incomplete when group period change breaks an existing mapping", async () => {
     const periodAId = "period-a";
     const periodBId = "period-b";

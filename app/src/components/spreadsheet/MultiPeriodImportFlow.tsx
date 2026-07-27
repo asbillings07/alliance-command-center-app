@@ -219,6 +219,14 @@ function reconcileColumnMappingForPeriodChange(
 
   if (mapping.target.kind === "attach") {
     const attachTarget = mapping.target;
+    const alreadyOnPeriod = periodMetrics.some((metric) => metric.id === attachTarget.metricId);
+    if (alreadyOnPeriod) {
+      return {
+        ...nextMapping,
+        confirmationStatus: "confirmed_metric",
+        target: { kind: "existing", metricId: attachTarget.metricId },
+      };
+    }
     const stillAttachable =
       canAttachMetrics && attachableLibrary.some((metric) => metric.id === attachTarget.metricId);
     if (stillAttachable) {
