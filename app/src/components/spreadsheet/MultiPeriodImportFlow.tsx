@@ -31,7 +31,7 @@ import {
   dispositionForTarget,
   type MetricImportPreviewData,
 } from "@/app/src/lib/import/importPreviewHelpers";
-import { MetricPreviewSection } from "@/app/src/components/spreadsheet/MetricPreviewSection";
+import { MetricPreviewAccordion } from "@/app/src/components/spreadsheet/MetricPreviewAccordion";
 import {
   ValueIssueNotice,
   WorkbookIssueNotice,
@@ -1436,15 +1436,14 @@ export function MultiPeriodImportFlow({
           />
         )}
 
-        {previews.map((preview) => (
-          <MetricPreviewSection
-            key={`${preview.groupKey}-${preview.columnIndex}`}
-            preview={preview}
-            selections={duplicateSelections[preview.columnIndex]}
-            onDuplicateSelection={handleDuplicateSelection}
-            contextLabel={preview.periodName}
-          />
-        ))}
+        <MetricPreviewAccordion
+          previews={previews}
+          selectionsByColumn={duplicateSelections}
+          onDuplicateSelection={handleDuplicateSelection}
+          contextLabelForPreview={(preview) =>
+            (preview as MultiPeriodMetricPreview).periodName
+          }
+        />
 
         {error && (
           <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
