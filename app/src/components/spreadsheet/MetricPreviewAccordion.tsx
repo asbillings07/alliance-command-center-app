@@ -145,13 +145,12 @@ export function MetricPreviewAccordion({
           </div>
 
           <div className="flex flex-col gap-1 sm:flex-1 sm:max-w-md">
-            <label htmlFor="metric-preview-jump" className="text-xs font-medium text-text-secondary">
+            <label id="metric-preview-jump-label" htmlFor="metric-preview-jump" className="text-xs font-medium text-text-secondary">
               Jump to metric
             </label>
             <select
               id="metric-preview-jump"
               data-testid="metric-preview-jump"
-              aria-labelledby="metric-preview-position metric-preview-jump"
               value={String(safeActiveIndex)}
               onChange={(event) => goToIndex(Number(event.target.value))}
               className="w-full px-3 py-1.5 rounded-md border border-border bg-surface text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"

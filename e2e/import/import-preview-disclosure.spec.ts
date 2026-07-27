@@ -100,7 +100,7 @@ test.describe("Results import preview progressive disclosure", () => {
     await expect(page.getByTestId("metric-preview-2")).toHaveCount(1);
     await expect(page.getByTestId("metric-preview-1")).toHaveCount(0);
 
-    await page.getByLabel("Jump to metric").selectOption({ index: 0 });
+    await page.getByTestId("metric-preview-jump").selectOption("0");
     await expect(page.getByTestId("metric-preview-1")).toHaveCount(1);
     await expect(page.getByTestId("metric-preview-2")).toHaveCount(0);
 
