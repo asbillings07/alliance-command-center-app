@@ -128,12 +128,14 @@ export function SetupImportForm({
   const handleSelectRegion = (regionIdx: number) => {
     if (!parsedWorkbook) return;
     setSelectedRegionIndex(regionIdx);
-    analyzeSheet(parsedWorkbook, selectedSheetIndex, regionIdx, selectedHeaderRowIndex);
+    setIsHeaderConfirmed(false);
+    analyzeSheet(parsedWorkbook, selectedSheetIndex, regionIdx);
   };
 
   const handleSelectHeaderRow = (headerRowIdx: number) => {
     if (!parsedWorkbook) return;
     setSelectedHeaderRowIndex(headerRowIdx);
+    setIsHeaderConfirmed(false);
     analyzeSheet(parsedWorkbook, selectedSheetIndex, selectedRegionIndex, headerRowIdx);
   };
 

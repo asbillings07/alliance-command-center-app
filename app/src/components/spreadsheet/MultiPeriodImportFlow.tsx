@@ -402,11 +402,20 @@ function defaultPeriodTargetForProposal(
   sortedPeriods: AlliancePeriodOption[],
   routePeriodId: string | null | undefined,
 ): PeriodTargetState {
-  const routePeriod = routePeriodId
-    ? sortedPeriods.find((period) => period.id === routePeriodId)
-    : null;
-  const suggestedPeriod = routePeriod ?? pickSuggestedAlliancePeriod(sortedPeriods);
+  if (routePeriodId) {
+    const routePeriod = sortedPeriods.find((period) => period.id === routePeriodId);
+    if (routePeriod) {
+      return { mode: "existing", periodId: routePeriod.id };
+    }
+  }
 
+  // Guided setup route: detected proposals derive create targets from evidence,
+  // not the latest active period.
+  if (routePeriodId == null && proposal.source === "detected") {
+    return createPeriodTargetFromProposal(proposal);
+  }
+
+  const suggestedPeriod = pickSuggestedAlliancePeriod(sortedPeriods);
   if (suggestedPeriod) {
     return { mode: "existing", periodId: suggestedPeriod.id };
   }
@@ -932,7 +941,9 @@ export function MultiPeriodImportFlow({
 
   const activeDataStart = tableBounds ? tableBounds.dataStartIndex : 0;
   const activeDataEnd = tableBounds ? tableBounds.dataEndIndex : (currentSheet?.rows.length ?? 0);
-  const selectedRegion = tableBounds?.tableRegions[0];
+  const selectedRegion = tableBounds
+    ? tableBounds.tableRegions[tableBounds.selectedRegionIndex]
+    : undefined;
   const activeStartCol = selectedRegion ? selectedRegion.startColumn : 0;
   const activeEndCol = selectedRegion ? selectedRegion.endColumn : 999;
 

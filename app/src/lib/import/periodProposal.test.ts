@@ -550,6 +550,28 @@ describe("resolveImportProposals", () => {
     expect(resolved[0]?.source).toBe("manual_fallback");
     expect(resolved[0]?.confidence).toBe("low");
   });
+
+  it("carries reviewable and no-date columns into an unassigned proposal alongside qualifying groups", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex,
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills on 3/29", { isNumeric: true }),
+        header(2, "Kills on 4/13", { isNumeric: true }),
+        header(3, "Hero Power", { isNumeric: true }),
+        header(4, "Kills on 3/4", { isNumeric: true }),
+      ],
+    });
+
+    const resolved = resolveImportProposals(review);
+    expect(resolved.length).toBeGreaterThanOrEqual(3);
+    const unassigned = resolved.find((p) => p.proposalId === "unassigned-columns");
+    expect(unassigned?.source).toBe("manual_fallback");
+    expect(unassigned?.columns.map((c) => c.headerText)).toEqual(
+      expect.arrayContaining(["Hero Power", "Kills on 3/4"]),
+    );
+  });
 });
 
 function assertQualifyingProposalsAreChronologicallyOrdered(

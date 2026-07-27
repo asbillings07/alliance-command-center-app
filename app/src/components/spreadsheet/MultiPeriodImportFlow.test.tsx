@@ -190,7 +190,43 @@ describe("MultiPeriodImportFlow [component]", () => {
     expect(names.some((name) => name.includes("Apr 13"))).toBe(true);
   });
 
-  it("pre-fills suggested existing period but keeps it editable", async () => {
+  it("uses proposal-derived create targets on guided setup route when routePeriodId is null", async () => {
+    const existingPeriodId = "period-existing";
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Kills on 3/29", "Kills on 4/13"],
+      ["Dragon", "1500", "2000"],
+    ]);
+    const review = buildMultiPeriodReview();
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      routePeriodId: null,
+      alliancePeriods: [
+        {
+          id: existingPeriodId,
+          name: "Latest Period",
+          startsAt: "2026-03-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [],
+        },
+      ],
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    const periodSelects = Array.from(
+      container.querySelectorAll('select[id^="multi-period-target-"]'),
+    ) as HTMLSelectElement[];
+    expect(periodSelects.length).toBeGreaterThanOrEqual(2);
+    for (const select of periodSelects) {
+      expect(select.value).toBe(CREATE_PERIOD_SELECT_VALUE);
+    }
+  });
+
+  it("pre-fills suggested existing period but keeps it editable when routePeriodId is set", async () => {
     const existingPeriodId = "period-existing";
     const workbook = buildWorkbookFromRows([
       ["Player", "Kills on 3/29"],
@@ -221,6 +257,7 @@ describe("MultiPeriodImportFlow [component]", () => {
       parsedWorkbook: workbook,
       tableBounds,
       playerColumnIndex,
+      routePeriodId: existingPeriodId,
       alliancePeriods: [
         {
           id: "older-period",
@@ -360,6 +397,7 @@ describe("MultiPeriodImportFlow [component]", () => {
       parsedWorkbook: workbook,
       tableBounds,
       playerColumnIndex,
+      routePeriodId: existingPeriodId,
       canConfigurePeriods: false,
       canCreateMetrics: false,
       canAttachMetrics: false,

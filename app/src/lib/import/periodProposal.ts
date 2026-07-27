@@ -474,15 +474,10 @@ function excludedNoDateToColumnEvidence(
   };
 }
 
-/**
- * When period detection finds insufficient evidence, synthesize one honest
- * manual-fallback proposal from the review's column classification — derived
- * columns stay out; ambiguous/reviewable and no-date numeric columns remain.
- */
-export function buildManualFallbackProposal(
+function collectUnassignedColumnEvidence(
   review: PeriodMappingReview,
-): PeriodMappingProposal {
-  const columns: ColumnPeriodEvidence[] = [
+): ColumnPeriodEvidence[] {
+  return [
     ...review.reviewableColumns.map(reviewableToColumnEvidence),
     ...review.excludedColumns
       .filter((col) => col.reason === "no_date_evidence")
@@ -494,11 +489,44 @@ export function buildManualFallbackProposal(
         ),
       ),
   ];
+}
+
+/**
+ * When period detection finds insufficient evidence, synthesize one honest
+ * manual-fallback proposal from the review's column classification — derived
+ * columns stay out; ambiguous/reviewable and no-date numeric columns remain.
+ */
+export function buildManualFallbackProposal(
+  review: PeriodMappingReview,
+): PeriodMappingProposal {
+  const columns = collectUnassignedColumnEvidence(review);
 
   return {
     proposalId: "manual-fallback",
     groupingKey: "manual_fallback",
     proposedPeriodName: "",
+    dateKind: "unspecified",
+    startsAtISO: null,
+    endsAtISO: null,
+    confidence: "low",
+    source: "manual_fallback",
+    columns,
+    warnings: [],
+  };
+}
+
+function buildUnassignedColumnsProposal(
+  review: PeriodMappingReview,
+): PeriodMappingProposal | null {
+  const columns = collectUnassignedColumnEvidence(review);
+  if (columns.length === 0) {
+    return null;
+  }
+
+  return {
+    proposalId: "unassigned-columns",
+    groupingKey: "unassigned_columns",
+    proposedPeriodName: "Unassigned columns",
     dateKind: "unspecified",
     startsAtISO: null,
     endsAtISO: null,
@@ -515,7 +543,11 @@ export function resolveImportProposals(review: PeriodMappingReview): PeriodMappi
     return [buildManualFallbackProposal(review)];
   }
   const qualifying = qualifyingProposals(review);
-  return qualifying.length > 0 ? qualifying : [buildManualFallbackProposal(review)];
+  if (qualifying.length === 0) {
+    return [buildManualFallbackProposal(review)];
+  }
+  const unassigned = buildUnassignedColumnsProposal(review);
+  return unassigned ? [...qualifying, unassigned] : qualifying;
 }
 
 function demoteConfidenceIfRangeInverted(
