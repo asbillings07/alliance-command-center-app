@@ -92,15 +92,15 @@ test.describe("Results import preview progressive disclosure", () => {
     await expect(killPointsPreview).toHaveAttribute("open", "");
     await expect(heroPowerPreview).not.toHaveAttribute("open");
 
-    await heroPowerPreview.locator("summary").click();
+    await heroPowerPreview.locator("#metric-preview-summary-2").click();
     await expect(heroPowerPreview).toHaveAttribute("open", "");
     await expect(killPointsPreview).toHaveAttribute("open", "");
 
-    await killPointsPreview.locator("summary").focus();
+    await killPointsPreview.locator("#metric-preview-summary-1").focus();
     await page.keyboard.press("Enter");
     await expect(killPointsPreview).not.toHaveAttribute("open");
 
-    await heroPowerPreview.locator("summary").focus();
+    await heroPowerPreview.locator("#metric-preview-summary-2").focus();
     await page.keyboard.press("Space");
     await expect(heroPowerPreview).not.toHaveAttribute("open");
 
@@ -150,7 +150,7 @@ test.describe("Results import preview progressive disclosure", () => {
     await expect(metricPreview).not.toHaveAttribute("open");
     await expect(metricPreview.getByText("1 importable")).toBeVisible();
 
-    await metricPreview.locator("summary").click();
+    await metricPreview.locator("#metric-preview-summary-1").click();
     await expect(metricPreview).toHaveAttribute("open", "");
     await expect(metricPreview.getByRole("cell", { name: "DisclosureHero" }).first()).toBeVisible();
   });
