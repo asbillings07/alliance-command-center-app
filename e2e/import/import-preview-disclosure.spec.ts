@@ -233,12 +233,13 @@ test.describe("Results import preview progressive disclosure", () => {
     await expect(willImport).toBeVisible();
     await expect(willImport).toContainText("2 rows will import");
     await expect(willImport.locator("summary")).toHaveAttribute("aria-expanded", "false");
-    await expect(willImport.getByText("DisclosureHero")).toHaveCount(0);
+    await expect(willImport.locator("tbody")).toBeHidden();
 
     await willImport.locator("summary").click();
     await expect(willImport.locator("summary")).toHaveAttribute("aria-expanded", "true");
-    await expect(willImport.getByText("DisclosureHero")).toBeVisible();
-    await expect(willImport.getByText("DisclosurePhoenix")).toBeVisible();
+    await expect(willImport.locator("tbody")).toBeVisible();
+    await expect(willImport.getByRole("cell", { name: "DisclosureHero" }).first()).toBeVisible();
+    await expect(willImport.getByRole("cell", { name: "DisclosurePhoenix" }).first()).toBeVisible();
 
     await needsAttention.locator("summary").focus();
     await page.keyboard.press(" ");
