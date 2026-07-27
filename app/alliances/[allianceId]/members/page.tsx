@@ -4,11 +4,14 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 import { metricPeriodChronologicalOrderBy } from "@/app/src/lib/metricPeriodOrdering";
-import { buildMetricsLibraryHref } from "@/app/src/lib/periods/metricsLibraryHref";
 import Link from "next/link";
 import { formatPower } from "@/app/src/lib/formatPower";
 import { MembersFilter } from "./MembersFilter";
 import { MembersPeriodSelector } from "./MembersPeriodSelector";
+import {
+  isActiveMemberPrerequisiteEmptyState,
+  resolveMembersContextualBanner,
+} from "./membersPageContextualState";
 import { PageLayout, Card, Badge, EmptyState } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 
@@ -74,7 +77,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 id: true,
                 name: true,
                 periodMetrics: {
-                    where: { active: true, metric: { active: true } },
+                    where: { active: true },
                     select: {
                         metricId: true,
                         metric: {
@@ -154,8 +157,6 @@ export default async function MembersPage({ params, searchParams }: Params) {
     });
     const totalPeriodCount = allPeriods.length;
     const requestedPeriodId = periodId;
-    const periodNotFound = Boolean(requestedPeriodId && !selectedPeriod);
-
     const hasResultsInView =
         periodMetricColumns.length > 0 &&
         allianceMembers.some((member) =>
@@ -163,23 +164,20 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 latestMetricValueByMemberAndMetric.has(`${member.id}:${metric.metricId}`),
             ),
         );
-
-    const showingActiveMemberPrerequisite = filter === "active" && activeCount === 0;
-    const showNoPeriodsBanner =
-        !showingActiveMemberPrerequisite && totalPeriodCount === 0 && !selectedPeriod;
-    const showNoMetricsBanner =
-        !showingActiveMemberPrerequisite &&
-        !showNoPeriodsBanner &&
-        !periodNotFound &&
-        selectedPeriod &&
-        periodMetricColumns.length === 0;
-    const showNoResultsBanner =
-        !showingActiveMemberPrerequisite &&
-        !showNoPeriodsBanner &&
-        !periodNotFound &&
-        selectedPeriod &&
-        periodMetricColumns.length > 0 &&
-        !hasResultsInView;
+    const contextualBanner = resolveMembersContextualBanner({
+        filter,
+        activeMemberCount: activeCount,
+        totalPeriodCount,
+        requestedPeriodId,
+        selectedPeriodId,
+        periodMetricCount: periodMetricColumns.length,
+        hasResultsInView,
+    });
+    const showingActiveMemberPrerequisite = isActiveMemberPrerequisiteEmptyState(
+        filter,
+        activeCount,
+        allianceMembers.length,
+    );
 
     const rosterHref = `/alliances/${allianceId}/members?filter=${filter}`;
 
@@ -255,7 +253,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 />
             </div>
 
-            {periodNotFound && (
+            {contextualBanner.kind === "invalid-period" && (
                 <div className="mb-6 rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm text-text-primary">
                     <p>This evaluation period is not available.</p>
                     <Link
@@ -267,7 +265,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 </div>
             )}
 
-            {showNoPeriodsBanner && (
+            {contextualBanner.kind === "no-periods" && (
                 <div className="mb-6 rounded-lg border border-primary/20 bg-primary/10 p-4 text-sm text-text-primary">
                     <p>Create an evaluation period before viewing member results.</p>
                     {permissions.canConfigurePeriods ? (
@@ -288,7 +286,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 </div>
             )}
 
-            {showNoMetricsBanner && selectedPeriod && (
+            {contextualBanner.kind === "no-metrics" && selectedPeriod && (
                 <div className="mb-6 rounded-lg border border-primary/20 bg-primary/10 p-4 text-sm text-text-primary">
                     <p>
                         <strong>{selectedPeriod.name}</strong> has no configured metrics yet.
@@ -298,7 +296,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                             <Button
                                 variant="primary"
                                 size="sm"
-                                href={buildMetricsLibraryHref(allianceId, selectedPeriod.id)}
+                                href={`/alliances/${allianceId}/periods/${selectedPeriod.id}`}
                             >
                                 Manage Period Metrics
                             </Button>
@@ -317,7 +315,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 </div>
             )}
 
-            {showNoResultsBanner && selectedPeriod && (
+            {contextualBanner.kind === "no-results" && selectedPeriod && (
                 <div className="mb-6 rounded-lg border border-border bg-surface-secondary p-4 text-sm text-text-primary">
                     <p>No results for members in this view.</p>
                     {periodResultsActions ?? (

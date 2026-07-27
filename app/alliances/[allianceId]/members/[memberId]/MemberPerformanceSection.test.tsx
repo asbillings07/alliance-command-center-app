@@ -16,13 +16,14 @@ describe("MemberPerformanceSection unrecorded banner", () => {
         unrecordedNotice={
           <>
             <p>No results were recorded for this member in this evaluation period yet.</p>
-            <a href="/alliances/all_1/periods/per_1/record">Record Results</a>
+            <span data-testid="record-results-action">Record Results</span>
           </>
         }
       />,
     );
 
     expect(html).toContain("No results were recorded for this member");
+    expect(html).toContain('data-testid="record-results-action"');
     expect(html).toContain("Record Results");
     expect(html).toContain("Not recorded");
   });
