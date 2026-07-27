@@ -34,7 +34,7 @@ export type BadgeProps = {
 const variantClasses: Record<BadgeVariant, string> = {
   success: "bg-success/20 text-success-light border-success/30",
   warning: "bg-warning/20 text-warning-light border-warning/30",
-  danger: "bg-danger/20 text-danger-light border-danger/30",
+  danger: "bg-danger-dark text-text-primary border-danger-dark",
   neutral: "bg-text-muted/20 text-text-secondary border-text-muted/30",
   info: "bg-primary/20 text-primary-light border-primary/30",
 };
