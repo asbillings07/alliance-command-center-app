@@ -59,7 +59,7 @@ jobs:
           echo "::error::Refusing to run: confirmation phrase was not 'PRODUCTION'."
           exit 1
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
