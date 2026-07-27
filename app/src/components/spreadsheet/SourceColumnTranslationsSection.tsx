@@ -22,10 +22,18 @@ export function SourceColumnTranslationsSection({
   return (
     <details
       open={defaultOpen}
+      onToggle={(event) => {
+        event.currentTarget
+          .querySelector("summary")
+          ?.setAttribute("aria-expanded", event.currentTarget.open ? "true" : "false");
+      }}
       className="bg-surface border border-border rounded-xl overflow-hidden group"
       data-testid="source-column-translations"
     >
-      <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between gap-3 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface [&::-webkit-details-marker]:hidden">
+      <summary
+        aria-expanded={defaultOpen ? "true" : "false"}
+        className="cursor-pointer list-none px-4 py-3 flex items-center justify-between gap-3 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface [&::-webkit-details-marker]:hidden"
+      >
         <div className="flex items-center gap-2 min-w-0">
           <span
             aria-hidden="true"

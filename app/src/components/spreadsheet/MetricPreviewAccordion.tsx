@@ -87,6 +87,11 @@ function MetricPreviewAccordionItem({
   return (
     <details
       open={defaultOpen}
+      onToggle={(event) => {
+        event.currentTarget
+          .querySelector("summary")
+          ?.setAttribute("aria-expanded", event.currentTarget.open ? "true" : "false");
+      }}
       className="border border-border bg-surface-secondary rounded-lg overflow-hidden group"
       data-testid={`metric-preview-${preview.columnIndex}`}
       data-metric-status={counts.status}
@@ -94,6 +99,7 @@ function MetricPreviewAccordionItem({
       <summary
         id={summaryId}
         aria-controls={panelId}
+        aria-expanded={defaultOpen ? "true" : "false"}
         className="cursor-pointer list-none px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset select-none [&::-webkit-details-marker]:hidden"
       >
         <div className="flex items-start sm:items-center gap-2 min-w-0 flex-wrap">

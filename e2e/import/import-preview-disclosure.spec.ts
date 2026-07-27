@@ -107,8 +107,6 @@ test.describe("Results import preview progressive disclosure", () => {
     await expect(heroPowerPreview.locator("#metric-preview-summary-2")).toHaveAttribute("aria-expanded", "false");
 
     await expect(translations.locator("summary")).toHaveAttribute("aria-expanded", "false");
-    await expect(killPointsPreview.locator("#metric-preview-summary-1")).toHaveAttribute("aria-expanded", "false");
-    await expect(heroPowerPreview.locator("#metric-preview-summary-2")).toHaveAttribute("aria-expanded", "false");
 
     await checkA11yWithOptions(page, {
       runOnly: ["wcag2a", "wcag2aa"],

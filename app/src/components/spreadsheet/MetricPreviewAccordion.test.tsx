@@ -175,5 +175,6 @@ describe("MetricPreviewAccordion [component]", () => {
     const summary = summaryFor(1);
     expect(summary.tagName).toBe("SUMMARY");
     expect(summary.getAttribute("aria-controls")).toBe("metric-preview-panel-1");
+    expect(summary.getAttribute("aria-expanded")).toBe("false");
   });
 });
