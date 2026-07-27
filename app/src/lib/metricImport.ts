@@ -29,6 +29,28 @@ export type ColumnTargetMapping = {
   entries: MetricEntrySubmission[];
 };
 
+/**
+ * Server-side guard: existing and attach targets both reference a metric id and
+ * must belong to the target alliance — either in the active library, or already
+ * linked to this period (including archived metrics still attached).
+ */
+export function assertImportMetricTargetBelongsToAlliance(
+  target: ImportMetricTarget,
+  libraryMetricIds: ReadonlySet<string>,
+  attachedMetricIds: ReadonlySet<string>,
+): void {
+  if (target.kind !== "existing" && target.kind !== "attach") {
+    return;
+  }
+
+  if (
+    !libraryMetricIds.has(target.metricId) &&
+    !attachedMetricIds.has(target.metricId)
+  ) {
+    throw new Error("One or more metrics do not belong to this alliance");
+  }
+}
+
 /** A validated column mapping with parsed numeric values. */
 export type ValidatedColumnTargetMapping = {
   sourceColumnName: string;
