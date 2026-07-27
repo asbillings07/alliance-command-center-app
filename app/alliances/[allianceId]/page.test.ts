@@ -51,30 +51,41 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import AlliancePage from "./page";
 import { metricPeriodChronologicalOrderBy } from "@/app/src/lib/metricPeriodOrdering";
 
+const adminPermissions = {
+  canViewAlliance: true,
+  canImportMetrics: true,
+  canConfigureMetrics: true,
+  canConfigurePeriods: true,
+  canImportMembers: true,
+  canManageMembers: true,
+  canInviteCollaborators: true,
+};
+
+function mockAlliance() {
+  vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+    id: "all_1",
+    name: "Alliance One",
+    server: "Server 100",
+  } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+}
+
 describe("AllianceDashboardPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(prisma.metricPeriod.count).mockResolvedValue(1);
+    vi.mocked(prisma.metric.count).mockResolvedValue(1);
+    vi.mocked(prisma.allianceMember.count).mockResolvedValue(5);
+    vi.mocked(prisma.allianceMembership.count).mockResolvedValue(1);
+    vi.mocked(prisma.invitation.count).mockResolvedValue(0);
+    vi.mocked(prisma.memberMetricEntry.count).mockResolvedValue(0);
   });
 
-  it("renders Record Now and Import Evaluation Results when active period has active metrics", async () => {
+  it("renders Record Now and Import Evaluation Results when prerequisites are met", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
       membership: { role: "ADMIN" },
-      permissions: {
-        canViewAlliance: true,
-        canImportMetrics: true,
-        canConfigureMetrics: true,
-        canConfigurePeriods: true,
-        canImportMembers: true,
-        canManageMembers: true,
-        canInviteCollaborators: true,
-      },
+      permissions: adminPermissions,
     } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
-
-    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
-      id: "all_1",
-      name: "Alliance One",
-      server: "Server 100",
-    } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+    mockAlliance();
 
     vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue({
       id: "per_1",
@@ -86,18 +97,75 @@ describe("AllianceDashboardPage", () => {
     const page = await AlliancePage({
       params: Promise.resolve({ allianceId: "all_1" }),
     });
-
     const html = renderToStaticMarkup(page);
 
-    expect(html).toContain("Evaluation Results");
-    expect(html).toContain("Week 30 Evaluation");
     expect(html).toContain("Record Now");
     expect(html).toContain("Import Evaluation Results");
     expect(html).toContain("/alliances/all_1/periods/per_1/record");
     expect(html).toContain("/alliances/all_1/periods/per_1/import");
   });
 
-  it("renders contextual guidance when active period has 0 assigned active metrics", async () => {
+  it("shows no-period guidance instead of omitting Evaluation Results", async () => {
+    vi.mocked(requireAllianceAccess).mockResolvedValue({
+      membership: { role: "ADMIN" },
+      permissions: adminPermissions,
+    } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
+    mockAlliance();
+    vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.metricPeriod.count).mockResolvedValue(0);
+
+    const page = await AlliancePage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("No evaluation periods yet");
+    expect(html).toContain("Go to Evaluation Periods");
+    expect(html).not.toContain("Record Now");
+  });
+
+  it("distinguishes archived-only periods in the no-period card", async () => {
+    vi.mocked(requireAllianceAccess).mockResolvedValue({
+      membership: { role: "ADMIN" },
+      permissions: adminPermissions,
+    } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
+    mockAlliance();
+    vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.metricPeriod.count).mockResolvedValue(2);
+
+    const page = await AlliancePage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("Only inactive evaluation periods exist");
+  });
+
+  it("hides Record and Import when there are no active members", async () => {
+    vi.mocked(requireAllianceAccess).mockResolvedValue({
+      membership: { role: "ADMIN" },
+      permissions: adminPermissions,
+    } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
+    mockAlliance();
+    vi.mocked(prisma.allianceMember.count).mockResolvedValue(0);
+    vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue({
+      id: "per_1",
+      name: "Week 30 Evaluation",
+      active: true,
+      periodMetrics: [{ metricId: "met_vs" }],
+    } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findFirst>>);
+
+    const page = await AlliancePage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).not.toContain("Record Now");
+    expect(html).not.toContain("Import Evaluation Results");
+    expect(html).toContain("Import Members");
+  });
+
+  it("shows import-only guidance when metrics can be provisioned during import", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
       membership: { role: "LEADER" },
       permissions: {
@@ -106,36 +174,56 @@ describe("AllianceDashboardPage", () => {
         canConfigureMetrics: true,
         canConfigurePeriods: true,
         canImportMembers: false,
-        canManageMembers: false,
-        canInviteCollaborators: false,
       },
     } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
-
-    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
-      id: "all_1",
-      name: "Alliance One",
-      server: "Server 100",
-    } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
-
+    mockAlliance();
     vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue({
       id: "per_empty",
       name: "Week 31 Evaluation",
       active: true,
-      periodMetrics: [], // 0 active period metrics
+      periodMetrics: [],
     } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findFirst>>);
+    vi.mocked(prisma.metric.count).mockResolvedValue(2);
 
     const page = await AlliancePage({
       params: Promise.resolve({ allianceId: "all_1" }),
     });
-
     const html = renderToStaticMarkup(page);
 
-    expect(html).toContain("Evaluation Results");
-    expect(html).toContain("Active period <strong>Week 31 Evaluation</strong> has no assigned metrics yet.");
-    expect(html).toContain("Manage Period Metrics");
+    expect(html).not.toContain("Record Now");
     expect(html).toContain("Import Evaluation Results");
-    expect(html).toContain("/alliances/all_1/periods/per_empty");
     expect(html).toContain("/alliances/all_1/periods/per_empty/import");
+    expect(html).not.toContain("Manage Period Metrics");
+  });
+
+  it("shows manage-period guidance when import cannot provision metrics", async () => {
+    vi.mocked(requireAllianceAccess).mockResolvedValue({
+      membership: { role: "LEADER" },
+      permissions: {
+        canViewAlliance: true,
+        canImportMetrics: true,
+        canConfigureMetrics: false,
+        canConfigurePeriods: false,
+        canImportMembers: false,
+      },
+    } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
+    mockAlliance();
+    vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue({
+      id: "per_empty",
+      name: "Week 31 Evaluation",
+      active: true,
+      periodMetrics: [],
+    } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findFirst>>);
+    vi.mocked(prisma.metric.count).mockResolvedValue(0);
+
+    const page = await AlliancePage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).not.toContain("Record Now");
+    expect(html).not.toContain("/alliances/all_1/periods/per_empty/import");
+    expect(html).toContain("View Period");
   });
 
   it("uses deterministic ordering when querying active period", async () => {
@@ -146,13 +234,7 @@ describe("AllianceDashboardPage", () => {
         canImportMetrics: true,
       },
     } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
-
-    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
-      id: "all_1",
-      name: "Alliance One",
-      server: "Server 100",
-    } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
-
+    mockAlliance();
     vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(null);
 
     await AlliancePage({

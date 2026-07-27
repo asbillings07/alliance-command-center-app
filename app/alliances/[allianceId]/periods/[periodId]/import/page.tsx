@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ImportForm } from "./ImportForm";
 import { PageLayout, Card, EmptyState } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
+import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvisionMetricsForPeriod";
 
 type Params = {
   params: Promise<{
@@ -56,9 +57,11 @@ export default async function ImportPage({ params }: Params) {
   const attachableLibraryMetrics = libraryMetrics.filter(
     (m) => !metrics.some((pm) => pm.id === m.id),
   );
-  const canProvisionMetrics =
-    canConfigureMetrics ||
-    (canConfigurePeriods && attachableLibraryMetrics.length > 0);
+  const canProvisionMetrics = canProvisionMetricsForPeriod({
+    canConfigureMetrics,
+    canConfigurePeriods,
+    attachableLibraryMetricCount: attachableLibraryMetrics.length,
+  });
 
   const alliancePeriodsRaw = await prisma.metricPeriod.findMany({
     where: { allianceId, active: true },
