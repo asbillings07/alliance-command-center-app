@@ -3,6 +3,7 @@ import {
   isValidCalendarDate,
   isCrossYearRangePattern,
   computeIsReversedRange,
+  isDateLikeMetricIdentity,
   type ParsedDateEvidence,
   type DateHeaderParseResult,
   type ParsedDateComponent,
@@ -12,6 +13,9 @@ import {
   type DerivedReason,
 } from "./derivedColumnDetector";
 import type { CellDateMetadata } from "@/app/src/lib/workbookParser";
+
+/** Display label when header date evidence does not imply a metric name. */
+export const UNKNOWN_METRIC_IDENTITY = "(confirm metric name)";
 
 export type ColumnExclusionReason =
   | "derived"
@@ -382,6 +386,27 @@ export function formatReviewableDateEvidence(parsedDate: ParsedDateEvidence): st
     : `${startStr} (year unknown)`;
 }
 
+function resolveProposedMetricName(
+  dateResult: DateHeaderParseResult,
+  headerText: string,
+  columnIndex: number,
+): string {
+  const stem = dateResult.metricStem?.trim();
+  if (stem && !isDateLikeMetricIdentity(stem)) {
+    return stem;
+  }
+
+  if (dateResult.hasDateEvidence) {
+    return UNKNOWN_METRIC_IDENTITY;
+  }
+
+  const fallback =
+    headerText.replace(/[\(\):,-]/g, " ").replace(/\s+/g, " ").trim() ||
+    `Metric Column ${columnIndex + 1}`;
+
+  return isDateLikeMetricIdentity(fallback) ? UNKNOWN_METRIC_IDENTITY : fallback;
+}
+
 function collectColumnWarnings(
   col: ColumnPeriodEvidence,
 ): string[] {
@@ -665,10 +690,11 @@ export function buildPeriodMappingReview(
       });
     }
 
-    const proposedMetricName =
-      dateResult.metricStem ||
-      h.headerText.replace(/[\(\):,-]/g, " ").replace(/\s+/g, " ").trim() ||
-      `Metric Column ${h.columnIndex + 1}`;
+    const proposedMetricName = resolveProposedMetricName(
+      dateResult,
+      h.headerText,
+      h.columnIndex,
+    );
 
     const colEvidence: ColumnPeriodEvidence = {
       columnIndex: h.columnIndex,

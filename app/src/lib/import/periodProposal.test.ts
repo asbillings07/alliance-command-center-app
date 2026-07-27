@@ -5,9 +5,15 @@ import {
   extractYearFromSheetName,
   isValidCalendarDate,
   isLocaleAmbiguousShorthand,
+  isDateLikeMetricIdentity,
 } from "./dateHeaderParser";
 import { analyzeDerivedColumn } from "./derivedColumnDetector";
-import { buildPeriodMappingReview, formatReviewableDateEvidence, resolveImportProposals } from "./periodProposal";
+import {
+  buildPeriodMappingReview,
+  formatReviewableDateEvidence,
+  resolveImportProposals,
+  UNKNOWN_METRIC_IDENTITY,
+} from "./periodProposal";
 import { cellAddress } from "@/app/src/lib/memberMatcher";
 import { decodeExcelSerialDate } from "@/app/src/lib/workbookParser";
 
@@ -68,6 +74,28 @@ describe("dateHeaderParser", () => {
     expect(res.dateEvidence?.kind).toBe("range");
     expect(res.dateEvidence?.start).toEqual({ month: 12, day: 15, year: 2026 });
     expect(res.dateEvidence?.end).toEqual({ month: 1, day: 15, year: 2027 });
+  });
+
+  it("parses textual month-name range headers as period evidence without metric stems", () => {
+    const res = parseDateHeader("Jan 27 - Feb 1", { sheetName: "Season 7 2026" });
+    expect(res.hasDateEvidence).toBe(true);
+    expect(res.dateEvidence?.kind).toBe("range");
+    expect(res.metricStem).toBeNull();
+    expect(res.dateEvidence?.start).toEqual({ month: 1, day: 27, year: 2026 });
+    expect(res.dateEvidence?.end).toEqual({ month: 2, day: 1, year: 2026 });
+
+    const second = parseDateHeader("Feb 9 - Feb 15", { sheetName: "Season 7 2026" });
+    expect(second.dateEvidence?.kind).toBe("range");
+    expect(second.metricStem).toBeNull();
+    expect(second.dateEvidence?.start).toEqual({ month: 2, day: 9, year: 2026 });
+    expect(second.dateEvidence?.end).toEqual({ month: 2, day: 15, year: 2026 });
+  });
+
+  it("identifies date-only strings as metric identities", () => {
+    expect(isDateLikeMetricIdentity("Jan 27")).toBe(true);
+    expect(isDateLikeMetricIdentity("3/29")).toBe(true);
+    expect(isDateLikeMetricIdentity("Kills")).toBe(false);
+    expect(isDateLikeMetricIdentity("Hero Power")).toBe(false);
   });
 
   it("flags reversed ranges when end precedes start", () => {
@@ -549,6 +577,26 @@ describe("resolveImportProposals", () => {
     expect(resolved).toHaveLength(1);
     expect(resolved[0]?.source).toBe("manual_fallback");
     expect(resolved[0]?.confidence).toBe("low");
+  });
+
+  it("builds range proposals from textual month-name headers with unknown metric identity", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "Season 7 2026",
+      headerRowIndex,
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Jan 27 - Feb 1", { isNumeric: true }),
+        header(2, "Feb 9 - Feb 15", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.mode).toBe("multi_period");
+    const proposals = review.proposals.filter((p) => p.confidence !== "low");
+    expect(proposals).toHaveLength(2);
+    for (const proposal of proposals) {
+      expect(proposal.dateKind).toBe("range");
+      expect(proposal.columns[0]?.proposedMetricName).toBe(UNKNOWN_METRIC_IDENTITY);
+    }
   });
 
   it("carries reviewable and no-date columns into an unassigned proposal alongside qualifying groups", () => {

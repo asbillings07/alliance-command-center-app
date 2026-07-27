@@ -12,6 +12,7 @@ import {
   buildManualFallbackProposal,
   buildPeriodMappingReview,
   resolveImportProposals,
+  UNKNOWN_METRIC_IDENTITY,
   type PeriodMappingReview,
 } from "@/app/src/lib/import/periodProposal";
 import type { ParsedWorkbook } from "@/app/src/lib/workbookParser";
@@ -511,6 +512,123 @@ describe("MultiPeriodImportFlow [component]", () => {
     ) as HTMLSelectElement;
     await selectOptionValue(heroPowerMetricSelect, "create");
     expect(previewButton.disabled).toBe(true);
+  });
+
+  it("maps textual month-name ranges to period proposals with unknown metric identity", async () => {
+    const existingPeriodId = "period-season-7";
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Jan 27 - Feb 1", "Feb 9 - Feb 15"],
+      ["Dragon", "1500", "2000"],
+    ]);
+    const review = buildPeriodMappingReview({
+      sheetName: "Season 7 2026",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: "A1",
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "Jan 27 - Feb 1",
+          headerAddress: "B1",
+          isNumeric: true,
+        },
+        {
+          columnIndex: 2,
+          headerText: "Feb 9 - Feb 15",
+          headerAddress: "C1",
+          isNumeric: true,
+        },
+      ],
+    });
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      routePeriodId: null,
+      alliancePeriods: [
+        {
+          id: existingPeriodId,
+          name: "Season 7",
+          startsAt: "2026-01-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [],
+        },
+      ],
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    expect(container.textContent).toContain(UNKNOWN_METRIC_IDENTITY);
+    expect(container.textContent).not.toContain('Create "Jan 27"');
+    expect(container.textContent).not.toContain('Create "Feb 9"');
+
+    const periodSelects = Array.from(
+      container.querySelectorAll('select[id^="multi-period-target-"]'),
+    ) as HTMLSelectElement[];
+    for (const select of periodSelects) {
+      expect(select.value).toBe(CREATE_PERIOD_SELECT_VALUE);
+    }
+
+    const previewButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Preview Multi-Period Import"),
+    ) as HTMLButtonElement;
+    expect(previewButton.disabled).toBe(true);
+  });
+
+  it("keeps manual-fallback proposals unassigned on guided route when periods exist", async () => {
+    const existingPeriodId = "period-existing";
+    const workbook = buildWorkbookFromRows([
+      ["Player", "VS Score"],
+      ["Dragon", "1500"],
+    ]);
+    const review = buildPeriodMappingReview({
+      sheetName: "Results",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: "A1",
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "VS Score",
+          headerAddress: "B1",
+          isNumeric: true,
+        },
+      ],
+    });
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      routePeriodId: null,
+      alliancePeriods: [
+        {
+          id: existingPeriodId,
+          name: "Season 7",
+          startsAt: "2026-01-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [],
+        },
+      ],
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    const periodSelect = container.querySelector(
+      'select[id^="multi-period-target-"]',
+    ) as HTMLSelectElement;
+    expect(periodSelect.value).toBe(UNCONFIRMED_PERIOD_SELECT_VALUE);
   });
 });
 

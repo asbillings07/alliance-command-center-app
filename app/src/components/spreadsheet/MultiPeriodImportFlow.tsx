@@ -15,7 +15,11 @@ import type {
   PeriodMappingReview,
   ColumnPeriodEvidence,
 } from "@/app/src/lib/import/periodProposal";
-import { qualifyingProposals } from "@/app/src/lib/import/periodProposal";
+import {
+  qualifyingProposals,
+  UNKNOWN_METRIC_IDENTITY,
+} from "@/app/src/lib/import/periodProposal";
+import { isDateLikeMetricIdentity } from "@/app/src/lib/import/dateHeaderParser";
 import {
   buildPlannedMultiPeriodTranslationSummary,
   buildCommittedMultiPeriodTranslationSummary,
@@ -110,7 +114,33 @@ type PeriodTargetState =
   | { mode: "unconfirmed" };
 
 function metricIdentity(col: ColumnPeriodEvidence): string {
+  if (col.proposedMetricName === UNKNOWN_METRIC_IDENTITY) {
+    return UNKNOWN_METRIC_IDENTITY;
+  }
+  if (col.proposedMetricName && !isDateLikeMetricIdentity(col.proposedMetricName)) {
+    return col.proposedMetricName;
+  }
+  if (isDateLikeMetricIdentity(col.headerText)) {
+    return UNKNOWN_METRIC_IDENTITY;
+  }
   return col.proposedMetricName || col.headerText;
+}
+
+function requiresExplicitMetricConfirmation(proposedMetricName: string): boolean {
+  return (
+    proposedMetricName === UNKNOWN_METRIC_IDENTITY ||
+    isDateLikeMetricIdentity(proposedMetricName)
+  );
+}
+
+function proposalRequiresExplicitMapping(
+  proposal: PeriodMappingProposal,
+  routePeriodId: string | null | undefined,
+): boolean {
+  return (
+    proposal.source === "unassigned" ||
+    (routePeriodId == null && proposal.source === "manual_fallback")
+  );
 }
 
 function formatPeriodLabel(period: AlliancePeriodOption): string {
@@ -219,7 +249,7 @@ function parsePeriodSelectValue(
     return { mode: "unconfirmed" };
   }
   if (value === CREATE_PERIOD_SELECT_VALUE) {
-    if (proposal.source === "unassigned") {
+    if (proposal.source === "unassigned" || proposal.source === "manual_fallback") {
       return { mode: "create", name: "", startsAt: "", endsAt: "" };
     }
     return createPeriodTargetFromProposal(proposal);
@@ -281,7 +311,12 @@ function tokenToTarget(token: string, proposedMetricName: string): ColumnTarget 
     return { kind: "skip" };
   }
   if (token === SKIP_TARGET_TOKEN) return { kind: "skip" };
-  if (token === "create") return { kind: "create", name: proposedMetricName };
+  if (token === "create") {
+    return {
+      kind: "create",
+      name: requiresExplicitMetricConfirmation(proposedMetricName) ? "" : proposedMetricName,
+    };
+  }
   const [kind, metricId] = token.split(":");
   if (kind === "existing" && metricId) return { kind: "existing", metricId };
   if (kind === "attach" && metricId) return { kind: "attach", metricId };
@@ -360,7 +395,7 @@ function buildColumnMappingsForProposal(
       libraryMetrics: attachableLibrary,
     });
 
-    if (!autoConfirmMetrics) {
+    if (!autoConfirmMetrics || requiresExplicitMetricConfirmation(proposedMetricName)) {
       return {
         columnIndex: col.columnIndex,
         columnName: col.headerText,
@@ -455,7 +490,10 @@ function defaultPeriodTargetForProposal(
   }
 
   // Supplemental mixed-confidence columns stay unassigned until the leader chooses.
-  if (proposal.source === "unassigned") {
+  if (
+    proposal.source === "unassigned" ||
+    (routePeriodId == null && proposal.source === "manual_fallback")
+  ) {
     return { mode: "unconfirmed" };
   }
 
@@ -498,7 +536,7 @@ function initialProposalStates(
         allianceLibraryMetrics,
         canAttachMetrics,
         canCreateMetrics,
-        proposal.source !== "unassigned",
+        !proposalRequiresExplicitMapping(proposal, routePeriodId),
       ),
     };
   });
@@ -608,7 +646,7 @@ export function MultiPeriodImportFlow({
         allianceLibraryMetrics,
         canAttachMetrics,
         canCreateMetrics,
-        proposal.source !== "unassigned",
+        !proposalRequiresExplicitMapping(proposal, routePeriodId),
       ),
     }));
   };
@@ -656,7 +694,7 @@ export function MultiPeriodImportFlow({
           allianceLibraryMetrics,
           canAttachMetrics,
           canCreateMetrics,
-          proposal.source !== "unassigned",
+          !proposalRequiresExplicitMapping(proposal, routePeriodId),
         )[0];
         return {
           ...rebuilt,
@@ -1349,7 +1387,8 @@ export function MultiPeriodImportFlow({
                     onChange={(e) => handlePeriodChange(state.proposalId, e.target.value)}
                     className="w-full rounded-md border border-border p-2 text-sm bg-surface"
                   >
-                    {proposal.source === "unassigned" && (
+                    {(proposal.source === "unassigned" ||
+                      (routePeriodId == null && proposal.source === "manual_fallback")) && (
                       <option value={UNCONFIRMED_PERIOD_SELECT_VALUE}>
                         Choose a target period...
                       </option>
@@ -1488,7 +1527,9 @@ export function MultiPeriodImportFlow({
                             }
                             className="w-full rounded-md border border-border p-2 text-sm bg-surface"
                           >
-                            {proposal.source === "unassigned" && (
+                            {(proposal.source === "unassigned" ||
+                              (routePeriodId == null &&
+                                proposal.source === "manual_fallback")) && (
                               <option value={UNCONFIRMED_PERIOD_SELECT_VALUE}>
                                 Choose a target period...
                               </option>
@@ -1628,7 +1669,9 @@ export function MultiPeriodImportFlow({
                           )}
                           {canCreateMetrics && (
                             <option value="create">
-                              Create &ldquo;{mapping.proposedMetricName}&rdquo;
+                              {requiresExplicitMetricConfirmation(mapping.proposedMetricName)
+                                ? "Create new metric (enter name below)"
+                                : `Create "${mapping.proposedMetricName}"`}
                             </option>
                           )}
                         </select>
