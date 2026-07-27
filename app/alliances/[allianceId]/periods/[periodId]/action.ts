@@ -1,8 +1,8 @@
 "use server";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
+import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 import { prisma } from "@/app/src/lib/prisma";
-import { revalidatePath } from "next/cache";
 
 export type PeriodMetricActionResult = {
   error?: string;
@@ -69,6 +69,14 @@ export async function addMetricToPeriod(
     return { error: "Period not found" };
   }
 
+  const metric = await prisma.metric.findFirst({
+    where: { id: metricId, allianceId, active: true },
+  });
+
+  if (!metric) {
+    return { error: "Metric not found" };
+  }
+
   try {
     await prisma.metricPeriodMetric.create({
       data: {
@@ -83,7 +91,11 @@ export async function addMetricToPeriod(
     return { error: "Failed to add metric. It may already be in this period." };
   }
 
-  revalidatePath(`/alliances/${allianceId}/periods/${periodId}`);
+  revalidateAllianceData({
+    allianceId,
+    periodId,
+    domains: ["evaluation-results", "setup", "dashboard"],
+  });
   return { success: true };
 }
 
@@ -111,6 +123,14 @@ export async function editPeriodMetric(
     return { error: "Period not found" };
   }
 
+  const metric = await prisma.metric.findFirst({
+    where: { id: metricId, allianceId, active: true },
+  });
+
+  if (!metric) {
+    return { error: "Metric not found" };
+  }
+
   try {
     await prisma.metricPeriodMetric.update({
       where: { periodId_metricId: { periodId, metricId } },
@@ -121,6 +141,10 @@ export async function editPeriodMetric(
     return { error: "Failed to update metric" };
   }
 
-  revalidatePath(`/alliances/${allianceId}/periods/${periodId}`);
+  revalidateAllianceData({
+    allianceId,
+    periodId,
+    domains: ["evaluation-results", "setup", "dashboard"],
+  });
   return { success: true };
 }

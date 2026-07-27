@@ -3,12 +3,38 @@ import { Metric_Type } from "@/app/generated/prisma/client";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
+import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 import { revalidatePath } from "next/cache";
 
 export type MetricActionResult = {
   error?: string;
   success?: boolean;
 };
+
+async function revalidateMetricStateChange(
+  allianceId: string,
+  metricId: string,
+): Promise<void> {
+  const attachments = await prisma.metricPeriodMetric.findMany({
+    where: { metricId, period: { allianceId } },
+    select: { periodId: true },
+  });
+
+  revalidateAllianceData({
+    allianceId,
+    domains: ["setup", "dashboard"],
+  });
+  revalidatePath(`/alliances/${allianceId}/metrics`);
+  revalidatePath(`/alliances/${allianceId}/periods`);
+
+  for (const { periodId } of attachments) {
+    revalidateAllianceData({
+      allianceId,
+      periodId,
+      domains: ["evaluation-results"],
+    });
+  }
+}
 
 export async function createMetric(
   formData: FormData
@@ -159,7 +185,7 @@ export async function archiveMetric(
     return { error: "Failed to archive metric" };
   }
 
-  revalidatePath(`/alliances/${allianceId}/metrics`);
+  await revalidateMetricStateChange(allianceId, metricId);
   return { success: true };
 }
 
@@ -201,6 +227,6 @@ export async function restoreMetric(
     return { error: "Failed to restore metric" };
   }
 
-  revalidatePath(`/alliances/${allianceId}/metrics`);
+  await revalidateMetricStateChange(allianceId, metricId);
   return { success: true };
 }

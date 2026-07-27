@@ -13,7 +13,9 @@ type MetricFormProps = {
   name?: string;
   description?: string;
   type?: Metric_Type;
+  returnTo?: string;
   onCancel: () => void;
+  onSuccess?: () => void;
 };
 
 export function MetricForm({
@@ -23,7 +25,9 @@ export function MetricForm({
   name = "",
   description = "",
   type = Metric_Type.NUMERIC,
+  returnTo,
   onCancel,
+  onSuccess,
 }: MetricFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const [isPending, startTransition] = useTransition();
@@ -45,6 +49,8 @@ export function MetricForm({
 
       if (result.error) {
         setError(result.error);
+      } else if (onSuccess) {
+        onSuccess();
       } else {
         onCancel();
       }

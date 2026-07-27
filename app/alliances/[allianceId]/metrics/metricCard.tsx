@@ -21,6 +21,7 @@ type MetricCardProps = {
   allianceId: string;
   mode: "create" | "view";
   metric?: MetricData;
+  returnTo?: string;
 };
 
 const METRIC_TYPE_VARIANTS: Record<Metric_Type, { label: string; variant: "info" | "success" }> = {
@@ -28,9 +29,9 @@ const METRIC_TYPE_VARIANTS: Record<Metric_Type, { label: string; variant: "info"
   [Metric_Type.BOOLEAN]: { label: "Boolean", variant: "success" },
 };
 
-export function MetricCard({ allianceId, mode, metric }: MetricCardProps) {
+export function MetricCard({ allianceId, mode, metric, returnTo }: MetricCardProps) {
   const router = useRouter();
-  const [cardState, setCardState] = useState<"closed" | "form" | "view">(
+  const [cardState, setCardState] = useState<"closed" | "form" | "view" | "created">(
     mode === "create" ? "closed" : "view"
   );
   const [isPending, startTransition] = useTransition();
@@ -84,12 +85,39 @@ export function MetricCard({ allianceId, mode, metric }: MetricCardProps) {
     }
 
     return (
-      <div className="w-full">
-        <MetricForm
-          allianceId={allianceId}
-          mode="create"
-          onCancel={() => setCardState("closed")}
-        />
+      <div className="w-full flex flex-col gap-3">
+        {cardState === "created" && returnTo ? (
+          <>
+            <div className="rounded-md border border-success/30 bg-success/10 p-4 text-sm text-text-primary">
+              Metric created. Attach it to your evaluation period to complete setup.
+            </div>
+            <Button variant="primary" href={returnTo}>
+              Continue configuring this period
+            </Button>
+            <button
+              type="button"
+              onClick={() => setCardState("form")}
+              className="text-sm text-text-muted hover:text-text-primary self-start"
+            >
+              Create another metric
+            </button>
+          </>
+        ) : (
+          <MetricForm
+            allianceId={allianceId}
+            mode="create"
+            returnTo={returnTo}
+            onCancel={() => setCardState("closed")}
+            onSuccess={() => {
+              router.refresh();
+              if (returnTo) {
+                setCardState("created");
+              } else {
+                setCardState("closed");
+              }
+            }}
+          />
+        )}
       </div>
     );
   }

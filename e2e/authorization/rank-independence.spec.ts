@@ -103,59 +103,86 @@ test.describe("Rank Independence", () => {
 
     const allianceId = adminScenario.allianceId;
 
-    // 1. Navigate to setup page and verify "Configure Metrics" is incomplete
+    // 1. Setup is period-first: Create Evaluation Period is the first required task
     await page.goto(`/alliances/${allianceId}/setup`);
     await expect(page.getByRole("heading", { name: "Alliance Setup" })).toBeVisible();
 
-    // Capture initial progress count
     const progressTextBefore = await page.locator('text=/\\d+ of \\d+ complete/').textContent();
-    expect(progressTextBefore).toMatch(/0 of \d+ complete/); // Should start at 0
+    expect(progressTextBefore).toMatch(/0 of 4 complete/);
 
-    // The task should be visible and incomplete (circle icon, not checkmark)
-    const configureMetricsTask = page.locator("text=Configure Metrics").first();
-    await expect(configureMetricsTask).toBeVisible();
+    const createPeriodTask = page.locator("text=Create Evaluation Period").first();
+    await expect(createPeriodTask).toBeVisible();
 
-    // 2. Navigate to metrics page and create a metric
-    await page.goto(`/alliances/${allianceId}/metrics`);
-    await expect(page.getByRole("heading", { name: /metrics library/i })).toBeVisible();
+    // 2. Create an evaluation period
+    await page.goto(`/alliances/${allianceId}/periods`);
+    await expect(page.getByRole("heading", { name: "Evaluation Periods", exact: true })).toBeVisible();
 
-    // Click "+ Create Metric" button and wait for form
+    await page.getByRole("button", { name: /create period/i }).first().click();
+    await page.waitForSelector('input[name="name"]', { state: "visible" });
+
+    const periodName = `E2E Admin Period ${Date.now()}`;
+    await page.fill('input[name="name"]', periodName);
+    await page.getByRole("button", { name: /create/i }).last().click();
+    await expect(page.getByText(periodName)).toBeVisible();
+
+    // 3. Period task completes
+    await page.goto(`/alliances/${allianceId}/setup`);
+    const progressAfterPeriod = await page.locator('text=/\\d+ of \\d+ complete/').textContent();
+    expect(progressAfterPeriod).toMatch(/1 of 4 complete/);
+    await expect(page.locator("text=Create Evaluation Period").first()).toHaveClass(/text-text-muted/);
+
+    // 4. Metrics requires an attached metric on the target period — start from the task link
+    await page.goto(`/alliances/${allianceId}/setup`);
+    await page.getByRole("link", { name: /configure metrics/i }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/alliances/${allianceId}/periods/[^/]+$`),
+    );
+
+    await page.getByRole("link", { name: /create a metric in the metrics library/i }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/alliances/${allianceId}/metrics\\?returnTo=`),
+    );
     await page.getByRole("button", { name: /create metric/i }).first().click();
-    await page.waitForSelector('input[name="name"]', { state: 'visible' });
+    await page.waitForSelector('input[name="name"]', { state: "visible" });
 
-    // Fill in the metric form
     const metricName = `E2E Admin Metric ${Date.now()}`;
     await page.fill('input[name="name"]', metricName);
-    await page.fill('textarea[name="description"]', "Metric created by ADMIN to verify setup progression");
+    await page.fill(
+      'textarea[name="description"]',
+      "Metric created by ADMIN to verify setup progression",
+    );
+    await page.getByRole("button", { name: /create metric/i }).last().click();
+    await expect(page.getByText(/metric created/i)).toBeVisible();
+    await page
+      .getByRole("link", { name: /continue configuring this period/i })
+      .click();
+    await expect(page).toHaveURL(
+      new RegExp(`/alliances/${allianceId}/periods/[^/]+$`),
+    );
 
-    // Submit
-    await page.getByRole("button", { name: /create/i }).last().click();
+    await page.getByRole("button", { name: "Add Metric" }).click();
+    await page.selectOption('select[name="metricId"]', { label: metricName });
+    await page.fill('input[name="weight"]', "10");
+    await page.getByRole("button", { name: /^add$/i }).click();
+    await expect(page.locator("dialog")).not.toBeVisible();
 
-    // Verify the metric was created
-    await expect(page.getByText(metricName)).toBeVisible();
+    // 5. Warm client navigation: dashboard reflects updated setup progress without page.goto()
+    await page.getByRole("link", { name: "Dashboard" }).click();
+    await expect(page).toHaveURL(`/alliances/${allianceId}`);
+    await expect(page.getByText(/2 of \d+ complete/i)).toBeVisible();
+    await expect(
+      page.getByText(/Next step:.*Configure Metrics/i),
+    ).not.toBeVisible();
 
-    // 3. Return to setup page and verify task transitioned from incomplete to complete
-    await page.goto(`/alliances/${allianceId}/setup`);
-    
-    // Verify progress count increased
-    const progressTextAfter = await page.locator('text=/\\d+ of \\d+ complete/').textContent();
-    expect(progressTextAfter).not.toBe(progressTextBefore);
-    expect(progressTextAfter).toMatch(/[1-9]\d* of \d+ complete/); // At least 1 complete
+    await page.getByRole("link", { name: /continue setup/i }).click();
+    await expect(page).toHaveURL(`/alliances/${allianceId}/setup`);
+    await expect(page.locator("text=Configure Metrics").first()).toHaveClass(
+      /text-text-muted/,
+    );
 
-    // Verify the task now shows with muted styling (completed state)
-    const completedTask = page.locator("text=Configure Metrics").first();
-    await expect(completedTask).toBeVisible();
-    await expect(completedTask).toHaveClass(/text-text-muted/); // Completed tasks are muted
-
-    // 4. Negative assertion: ADMIN cannot manage leadership
-    // Navigate to invitations page (ADMIN has canInviteCollaborators)
+    // 6. Negative assertion: ADMIN cannot manage leadership
     await page.goto(`/alliances/${allianceId}/settings/invitations`);
     await expect(page.getByRole("heading", { name: /leadership team/i })).toBeVisible();
-
-    // ADMIN can see the page but not role-management UI (OWNER-only)
-    // Note: This is placeholder for future role management UI
-    // Current test proves ADMIN can access invitation page but would not see
-    // role-change controls when they exist
   });
 
   test("LEADER role advances period setup from incomplete to complete", async ({
@@ -177,7 +204,7 @@ test.describe("Rank Independence", () => {
 
     // Capture initial progress count
     const progressTextBefore = await page.locator('text=/\\d+ of \\d+ complete/').textContent();
-    expect(progressTextBefore).toMatch(/0 of \d+ complete/); // Should start at 0
+    expect(progressTextBefore).toMatch(/0 of 4 complete/); // Should start at 0
 
     // The task should be visible and incomplete
     const createPeriodTask = page.locator("text=Create Evaluation Period").first();
@@ -208,7 +235,7 @@ test.describe("Rank Independence", () => {
     // Verify progress count increased
     const progressTextAfter = await page.locator('text=/\\d+ of \\d+ complete/').textContent();
     expect(progressTextAfter).not.toBe(progressTextBefore);
-    expect(progressTextAfter).toMatch(/[1-9]\d* of \d+ complete/); // At least 1 complete
+    expect(progressTextAfter).toMatch(/1 of 4 complete/);
 
     // Verify the task now shows with muted styling (completed state)
     const completedTask = page.locator("text=Create Evaluation Period").first();
