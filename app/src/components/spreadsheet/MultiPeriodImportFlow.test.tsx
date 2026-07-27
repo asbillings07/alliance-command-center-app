@@ -1036,9 +1036,16 @@ describe("MultiPeriodImportFlow [component]", () => {
     expect(previewButton.disabled).toBe(false);
   });
 
-  it("marks only invalidated columns incomplete when group period change breaks an existing mapping", async () => {
+  it("reconciles existing metric mappings when the group period changes", async () => {
+    importMock.mockResolvedValue({
+      success: true,
+      totalCount: 1,
+      periods: [],
+    });
+
     const periodAId = "period-a";
     const periodBId = "period-b";
+    const periodCId = "period-c";
     const workbook = buildWorkbookFromRows([
       ["Player", "Kills on 3/29"],
       ["Dragon", "1500"],
@@ -1084,6 +1091,13 @@ describe("MultiPeriodImportFlow [component]", () => {
           endsAt: null,
           metrics: [],
         },
+        {
+          id: periodCId,
+          name: "Period C",
+          startsAt: "2026-01-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [{ id: "met1", name: "Kill Points" }],
+        },
       ],
       resolvedProposals: resolveImportProposals(review),
     });
@@ -1100,6 +1114,112 @@ describe("MultiPeriodImportFlow [component]", () => {
 
     await selectOptionValue(periodSelect, periodAId);
     await selectOptionValue(metricSelect, "existing:met1");
+    expect(previewButton.disabled).toBe(false);
+
+    await selectOptionValue(periodSelect, periodCId);
+    expect(metricSelect.value).toBe("existing:met1");
+    expect(previewButton.disabled).toBe(false);
+
+    await selectOptionValue(periodSelect, periodBId);
+    expect(metricSelect.value).toBe("attach:met1");
+    expect(container.textContent).not.toContain(
+      "The previously selected metric is not attached to the new target period. Choose a metric again.",
+    );
+    expect(previewButton.disabled).toBe(false);
+    expect(importMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      previewButton.click();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+
+    expect(container.textContent).toContain("Kill Points");
+    expect(container.textContent).toContain("Planned Multi-Period Import");
+    expect(container.textContent).toContain("Add to period");
+    expect(importMock).not.toHaveBeenCalled();
+
+    const confirmButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.match(/Confirm Multi-Period Import/i),
+    ) as HTMLButtonElement;
+
+    await act(async () => {
+      confirmButton.click();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+
+    expect(importMock).toHaveBeenCalledTimes(1);
+    const payload = importMock.mock.calls[0]?.[0];
+    expect(payload?.groups[0]?.mappings[0]?.target).toEqual({
+      kind: "attach",
+      metricId: "met1",
+    });
+  });
+
+  it("invalidates existing mappings when the metric is neither on the new period nor attachable", async () => {
+    const periodAId = "period-a";
+    const periodBId = "period-b";
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Kills on 3/29"],
+      ["Dragon", "1500"],
+    ]);
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: "A1",
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "Kills on 3/29",
+          headerAddress: "B1",
+          isNumeric: true,
+        },
+      ],
+    });
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      routePeriodId: null,
+      allianceLibraryMetrics: [{ id: "lib-kills", name: "Kills" }],
+      alliancePeriods: [
+        {
+          id: periodAId,
+          name: "Period A",
+          startsAt: "2026-03-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [{ id: "period-only", name: "Period-only Metric" }],
+        },
+        {
+          id: periodBId,
+          name: "Period B",
+          startsAt: "2026-02-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [],
+        },
+      ],
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    const metricSelect = container.querySelector(
+      'select[aria-label="Metric for Kills on 3/29"]',
+    ) as HTMLSelectElement;
+    const periodSelect = container.querySelector(
+      'select[id^="multi-period-target-"]',
+    ) as HTMLSelectElement;
+    const previewButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Preview Multi-Period Import"),
+    ) as HTMLButtonElement;
+
+    await selectOptionValue(periodSelect, periodAId);
+    await selectOptionValue(metricSelect, "existing:period-only");
     expect(previewButton.disabled).toBe(false);
 
     await selectOptionValue(periodSelect, periodBId);

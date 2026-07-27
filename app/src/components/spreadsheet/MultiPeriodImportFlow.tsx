@@ -25,6 +25,7 @@ import {
   buildCommittedMultiPeriodTranslationSummary,
   type ColumnTarget,
 } from "@/app/src/lib/importTranslation";
+import type { ImportMetricTarget } from "@/app/src/lib/metricResolution";
 import {
   getPreviewEntries,
   dispositionForTarget,
@@ -206,6 +207,16 @@ function reconcileColumnMappingForPeriodChange(
         ...nextMapping,
         confirmationStatus: "confirmed_metric",
         target: mapping.target,
+      };
+    }
+    const attachableOnNewPeriod =
+      canAttachMetrics &&
+      attachableLibrary.some((metric) => metric.id === existingTarget.metricId);
+    if (attachableOnNewPeriod) {
+      return {
+        ...nextMapping,
+        confirmationStatus: "confirmed_metric",
+        target: { kind: "attach", metricId: existingTarget.metricId },
       };
     }
     return {
@@ -431,13 +442,10 @@ function tokenToTarget(token: string, proposedMetricName: string): ColumnTarget 
   return { kind: "skip" };
 }
 
-function toWireTarget(
-  target: ColumnTarget,
-): { kind: "existing"; metricId: string } | { kind: "create"; name: string } {
+function toWireTarget(target: ColumnTarget): ImportMetricTarget {
   if (target.kind === "create") return { kind: "create", name: target.name };
-  if (target.kind === "existing" || target.kind === "attach") {
-    return { kind: "existing", metricId: target.metricId };
-  }
+  if (target.kind === "attach") return { kind: "attach", metricId: target.metricId };
+  if (target.kind === "existing") return { kind: "existing", metricId: target.metricId };
   throw new Error("Cannot send a skipped column");
 }
 

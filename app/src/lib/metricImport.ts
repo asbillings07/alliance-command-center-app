@@ -148,7 +148,7 @@ export function validateColumnTargets(
       throw new Error("Source column name is required for every mapping");
     }
 
-    if (target.kind === "existing") {
+    if (target.kind === "existing" || target.kind === "attach") {
       if (typeof target.metricId !== "string" || !target.metricId) {
         throw new Error("Invalid metric ID");
       }
