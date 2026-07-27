@@ -177,6 +177,11 @@ test.describe("Spreadsheet-first setup (#185 PR 3)", () => {
     await expect(
       page.getByRole("link", { name: /Import Evaluation Results/i }),
     ).toHaveCount(0);
+
+    await page
+      .getByRole("link", { name: "Import Members →" })
+      .click();
+    await expect(page).toHaveURL(`/alliances/${allianceId}/members/import`);
   });
 
   test("leader without IMPORT_MEMBERS sees consistent blocked explanation", async ({
@@ -190,6 +195,7 @@ test.describe("Spreadsheet-first setup (#185 PR 3)", () => {
     await page.goto(`/alliances/${allianceId}/setup`);
 
     await expect(page.getByText(DATA_BLOCKED_BY_MEMBERS)).toBeVisible();
+    await expect(page.getByRole("link", { name: "Import Members →" })).toHaveCount(0);
 
     await page.goto(`/alliances/${allianceId}/setup/import`);
     await expect(page.getByText("Import members first")).toBeVisible();
