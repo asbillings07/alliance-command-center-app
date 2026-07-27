@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { ColumnTranslation } from "@/app/src/lib/importTranslation";
 import {
   columnTranslationRequiresAction,
-  getDefaultOpenMetricColumnIndex,
+  getDefaultActiveMetricIndex,
+  getMetricIndicesNeedingReview,
   getMetricPreviewCounts,
   shouldSourceColumnTranslationsDefaultOpen,
   type MetricImportPreviewData,
@@ -164,10 +165,70 @@ describe("importPreviewHelpers disclosure", () => {
     });
 
     expect(
-      getDefaultOpenMetricColumnIndex([clean, unmatched], {
+      getDefaultActiveMetricIndex([clean, unmatched], {
         1: { m1: 0, m2: 1 },
         2: {},
       }),
-    ).toBe(2);
+    ).toBe(1);
+  });
+
+  it("lists metric indices that still need review", () => {
+    const clean = preview({ columnIndex: 1, displayName: "Clean Metric" });
+    const unmatched = preview({
+      columnIndex: 2,
+      displayName: "Needs Review",
+      summary: {
+        ...preview().summary,
+        unmatched: 1,
+        results: [
+          {
+            rawName: "Ghost",
+            value: undefined,
+            rawValue: "50",
+            sourceRow: 2,
+            confidence: 0,
+            status: "unmatched",
+          },
+        ],
+      },
+    });
+    const duplicate = preview({
+      columnIndex: 3,
+      displayName: "Duplicate Metric",
+      summary: {
+        ...preview().summary,
+        duplicates: 1,
+        results: [
+          {
+            rawName: "Dragon",
+            matchedName: "Dragon",
+            memberId: "m1",
+            value: 100,
+            rawValue: "100",
+            sourceRow: 2,
+            confidence: 1,
+            status: "matched",
+          },
+          {
+            rawName: "Dragon",
+            matchedName: "Dragon",
+            memberId: "m1",
+            value: 200,
+            rawValue: "200",
+            sourceRow: 3,
+            confidence: 1,
+            status: "duplicate",
+          },
+        ],
+      },
+    });
+
+    expect(
+      getMetricIndicesNeedingReview([clean, unmatched, duplicate], {
+        1: { m1: 0, m2: 1 },
+        2: {},
+        3: { m1: 0 },
+      }),
+    ).toEqual([1, 2]);
   });
 });

@@ -74,13 +74,26 @@ export function getMetricPreviewCounts(
   };
 }
 
-export function getDefaultOpenMetricColumnIndex(
+/** Index in `previews` of the metric leaders should review first (first needs_review, else 0). */
+export function getDefaultActiveMetricIndex(
   previews: MetricImportPreviewData[],
   selectionsByColumn: Record<number, Record<string, number> | undefined>,
-): number | null {
-  for (const preview of previews) {
+): number {
+  for (let index = 0; index < previews.length; index++) {
+    const preview = previews[index];
     const { status } = getMetricPreviewCounts(preview, selectionsByColumn[preview.columnIndex]);
-    if (status === "needs_review") return preview.columnIndex;
+    if (status === "needs_review") return index;
   }
-  return null;
+  return 0;
+}
+
+export function getMetricIndicesNeedingReview(
+  previews: MetricImportPreviewData[],
+  selectionsByColumn: Record<number, Record<string, number> | undefined>,
+): number[] {
+  return previews.reduce<number[]>((indices, preview, index) => {
+    const { status } = getMetricPreviewCounts(preview, selectionsByColumn[preview.columnIndex]);
+    if (status === "needs_review") indices.push(index);
+    return indices;
+  }, []);
 }

@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/app/src/components/Badge";
 import {
-  getDefaultOpenMetricColumnIndex,
+  getDefaultActiveMetricIndex,
+  getMetricIndicesNeedingReview,
   getMetricPreviewCounts,
   type MetricImportPreviewData,
   type MetricDisposition,
@@ -28,40 +29,172 @@ export function MetricPreviewAccordion({
   onDuplicateSelection,
   contextLabelForPreview,
 }: MetricPreviewAccordionProps) {
-  const defaultOpenColumnIndex = useMemo(
-    () => getDefaultOpenMetricColumnIndex(previews, selectionsByColumn),
+  const [activeIndex, setActiveIndex] = useState(() =>
+    getDefaultActiveMetricIndex(previews, selectionsByColumn),
+  );
+  const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
+
+  const reviewIndices = useMemo(
+    () => getMetricIndicesNeedingReview(previews, selectionsByColumn),
     [previews, selectionsByColumn],
   );
 
+  const navigableIndices = useMemo(
+    () => (needsReviewOnly ? reviewIndices : previews.map((_, index) => index)),
+    [needsReviewOnly, reviewIndices, previews],
+  );
+
+  const toggleNeedsReviewOnly = () => {
+    setNeedsReviewOnly((current) => {
+      const next = !current;
+      if (next && reviewIndices.length > 0 && !reviewIndices.includes(activeIndex)) {
+        setActiveIndex(reviewIndices[0]);
+      }
+      return next;
+    });
+  };
+
   if (previews.length === 0) return null;
 
+  const safeActiveIndex = Math.min(activeIndex, previews.length - 1);
+  const activePreview = previews[safeActiveIndex];
+  const activeSelections = selectionsByColumn[activePreview.columnIndex];
+  const contextLabel = contextLabelForPreview?.(activePreview);
+
+  const positionInNavigable = navigableIndices.indexOf(safeActiveIndex);
+  const canGoPrevious = positionInNavigable > 0;
+  const canGoNext = positionInNavigable >= 0 && positionInNavigable < navigableIndices.length - 1;
+
+  const goToIndex = (index: number) => {
+    if (index >= 0 && index < previews.length) setActiveIndex(index);
+  };
+
+  const goPrevious = () => {
+    if (canGoPrevious) setActiveIndex(navigableIndices[positionInNavigable - 1]);
+  };
+
+  const goNext = () => {
+    if (canGoNext) setActiveIndex(navigableIndices[positionInNavigable + 1]);
+  };
+
+  const positionLabel = needsReviewOnly && reviewIndices.length > 0
+    ? `Needs review ${positionInNavigable + 1} of ${navigableIndices.length}`
+    : `Metric ${safeActiveIndex + 1} of ${previews.length}`;
+
+  const headerContext = contextLabel ? `Period: ${contextLabel} — ${positionLabel}` : positionLabel;
+
   return (
-    <div className="flex flex-col gap-2" role="region" aria-label="Metric import previews">
-      {previews.map((preview) => (
-        <MetricPreviewAccordionItem
-          key={preview.columnIndex}
-          preview={preview}
-          selections={selectionsByColumn[preview.columnIndex]}
-          onDuplicateSelection={onDuplicateSelection}
-          defaultOpen={preview.columnIndex === defaultOpenColumnIndex}
-          contextLabel={contextLabelForPreview?.(preview)}
-        />
-      ))}
+    <div className="flex flex-col gap-3" role="region" aria-label="Metric import previews">
+      <div
+        className="flex flex-col gap-3 p-3 border border-border bg-surface-secondary rounded-lg"
+        data-testid="metric-preview-navigator"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-medium text-text-primary" id="metric-preview-position">
+            {headerContext}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {reviewIndices.length > 0 && (
+              <button
+                type="button"
+                data-testid="metric-preview-needs-review-filter"
+                aria-pressed={needsReviewOnly}
+                aria-label={
+                  needsReviewOnly
+                    ? `Showing only metrics needing review (${reviewIndices.length}). Click to show all metrics.`
+                    : `${reviewIndices.length} metrics need review. Click to filter navigation to those metrics only.`
+                }
+                onClick={toggleNeedsReviewOnly}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                  needsReviewOnly
+                    ? "bg-warning/20 border-warning/40 text-warning"
+                    : "bg-surface border-border text-text-secondary hover:bg-surface-elevated"
+                }`}
+              >
+                <Badge variant="warning" size="sm">
+                  {reviewIndices.length} need review
+                </Badge>
+                {needsReviewOnly ? "Showing review only" : "Filter to review"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-testid="metric-preview-previous"
+              aria-label="Previous metric"
+              disabled={!canGoPrevious}
+              onClick={goPrevious}
+              className="px-3 py-1.5 rounded-md border border-border bg-surface text-sm text-text-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              data-testid="metric-preview-next"
+              aria-label="Next metric"
+              disabled={!canGoNext}
+              onClick={goNext}
+              className="px-3 py-1.5 rounded-md border border-border bg-surface text-sm text-text-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              Next
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-1 sm:flex-1 sm:max-w-md">
+            <label htmlFor="metric-preview-jump" className="text-xs font-medium text-text-secondary">
+              Jump to metric
+            </label>
+            <select
+              id="metric-preview-jump"
+              data-testid="metric-preview-jump"
+              aria-labelledby="metric-preview-position metric-preview-jump"
+              value={String(safeActiveIndex)}
+              onChange={(event) => goToIndex(Number(event.target.value))}
+              className="w-full px-3 py-1.5 rounded-md border border-border bg-surface text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              {(needsReviewOnly ? reviewIndices : previews.map((_, index) => index)).map((index) => {
+                const preview = previews[index];
+                const counts = getMetricPreviewCounts(preview, selectionsByColumn[preview.columnIndex]);
+                const periodSuffix = contextLabelForPreview?.(preview)
+                  ? ` (${contextLabelForPreview(preview)})`
+                  : "";
+                return (
+                  <option key={preview.columnIndex} value={String(index)}>
+                    {preview.displayName}
+                    {periodSuffix}
+                    {counts.status === "needs_review" ? " — Needs review" : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <MetricPreviewDetail
+        key={activePreview.columnIndex}
+        preview={activePreview}
+        selections={activeSelections}
+        onDuplicateSelection={onDuplicateSelection}
+        contextLabel={contextLabel}
+      />
     </div>
   );
 }
 
-function MetricPreviewAccordionItem({
+function MetricPreviewDetail({
   preview,
   selections,
   onDuplicateSelection,
-  defaultOpen,
   contextLabel,
 }: {
   preview: MetricImportPreviewData;
   selections: Record<string, number> | undefined;
   onDuplicateSelection: (columnIndex: number, memberId: string, resultIndex: number) => void;
-  defaultOpen: boolean;
   contextLabel?: string;
 }) {
   const { summary, skippedBlankCells } = preview;
@@ -81,41 +214,25 @@ function MetricPreviewAccordionItem({
   }, [summary]);
 
   const hasDuplicates = summary.duplicates > 0;
-  const summaryId = `metric-preview-summary-${preview.columnIndex}`;
-  const panelId = `metric-preview-panel-${preview.columnIndex}`;
+  const headerId = `metric-preview-header-${preview.columnIndex}`;
 
   return (
-    <details
-      open={defaultOpen}
-      onToggle={(event) => {
-        event.currentTarget
-          .querySelector("summary")
-          ?.setAttribute("aria-expanded", event.currentTarget.open ? "true" : "false");
-      }}
-      className="border border-border bg-surface-secondary rounded-lg overflow-hidden group"
+    <section
+      aria-labelledby={headerId}
+      className="border border-border bg-surface-secondary rounded-lg overflow-hidden"
       data-testid={`metric-preview-${preview.columnIndex}`}
       data-metric-status={counts.status}
     >
-      <summary
-        id={summaryId}
-        aria-controls={panelId}
-        aria-expanded={defaultOpen ? "true" : "false"}
-        className="cursor-pointer list-none px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset select-none [&::-webkit-details-marker]:hidden"
+      <div
+        id={headerId}
+        className="px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-border/60"
       >
-        <div className="flex items-start sm:items-center gap-2 min-w-0 flex-wrap">
-          <span
-            aria-hidden="true"
-            className="text-text-muted transition-transform group-open:rotate-90 shrink-0 mt-0.5 sm:mt-0"
-          >
-            ▸
-          </span>
-          <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <span className="font-semibold text-text-primary">{preview.displayName}</span>
-            <span className={`px-2 py-0.5 rounded text-xs ${badge.className}`}>{badge.label}</span>
-            <Badge variant={counts.status === "needs_review" ? "warning" : "success"} size="sm">
-              {counts.status === "needs_review" ? "Needs review" : "Ready"}
-            </Badge>
-          </div>
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <span className="font-semibold text-text-primary">{preview.displayName}</span>
+          <span className={`px-2 py-0.5 rounded text-xs ${badge.className}`}>{badge.label}</span>
+          <Badge variant={counts.status === "needs_review" ? "warning" : "success"} size="sm">
+            {counts.status === "needs_review" ? "Needs review" : "Ready"}
+          </Badge>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs sm:justify-end">
@@ -142,9 +259,9 @@ function MetricPreviewAccordionItem({
             {contextLabel ? ` · ${contextLabel}` : ""}
           </span>
         </div>
-      </summary>
+      </div>
 
-      <div id={panelId} aria-labelledby={summaryId} className="px-4 pb-4 flex flex-col gap-3 border-t border-border/60">
+      <div className="px-4 pb-4 flex flex-col gap-3">
         <p className="text-xs text-text-secondary pt-3">
           Proposed metric identity: <strong>{preview.proposedMetricName}</strong>
           <span className="sm:hidden text-text-muted">
@@ -182,7 +299,10 @@ function MetricPreviewAccordionItem({
           </details>
         )}
 
-        <div className="border border-border rounded-md overflow-hidden bg-surface">
+        <div
+          className="border border-border rounded-md overflow-hidden bg-surface"
+          data-testid="metric-preview-row-detail"
+        >
           <table className="w-full text-sm">
             <thead className="bg-surface-secondary border-b border-border">
               <tr className="text-text-primary font-semibold">
@@ -200,6 +320,7 @@ function MetricPreviewAccordionItem({
                 return (
                   <tr
                     key={i}
+                    data-testid={`metric-preview-row-${preview.columnIndex}-${i}`}
                     className={
                       result.status === "invalid_value" ? "bg-danger/20 text-danger font-semibold border-t border-border" :
                       result.status === "unmatched" ? "bg-danger/10 text-text-secondary border-t border-border" :
@@ -247,6 +368,6 @@ function MetricPreviewAccordionItem({
           </table>
         </div>
       </div>
-    </details>
+    </section>
   );
 }

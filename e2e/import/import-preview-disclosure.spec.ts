@@ -26,7 +26,7 @@ test.describe("Results import preview progressive disclosure", () => {
     }
   });
 
-  test("@a11y keeps import preview disclosures accessible with collapsed defaults", async ({
+  test("@a11y keeps import preview navigator accessible with one active metric workspace", async ({
     page,
     login,
     adminScenario,
@@ -84,27 +84,33 @@ test.describe("Results import preview progressive disclosure", () => {
     await expect(translations).toBeVisible();
     await expect(translations.getByText("All columns mapped")).toBeVisible();
 
-    const killPointsPreview = page.getByTestId("metric-preview-1");
-    const heroPowerPreview = page.getByTestId("metric-preview-2");
-    await expect(killPointsPreview).toHaveAttribute("data-metric-status", "needs_review");
-    await expect(heroPowerPreview).toHaveAttribute("data-metric-status", "ready");
+    const navigator = page.getByTestId("metric-preview-navigator");
+    await expect(navigator).toBeVisible();
+    await expect(navigator).toContainText("Metric 1 of 2");
+    await expect(navigator).toContainText("1 need review");
 
-    await expect(killPointsPreview).toHaveAttribute("open", "");
-    await expect(heroPowerPreview).not.toHaveAttribute("open");
+    const activePreview = page.locator('[data-metric-status="needs_review"]');
+    await expect(activePreview).toHaveCount(1);
+    await expect(activePreview).toHaveAttribute("data-testid", "metric-preview-1");
+    await expect(page.getByTestId("metric-preview-2")).toHaveCount(0);
 
-    await heroPowerPreview.locator("#metric-preview-summary-2").click();
-    await expect(heroPowerPreview).toHaveAttribute("open", "");
-    await expect(killPointsPreview).toHaveAttribute("open", "");
+    await page.getByTestId("metric-preview-next").click();
+    await expect(navigator).toContainText("Metric 2 of 2");
+    await expect(page.locator('[data-metric-status="ready"]')).toHaveCount(1);
+    await expect(page.getByTestId("metric-preview-2")).toHaveCount(1);
+    await expect(page.getByTestId("metric-preview-1")).toHaveCount(0);
 
-    await killPointsPreview.locator("#metric-preview-summary-1").focus();
+    await page.getByLabel("Jump to metric").selectOption({ index: 0 });
+    await expect(page.getByTestId("metric-preview-1")).toHaveCount(1);
+    await expect(page.getByTestId("metric-preview-2")).toHaveCount(0);
+
+    await page.getByTestId("metric-preview-needs-review-filter").click();
+    await expect(navigator).toContainText("Needs review 1 of 1");
+    await expect(page.getByTestId("metric-preview-next")).toBeDisabled();
+
+    await page.getByTestId("metric-preview-previous").focus();
     await page.keyboard.press("Enter");
-    await expect(killPointsPreview).not.toHaveAttribute("open");
-    await expect(killPointsPreview.locator("#metric-preview-summary-1")).toHaveAttribute("aria-expanded", "false");
-
-    await heroPowerPreview.locator("#metric-preview-summary-2").focus();
-    await page.keyboard.press("Space");
-    await expect(heroPowerPreview).not.toHaveAttribute("open");
-    await expect(heroPowerPreview.locator("#metric-preview-summary-2")).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByTestId("metric-preview-previous")).toBeDisabled();
 
     await expect(translations.locator("summary")).toHaveAttribute("aria-expanded", "false");
 
@@ -117,7 +123,7 @@ test.describe("Results import preview progressive disclosure", () => {
     });
   });
 
-  test("leaders can expand any metric preview independently during import review", async ({
+  test("leaders can navigate metric previews one at a time during import review", async ({
     page,
     login,
     adminScenario,
@@ -155,13 +161,10 @@ test.describe("Results import preview progressive disclosure", () => {
 
     await page.getByRole("button", { name: "Preview Import" }).click();
 
-    const metricPreview = page.getByTestId("metric-preview-1");
-    await expect(metricPreview).toHaveAttribute("data-metric-status", "ready");
-    await expect(metricPreview).not.toHaveAttribute("open");
-    await expect(metricPreview.getByText("1 importable")).toBeVisible();
-
-    await metricPreview.locator("#metric-preview-summary-1").click();
-    await expect(metricPreview).toHaveAttribute("open", "");
-    await expect(metricPreview.getByRole("cell", { name: "DisclosureHero" }).first()).toBeVisible();
+    const activePreview = page.getByTestId("metric-preview-1");
+    await expect(activePreview).toHaveAttribute("data-metric-status", "ready");
+    await expect(activePreview.getByText("1 importable")).toBeVisible();
+    await expect(page.getByTestId("metric-preview-row-detail")).toHaveCount(1);
+    await expect(activePreview.getByRole("cell", { name: "DisclosureHero" }).first()).toBeVisible();
   });
 });

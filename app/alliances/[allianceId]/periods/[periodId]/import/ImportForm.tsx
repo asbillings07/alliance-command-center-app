@@ -1653,6 +1653,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         )}
 
         <MetricPreviewAccordion
+          key={previews.map((item) => item.columnIndex).join("-")}
           previews={previews}
           selectionsByColumn={duplicateSelections}
           onDuplicateSelection={handleDuplicateSelection}

@@ -1437,6 +1437,7 @@ export function MultiPeriodImportFlow({
         )}
 
         <MetricPreviewAccordion
+          key={previews.map((item) => item.columnIndex).join("-")}
           previews={previews}
           selectionsByColumn={duplicateSelections}
           onDuplicateSelection={handleDuplicateSelection}
