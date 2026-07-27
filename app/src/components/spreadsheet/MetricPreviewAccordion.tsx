@@ -347,7 +347,7 @@ function MetricPreviewDetail({
                       {result.status === "invalid_value" ? (
                         <span className="px-2 py-0.5 rounded text-xs bg-danger/20 text-danger font-bold">Invalid Value</span>
                       ) : result.status === "unmatched" ? (
-                        <span className="px-2 py-0.5 rounded text-xs bg-danger/10 text-danger">No Match</span>
+                        <span className="px-2 py-0.5 rounded text-xs bg-danger-dark text-text-primary font-medium">No Match</span>
                       ) : memberHasDuplicates ? (
                         <button
                           type="button"
