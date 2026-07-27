@@ -152,7 +152,9 @@ test.describe("Rank Independence", () => {
       "Metric created by ADMIN to verify setup progression",
     );
     await page.getByRole("button", { name: /create metric/i }).last().click();
-    await expect(page.getByText(/metric created/i)).toBeVisible();
+    await expect(
+      page.getByText("Metric created. Attach it to your evaluation period"),
+    ).toBeVisible();
     await page
       .getByRole("link", { name: /continue configuring this period/i })
       .click();
