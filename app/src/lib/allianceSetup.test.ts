@@ -236,7 +236,7 @@ describe("getAllianceSetupStatus", () => {
     });
   });
 
-  it("blocks the data task when zero members exist", async () => {
+  it("blocks the data task when zero members exist for a leader without blockedFix", async () => {
     mockPrisma.metric.count.mockResolvedValue(1);
     mockPrisma.metricPeriod.count.mockResolvedValue(1);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
@@ -269,7 +269,58 @@ describe("getAllianceSetupStatus", () => {
       blockedReason:
         "An Admin or Owner must import members before you can import evaluation results.",
     });
+    expect(dataTask?.blockedFix).toBeUndefined();
     expect(status.recommendedTask).toBeNull();
+  });
+
+  it("offers blockedFix on data task when admin can import members", async () => {
+    mockPrisma.metric.count.mockResolvedValue(1);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(0);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+    mockPrisma.metricPeriod.findFirst.mockResolvedValue(defaultTargetPeriod);
+
+    const adminPermissions = {
+      canViewAlliance: true,
+      canViewMembers: true,
+      canViewNotes: true,
+      canManageNotes: true,
+      canImportMetrics: true,
+      canManageMembers: true,
+      canImportMembers: true,
+      canConfigureMetrics: true,
+      canConfigurePeriods: true,
+      canInviteCollaborators: true,
+      canManageLeadership: true,
+      canManageAlliance: true,
+    };
+
+    const status = await getAllianceSetupStatus("alliance-1", adminPermissions);
+    const dataTask = status.tasks.find((t) => t.id === "data");
+
+    expect(dataTask?.blockedFix).toEqual({
+      label: "Import Members",
+      href: "/alliances/alliance-1/members/import",
+    });
+  });
+
+  it("omits blockedFix when permissions are not supplied", async () => {
+    mockPrisma.metric.count.mockResolvedValue(1);
+    mockPrisma.metricPeriod.count.mockResolvedValue(1);
+    mockPrisma.allianceMembership.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    mockPrisma.allianceMember.count.mockResolvedValue(0);
+    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
+    mockPrisma.metricPeriod.findFirst.mockResolvedValue(defaultTargetPeriod);
+
+    const status = await getAllianceSetupStatus("alliance-1");
+    const dataTask = status.tasks.find((t) => t.id === "data");
+
+    expect(dataTask?.actionable).toBe(false);
+    expect(dataTask?.blockedReason).toBeDefined();
+    expect(dataTask?.blockedFix).toBeUndefined();
   });
 
   it("surfaces archived-only periods for restore/select/create guidance", async () => {
@@ -286,6 +337,10 @@ describe("getAllianceSetupStatus", () => {
     expect(status.targetPeriodId).toBeNull();
     expect(status.hasArchivedPeriodsOnly).toBe(true);
     expect(status.tasks.find((t) => t.id === "period")?.completed).toBe(false);
+    expect(status.tasks.find((t) => t.id === "period")?.hint).toBe(
+      "Only inactive evaluation periods exist. Restore one or create a new period to continue.",
+    );
+    expect(status.tasks.find((t) => t.id === "period")?.actionable).toBe(true);
   });
 
   it("filters tasks by permissions when provided", async () => {

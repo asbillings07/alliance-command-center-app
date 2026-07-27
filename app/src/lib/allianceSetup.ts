@@ -47,7 +47,11 @@ export type SetupTask = {
   typicallyCompletedBy: TypicalRole;
   required: boolean;
   actionable: boolean;
+  /** Explanatory note shown regardless of actionable state. */
+  hint?: string;
   blockedReason?: string;
+  /** Direct link to unblock this task, only when the caller can perform it. */
+  blockedFix?: { label: string; href: string };
 };
 
 export type AllianceSetupStatus = {
@@ -87,6 +91,13 @@ type SetupCounts = {
 
 const DATA_BLOCKED_BY_MEMBERS_REASON =
   "An Admin or Owner must import members before you can import evaluation results.";
+
+const ARCHIVED_PERIODS_ONLY_HINT =
+  "Only inactive evaluation periods exist. Restore one or create a new period to continue.";
+
+function getMembersImportHref(allianceId: string): string {
+  return `/alliances/${allianceId}/members/import`;
+}
 
 /**
  * Fetch all setup-relevant counts in a single database round-trip.
@@ -133,12 +144,21 @@ function buildCompletionByTask(
 function getTaskActionability(
   taskId: SetupTaskId,
   counts: SetupCounts,
-): Pick<SetupTask, "actionable" | "blockedReason"> {
+  allianceId: string,
+  permissions?: PermissionSet,
+): Pick<SetupTask, "actionable" | "blockedReason" | "blockedFix"> {
   if (taskId === "data" && counts.members === 0) {
-    return {
+    const result: Pick<SetupTask, "actionable" | "blockedReason" | "blockedFix"> = {
       actionable: false,
       blockedReason: DATA_BLOCKED_BY_MEMBERS_REASON,
     };
+    if (permissions?.canImportMembers) {
+      result.blockedFix = {
+        label: "Import Members",
+        href: getMembersImportHref(allianceId),
+      };
+    }
+    return result;
   }
   return { actionable: true };
 }
@@ -272,9 +292,11 @@ export async function getAllianceSetupStatus(
   const tasks: SetupTask[] = applicableTasks.map((definition) => {
     let href = definition.href(allianceId);
     const completed = completionByTask[definition.id];
-    const { actionable, blockedReason } = getTaskActionability(
+    const { actionable, blockedReason, blockedFix } = getTaskActionability(
       definition.id,
       counts,
+      allianceId,
+      permissions,
     );
 
     if (definition.id === "metrics") {
@@ -297,6 +319,11 @@ export async function getAllianceSetupStatus(
       }
     }
 
+    const hint =
+      definition.id === "period" && hasArchivedPeriodsOnly
+        ? ARCHIVED_PERIODS_ONLY_HINT
+        : undefined;
+
     return {
       id: definition.id,
       label: definition.label,
@@ -306,7 +333,9 @@ export async function getAllianceSetupStatus(
       typicallyCompletedBy: definition.typicallyCompletedBy,
       required: definition.required,
       actionable,
+      hint,
       blockedReason,
+      blockedFix,
     };
   });
 
