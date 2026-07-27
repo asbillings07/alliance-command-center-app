@@ -1,3 +1,4 @@
+import { getAllianceSetupStatus } from "../allianceSetup";
 import { prisma } from "../prisma";
 
 /**
@@ -41,10 +42,10 @@ export type AllianceReadinessSummary = {
   stalled: number;
 };
 
-export type JumpLink = {
-  label: string;
-  href: string;
-};
+export type AlliancePlatformSetupStatus =
+  | "complete"
+  | "incomplete"
+  | "unavailable";
 
 export type TimelineEvent = {
   event: string;
@@ -93,100 +94,140 @@ export async function getAllianceHealth(): Promise<AllianceHealth> {
   return { total, activeToday, newThisWeek };
 }
 
+const allianceReadinessSelect = {
+  id: true,
+  name: true,
+  createdAt: true,
+  updatedAt: true,
+  _count: {
+    select: {
+      metrics: true,
+      metricPeriods: true,
+      allianceMembers: true,
+    },
+  },
+  allianceMembers: {
+    select: {
+      createdAt: true,
+      _count: { select: { metricEntries: true } },
+      metricEntries: {
+        select: { recordedAt: true },
+        orderBy: { recordedAt: "desc" as const },
+        take: 1,
+      },
+    },
+    where: { archivedAt: null },
+  },
+} as const;
+
+type AllianceReadinessRecord = {
+  id: string;
+  name: string;
+  createdAt: Date;
+  updatedAt: Date;
+  _count: {
+    metrics: number;
+    metricPeriods: number;
+    allianceMembers: number;
+  };
+  allianceMembers: Array<{
+    createdAt: Date;
+    _count: { metricEntries: number };
+    metricEntries: Array<{ recordedAt: Date }>;
+  }>;
+};
+
+function mapAllianceToReadinessItem(
+  alliance: AllianceReadinessRecord
+): AllianceReadinessItem {
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+
+  const hasMetrics = alliance._count.metrics > 0;
+  const hasPeriods = alliance._count.metricPeriods > 0;
+  // Use filtered allianceMembers array (archivedAt: null), not _count which includes archived
+  const hasMembers = alliance.allianceMembers.length > 0;
+  const hasData = alliance.allianceMembers.some(
+    (m) => m._count.metricEntries > 0
+  );
+
+  const completedSteps = [hasMetrics, hasPeriods, hasMembers, hasData].filter(
+    Boolean
+  ).length;
+  const progress = Math.round((completedSteps / 4) * 100);
+
+  const isComplete = hasMetrics && hasPeriods && hasMembers && hasData;
+  const isNew = alliance.createdAt >= weekAgo;
+
+  const lastMemberActivity = alliance.allianceMembers
+    .flatMap((m) => m.metricEntries.map((e) => e.recordedAt))
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+
+  const lastMemberCreated = alliance.allianceMembers
+    .map((m) => m.createdAt)
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+
+  const lastActivity = lastMemberActivity || lastMemberCreated || null;
+
+  const stalledThreshold = new Date();
+  stalledThreshold.setDate(stalledThreshold.getDate() - 7);
+  const isStalled =
+    !isNew &&
+    !isComplete &&
+    (!lastActivity || lastActivity < stalledThreshold);
+
+  let status: AllianceReadinessStatus;
+  if (isNew) {
+    status = "new";
+  } else if (isStalled) {
+    status = "stalled";
+  } else if (isComplete) {
+    status = "ready";
+  } else {
+    status = "needsSetup";
+  }
+
+  return {
+    id: alliance.id,
+    name: alliance.name,
+    status,
+    progress,
+    lastActivity,
+    createdAt: alliance.createdAt,
+    hasMetrics,
+    hasPeriods,
+    hasMembers,
+    hasData,
+  };
+}
+
 /**
  * Get readiness status for all alliances.
  */
 export async function getAllianceReadiness(): Promise<AllianceReadinessItem[]> {
-  const weekAgo = new Date();
-  weekAgo.setDate(weekAgo.getDate() - 7);
-
   const alliances = await prisma.alliance.findMany({
-    select: {
-      id: true,
-      name: true,
-      createdAt: true,
-      updatedAt: true,
-      _count: {
-        select: {
-          metrics: true,
-          metricPeriods: true,
-          allianceMembers: true,
-        },
-      },
-      allianceMembers: {
-        select: {
-          createdAt: true,
-          _count: { select: { metricEntries: true } },
-          metricEntries: {
-            select: { recordedAt: true },
-            orderBy: { recordedAt: "desc" },
-            take: 1,
-          },
-        },
-        where: { archivedAt: null },
-      },
-    },
+    select: allianceReadinessSelect,
     orderBy: { createdAt: "desc" },
   });
 
-  return alliances.map((alliance) => {
-    const hasMetrics = alliance._count.metrics > 0;
-    const hasPeriods = alliance._count.metricPeriods > 0;
-    // Use filtered allianceMembers array (archivedAt: null), not _count which includes archived
-    const hasMembers = alliance.allianceMembers.length > 0;
-    const hasData = alliance.allianceMembers.some(
-      (m) => m._count.metricEntries > 0
-    );
+  return alliances.map(mapAllianceToReadinessItem);
+}
 
-    const completedSteps = [hasMetrics, hasPeriods, hasMembers, hasData].filter(
-      Boolean
-    ).length;
-    const progress = Math.round((completedSteps / 4) * 100);
-
-    const isComplete = hasMetrics && hasPeriods && hasMembers && hasData;
-    const isNew = alliance.createdAt >= weekAgo;
-
-    const lastMemberActivity = alliance.allianceMembers
-      .flatMap((m) => m.metricEntries.map((e) => e.recordedAt))
-      .sort((a, b) => b.getTime() - a.getTime())[0];
-
-    const lastMemberCreated = alliance.allianceMembers
-      .map((m) => m.createdAt)
-      .sort((a, b) => b.getTime() - a.getTime())[0];
-
-    const lastActivity = lastMemberActivity || lastMemberCreated || null;
-
-    const stalledThreshold = new Date();
-    stalledThreshold.setDate(stalledThreshold.getDate() - 7);
-    const isStalled =
-      !isNew &&
-      !isComplete &&
-      (!lastActivity || lastActivity < stalledThreshold);
-
-    let status: AllianceReadinessStatus;
-    if (isNew) {
-      status = "new";
-    } else if (isStalled) {
-      status = "stalled";
-    } else if (isComplete) {
-      status = "ready";
-    } else {
-      status = "needsSetup";
-    }
-
-    return {
-      id: alliance.id,
-      name: alliance.name,
-      status,
-      progress,
-      lastActivity,
-      createdAt: alliance.createdAt,
-      hasMetrics,
-      hasPeriods,
-      hasMembers,
-      hasData,
-    };
-  });
+/**
+ * Get setup completion status for a single alliance.
+ *
+ * Delegates to getAllianceSetupStatus so platform support reflects the
+ * alliance's active target period, not historical setup artifacts.
+ */
+export async function getAllianceSetupStatusById(
+  allianceId: string
+): Promise<AlliancePlatformSetupStatus> {
+  try {
+    const status = await getAllianceSetupStatus(allianceId);
+    return status.isComplete ? "complete" : "incomplete";
+  } catch {
+    return "unavailable";
+  }
 }
 
 /**
@@ -314,18 +355,6 @@ export async function getAllianceTimeline(
     allianceName: alliance.name,
     events,
   };
-}
-
-/**
- * Get jump links for an alliance.
- *
- * Per ADR-010: Platform links should route to platform support pages.
- * Operators shouldn't need alliance membership to investigate.
- */
-export function getJumpLinks(allianceId: string): JumpLink[] {
-  return [
-    { label: "View Details", href: `/platform/support/alliance/${allianceId}` },
-  ];
 }
 
 /**

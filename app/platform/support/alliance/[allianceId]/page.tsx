@@ -1,18 +1,18 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "@/app/src/components";
 import {
   getAllianceById,
   getAllianceTimeline,
   getAllianceActivity,
-  getJumpLinks,
+  getAllianceSetupStatusById,
+  type AlliancePlatformSetupStatus,
 } from "@/app/src/lib/platform";
 
 /**
  * Alliance Detail (Support)
  *
  * Shows detailed alliance information for support purposes.
- * Includes timeline, quick links, and recent activity.
+ * Includes timeline and recent activity.
  */
 
 function formatDate(date: Date | null): string {
@@ -42,20 +42,30 @@ type Props = {
   params: Promise<{ allianceId: string }>;
 };
 
+const setupStatusConfig: Record<
+  AlliancePlatformSetupStatus,
+  { variant: "success" | "warning" | "neutral"; label: string }
+> = {
+  complete: { variant: "success", label: "Setup complete" },
+  incomplete: { variant: "warning", label: "Setup incomplete" },
+  unavailable: { variant: "neutral", label: "Status unavailable" },
+};
+
 export default async function AllianceDetailPage({ params }: Props) {
   const { allianceId } = await params;
 
-  const [alliance, timeline, activity] = await Promise.all([
+  const [alliance, timeline, activity, setupStatus] = await Promise.all([
     getAllianceById(allianceId),
     getAllianceTimeline(allianceId),
     getAllianceActivity(allianceId, 10),
+    getAllianceSetupStatusById(allianceId),
   ]);
 
   if (!alliance) {
     notFound();
   }
 
-  const jumpLinks = getJumpLinks(allianceId);
+  const setupBadge = setupStatusConfig[setupStatus];
 
   const owner = alliance.memberships.find((m) => m.role === "OWNER");
   const teamMembers = alliance.memberships.filter((m) => m.role !== "OWNER");
@@ -77,28 +87,15 @@ export default async function AllianceDetailPage({ params }: Props) {
             })}
           </p>
         </div>
-        <Badge variant="neutral" size="md">
-          {alliance._count.allianceMembers} members
-        </Badge>
-      </div>
-
-      {/* Jump Links - Open as Platform */}
-      <section>
-        <h2 className="text-lg font-semibold text-text-secondary mb-4">
-          Open in ACC
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {jumpLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="flex items-center justify-center px-4 py-3 bg-surface-secondary rounded-lg border border-border hover:border-primary hover:text-primary transition-colors text-sm font-medium"
-            >
-              {link.label}
-            </Link>
-          ))}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant={setupBadge.variant} size="md">
+            {setupBadge.label}
+          </Badge>
+          <Badge variant="neutral" size="md">
+            {alliance._count.allianceMembers} members
+          </Badge>
         </div>
-      </section>
+      </div>
 
       {/* Alliance Info */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-6">

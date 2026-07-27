@@ -14,7 +14,7 @@ import {
  * Features:
  * - Alliance lookup (search is in layout header)
  * - Quick access to alliances needing attention
- * - Jump links
+ * - Support detail navigation
  */
 
 function formatTimeAgo(date: Date | null): string {
@@ -44,6 +44,7 @@ function AllianceQuickCard({ alliance }: { alliance: AllianceReadinessItem }) {
   return (
     <Link
       href={`/platform/support/alliance/${alliance.id}`}
+      aria-label={`View support details for ${alliance.name}`}
       className="block bg-surface-secondary rounded-lg border border-border p-4 hover:border-border-hover transition-colors"
     >
       <div className="flex items-center justify-between">
@@ -60,6 +61,7 @@ function AllianceQuickCard({ alliance }: { alliance: AllianceReadinessItem }) {
           </Badge>
         </div>
       </div>
+      <p className="mt-3 text-sm font-medium text-primary">View support details</p>
     </Link>
   );
 }
