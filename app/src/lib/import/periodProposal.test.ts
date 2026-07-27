@@ -7,7 +7,7 @@ import {
   isLocaleAmbiguousShorthand,
 } from "./dateHeaderParser";
 import { analyzeDerivedColumn } from "./derivedColumnDetector";
-import { buildPeriodMappingReview, formatReviewableDateEvidence } from "./periodProposal";
+import { buildPeriodMappingReview, formatReviewableDateEvidence, resolveImportProposals } from "./periodProposal";
 import { cellAddress } from "@/app/src/lib/memberMatcher";
 import { decodeExcelSerialDate } from "@/app/src/lib/workbookParser";
 
@@ -502,6 +502,76 @@ describe("buildPeriodMappingReview", () => {
 
     expect(review.mode).toBe("insufficient_evidence");
     expect(review.proposals).toHaveLength(0);
+  });
+
+  it("marks detected proposals with source detected", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex: 0,
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills on 3/29", { isNumeric: true }),
+      ],
+    });
+
+    expect(review.proposals[0]?.source).toBe("detected");
+  });
+});
+
+describe("resolveImportProposals", () => {
+  const headerRowIndex = 0;
+
+  function header(
+    columnIndex: number,
+    headerText: string,
+    opts?: { isPlayerColumn?: boolean; isNumeric?: boolean },
+  ) {
+    return {
+      columnIndex,
+      headerText,
+      headerAddress: cellAddress(headerRowIndex, columnIndex),
+      isPlayerColumn: opts?.isPlayerColumn,
+      isNumeric: opts?.isNumeric,
+    };
+  }
+
+  it("returns one manual_fallback proposal for insufficient_evidence workbooks", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "Results",
+      headerRowIndex,
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kill Points", { isNumeric: true }),
+      ],
+    });
+
+    const resolved = resolveImportProposals(review);
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]?.source).toBe("manual_fallback");
+    expect(resolved[0]?.confidence).toBe("low");
+  });
+
+  it("carries reviewable and no-date columns into an unassigned proposal alongside qualifying groups", () => {
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex,
+      headers: [
+        header(0, "Player", { isPlayerColumn: true }),
+        header(1, "Kills on 3/29", { isNumeric: true }),
+        header(2, "Kills on 4/13", { isNumeric: true }),
+        header(3, "Hero Power", { isNumeric: true }),
+        header(4, "Kills on 3/4", { isNumeric: true }),
+      ],
+    });
+
+    const resolved = resolveImportProposals(review);
+    expect(resolved.length).toBeGreaterThanOrEqual(3);
+    const unassigned = resolved.find((p) => p.proposalId === "unassigned-columns");
+    expect(unassigned?.source).toBe("unassigned");
+    expect(unassigned?.warnings.length).toBeGreaterThan(0);
+    expect(unassigned?.columns.map((c) => c.headerText)).toEqual(
+      expect.arrayContaining(["Hero Power", "Kills on 3/4"]),
+    );
   });
 });
 

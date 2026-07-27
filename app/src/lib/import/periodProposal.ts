@@ -68,10 +68,11 @@ export type PeriodMappingProposal = {
   proposalId: string;
   groupingKey: string;
   proposedPeriodName: string;
-  dateKind: "snapshot" | "range";
+  dateKind: "snapshot" | "range" | "unspecified";
   startsAtISO: string | null;
   endsAtISO: string | null;
   confidence: "high" | "medium" | "low";
+  source: "detected" | "manual_fallback" | "unassigned";
   columns: ColumnPeriodEvidence[];
   warnings: string[];
 };
@@ -425,8 +426,130 @@ function scoreProposalConfidence(
   return "high";
 }
 
-function isQualifyingProposal(proposal: PeriodMappingProposal): boolean {
-  return proposal.confidence === "high" || proposal.confidence === "medium";
+export function isQualifyingProposal(proposal: PeriodMappingProposal): boolean {
+  return (
+    proposal.confidence === "high" ||
+    proposal.confidence === "medium" ||
+    proposal.source === "manual_fallback"
+  );
+}
+
+export function qualifyingProposals(review: PeriodMappingReview): PeriodMappingProposal[] {
+  return review.proposals.filter(isQualifyingProposal);
+}
+
+function reviewableToColumnEvidence(col: ReviewableColumnEvidence): ColumnPeriodEvidence {
+  return {
+    columnIndex: col.columnIndex,
+    headerAddress: col.headerAddress,
+    headerText: col.headerText,
+    tableRegionId: col.tableRegionId,
+    parsedDate: col.parsedDate,
+    proposedMetricName: col.proposedMetricName,
+    isDerived: false,
+    derivedReason: null,
+    isNumeric: true,
+    hasTypedDateHeader: col.hasTypedDateHeader,
+    typedDateFormattedText: col.typedDateFormattedText,
+    excludedByDefault: false,
+  };
+}
+
+function excludedNoDateToColumnEvidence(
+  col: ExcludedColumnEvidence,
+  proposedMetricName: string,
+): ColumnPeriodEvidence {
+  return {
+    columnIndex: col.columnIndex,
+    headerAddress: col.headerAddress,
+    headerText: col.headerText,
+    tableRegionId: col.tableRegionId,
+    parsedDate: null,
+    proposedMetricName,
+    isDerived: false,
+    derivedReason: null,
+    isNumeric: true,
+    hasTypedDateHeader: false,
+    excludedByDefault: false,
+  };
+}
+
+function collectUnassignedColumnEvidence(
+  review: PeriodMappingReview,
+): ColumnPeriodEvidence[] {
+  return [
+    ...review.reviewableColumns.map(reviewableToColumnEvidence),
+    ...review.excludedColumns
+      .filter((col) => col.reason === "no_date_evidence")
+      .map((col) =>
+        excludedNoDateToColumnEvidence(
+          col,
+          col.headerText.replace(/[\(\):,-]/g, " ").replace(/\s+/g, " ").trim() ||
+            `Metric Column ${col.columnIndex + 1}`,
+        ),
+      ),
+  ];
+}
+
+/**
+ * When period detection finds insufficient evidence, synthesize one honest
+ * manual-fallback proposal from the review's column classification — derived
+ * columns stay out; ambiguous/reviewable and no-date numeric columns remain.
+ */
+export function buildManualFallbackProposal(
+  review: PeriodMappingReview,
+): PeriodMappingProposal {
+  const columns = collectUnassignedColumnEvidence(review);
+
+  return {
+    proposalId: "manual-fallback",
+    groupingKey: "manual_fallback",
+    proposedPeriodName: "",
+    dateKind: "unspecified",
+    startsAtISO: null,
+    endsAtISO: null,
+    confidence: "low",
+    source: "manual_fallback",
+    columns,
+    warnings: [],
+  };
+}
+
+function buildUnassignedColumnsProposal(
+  review: PeriodMappingReview,
+): PeriodMappingProposal | null {
+  const columns = collectUnassignedColumnEvidence(review);
+  if (columns.length === 0) {
+    return null;
+  }
+
+  return {
+    proposalId: "unassigned-columns",
+    groupingKey: "unassigned_columns",
+    proposedPeriodName: "Unassigned columns",
+    dateKind: "unspecified",
+    startsAtISO: null,
+    endsAtISO: null,
+    confidence: "low",
+    source: "unassigned",
+    columns,
+    warnings: [
+      "These columns lack confident date evidence alongside the detected period groups. Choose a target evaluation period and confirm or exclude each column before import.",
+    ],
+  };
+}
+
+/** Resolve which proposals the guided importer should present for mapping. */
+export function resolveImportProposals(review: PeriodMappingReview): PeriodMappingProposal[] {
+  if (review.mode === "insufficient_evidence") {
+    return [buildManualFallbackProposal(review)];
+  }
+  const qualifying = qualifyingProposals(review);
+  if (qualifying.length === 0) {
+    return [buildManualFallbackProposal(review)];
+  }
+  const unassigned = buildUnassignedColumnsProposal(review);
+  return unassigned ? [...qualifying, unassigned] : qualifying;
 }
 
 function demoteConfidenceIfRangeInverted(
@@ -743,6 +866,7 @@ export function buildPeriodMappingReview(
       startsAtISO,
       endsAtISO,
       confidence,
+      source: "detected",
       columns: cols,
       warnings,
     });

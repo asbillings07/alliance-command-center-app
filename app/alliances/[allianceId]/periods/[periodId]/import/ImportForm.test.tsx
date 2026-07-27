@@ -1253,6 +1253,17 @@ describe("ImportForm [component]", () => {
             }
         }
         expect(container.textContent).toContain("Multi-Period Import Complete");
+        expect(container.textContent).not.toContain("Done");
+        expect(container.textContent).not.toContain("View Dashboard");
+        expect(
+            container.querySelector(`a[href="/alliances/${allianceId}/members?periodId=${periodId}"]`),
+        ).not.toBeNull();
+        expect(
+            container.querySelector(
+                `a[href="/alliances/${allianceId}/members?periodId=${secondPeriodId}"]`,
+            ),
+        ).not.toBeNull();
+        expect(container.textContent).toContain("View Members");
     });
 
     it("allows excluding one proposal and previewing the remaining mapped proposal", async () => {
@@ -1869,6 +1880,15 @@ describe("ImportForm [component]", () => {
         expect(payload.groups[0].target.kind).toBe("create");
         expect(payload.groups[0].target.name).toBeTruthy();
         expect(payload.groups[0].mappings).toHaveLength(1);
+
+        expect(container.textContent).toContain("Multi-Period Import Complete");
+        expect(container.textContent).not.toContain("Done");
+        expect(
+            container.querySelector(
+                `a[href="/alliances/${allianceId}/members?periodId=created-period-id"]`,
+            ),
+        ).not.toBeNull();
+        expect(container.textContent).toContain("View Member Results");
     });
 
     it("blocks preview when a create-period date range is reversed", async () => {
