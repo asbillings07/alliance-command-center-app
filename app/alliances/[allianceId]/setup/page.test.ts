@@ -158,11 +158,71 @@ describe("AllianceSetupPage", () => {
     expect(html).toContain(
       "An Admin or Owner must import members before you can import evaluation results.",
     );
+    expect(html).not.toContain('href="/alliances/all_1/members/import"');
     expect(html).toContain(
       '<div class="font-medium text-text-primary">Import Evaluation Results</div>',
     );
     expect(html).not.toContain(
       '<a href="/alliances/all_1/periods" class="block p-4"><div class="flex items-start gap-3"><div class="mt-0.5"><div class="w-5 h-5 rounded-full border-2 border-border-hover"></div></div><div class="flex-1"><div class="font-medium text-text-primary">Import Evaluation Results</div>',
+    );
+  });
+
+  it("renders blockedFix link for admin when data task is blocked by missing members", async () => {
+    vi.mocked(requireAllianceAccess).mockResolvedValue({
+      permissions: {
+        canImportMetrics: true,
+        canImportMembers: true,
+        canConfigureMetrics: true,
+        canConfigurePeriods: true,
+        canInviteCollaborators: true,
+      },
+    } as Awaited<ReturnType<typeof requireAllianceAccess>>);
+
+    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+      id: "all_1",
+      name: "Alliance One",
+    } as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+    mockFreshAllianceCounts();
+
+    const page = await AllianceSetupPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+    });
+
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain('href="/alliances/all_1/members/import"');
+    expect(html).toContain("Import Members →");
+  });
+
+  it("renders archived-only hint on period task while keeping it actionable", async () => {
+    vi.mocked(requireAllianceAccess).mockResolvedValue({
+      permissions: {
+        canImportMetrics: true,
+        canImportMembers: true,
+        canConfigureMetrics: true,
+        canConfigurePeriods: true,
+        canInviteCollaborators: true,
+      },
+    } as Awaited<ReturnType<typeof requireAllianceAccess>>);
+
+    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+      id: "all_1",
+      name: "Alliance One",
+    } as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+    mockFreshAllianceCounts();
+    vi.mocked(prisma.metricPeriod.count).mockResolvedValue(2);
+
+    const page = await AllianceSetupPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+    });
+
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain(
+      "Only inactive evaluation periods exist. Restore one or create a new period to continue.",
+    );
+    expect(html).toContain(
+      '<a href="/alliances/all_1/periods" class="block p-4">',
     );
   });
 

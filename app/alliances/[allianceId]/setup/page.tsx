@@ -80,8 +80,24 @@ function SetupTaskCard({ task }: { task: SetupTask }) {
           {task.label}
         </div>
         <div className="text-sm text-text-muted mt-1">{task.description}</div>
+        {task.hint && (
+          <p className="text-sm text-text-secondary mt-2">{task.hint}</p>
+        )}
         {isBlocked && task.blockedReason && (
-          <p className="text-sm text-text-secondary mt-2">{task.blockedReason}</p>
+          <p className="text-sm text-text-secondary mt-2">
+            {task.blockedReason}
+            {task.blockedFix && (
+              <>
+                {" "}
+                <Link
+                  href={task.blockedFix.href}
+                  className="font-medium text-primary-light hover:text-primary hover:underline"
+                >
+                  {task.blockedFix.label} →
+                </Link>
+              </>
+            )}
+          </p>
         )}
       </div>
       {!task.completed && !isBlocked && <ChevronIcon />}

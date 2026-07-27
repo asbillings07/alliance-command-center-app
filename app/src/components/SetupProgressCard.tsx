@@ -39,7 +39,7 @@ export function SetupProgressCard({
           </p>
         </div>
         <Link
-          href={`/alliances/${allianceId}/setup`}
+          href={recommendedTask?.href ?? `/alliances/${allianceId}/setup`}
           className="shrink-0 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-hover"
         >
           Continue Setup

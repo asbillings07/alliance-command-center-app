@@ -177,10 +177,8 @@ test.describe("Rank Independence", () => {
     ).not.toBeVisible();
 
     await page.getByRole("link", { name: /continue setup/i }).click();
-    await expect(page).toHaveURL(`/alliances/${allianceId}/setup`);
-    await expect(page.locator("text=Configure Metrics").first()).toHaveClass(
-      /text-text-muted/,
-    );
+    await expect(page).toHaveURL(`/alliances/${allianceId}/members/import`);
+    await expect(page.getByRole("heading", { name: /member import/i })).toBeVisible();
 
     // 6. Negative assertion: ADMIN cannot manage leadership
     await page.goto(`/alliances/${allianceId}/settings/invitations`);
