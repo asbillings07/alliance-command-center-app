@@ -215,7 +215,7 @@ test.describe("Alliance Member Filter Tests", () => {
   test("Filter tabs show correct counts", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}/members`);
 
-    // Filter tabs should show counts
-    await expect(page.getByText(/active.*\d+/i)).toBeVisible();
+    // Filter tabs should show counts (scope to filter links — period options also match /active.*\d+/i)
+    await expect(page.getByRole("link", { name: /^Active\d+$/ })).toBeVisible();
   });
 });

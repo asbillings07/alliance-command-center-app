@@ -148,7 +148,29 @@ export default async function MemberPage({ params, searchParams }: Params) {
             : "Inactive Period"
         : undefined;
 
+    const allUnrecorded =
+        performanceMetrics.length > 0 &&
+        performanceMetrics.every((metric) => metric.current === undefined);
+
     const membersBreadcrumbHref = `/alliances/${allianceId}/members${selectedPeriod ? `?periodId=${selectedPeriod.id}` : ""}`;
+
+    const recordImportActions =
+        selectedPeriod && permissions.canImportMetrics ? (
+            <div className="mt-3 flex gap-3 flex-wrap justify-center">
+                <Button
+                    variant="primary"
+                    href={`/alliances/${allianceId}/periods/${selectedPeriod.id}/record`}
+                >
+                    Record Results
+                </Button>
+                <Button
+                    variant="secondary"
+                    href={`/alliances/${allianceId}/periods/${selectedPeriod.id}/import`}
+                >
+                    Import Evaluation Results
+                </Button>
+            </div>
+        ) : null;
 
     const performanceAction = !selectedPeriod
         ? permissions.canConfigurePeriods
@@ -171,6 +193,23 @@ export default async function MemberPage({ params, searchParams }: Params) {
                   metrics: performanceMetrics,
                   periodSelector,
                   periodStatusLabel,
+                  unrecordedNotice: allUnrecorded
+                      ? allianceMember.archivedAt
+                          ? (
+                              <p>
+                                  No results were recorded for this period. This member is archived;
+                                  historical results are read-only.
+                              </p>
+                          )
+                          : (
+                              <>
+                                  <p>
+                                      No results were recorded for this member in this evaluation period yet.
+                                  </p>
+                                  {recordImportActions}
+                              </>
+                          )
+                      : undefined,
               };
 
     const leadershipNotes = await prisma.leadershipNote.findMany({

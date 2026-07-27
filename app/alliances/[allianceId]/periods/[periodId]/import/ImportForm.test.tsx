@@ -890,6 +890,19 @@ describe("ImportForm [component]", () => {
         // 2. Planned Metric Translation Summary and Column Translation Cards
         expect(container.textContent).toContain("Planned Metric Translation");
         expect(container.textContent).toContain("Source Column Translations");
+        expect(container.textContent).toContain("All columns mapped");
+
+        const translationDetails = container.querySelector(
+            '[data-testid="source-column-translations"]',
+        ) as HTMLDetailsElement;
+        expect(translationDetails?.open).toBe(false);
+
+        await act(async () => {
+            translationDetails.querySelector("summary")?.dispatchEvent(
+                new MouseEvent("click", { bubbles: true }),
+            );
+            await new Promise((r) => setTimeout(r, 0));
+        });
 
         // Column translation status badges
         expect(container.textContent).toContain("Mapped: Member Identity");
@@ -897,7 +910,7 @@ describe("ImportForm [component]", () => {
         expect(container.textContent).toContain("Excluded: Free-form text / unsupported non-numeric column");
         expect(container.textContent).toContain("Ignored: No values in column");
 
-        // Sample values displayed
+        // Sample values displayed after expanding translations
         expect(container.textContent).toContain('"Dragon"');
         expect(container.textContent).toContain('"1500"');
         expect(container.textContent).toContain('"Good run"');
