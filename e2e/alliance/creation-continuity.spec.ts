@@ -49,7 +49,33 @@ test.describe("Creation continuity (#200 PR 2)", () => {
     await expect(page.getByText("Continue configuring this period")).toBeVisible();
     await page.getByRole("link", { name: "Continue configuring this period" }).click();
     await expect(page).toHaveURL(new RegExp(`/alliances/${allianceId}/periods/`));
-    await expect(page.getByText(metricName)).toBeVisible();
+
+    await expect(
+      page.getByText("No metrics have been configured for this period yet"),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Add Metric" }).click();
+    await page.selectOption('select[name="metricId"]', { label: metricName });
+    await page.fill('input[name="weight"]', "10");
+    await page.getByRole("button", { name: /^add$/i }).click();
+    await expect(page.locator("dialog")).not.toBeVisible();
+
+    const configuredMetricRow = page.locator("li").filter({ hasText: metricName });
+    await expect(configuredMetricRow).toBeVisible();
+    await expect(configuredMetricRow.getByText("Weight: 10")).toBeVisible();
+    await expect(
+      page.getByText("No metrics have been configured for this period yet"),
+    ).not.toBeVisible();
+
+    const periodId = page.url().match(/\/periods\/([^/]+)$/)?.[1];
+    expect(periodId).toBeTruthy();
+    const attachment = await prisma.metricPeriodMetric.findFirst({
+      where: {
+        periodId,
+        metric: { allianceId, name: metricName },
+      },
+    });
+    expect(attachment).not.toBeNull();
   });
 
   test("create metric from library guides attach when no returnTo", async ({
