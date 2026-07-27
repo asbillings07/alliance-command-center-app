@@ -18,6 +18,7 @@ export type MemberPerformanceProps = {
     periodSelector?: React.ReactNode;
     periodStatusLabel?: string;
     action?: React.ReactNode;
+    unrecordedNotice?: React.ReactNode;
 } & (
     | { emptyState: "no-period" }
     | { emptyState: "no-metrics"; periodName: string }
@@ -109,6 +110,11 @@ export function MemberPerformanceSection(props: MemberPerformanceProps) {
                 </div>
                 {props.periodSelector}
             </div>
+            {props.unrecordedNotice && (
+                <div className="rounded-lg border border-border bg-surface-secondary p-4 text-sm text-text-primary">
+                    {props.unrecordedNotice}
+                </div>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {props.metrics.map((metric) => (
                     <MetricCard key={metric.metricId} metric={metric} />

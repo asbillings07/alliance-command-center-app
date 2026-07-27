@@ -2,9 +2,13 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
+import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
+import { metricPeriodChronologicalOrderBy } from "@/app/src/lib/metricPeriodOrdering";
+import { buildMetricsLibraryHref } from "@/app/src/lib/periods/metricsLibraryHref";
 import Link from "next/link";
 import { formatPower } from "@/app/src/lib/formatPower";
 import { MembersFilter } from "./MembersFilter";
+import { MembersPeriodSelector } from "./MembersPeriodSelector";
 import { PageLayout, Card, Badge, EmptyState } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 
@@ -141,8 +145,65 @@ export default async function MembersPage({ params, searchParams }: Params) {
     ]);
 
     const { permissions } = authContext;
+    const setupStatus = await getAllianceSetupStatus(allianceId, permissions);
+
+    const allPeriods = await prisma.metricPeriod.findMany({
+        where: { allianceId },
+        orderBy: metricPeriodChronologicalOrderBy,
+        select: { id: true, name: true, active: true },
+    });
+    const totalPeriodCount = allPeriods.length;
+    const requestedPeriodId = periodId;
+    const periodNotFound = Boolean(requestedPeriodId && !selectedPeriod);
+
+    const hasResultsInView =
+        periodMetricColumns.length > 0 &&
+        allianceMembers.some((member) =>
+            periodMetricColumns.some((metric) =>
+                latestMetricValueByMemberAndMetric.has(`${member.id}:${metric.metricId}`),
+            ),
+        );
+
+    const showingActiveMemberPrerequisite = filter === "active" && activeCount === 0;
+    const showNoPeriodsBanner =
+        !showingActiveMemberPrerequisite && totalPeriodCount === 0 && !selectedPeriod;
+    const showNoMetricsBanner =
+        !showingActiveMemberPrerequisite &&
+        !showNoPeriodsBanner &&
+        !periodNotFound &&
+        selectedPeriod &&
+        periodMetricColumns.length === 0;
+    const showNoResultsBanner =
+        !showingActiveMemberPrerequisite &&
+        !showNoPeriodsBanner &&
+        !periodNotFound &&
+        selectedPeriod &&
+        periodMetricColumns.length > 0 &&
+        !hasResultsInView;
+
+    const rosterHref = `/alliances/${allianceId}/members?filter=${filter}`;
 
     const description = `${allianceMembers.length} member${allianceMembers.length !== 1 ? "s" : ""}${filter !== "all" ? ` (${filter})` : ""}${selectedPeriod ? ` · ${selectedPeriod.name} results` : ""}`;
+
+    const periodResultsActions =
+        setupStatus.activeMemberCount > 0 && permissions.canImportMetrics && selectedPeriod ? (
+            <div className="mt-3 flex gap-3 flex-wrap">
+                <Button
+                    variant="primary"
+                    size="sm"
+                    href={`/alliances/${allianceId}/periods/${selectedPeriod.id}/record`}
+                >
+                    Record Results
+                </Button>
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    href={`/alliances/${allianceId}/periods/${selectedPeriod.id}/import`}
+                >
+                    Import Evaluation Results
+                </Button>
+            </div>
+        ) : null;
 
     const actionButtons = (
         <div className="flex gap-3">
@@ -177,15 +238,99 @@ export default async function MembersPage({ params, searchParams }: Params) {
             description={description}
             action={allianceMembers.length > 0 ? actionButtons : undefined}
         >
-            <MembersFilter
-                currentFilter={filter}
-                activeCount={activeCount}
-                archivedCount={archivedCount}
-                allianceId={allianceId}
-                periodId={selectedPeriodId}
-            />
+            <div className="flex flex-col gap-4 mb-6">
+                <MembersFilter
+                    currentFilter={filter}
+                    activeCount={activeCount}
+                    archivedCount={archivedCount}
+                    allianceId={allianceId}
+                    periodId={selectedPeriodId}
+                    className="mb-0"
+                />
+                <MembersPeriodSelector
+                    allianceId={allianceId}
+                    currentFilter={filter}
+                    selectedPeriodId={selectedPeriodId}
+                    periods={allPeriods}
+                />
+            </div>
 
-            {allianceMembers.length === 0 ? (
+            {periodNotFound && (
+                <div className="mb-6 rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm text-text-primary">
+                    <p>This evaluation period is not available.</p>
+                    <Link
+                        href={rosterHref}
+                        className="mt-2 inline-block font-medium text-primary-light hover:text-primary hover:underline"
+                    >
+                        Return to roster
+                    </Link>
+                </div>
+            )}
+
+            {showNoPeriodsBanner && (
+                <div className="mb-6 rounded-lg border border-primary/20 bg-primary/10 p-4 text-sm text-text-primary">
+                    <p>Create an evaluation period before viewing member results.</p>
+                    {permissions.canConfigurePeriods ? (
+                        <div className="mt-3">
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                href={`/alliances/${allianceId}/periods`}
+                            >
+                                Go to Evaluation Periods
+                            </Button>
+                        </div>
+                    ) : (
+                        <p className="mt-2 text-text-secondary">
+                            Ask an Admin or Owner to create an evaluation period.
+                        </p>
+                    )}
+                </div>
+            )}
+
+            {showNoMetricsBanner && selectedPeriod && (
+                <div className="mb-6 rounded-lg border border-primary/20 bg-primary/10 p-4 text-sm text-text-primary">
+                    <p>
+                        <strong>{selectedPeriod.name}</strong> has no configured metrics yet.
+                    </p>
+                    {permissions.canConfigurePeriods ? (
+                        <div className="mt-3">
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                href={buildMetricsLibraryHref(allianceId, selectedPeriod.id)}
+                            >
+                                Manage Period Metrics
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="mt-3">
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                href={`/alliances/${allianceId}/periods/${selectedPeriod.id}`}
+                            >
+                                View Period
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {showNoResultsBanner && selectedPeriod && (
+                <div className="mb-6 rounded-lg border border-border bg-surface-secondary p-4 text-sm text-text-primary">
+                    <p>No results for members in this view.</p>
+                    {periodResultsActions ?? (
+                        <p className="mt-2 text-text-secondary">
+                            {setupStatus.activeMemberCount === 0
+                                ? "Record and import workflows operate on active members only."
+                                : "You do not have permission to record or import evaluation results."}
+                        </p>
+                    )}
+                </div>
+            )}
+
+            {showingActiveMemberPrerequisite || allianceMembers.length === 0 ? (
                 <EmptyState
                     title={
                         filter === "active"

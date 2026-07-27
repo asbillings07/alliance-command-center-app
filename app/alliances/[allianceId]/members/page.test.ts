@@ -24,6 +24,14 @@ vi.mock("@/app/src/lib/auth/requireAllianceAccess", () => ({
   }),
 }));
 
+vi.mock("@/app/src/lib/allianceSetup", () => ({
+  getAllianceSetupStatus: vi.fn(),
+}));
+
+vi.mock("./MembersPeriodSelector", () => ({
+  MembersPeriodSelector: () => null,
+}));
+
 vi.mock("@/app/src/lib/prisma", () => ({
   prisma: {
     alliance: {
@@ -35,6 +43,7 @@ vi.mock("@/app/src/lib/prisma", () => ({
     },
     metricPeriod: {
       findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
     },
     memberMetricEntry: {
       findMany: vi.fn(),
@@ -44,11 +53,30 @@ vi.mock("@/app/src/lib/prisma", () => ({
 
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 import MembersPage from "./page";
+
+function mockSetupStatus(overrides: Partial<Awaited<ReturnType<typeof getAllianceSetupStatus>>> = {}) {
+  vi.mocked(getAllianceSetupStatus).mockResolvedValue({
+    tasks: [],
+    isComplete: false,
+    completedCount: 0,
+    totalCount: 0,
+    requiredComplete: 0,
+    requiredTotal: 0,
+    targetPeriodId: null,
+    hasArchivedPeriodsOnly: false,
+    activeMemberCount: 2,
+    recommendedTask: null,
+    ...overrides,
+  });
+}
 
 describe("MembersPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSetupStatus();
+    vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([]);
   });
 
   it("renders actionable empty state CTAs for Admins/Owners when no active members exist", async () => {
@@ -200,27 +228,165 @@ describe("MembersPage", () => {
     expect(html).toContain("2.3K");
     expect(html).toContain('/alliances/all_1/members/mem_1?periodId=per_1');
     expect(html).toContain('aria-label="Dragon Kill Points"');
+  });
 
-    expect(prisma.memberMetricEntry.findMany).toHaveBeenCalledWith({
-      where: {
-        periodId: "per_1",
-        metricId: { in: ["met_kill", "met_vs"] },
-        allianceMemberId: { in: ["mem_1", "mem_2"] },
-        allianceMember: { allianceId: "all_1" },
+  it("shows invalid period notice instead of silently falling back to roster-only", async () => {
+    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+      id: "all_1",
+      name: "Alliance One",
+    } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+    vi.mocked(prisma.allianceMember.findMany).mockResolvedValue([
+      {
+        id: "mem_1",
+        playerName: "Dragon",
+        archivedAt: null,
       },
-      select: {
-        allianceMemberId: true,
-        metricId: true,
-        value: true,
-        recordedAt: true,
-        createdAt: true,
-        id: true,
-      },
-      orderBy: [
-        { recordedAt: "desc" },
-        { createdAt: "desc" },
-        { id: "desc" },
-      ],
+    ] as unknown as Awaited<ReturnType<typeof prisma.allianceMember.findMany>>);
+    vi.mocked(prisma.allianceMember.count)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0);
+    vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
+      { id: "per_1", name: "Season 7", active: true },
+    ] as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findMany>>);
+
+    const page = await MembersPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({ periodId: "missing-period" }),
     });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("This evaluation period is not available");
+    expect(html).toContain("Return to roster");
+  });
+
+  it("preserves archived members in All view even when there are zero active members", async () => {
+    mockSetupStatus({ activeMemberCount: 0 });
+    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+      id: "all_1",
+      name: "Alliance One",
+    } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+    vi.mocked(prisma.allianceMember.findMany).mockResolvedValue([
+      {
+        id: "mem_arch",
+        playerName: "OldHero",
+        archivedAt: new Date(),
+      },
+    ] as unknown as Awaited<ReturnType<typeof prisma.allianceMember.findMany>>);
+    vi.mocked(prisma.allianceMember.count)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(1);
+    vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
+      { id: "per_1", name: "Season 6", active: false },
+    ] as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findMany>>);
+
+    const page = await MembersPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({ filter: "all" }),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).not.toContain("No active members yet");
+    expect(html).toContain("OldHero");
+  });
+
+  it("shows no-results banner with record/import actions when active members exist", async () => {
+    vi.mocked(requireAllianceAccess).mockResolvedValue({
+      permissions: {
+        canImportMembers: true,
+        canManageMembers: true,
+        canImportMetrics: true,
+        canConfigurePeriods: true,
+      },
+    } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
+    mockSetupStatus({ activeMemberCount: 2 });
+
+    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+      id: "all_1",
+      name: "Alliance One",
+    } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+    vi.mocked(prisma.allianceMember.findMany).mockResolvedValue([
+      { id: "mem_1", playerName: "Dragon", archivedAt: null },
+    ] as unknown as Awaited<ReturnType<typeof prisma.allianceMember.findMany>>);
+    vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue({
+      id: "per_1",
+      name: "Week 28 Evaluation",
+      periodMetrics: [
+        { metricId: "met_kill", metric: { id: "met_kill", name: "Kill Points" } },
+      ],
+    } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findFirst>>);
+    vi.mocked(prisma.memberMetricEntry.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
+      { id: "per_1", name: "Week 28 Evaluation", active: true },
+    ] as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findMany>>);
+    vi.mocked(prisma.allianceMember.count)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0);
+
+    const page = await MembersPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({ periodId: "per_1" }),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("No results for members in this view");
+    expect(html).toContain("Record Results");
+    expect(html).toContain("/alliances/all_1/periods/per_1/import");
+  });
+
+  it("shows read-only no-results copy when viewing archived members with zero active members", async () => {
+    mockSetupStatus({ activeMemberCount: 0 });
+    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+      id: "all_1",
+      name: "Alliance One",
+    } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+    vi.mocked(prisma.allianceMember.findMany).mockResolvedValue([
+      { id: "mem_arch", playerName: "OldHero", archivedAt: new Date() },
+    ] as unknown as Awaited<ReturnType<typeof prisma.allianceMember.findMany>>);
+    vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue({
+      id: "per_1",
+      name: "Week 28 Evaluation",
+      periodMetrics: [
+        { metricId: "met_kill", metric: { id: "met_kill", name: "Kill Points" } },
+      ],
+    } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findFirst>>);
+    vi.mocked(prisma.memberMetricEntry.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.allianceMember.count)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(1);
+    vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
+      { id: "per_1", name: "Week 28 Evaluation", active: true },
+    ] as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findMany>>);
+
+    const page = await MembersPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({ filter: "archived", periodId: "per_1" }),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("No results for members in this view");
+    expect(html).toContain("Record and import workflows operate on active members only");
+    expect(html).not.toContain("/alliances/all_1/periods/per_1/record");
+  });
+
+  it("uses deterministic ordering when querying all periods for the selector", async () => {
+    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+      id: "all_1",
+      name: "Alliance One",
+    } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+    vi.mocked(prisma.allianceMember.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.allianceMember.count).mockResolvedValue(0);
+
+    await MembersPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({}),
+    });
+
+    expect(prisma.metricPeriod.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { allianceId: "all_1" },
+        orderBy: expect.any(Array),
+      }),
+    );
   });
 });
