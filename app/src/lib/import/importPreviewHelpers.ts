@@ -1,4 +1,4 @@
-import type { MatchSummary } from "@/app/src/lib/memberMatcher";
+import type { MatchResult, MatchSummary } from "@/app/src/lib/memberMatcher";
 import type {
   SkippedBlankCell,
   InvalidValueIssue,
@@ -96,4 +96,70 @@ export function getMetricIndicesNeedingReview(
     if (status === "needs_review") indices.push(index);
     return indices;
   }, []);
+}
+
+export type PreviewRowOutcome = "needs_attention" | "will_import";
+
+export function getMembersWithDuplicateRows(summary: MatchSummary): Set<string> {
+  const duplicateCounts = new Map<string, number>();
+  for (const result of summary.results) {
+    if (result.memberId) {
+      duplicateCounts.set(result.memberId, (duplicateCounts.get(result.memberId) || 0) + 1);
+    }
+  }
+  const duplicates = new Set<string>();
+  for (const [memberId, count] of duplicateCounts) {
+    if (count > 1) duplicates.add(memberId);
+  }
+  return duplicates;
+}
+
+export function classifyPreviewRow(
+  result: MatchResult,
+  resultIndex: number,
+  membersWithDuplicates: Set<string>,
+  selections: Record<string, number> | undefined,
+): PreviewRowOutcome {
+  if (result.status === "unmatched" || result.status === "invalid_value") {
+    return "needs_attention";
+  }
+
+  const isSelected = result.memberId ? selections?.[result.memberId] === resultIndex : false;
+  const memberHasDuplicates = result.memberId ? membersWithDuplicates.has(result.memberId) : false;
+
+  if (memberHasDuplicates && !isSelected) {
+    return "needs_attention";
+  }
+
+  if (isSelected) {
+    return "will_import";
+  }
+
+  return "needs_attention";
+}
+
+export type MetricRowGroups = {
+  needsAttention: number[];
+  willImport: number[];
+};
+
+/** Partition `summary.results` indices into outcome groups. Skipped blanks live outside `results`. */
+export function groupMetricRowsByOutcome(
+  preview: MetricImportPreviewData,
+  selections: Record<string, number> | undefined,
+): MetricRowGroups {
+  const membersWithDuplicates = getMembersWithDuplicateRows(preview.summary);
+  const needsAttention: number[] = [];
+  const willImport: number[] = [];
+
+  preview.summary.results.forEach((result, index) => {
+    const outcome = classifyPreviewRow(result, index, membersWithDuplicates, selections);
+    if (outcome === "needs_attention") {
+      needsAttention.push(index);
+    } else {
+      willImport.push(index);
+    }
+  });
+
+  return { needsAttention, willImport };
 }

@@ -4,11 +4,14 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/app/src/components/Badge";
 import {
   getDefaultActiveMetricIndex,
+  getMembersWithDuplicateRows,
   getMetricIndicesNeedingReview,
   getMetricPreviewCounts,
+  groupMetricRowsByOutcome,
   type MetricImportPreviewData,
   type MetricDisposition,
 } from "@/app/src/lib/import/importPreviewHelpers";
+import type { MatchResult } from "@/app/src/lib/memberMatcher";
 
 const DISPOSITION_BADGE: Record<MetricDisposition, { label: string; className: string }> = {
   existing: { label: "On period", className: "bg-surface border border-border text-text-secondary" },
@@ -199,21 +202,18 @@ function MetricPreviewDetail({
   const { summary, skippedBlankCells } = preview;
   const counts = getMetricPreviewCounts(preview, selections);
   const badge = DISPOSITION_BADGE[preview.disposition];
-
-  const membersWithDuplicates = useMemo(() => {
-    const duplicateCounts = new Map<string, number>();
-    for (const result of summary.results) {
-      if (result.memberId) duplicateCounts.set(result.memberId, (duplicateCounts.get(result.memberId) || 0) + 1);
-    }
-    const duplicates = new Set<string>();
-    for (const [memberId, count] of duplicateCounts) {
-      if (count > 1) duplicates.add(memberId);
-    }
-    return duplicates;
-  }, [summary]);
+  const rowGroups = useMemo(
+    () => groupMetricRowsByOutcome(preview, selections),
+    [preview, selections],
+  );
+  const membersWithDuplicates = useMemo(
+    () => getMembersWithDuplicateRows(summary),
+    [summary],
+  );
 
   const hasDuplicates = summary.duplicates > 0;
   const headerId = `metric-preview-header-${preview.columnIndex}`;
+  const needsAttentionOpen = rowGroups.needsAttention.length > 0;
 
   return (
     <section
@@ -279,94 +279,252 @@ function MetricPreviewDetail({
           </div>
         )}
 
+        <div className="flex flex-col gap-3" data-testid="metric-preview-row-detail">
+          {rowGroups.needsAttention.length > 0 && (
+            <MetricPreviewRowGroup
+              testId="metric-preview-needs-attention"
+              title="Needs attention"
+              defaultOpen={needsAttentionOpen}
+              countLabel={`${rowGroups.needsAttention.length} need attention`}
+              badgeVariant="warning"
+              rowIndices={rowGroups.needsAttention}
+              preview={preview}
+              summary={summary}
+              membersWithDuplicates={membersWithDuplicates}
+              selections={selections}
+              onDuplicateSelection={onDuplicateSelection}
+            />
+          )}
+
+          {rowGroups.willImport.length > 0 && (
+            <MetricPreviewRowGroup
+              testId="metric-preview-will-import"
+              title="Will import"
+              defaultOpen={false}
+              countLabel={`${rowGroups.willImport.length} row${rowGroups.willImport.length === 1 ? "" : "s"} will import`}
+              badgeVariant="success"
+              rowIndices={rowGroups.willImport}
+              preview={preview}
+              summary={summary}
+              membersWithDuplicates={membersWithDuplicates}
+              selections={selections}
+              onDuplicateSelection={onDuplicateSelection}
+            />
+          )}
+        </div>
+
         {skippedBlankCells.length > 0 && (
-          <details className="text-sm text-text-secondary bg-surface border border-border rounded-md p-3">
-            <summary className="cursor-pointer font-medium text-text-primary select-none">
-              Review {skippedBlankCells.length} skipped blank cell{skippedBlankCells.length === 1 ? "" : "s"}
+          <details
+            className="text-sm text-text-secondary bg-surface border border-border rounded-md overflow-hidden group"
+            data-testid="metric-preview-skipped-blanks"
+          >
+            <summary
+              aria-expanded="false"
+              className="cursor-pointer list-none px-3 py-3 font-medium text-text-primary select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface [&::-webkit-details-marker]:hidden"
+            >
+              <span className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2 min-w-0">
+                  <span aria-hidden="true" className="text-text-muted transition-transform group-open:rotate-90 shrink-0">
+                    ▸
+                  </span>
+                  Review {skippedBlankCells.length} skipped blank cell{skippedBlankCells.length === 1 ? "" : "s"}
+                </span>
+                <Badge variant="neutral" size="sm" className="shrink-0">
+                  {skippedBlankCells.length} skipped
+                </Badge>
+              </span>
             </summary>
-            <p className="text-xs text-text-muted mt-1">
-              Blank cells will be skipped without creating entries or zeroes:
-            </p>
-            <ul className="text-xs font-mono space-y-1 mt-2 max-h-32 overflow-y-auto">
-              {skippedBlankCells.map((cell, idx) => (
-                <li key={idx} className="flex justify-between py-0.5 border-b border-border/40 last:border-0">
-                  <span>{cell.rawName}</span>
-                  <span className="text-text-muted">Cell {cell.address}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="px-3 pb-3 border-t border-border/60">
+              <p className="text-xs text-text-muted mt-2">
+                Blank cells will be skipped without creating entries or zeroes:
+              </p>
+              <ul className="text-xs font-mono space-y-1 mt-2 max-h-32 overflow-y-auto">
+                {skippedBlankCells.map((cell, idx) => (
+                  <li key={idx} className="flex justify-between py-0.5 border-b border-border/40 last:border-0">
+                    <span>{cell.rawName}</span>
+                    <span className="text-text-muted">Cell {cell.address}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </details>
         )}
-
-        <div
-          className="border border-border rounded-md overflow-hidden bg-surface"
-          data-testid="metric-preview-row-detail"
-        >
-          <table className="w-full text-sm">
-            <thead className="bg-surface-secondary border-b border-border">
-              <tr className="text-text-primary font-semibold">
-                <th className="px-3 py-2 text-left">File Name</th>
-                <th className="px-3 py-2 text-left">Matched To</th>
-                <th className="px-3 py-2 text-right">Value</th>
-                <th className="px-3 py-2 text-center">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {summary.results.map((result, i) => {
-                const memberHasDuplicates = result.memberId ? membersWithDuplicates.has(result.memberId) : false;
-                const isSelected = result.memberId ? selections?.[result.memberId] === i : false;
-                const willImport = result.status !== "unmatched" && isSelected;
-                return (
-                  <tr
-                    key={i}
-                    data-testid={`metric-preview-row-${preview.columnIndex}-${i}`}
-                    className={
-                      result.status === "invalid_value" ? "bg-danger/20 text-danger font-semibold border-t border-border" :
-                      result.status === "unmatched" ? "bg-danger/10 text-text-secondary border-t border-border" :
-                      !isSelected ? "bg-surface-secondary text-text-disabled border-t border-border" :
-                      "bg-success/10 text-text-primary border-t border-border"
-                    }
-                  >
-                    <td className="px-3 py-2 font-medium">{result.rawName}</td>
-                    <td className="px-3 py-2">
-                      {result.matchedName || "—"}
-                      {result.confidence > 0 && result.confidence < 1 && (
-                        <span className={`ml-2 text-xs ${willImport ? "text-text-secondary" : "text-text-disabled"}`}>
-                          ({Math.round(result.confidence * 100)}%)
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono font-medium">
-                      {result.status === "invalid_value" ? (
-                        <span className="text-danger font-bold">{result.rawValue} ({result.error})</span>
-                      ) : (
-                        result.value?.toLocaleString()
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      {result.status === "invalid_value" ? (
-                        <span className="px-2 py-0.5 rounded text-xs bg-danger/20 text-danger font-bold">Invalid Value</span>
-                      ) : result.status === "unmatched" ? (
-                        <span className="px-2 py-0.5 rounded text-xs bg-danger-dark text-text-primary font-medium">No Match</span>
-                      ) : memberHasDuplicates ? (
-                        <button
-                          type="button"
-                          onClick={() => result.memberId && onDuplicateSelection(preview.columnIndex, result.memberId, i)}
-                          className={`px-2 py-1 rounded text-xs cursor-pointer ${isSelected ? "bg-success text-white" : "bg-surface-secondary border border-border text-text-secondary hover:bg-surface-elevated"}`}
-                        >
-                          {isSelected ? "Selected" : "Use This"}
-                        </button>
-                      ) : willImport ? (
-                        <span className="px-2 py-0.5 rounded text-xs bg-success/20 text-success font-medium">Will Import</span>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
       </div>
     </section>
+  );
+}
+
+function MetricPreviewRowGroup({
+  testId,
+  title,
+  defaultOpen,
+  countLabel,
+  badgeVariant,
+  rowIndices,
+  preview,
+  summary,
+  membersWithDuplicates,
+  selections,
+  onDuplicateSelection,
+}: {
+  testId: string;
+  title: string;
+  defaultOpen: boolean;
+  countLabel: string;
+  badgeVariant: "warning" | "success";
+  rowIndices: number[];
+  preview: MetricImportPreviewData;
+  summary: MetricImportPreviewData["summary"];
+  membersWithDuplicates: Set<string>;
+  selections: Record<string, number> | undefined;
+  onDuplicateSelection: (columnIndex: number, memberId: string, resultIndex: number) => void;
+}) {
+  return (
+    <details
+      open={defaultOpen}
+      onToggle={(event) => {
+        event.currentTarget
+          .querySelector("summary")
+          ?.setAttribute("aria-expanded", event.currentTarget.open ? "true" : "false");
+      }}
+      className="border border-border rounded-md overflow-hidden bg-surface group"
+      data-testid={testId}
+    >
+      <summary
+        aria-expanded={defaultOpen ? "true" : "false"}
+        className="cursor-pointer list-none px-3 py-2.5 flex items-center justify-between gap-3 select-none bg-surface-secondary border-b border-border/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface [&::-webkit-details-marker]:hidden"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span aria-hidden="true" className="text-text-muted transition-transform group-open:rotate-90 shrink-0">
+            ▸
+          </span>
+          <span className="font-semibold text-sm text-text-primary">{title}</span>
+        </div>
+        <Badge variant={badgeVariant} size="sm" className="shrink-0">
+          {countLabel}
+        </Badge>
+      </summary>
+      <PreviewRowTable
+        preview={preview}
+        summary={summary}
+        rowIndices={rowIndices}
+        membersWithDuplicates={membersWithDuplicates}
+        selections={selections}
+        onDuplicateSelection={onDuplicateSelection}
+      />
+    </details>
+  );
+}
+
+function PreviewRowTable({
+  preview,
+  summary,
+  rowIndices,
+  membersWithDuplicates,
+  selections,
+  onDuplicateSelection,
+}: {
+  preview: MetricImportPreviewData;
+  summary: MetricImportPreviewData["summary"];
+  rowIndices: number[];
+  membersWithDuplicates: Set<string>;
+  selections: Record<string, number> | undefined;
+  onDuplicateSelection: (columnIndex: number, memberId: string, resultIndex: number) => void;
+}) {
+  if (rowIndices.length === 0) return null;
+
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-surface-secondary border-b border-border">
+        <tr className="text-text-primary font-semibold">
+          <th className="px-3 py-2 text-left">File Name</th>
+          <th className="px-3 py-2 text-left">Matched To</th>
+          <th className="px-3 py-2 text-right">Value</th>
+          <th className="px-3 py-2 text-center">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rowIndices.map((i) => {
+          const result = summary.results[i];
+          return (
+            <PreviewRow
+              key={i}
+              result={result}
+              resultIndex={i}
+              preview={preview}
+              membersWithDuplicates={membersWithDuplicates}
+              selections={selections}
+              onDuplicateSelection={onDuplicateSelection}
+            />
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function PreviewRow({
+  result,
+  resultIndex,
+  preview,
+  membersWithDuplicates,
+  selections,
+  onDuplicateSelection,
+}: {
+  result: MatchResult;
+  resultIndex: number;
+  preview: MetricImportPreviewData;
+  membersWithDuplicates: Set<string>;
+  selections: Record<string, number> | undefined;
+  onDuplicateSelection: (columnIndex: number, memberId: string, resultIndex: number) => void;
+}) {
+  const memberHasDuplicates = result.memberId ? membersWithDuplicates.has(result.memberId) : false;
+  const isSelected = result.memberId ? selections?.[result.memberId] === resultIndex : false;
+  const willImport = result.status !== "unmatched" && result.status !== "invalid_value" && isSelected;
+
+  return (
+    <tr
+      data-testid={`metric-preview-row-${preview.columnIndex}-${resultIndex}`}
+      className={
+        result.status === "invalid_value" ? "bg-danger/20 text-danger font-semibold border-t border-border" :
+        result.status === "unmatched" ? "bg-danger/10 text-text-secondary border-t border-border" :
+        !isSelected ? "bg-surface-secondary text-text-disabled border-t border-border" :
+        "bg-success/10 text-text-primary border-t border-border"
+      }
+    >
+      <td className="px-3 py-2 font-medium">{result.rawName}</td>
+      <td className="px-3 py-2">
+        {result.matchedName || "—"}
+        {result.confidence > 0 && result.confidence < 1 && (
+          <span className={`ml-2 text-xs ${willImport ? "text-text-secondary" : "text-text-disabled"}`}>
+            ({Math.round(result.confidence * 100)}%)
+          </span>
+        )}
+      </td>
+      <td className="px-3 py-2 text-right font-mono font-medium">
+        {result.status === "invalid_value" ? (
+          <span className="text-danger font-bold">{result.rawValue} ({result.error})</span>
+        ) : (
+          result.value?.toLocaleString()
+        )}
+      </td>
+      <td className="px-3 py-2 text-center">
+        {result.status === "invalid_value" ? (
+          <span className="px-2 py-0.5 rounded text-xs bg-danger/20 text-danger font-bold">Invalid Value</span>
+        ) : result.status === "unmatched" ? (
+          <span className="px-2 py-0.5 rounded text-xs bg-danger-dark text-text-primary font-medium">No Match</span>
+        ) : memberHasDuplicates ? (
+          <button
+            type="button"
+            onClick={() => result.memberId && onDuplicateSelection(preview.columnIndex, result.memberId, resultIndex)}
+            className={`px-2 py-1 rounded text-xs cursor-pointer ${isSelected ? "bg-success text-white" : "bg-surface-secondary border border-border text-text-secondary hover:bg-surface-elevated"}`}
+          >
+            {isSelected ? "Selected" : "Use This"}
+          </button>
+        ) : willImport ? (
+          <span className="px-2 py-0.5 rounded text-xs bg-success/20 text-success font-medium">Will Import</span>
+        ) : null}
+      </td>
+    </tr>
   );
 }

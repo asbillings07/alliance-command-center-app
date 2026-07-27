@@ -5,6 +5,7 @@ import {
   getDefaultActiveMetricIndex,
   getMetricIndicesNeedingReview,
   getMetricPreviewCounts,
+  groupMetricRowsByOutcome,
   shouldSourceColumnTranslationsDefaultOpen,
   type MetricImportPreviewData,
 } from "./importPreviewHelpers";
@@ -230,5 +231,75 @@ describe("importPreviewHelpers disclosure", () => {
         3: { m1: 0 },
       }),
     ).toEqual([1, 2]);
+  });
+
+  it("partitions every preview row into exactly one outcome group", () => {
+    const mixed = preview({
+      summary: {
+        total: 5,
+        matched: 2,
+        unmatched: 1,
+        duplicates: 1,
+        results: [
+          {
+            rawName: "Dragon",
+            matchedName: "Dragon",
+            memberId: "m1",
+            value: 100,
+            rawValue: "100",
+            sourceRow: 2,
+            confidence: 1,
+            status: "matched",
+          },
+          {
+            rawName: "Dragon",
+            matchedName: "Dragon",
+            memberId: "m1",
+            value: 250,
+            rawValue: "250",
+            sourceRow: 3,
+            confidence: 1,
+            status: "duplicate",
+          },
+          {
+            rawName: "Phoenix",
+            matchedName: "Phoenix",
+            memberId: "m2",
+            value: 200,
+            rawValue: "200",
+            sourceRow: 4,
+            confidence: 1,
+            status: "matched",
+          },
+          {
+            rawName: "Ghost",
+            value: undefined,
+            rawValue: "50",
+            sourceRow: 5,
+            confidence: 0,
+            status: "unmatched",
+          },
+          {
+            rawName: "BadValue",
+            matchedName: "BadValue",
+            memberId: "m3",
+            value: undefined,
+            rawValue: "abc",
+            sourceRow: 6,
+            confidence: 1,
+            status: "invalid_value",
+            error: "Not a number",
+          },
+        ],
+      },
+    });
+
+    const groups = groupMetricRowsByOutcome(mixed, { m1: 0, m2: 2 });
+    const allIndices = [...groups.needsAttention, ...groups.willImport].sort((a, b) => a - b);
+
+    expect(allIndices).toEqual([0, 1, 2, 3, 4]);
+    expect(new Set(allIndices).size).toBe(mixed.summary.results.length);
+    expect(groups.needsAttention).toEqual([1, 3, 4]);
+    expect(groups.willImport).toEqual([0, 2]);
   });
 });

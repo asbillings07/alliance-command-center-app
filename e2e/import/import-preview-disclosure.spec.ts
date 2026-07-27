@@ -119,6 +119,8 @@ test.describe("Results import preview progressive disclosure", () => {
       include: [
         '[data-testid="source-column-translations"]',
         '[role="region"][aria-label="Metric import previews"]',
+        '[data-testid="metric-preview-needs-attention"]',
+        '[data-testid="metric-preview-will-import"]',
       ],
     });
   });
@@ -165,6 +167,86 @@ test.describe("Results import preview progressive disclosure", () => {
     await expect(activePreview).toHaveAttribute("data-metric-status", "ready");
     await expect(activePreview.getByText("1 importable")).toBeVisible();
     await expect(page.getByTestId("metric-preview-row-detail")).toHaveCount(1);
+    await expect(page.getByTestId("metric-preview-needs-attention")).toHaveCount(0);
+
+    const willImport = page.getByTestId("metric-preview-will-import");
+    await expect(willImport).toContainText("1 row will import");
+    await willImport.locator("summary").click();
     await expect(activePreview.getByRole("cell", { name: "DisclosureHero" }).first()).toBeVisible();
+  });
+
+  test("groups active metric rows by outcome with needs-attention open and will-import collapsed", async ({
+    page,
+    login,
+    adminScenario,
+  }) => {
+    const { allianceId, email, password } = adminScenario;
+
+    const killPoints = await prisma.metric.create({
+      data: { allianceId, name: "Kill Points", type: "NUMERIC" },
+    });
+
+    const period = await prisma.metricPeriod.create({
+      data: {
+        allianceId,
+        name: "Grouping Period",
+        active: true,
+        periodMetrics: {
+          create: { metricId: killPoints.id, weight: 1, required: false },
+        },
+      },
+    });
+
+    await prisma.allianceMember.createMany({
+      data: [
+        { allianceId, playerName: "DisclosureHero" },
+        { allianceId, playerName: "DisclosurePhoenix" },
+      ],
+    });
+
+    await login({ email, password, displayName: "Admin User" });
+    await page.goto(`/alliances/${allianceId}/periods/${period.id}/import`);
+
+    const csvContent = [
+      "Player,Kill Points",
+      "DisclosureHero,1000",
+      "DisclosurePhoenix,2000",
+      "GhostPlayer,999",
+    ].join("\n");
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "grouping.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csvContent),
+    });
+
+    await page.getByRole("button", { name: "Preview Import" }).click();
+
+    const needsAttention = page.getByTestId("metric-preview-needs-attention");
+    const willImport = page.getByTestId("metric-preview-will-import");
+
+    await expect(needsAttention).toBeVisible();
+    await expect(needsAttention).toContainText("1 need attention");
+    await expect(needsAttention.locator("summary")).toHaveAttribute("aria-expanded", "true");
+    await expect(needsAttention.getByText("GhostPlayer")).toBeVisible();
+
+    await expect(willImport).toBeVisible();
+    await expect(willImport).toContainText("2 rows will import");
+    await expect(willImport.locator("summary")).toHaveAttribute("aria-expanded", "false");
+    await expect(willImport.getByText("DisclosureHero")).toHaveCount(0);
+
+    await willImport.locator("summary").click();
+    await expect(willImport.locator("summary")).toHaveAttribute("aria-expanded", "true");
+    await expect(willImport.getByText("DisclosureHero")).toBeVisible();
+    await expect(willImport.getByText("DisclosurePhoenix")).toBeVisible();
+
+    await needsAttention.locator("summary").focus();
+    await page.keyboard.press(" ");
+    await expect(needsAttention.locator("summary")).toHaveAttribute("aria-expanded", "false");
+    await expect(needsAttention).toContainText("1 need attention");
+
+    await willImport.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    await expect(willImport.locator("summary")).toHaveAttribute("aria-expanded", "true");
   });
 });

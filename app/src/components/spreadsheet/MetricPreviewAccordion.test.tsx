@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { MetricPreviewAccordion } from "./MetricPreviewAccordion";
 import {
   getPreviewEntries,
+  groupMetricRowsByOutcome,
   type MetricImportPreviewData,
 } from "@/app/src/lib/import/importPreviewHelpers";
 
@@ -388,5 +389,206 @@ describe("MetricPreviewAccordion [component]", () => {
     );
     expect(navigator().querySelector('label[for="metric-preview-jump"]')?.textContent).toBe("Jump to metric");
     expect(container.querySelector('[role="region"][aria-label="Metric import previews"]')).not.toBeNull();
+  });
+
+  it("groups active metric rows by outcome with accurate counts and no overlap", async () => {
+    const mixedMetric = preview({
+      columnIndex: 5,
+      displayName: "Mixed Metric",
+      columnName: "Mixed Column",
+      proposedMetricName: "Mixed Metric",
+      summary: {
+        total: 5,
+        matched: 2,
+        unmatched: 1,
+        duplicates: 1,
+        results: [
+          matchedResult("Dragon", "m1", 100, 2),
+          {
+            rawName: "Dragon",
+            matchedName: "Dragon",
+            memberId: "m1",
+            value: 250,
+            rawValue: "250",
+            sourceRow: 3,
+            confidence: 1,
+            status: "duplicate" as const,
+          },
+          matchedResult("Phoenix", "m2", 200, 4),
+          {
+            rawName: "Ghost",
+            value: undefined,
+            rawValue: "50",
+            sourceRow: 5,
+            confidence: 0,
+            status: "unmatched" as const,
+          },
+          {
+            rawName: "BadValue",
+            matchedName: "BadValue",
+            memberId: "m3",
+            value: undefined,
+            rawValue: "abc",
+            sourceRow: 6,
+            confidence: 1,
+            status: "invalid_value" as const,
+            error: "Not a number",
+          },
+        ],
+      },
+      skippedBlankCells: [
+        {
+          rawName: "BlankPlayer",
+          address: "B7",
+          sourceRow: 7,
+          columnIndex: 5,
+          metricName: "Mixed Metric",
+        },
+      ],
+    });
+
+    const largeSet = Array.from({ length: 24 }, (_, index) =>
+      preview({
+        columnIndex: index + 10,
+        displayName: `Bulk Metric ${index + 1}`,
+        columnName: `Bulk Column ${index + 1}`,
+        proposedMetricName: `Bulk Metric ${index + 1}`,
+      }),
+    );
+
+    await renderAccordion([...largeSet, mixedMetric], {
+      ...Object.fromEntries(largeSet.map((item) => [item.columnIndex, { m1: 0, m2: 1 }])),
+      5: { m1: 0, m2: 2 },
+    });
+
+    await act(async () => {
+      const jumpSelect = navigator().querySelector('[data-testid="metric-preview-jump"]') as HTMLSelectElement;
+      jumpSelect.value = String(largeSet.length);
+      jumpSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const panel = activeMetricPanel();
+    const groups = groupMetricRowsByOutcome(mixedMetric, { m1: 0, m2: 2 });
+
+    expect(groups.needsAttention).toHaveLength(3);
+    expect(groups.willImport).toHaveLength(2);
+    expect([...groups.needsAttention, ...groups.willImport].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4]);
+
+    const needsAttention = panel.querySelector('[data-testid="metric-preview-needs-attention"]') as HTMLDetailsElement;
+    const willImport = panel.querySelector('[data-testid="metric-preview-will-import"]') as HTMLDetailsElement;
+    const skippedBlanks = panel.querySelector('[data-testid="metric-preview-skipped-blanks"]') as HTMLDetailsElement;
+
+    expect(needsAttention.open).toBe(true);
+    expect(needsAttention.textContent).toContain("3 need attention");
+    expect(willImport.open).toBe(false);
+    expect(willImport.textContent).toContain("2 rows will import");
+    expect(skippedBlanks).not.toBeNull();
+    expect(skippedBlanks.textContent).toContain("1 skipped");
+
+    expect(panel.querySelector('[data-testid="metric-preview-row-5-3"]')).not.toBeNull();
+    expect(panel.querySelector('[data-testid="metric-preview-row-5-4"]')).not.toBeNull();
+    expect(willImport.open).toBe(false);
+
+    await act(async () => {
+      willImport.querySelector("summary")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(willImport.querySelector('[data-testid="metric-preview-row-5-0"]')).not.toBeNull();
+    expect(willImport.querySelector('[data-testid="metric-preview-row-5-2"]')).not.toBeNull();
+  });
+
+  it("toggling row group disclosure does not change duplicate selections or import payload", async () => {
+    const duplicateMetric = preview({
+      columnIndex: 1,
+      displayName: "Kill Points",
+      summary: {
+        total: 2,
+        matched: 1,
+        unmatched: 0,
+        duplicates: 1,
+        results: [
+          matchedResult("Dragon", "m1", 100, 2),
+          {
+            rawName: "Dragon",
+            matchedName: "Dragon",
+            memberId: "m1",
+            value: 250,
+            rawValue: "250",
+            sourceRow: 3,
+            confidence: 1,
+            status: "duplicate" as const,
+          },
+        ],
+      },
+    });
+
+    const state = await renderAccordionWithSelectionState([duplicateMetric]);
+
+    const panel = activeMetricPanel();
+    const needsAttention = panel.querySelector('[data-testid="metric-preview-needs-attention"]') as HTMLDetailsElement;
+    const willImport = panel.querySelector('[data-testid="metric-preview-will-import"]') as HTMLDetailsElement;
+    const needsSummary = needsAttention.querySelector("summary") as HTMLElement;
+    const willSummary = willImport.querySelector("summary") as HTMLElement;
+
+    expect(needsAttention.open).toBe(true);
+    expect(willImport.open).toBe(false);
+    expect(needsSummary.getAttribute("aria-expanded")).toBe("true");
+    expect(willSummary.getAttribute("aria-expanded")).toBe("false");
+
+    const payloadBeforeToggle = getPreviewEntries(duplicateMetric, state.selections[1]).map((e) => e.rawValue);
+    expect(payloadBeforeToggle).toEqual(["100"]);
+
+    await act(async () => {
+      needsSummary.click();
+      willSummary.click();
+      needsSummary.click();
+      willSummary.click();
+    });
+
+    expect(needsAttention.open).toBe(true);
+    expect(willImport.open).toBe(false);
+    expect(getPreviewEntries(duplicateMetric, state.selections[1]).map((e) => e.rawValue)).toEqual(["100"]);
+  });
+
+  it("exposes keyboard-focusable row group summaries with aria-expanded state", async () => {
+    const needsReview = preview({
+      columnIndex: 2,
+      displayName: "Mystery Score",
+      summary: {
+        total: 2,
+        matched: 1,
+        unmatched: 1,
+        duplicates: 0,
+        results: [
+          matchedResult("Dragon", "m1", 100, 2),
+          {
+            rawName: "Ghost",
+            value: undefined,
+            rawValue: "50",
+            sourceRow: 3,
+            confidence: 0,
+            status: "unmatched" as const,
+          },
+        ],
+      },
+    });
+
+    await renderAccordion([needsReview], { 2: { m1: 0 } });
+
+    const panel = activeMetricPanel();
+    const needsAttention = panel.querySelector('[data-testid="metric-preview-needs-attention"]') as HTMLDetailsElement;
+    const willImport = panel.querySelector('[data-testid="metric-preview-will-import"]') as HTMLDetailsElement;
+    const needsSummary = needsAttention.querySelector("summary") as HTMLElement;
+    const willSummary = willImport.querySelector("summary") as HTMLElement;
+
+    expect(needsSummary.tagName).toBe("SUMMARY");
+    expect(willSummary.tagName).toBe("SUMMARY");
+    expect(needsSummary.getAttribute("aria-expanded")).toBe("true");
+    expect(willSummary.getAttribute("aria-expanded")).toBe("false");
+
+    needsSummary.focus();
+    expect(document.activeElement).toBe(needsSummary);
+
+    willSummary.focus();
+    expect(document.activeElement).toBe(willSummary);
   });
 });
