@@ -703,8 +703,18 @@ describe("MultiPeriodImportFlow [component]", () => {
     ) as HTMLInputElement;
     expect(metricNameInput).not.toBeNull();
     expect(metricNameInput.value).toBe("");
+    expect(metricNameInput.required).toBe(true);
+    expect(metricNameInput.getAttribute("aria-required")).toBe("true");
+    expect(metricNameInput.getAttribute("aria-invalid")).toBe("true");
+    const metricNameErrorId = metricNameInput.getAttribute("aria-describedby");
+    expect(metricNameErrorId).toMatch(/multi-period-metric-name-error-/);
+    const metricNameError = document.getElementById(metricNameErrorId!);
+    expect(metricNameError).not.toBeNull();
+    expect(metricNameError?.textContent).toContain("Metric name is required.");
+    expect(container.textContent?.match(/Metric name is required/g)?.length).toBe(1);
 
     await fillInputElement(metricNameInput, "Weekly Kills");
+    expect(metricNameInput.getAttribute("aria-invalid")).toBe("false");
     expect(previewButton.disabled).toBe(false);
 
     await act(async () => {
@@ -730,6 +740,173 @@ describe("MultiPeriodImportFlow [component]", () => {
       kind: "create",
       name: "Weekly Kills",
     });
+  });
+
+  it("preserves explicit metric choices when the group period target changes", async () => {
+    const existingPeriodId = "period-existing";
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Kills on 3/29", "Kills on 4/13", "Hero Power", "Kills on 3/4"],
+      ["Dragon", "1500", "2000", "9000", "300"],
+    ]);
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: "A1",
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "Kills on 3/29",
+          headerAddress: "B1",
+          isNumeric: true,
+        },
+        {
+          columnIndex: 2,
+          headerText: "Kills on 4/13",
+          headerAddress: "C1",
+          isNumeric: true,
+        },
+        {
+          columnIndex: 3,
+          headerText: "Hero Power",
+          headerAddress: "D1",
+          isNumeric: true,
+        },
+        {
+          columnIndex: 4,
+          headerText: "Kills on 3/4",
+          headerAddress: "E1",
+          isNumeric: true,
+        },
+      ],
+    });
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      routePeriodId: null,
+      alliancePeriods: [
+        {
+          id: existingPeriodId,
+          name: "Latest Period",
+          startsAt: "2026-03-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [],
+        },
+      ],
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    const unassignedPeriodSelect = container.querySelector(
+      'select[id="multi-period-target-unassigned-columns"]',
+    ) as HTMLSelectElement;
+    const heroPowerMetricSelect = container.querySelector(
+      'select[aria-label="Metric for Hero Power"]',
+    ) as HTMLSelectElement;
+    const killsMetricSelect = container.querySelector(
+      'select[aria-label="Metric for Kills on 3/4"]',
+    ) as HTMLSelectElement;
+    const previewButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Preview Multi-Period Import"),
+    ) as HTMLButtonElement;
+
+    await selectOptionValue(unassignedPeriodSelect, existingPeriodId);
+    await selectOptionValue(heroPowerMetricSelect, "skip");
+    await selectOptionValue(killsMetricSelect, "create");
+    expect(previewButton.disabled).toBe(false);
+
+    await selectOptionValue(unassignedPeriodSelect, CREATE_PERIOD_SELECT_VALUE);
+
+    const createPeriodNameInput = container.querySelector(
+      'input[id="multi-period-target-unassigned-columns-name"]',
+    ) as HTMLInputElement;
+    await fillInputElement(createPeriodNameInput, "Supplemental Period");
+
+    expect(heroPowerMetricSelect.value).toBe("skip");
+    expect(killsMetricSelect.value).toBe("create");
+    expect(previewButton.disabled).toBe(false);
+  });
+
+  it("marks only invalidated columns incomplete when group period change breaks an existing mapping", async () => {
+    const periodAId = "period-a";
+    const periodBId = "period-b";
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Kills on 3/29"],
+      ["Dragon", "1500"],
+    ]);
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: "A1",
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "Kills on 3/29",
+          headerAddress: "B1",
+          isNumeric: true,
+        },
+      ],
+    });
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      routePeriodId: null,
+      alliancePeriods: [
+        {
+          id: periodAId,
+          name: "Period A",
+          startsAt: "2026-03-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [{ id: "met1", name: "Kill Points" }],
+        },
+        {
+          id: periodBId,
+          name: "Period B",
+          startsAt: "2026-02-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [],
+        },
+      ],
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    const metricSelect = container.querySelector(
+      'select[aria-label="Metric for Kills on 3/29"]',
+    ) as HTMLSelectElement;
+    const periodSelect = container.querySelector(
+      'select[id^="multi-period-target-"]',
+    ) as HTMLSelectElement;
+    const previewButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Preview Multi-Period Import"),
+    ) as HTMLButtonElement;
+
+    await selectOptionValue(periodSelect, periodAId);
+    await selectOptionValue(metricSelect, "existing:met1");
+    expect(previewButton.disabled).toBe(false);
+
+    await selectOptionValue(periodSelect, periodBId);
+
+    expect(metricSelect.value).toBe(UNCONFIRMED_TARGET_TOKEN);
+    expect(container.textContent).toContain(
+      "The previously selected metric is not attached to the new target period. Choose a metric again.",
+    );
+    expect(previewButton.disabled).toBe(true);
   });
 });
 
