@@ -63,6 +63,8 @@ export type AllianceSetupStatus = {
   /** Separate counts for required vs optional tasks */
   requiredComplete: number;
   requiredTotal: number;
+  /** Active (non-archived) alliance members. */
+  activeMemberCount: number;
   /**
    * Latest active evaluation period, or null when none exist (including
    * archived-only). Consumers can use this with hasArchivedPeriodsOnly to
@@ -353,6 +355,7 @@ export async function getAllianceSetupStatus(
     requiredTotal: allRequiredTotal,
     targetPeriodId: targetPeriod?.id ?? null,
     hasArchivedPeriodsOnly,
+    activeMemberCount: counts.members,
     recommendedTask,
   };
 }

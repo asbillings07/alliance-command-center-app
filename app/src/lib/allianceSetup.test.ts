@@ -158,6 +158,7 @@ describe("getAllianceSetupStatus", () => {
     expect(status.tasks.every((t) => !t.completed)).toBe(true);
     expect(status.targetPeriodId).toBeNull();
     expect(status.hasArchivedPeriodsOnly).toBe(false);
+    expect(status.activeMemberCount).toBe(0);
   });
 
   it("returns all tasks complete for fully setup alliance", async () => {

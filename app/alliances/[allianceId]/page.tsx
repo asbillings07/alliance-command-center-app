@@ -3,6 +3,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 import { resolveTargetPeriod } from "@/app/src/lib/periods/resolveTargetPeriod";
+import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvisionMetricsForPeriod";
 import { PageLayout, Card, Badge, SetupProgressCard } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 
@@ -11,6 +12,21 @@ type Params = {
     allianceId: string;
   }>;
 };
+
+async function getAttachableLibraryMetricCount(
+  allianceId: string,
+  assignedMetricIds: string[],
+): Promise<number> {
+  return prisma.metric.count({
+    where: {
+      allianceId,
+      active: true,
+      ...(assignedMetricIds.length > 0
+        ? { id: { notIn: assignedMetricIds } }
+        : {}),
+    },
+  });
+}
 
 export default async function AlliancePage({ params }: Params) {
   const { allianceId } = await params;
@@ -35,14 +51,25 @@ export default async function AlliancePage({ params }: Params) {
     ? await resolveTargetPeriod(allianceId)
     : null;
 
+  const assignedMetricIds =
+    activePeriod?.periodMetrics.map((pm) => pm.metricId) ?? [];
+  const attachableLibraryMetricCount = activePeriod
+    ? await getAttachableLibraryMetricCount(allianceId, assignedMetricIds)
+    : 0;
+  const hasPeriodMetrics = assignedMetricIds.length > 0;
+  const hasActiveMembers = setupStatus.activeMemberCount > 0;
+  const canProvision = canProvisionMetricsForPeriod({
+    canConfigureMetrics: permissions.canConfigureMetrics,
+    canConfigurePeriods: permissions.canConfigurePeriods,
+    attachableLibraryMetricCount,
+  });
+
   return (
     <PageLayout
       title={alliance.name}
       description={`Server: ${alliance.server}`}
     >
       <div className="flex flex-col gap-6">
-        {/* Persistent setup progress: stays until all applicable tasks (required
-            and optional next steps) are complete. Visibility handled internally. */}
         <SetupProgressCard
           allianceId={allianceId}
           completedCount={setupStatus.completedCount}
@@ -77,49 +104,110 @@ export default async function AlliancePage({ params }: Params) {
               </Card.Body>
             </Card>
 
+            {permissions.canImportMetrics && !activePeriod && (
+              <Card>
+                <Card.Body>
+                  <h3 className="font-medium text-primary mb-2">Evaluation Results</h3>
+                  <p className="text-sm text-text-secondary mb-4">
+                    {setupStatus.hasArchivedPeriodsOnly
+                      ? "Only inactive evaluation periods exist. Restore one or create a new period before recording or importing results."
+                      : "No evaluation periods yet. Create one before recording or importing member results."}
+                  </p>
+                  {permissions.canConfigurePeriods ? (
+                    <Button href={`/alliances/${allianceId}/periods`} variant="primary" size="sm">
+                      Go to Evaluation Periods
+                    </Button>
+                  ) : (
+                    <p className="text-sm text-text-secondary">
+                      Ask an Admin or Owner to create or restore an evaluation period.
+                    </p>
+                  )}
+                </Card.Body>
+              </Card>
+            )}
+
             {permissions.canImportMetrics && activePeriod && (
               <Card>
                 <Card.Body>
                   <h3 className="font-medium text-primary mb-2">Evaluation Results</h3>
-                  {activePeriod.periodMetrics.length > 0 ? (
+                  {!hasActiveMembers ? (
+                    <>
+                      <p className="text-sm text-text-secondary mb-4">
+                        Import members before recording or importing evaluation results for{" "}
+                        <strong>{activePeriod.name}</strong>.
+                      </p>
+                      {permissions.canImportMembers ? (
+                        <Button
+                          href={`/alliances/${allianceId}/members/import`}
+                          variant="primary"
+                          size="sm"
+                        >
+                          Import Members
+                        </Button>
+                      ) : (
+                        <p className="text-sm text-text-secondary">
+                          Ask an Admin or Owner to import members.
+                        </p>
+                      )}
+                    </>
+                  ) : !hasPeriodMetrics && !canProvision ? (
+                    <>
+                      <p className="text-sm text-text-secondary mb-4">
+                        Active period <strong>{activePeriod.name}</strong> has no assigned metrics yet.
+                        Configure period metrics before recording results.
+                      </p>
+                      {permissions.canConfigurePeriods ? (
+                        <Button
+                          href={`/alliances/${allianceId}/periods/${activePeriod.id}`}
+                          variant="primary"
+                          size="sm"
+                        >
+                          Manage Period Metrics
+                        </Button>
+                      ) : (
+                        <Button
+                          href={`/alliances/${allianceId}/periods/${activePeriod.id}`}
+                          variant="secondary"
+                          size="sm"
+                        >
+                          View Period
+                        </Button>
+                      )}
+                    </>
+                  ) : !hasPeriodMetrics && canProvision ? (
+                    <>
+                      <p className="text-sm text-text-secondary mb-4">
+                        Active period <strong>{activePeriod.name}</strong> has no assigned metrics yet.
+                        Import a spreadsheet to attach metrics and add results.
+                      </p>
+                      <Button
+                        href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`}
+                        variant="primary"
+                        size="sm"
+                      >
+                        Import Evaluation Results
+                      </Button>
+                    </>
+                  ) : (
                     <>
                       <p className="text-sm text-text-secondary mb-4">
                         Record or import performance data for <strong>{activePeriod.name}</strong>.
                       </p>
                       <div className="flex gap-2">
-                        <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}/record`} variant="primary" size="sm">
+                        <Button
+                          href={`/alliances/${allianceId}/periods/${activePeriod.id}/record`}
+                          variant="primary"
+                          size="sm"
+                        >
                           Record Now
                         </Button>
-                        <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`} variant="secondary" size="sm">
+                        <Button
+                          href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`}
+                          variant="secondary"
+                          size="sm"
+                        >
                           Import Evaluation Results
                         </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm text-text-secondary mb-4">
-                        Active period <strong>{activePeriod.name}</strong> has no assigned metrics yet. Assign metrics to record results, or import a spreadsheet.
-                      </p>
-                      <div className="flex gap-2 flex-wrap">
-                        {permissions.canConfigurePeriods || permissions.canConfigureMetrics ? (
-                          <>
-                            <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}`} variant="primary" size="sm">
-                              Manage Period Metrics
-                            </Button>
-                            <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`} variant="secondary" size="sm">
-                              Import Evaluation Results
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`} variant="primary" size="sm">
-                              Import Evaluation Results
-                            </Button>
-                            <Button href={`/alliances/${allianceId}/periods/${activePeriod.id}`} variant="secondary" size="sm">
-                              View Period
-                            </Button>
-                          </>
-                        )}
                       </div>
                     </>
                   )}

@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { PageLayout, Card } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { getPeriodResultsSummary } from "@/app/src/lib/reports/getPeriodResultsSummary";
+import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvisionMetricsForPeriod";
 
 type Params = {
     params: Promise<{
@@ -60,6 +61,24 @@ export default async function PeriodPage({ params }: Params) {
         required: pm.required,
     }));
 
+    const assignedMetricIds = periodMetrics.map((pm) => pm.metricId);
+    const attachableLibraryMetricCount = await prisma.metric.count({
+        where: {
+            allianceId,
+            active: true,
+            ...(assignedMetricIds.length > 0
+                ? { id: { notIn: assignedMetricIds } }
+                : {}),
+        },
+    });
+    const hasPeriodMetrics = periodMetrics.length > 0;
+    const hasActiveMembers = resultsSummary.currentActiveMemberCount > 0;
+    const canProvision = canProvisionMetricsForPeriod({
+        canConfigureMetrics: permissions.canConfigureMetrics,
+        canConfigurePeriods: permissions.canConfigurePeriods,
+        attachableLibraryMetricCount,
+    });
+
     return (
         <PageLayout
             breadcrumb={[
@@ -96,22 +115,46 @@ export default async function PeriodPage({ params }: Params) {
                     <Card.Body>
                         <div className="flex flex-col gap-4">
                             <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg flex items-center justify-between">
-                                <div>
-                                    <p className="text-lg font-bold text-text-primary">
-                                        {resultsSummary.participatingMemberCount} participating {resultsSummary.participatingMemberCount === 1 ? "member" : "members"}
-                                    </p>
-                                    <p className="text-sm text-text-secondary mt-0.5">
-                                        {resultsSummary.participatingActiveMemberCount} of {resultsSummary.currentActiveMemberCount} current active members have recorded results
-                                    </p>
-                                </div>
-                                {permissions.canViewMembers && (
-                                    <Button
-                                        href={`/alliances/${allianceId}/members?periodId=${periodId}`}
-                                        variant="secondary"
-                                        size="sm"
-                                    >
-                                        View Member Results
-                                    </Button>
+                                {resultsSummary.currentActiveMemberCount === 0 ? (
+                                    <div>
+                                        <p className="text-lg font-bold text-text-primary">
+                                            No active members yet
+                                        </p>
+                                        <p className="text-sm text-text-secondary mt-0.5">
+                                            Import members before recording evaluation results for this period.
+                                        </p>
+                                        {permissions.canImportMembers && (
+                                            <div className="mt-3">
+                                                <Button
+                                                    href={`/alliances/${allianceId}/members/import`}
+                                                    variant="primary"
+                                                    size="sm"
+                                                >
+                                                    Import Members
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div>
+                                            <p className="text-lg font-bold text-text-primary">
+                                                {resultsSummary.participatingMemberCount} participating {resultsSummary.participatingMemberCount === 1 ? "member" : "members"}
+                                            </p>
+                                            <p className="text-sm text-text-secondary mt-0.5">
+                                                {resultsSummary.participatingActiveMemberCount} of {resultsSummary.currentActiveMemberCount} current active members have recorded results
+                                            </p>
+                                        </div>
+                                        {permissions.canViewMembers && (
+                                            <Button
+                                                href={`/alliances/${allianceId}/members?periodId=${periodId}`}
+                                                variant="secondary"
+                                                size="sm"
+                                            >
+                                                View Member Results
+                                            </Button>
+                                        )}
+                                    </>
                                 )}
                             </div>
 
@@ -153,20 +196,73 @@ export default async function PeriodPage({ params }: Params) {
                     <Card>
                         <Card.Header>Actions</Card.Header>
                         <Card.Body>
-                            <div className="flex gap-4">
-                                <Button
-                                    href={`/alliances/${allianceId}/periods/${periodId}/record`}
-                                    variant="primary"
-                                >
-                                    Record Results
-                                </Button>
-                                <Button
-                                    href={`/alliances/${allianceId}/periods/${periodId}/import`}
-                                    variant="secondary"
-                                >
-                                    Import Evaluation Results
-                                </Button>
-                            </div>
+                            {!hasActiveMembers ? (
+                                <>
+                                    <p className="text-sm text-text-secondary mb-4">
+                                        Import members before recording or importing evaluation results.
+                                    </p>
+                                    {permissions.canImportMembers ? (
+                                        <Button
+                                            href={`/alliances/${allianceId}/members/import`}
+                                            variant="primary"
+                                        >
+                                            Import Members
+                                        </Button>
+                                    ) : (
+                                        <p className="text-sm text-text-secondary">
+                                            Ask an Admin or Owner to import members.
+                                        </p>
+                                    )}
+                                </>
+                            ) : !hasPeriodMetrics && !canProvision ? (
+                                <>
+                                    <p className="text-sm text-text-secondary mb-4">
+                                        Configure period metrics before recording results.
+                                    </p>
+                                    {permissions.canConfigurePeriods ? (
+                                        <Button
+                                            href={`/alliances/${allianceId}/periods/${periodId}`}
+                                            variant="primary"
+                                        >
+                                            Manage Period Metrics
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            href={`/alliances/${allianceId}/periods/${periodId}`}
+                                            variant="secondary"
+                                        >
+                                            View Period
+                                        </Button>
+                                    )}
+                                </>
+                            ) : !hasPeriodMetrics && canProvision ? (
+                                <>
+                                    <p className="text-sm text-text-secondary mb-4">
+                                        Import a spreadsheet to attach metrics and add results for this period.
+                                    </p>
+                                    <Button
+                                        href={`/alliances/${allianceId}/periods/${periodId}/import`}
+                                        variant="primary"
+                                    >
+                                        Import Evaluation Results
+                                    </Button>
+                                </>
+                            ) : (
+                                <div className="flex gap-4">
+                                    <Button
+                                        href={`/alliances/${allianceId}/periods/${periodId}/record`}
+                                        variant="primary"
+                                    >
+                                        Record Results
+                                    </Button>
+                                    <Button
+                                        href={`/alliances/${allianceId}/periods/${periodId}/import`}
+                                        variant="secondary"
+                                    >
+                                        Import Evaluation Results
+                                    </Button>
+                                </div>
+                            )}
                         </Card.Body>
                     </Card>
                 )}
