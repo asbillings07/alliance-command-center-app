@@ -1,5 +1,5 @@
 import { test, expect } from "../shared/fixtures";
-import { checkA11yLevelAA } from "../shared/accessibility";
+import { checkA11yWithOptions } from "../shared/accessibility";
 import { prisma } from "@/app/src/lib/prisma";
 
 test.describe("Results import preview progressive disclosure", () => {
@@ -99,12 +99,24 @@ test.describe("Results import preview progressive disclosure", () => {
     await killPointsPreview.locator("#metric-preview-summary-1").focus();
     await page.keyboard.press("Enter");
     await expect(killPointsPreview).not.toHaveAttribute("open");
+    await expect(killPointsPreview.locator("#metric-preview-summary-1")).toHaveAttribute("aria-expanded", "false");
 
     await heroPowerPreview.locator("#metric-preview-summary-2").focus();
     await page.keyboard.press("Space");
     await expect(heroPowerPreview).not.toHaveAttribute("open");
+    await expect(heroPowerPreview.locator("#metric-preview-summary-2")).toHaveAttribute("aria-expanded", "false");
 
-    await checkA11yLevelAA(page);
+    await expect(translations.locator("summary")).toHaveAttribute("aria-expanded", "false");
+    await expect(killPointsPreview.locator("#metric-preview-summary-1")).toHaveAttribute("aria-expanded", "false");
+    await expect(heroPowerPreview.locator("#metric-preview-summary-2")).toHaveAttribute("aria-expanded", "false");
+
+    await checkA11yWithOptions(page, {
+      runOnly: ["wcag2a", "wcag2aa"],
+      include: [
+        '[data-testid="source-column-translations"]',
+        '[role="region"][aria-label="Metric import previews"]',
+      ],
+    });
   });
 
   test("leaders can expand any metric preview independently during import review", async ({

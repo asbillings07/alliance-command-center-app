@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@/app/src/components/Badge";
 import type { ColumnTranslation } from "@/app/src/lib/importTranslation";
 import {
   columnTranslationRequiresAction,
@@ -35,13 +36,13 @@ export function SourceColumnTranslationsSection({
           <h3 className="font-semibold text-text-primary text-sm">Source Column Translations</h3>
         </div>
         {pendingActionCount > 0 ? (
-          <span className="shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium bg-warning/15 text-warning border border-warning/30">
+          <Badge variant="warning" size="sm" className="shrink-0">
             {pendingActionCount} column{pendingActionCount === 1 ? "" : "s"} need action
-          </span>
+          </Badge>
         ) : (
-          <span className="shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium bg-success/10 text-success border border-success/30">
+          <Badge variant="success" size="sm" className="shrink-0">
             All columns mapped
-          </span>
+          </Badge>
         )}
       </summary>
       <div className="px-4 pb-4 space-y-2 border-t border-border/60">{children}</div>

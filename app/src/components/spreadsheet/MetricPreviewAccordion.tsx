@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { Badge } from "@/app/src/components/Badge";
 import {
   getDefaultOpenMetricColumnIndex,
   getMetricPreviewCounts,
@@ -105,36 +106,30 @@ function MetricPreviewAccordionItem({
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <span className="font-semibold text-text-primary">{preview.displayName}</span>
             <span className={`px-2 py-0.5 rounded text-xs ${badge.className}`}>{badge.label}</span>
-            {counts.status === "needs_review" ? (
-              <span className="px-2 py-0.5 rounded text-xs bg-warning/15 text-warning border border-warning/30 font-medium">
-                Needs review
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded text-xs bg-success/10 text-success border border-success/30 font-medium">
-                Ready
-              </span>
-            )}
+            <Badge variant={counts.status === "needs_review" ? "warning" : "success"} size="sm">
+              {counts.status === "needs_review" ? "Needs review" : "Ready"}
+            </Badge>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs sm:justify-end">
-          <span className="px-2 py-0.5 rounded bg-success/10 text-success border border-success/30">
+          <Badge variant="success" size="sm">
             {counts.importableCount} importable
-          </span>
+          </Badge>
           {counts.unmatchedCount > 0 && (
-            <span className="px-2 py-0.5 rounded bg-danger/10 text-danger border border-danger/30">
+            <Badge variant="danger" size="sm">
               {counts.unmatchedCount} unmatched
-            </span>
+            </Badge>
           )}
           {counts.invalidCount > 0 && (
-            <span className="px-2 py-0.5 rounded bg-danger/15 text-danger border border-danger/40 font-medium">
+            <Badge variant="danger" size="sm">
               {counts.invalidCount} invalid
-            </span>
+            </Badge>
           )}
           {hasDuplicates && (
-            <span className="px-2 py-0.5 rounded bg-warning/10 text-warning border border-warning/30">
+            <Badge variant="warning" size="sm">
               {summary.duplicates} duplicate{summary.duplicates === 1 ? "" : "s"}
-            </span>
+            </Badge>
           )}
           <span className="text-text-muted hidden sm:inline">
             from <strong className="text-text-secondary">{preview.columnName}</strong>
