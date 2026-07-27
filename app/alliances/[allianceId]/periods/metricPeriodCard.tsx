@@ -8,6 +8,7 @@ import { MetricPeriodMetric } from "@/app/generated/prisma/client";
 import { Metric } from "@/app/generated/prisma/client";
 import { Card, Badge } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
+import { buildMetricsLibraryHref } from "@/app/src/lib/periods/metricsLibraryHref";
 
 type MetricPeriodData = {
   id: string;
@@ -36,9 +37,10 @@ export function MetricPeriodCard({
   period,
 }: MetricPeriodCardProps) {
   const router = useRouter();
-  const [cardState, setCardState] = useState<"closed" | "form" | "view">(
+  const [cardState, setCardState] = useState<"closed" | "form" | "view" | "created">(
     mode === "create" ? "closed" : "view"
   );
+  const [createdPeriodId, setCreatedPeriodId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -89,12 +91,45 @@ export function MetricPeriodCard({
       );
     }
 
+    if (cardState === "created" && createdPeriodId) {
+      const metricsHref = buildMetricsLibraryHref(allianceId, createdPeriodId);
+      return (
+        <div className="w-full flex flex-col gap-3" data-tour="create-period">
+          <div className="rounded-md border border-success/30 bg-success/10 p-4 text-sm text-text-primary">
+            Evaluation period created.
+          </div>
+          <Button variant="primary" href={metricsHref}>
+            Configure metrics for this period
+          </Button>
+          <button
+            type="button"
+            onClick={() => setCardState("form")}
+            className="text-sm text-text-muted hover:text-text-primary self-start"
+          >
+            Create another period
+          </button>
+          <button
+            type="button"
+            onClick={() => setCardState("closed")}
+            className="text-sm text-text-muted hover:text-text-primary self-start"
+          >
+            Stay on Evaluation Periods
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div className="w-full" data-tour="create-period">
         <MetricPeriodForm
           allianceId={allianceId}
           mode="create"
           onCancel={() => setCardState("closed")}
+          onSuccess={(periodId) => {
+            router.refresh();
+            setCreatedPeriodId(periodId);
+            setCardState("created");
+          }}
         />
       </div>
     );

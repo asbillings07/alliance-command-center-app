@@ -2,6 +2,7 @@
 import type { Metric } from "@/app/generated/prisma/client";
 import Link from "next/link";
 import { PeriodMetricForm } from "./PeriodMetricForm";
+import { buildMetricsLibraryHref } from "@/app/src/lib/periods/metricsLibraryHref";
 
 type PeriodMetricData = {
     metricId: string;
@@ -17,12 +18,6 @@ type PeriodMetricListProps = {
     periodMetrics: PeriodMetricData[];
     readOnly?: boolean;
 };
-
-function buildMetricsLibraryHref(allianceId: string, periodId: string): string {
-    const returnTo = `/alliances/${allianceId}/periods/${periodId}`;
-    return `/alliances/${allianceId}/metrics?returnTo=${encodeURIComponent(returnTo)}`;
-}
-
 export function PeriodMetricList({ metrics, periodId, allianceId, periodMetrics, readOnly = false }: PeriodMetricListProps) {
     const assignedMetricIds = new Set(periodMetrics.map((pm) => pm.metricId));
     const availableMetrics = metrics.filter((m) => !assignedMetricIds.has(m.id));
