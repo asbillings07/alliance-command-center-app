@@ -715,6 +715,9 @@ describe("MultiPeriodImportFlow [component]", () => {
 
     await fillInputElement(metricNameInput, "Weekly Kills");
     expect(metricNameInput.getAttribute("aria-invalid")).toBe("false");
+    expect(metricNameInput.getAttribute("aria-describedby")).toBeNull();
+    expect(document.getElementById(metricNameErrorId!)).toBeNull();
+    expect(container.textContent).not.toContain("Metric name is required.");
     expect(previewButton.disabled).toBe(false);
 
     await act(async () => {
@@ -832,6 +835,107 @@ describe("MultiPeriodImportFlow [component]", () => {
     expect(heroPowerMetricSelect.value).toBe("skip");
     expect(killsMetricSelect.value).toBe("create");
     expect(previewButton.disabled).toBe(false);
+  });
+
+  it("preserves typed explicit create metric name when the group period target changes", async () => {
+    importMock.mockResolvedValue({
+      success: true,
+      totalCount: 1,
+      periods: [],
+    });
+
+    const existingPeriodId = "period-existing";
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Jan 27 - Feb 1"],
+      ["Dragon", "1500"],
+    ]);
+    const review = buildPeriodMappingReview({
+      sheetName: "Season 7 2026",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: "A1",
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "Jan 27 - Feb 1",
+          headerAddress: "B1",
+          isNumeric: true,
+        },
+      ],
+    });
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      routePeriodId: null,
+      alliancePeriods: [
+        {
+          id: existingPeriodId,
+          name: "Season 7",
+          startsAt: "2026-01-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [],
+        },
+      ],
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    const metricSelect = container.querySelector(
+      'select[aria-label="Metric for Jan 27 - Feb 1"]',
+    ) as HTMLSelectElement;
+    const periodSelect = container.querySelector(
+      'select[id^="multi-period-target-"]',
+    ) as HTMLSelectElement;
+    const previewButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Preview Multi-Period Import"),
+    ) as HTMLButtonElement;
+
+    await selectOptionValue(metricSelect, "create");
+
+    const metricNameInput = container.querySelector(
+      'input[aria-label="New metric name for Jan 27 - Feb 1"]',
+    ) as HTMLInputElement;
+    await fillInputElement(metricNameInput, "Weekly Kills");
+    expect(previewButton.disabled).toBe(false);
+
+    await selectOptionValue(periodSelect, existingPeriodId);
+
+    const metricNameInputAfterPeriodChange = container.querySelector(
+      'input[aria-label="New metric name for Jan 27 - Feb 1"]',
+    ) as HTMLInputElement;
+    expect(metricNameInputAfterPeriodChange.value).toBe("Weekly Kills");
+    expect(previewButton.disabled).toBe(false);
+
+    await act(async () => {
+      previewButton.click();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+
+    expect(container.textContent).toContain("Weekly Kills");
+    expect(container.textContent).toContain("Planned Multi-Period Import");
+
+    const confirmButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.match(/Confirm Multi-Period Import/i),
+    ) as HTMLButtonElement;
+
+    await act(async () => {
+      confirmButton.click();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+
+    expect(importMock).toHaveBeenCalledTimes(1);
+    const payload = importMock.mock.calls[0]?.[0];
+    expect(payload?.groups[0]?.mappings[0]?.target).toEqual({
+      kind: "create",
+      name: "Weekly Kills",
+    });
   });
 
   it("marks only invalidated columns incomplete when group period change breaks an existing mapping", async () => {

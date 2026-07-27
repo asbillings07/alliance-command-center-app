@@ -1641,6 +1641,10 @@ export function MultiPeriodImportFlow({
                       )
                         ? mapping.target
                         : null;
+                    const metricNameIsBlank = columnCreateMetricTarget
+                      ? !columnCreateMetricTarget.name.trim()
+                      : false;
+                    const metricNameErrorId = `multi-period-metric-name-error-${state.proposalId}-${mapping.columnIndex}`;
 
                     return (
                       <div
@@ -1834,8 +1838,8 @@ export function MultiPeriodImportFlow({
                               type="text"
                               required
                               aria-required="true"
-                              aria-invalid={!columnCreateMetricTarget.name.trim()}
-                              aria-describedby={`multi-period-metric-name-error-${state.proposalId}-${mapping.columnIndex}`}
+                              aria-invalid={metricNameIsBlank}
+                              aria-describedby={metricNameIsBlank ? metricNameErrorId : undefined}
                               value={columnCreateMetricTarget.name}
                               onChange={(e) =>
                                 handleColumnCreateMetricNameChange(
@@ -1847,12 +1851,11 @@ export function MultiPeriodImportFlow({
                               aria-label={`New metric name for ${mapping.columnName}`}
                               className="w-full rounded-md border border-border p-2 text-sm bg-surface"
                             />
-                            <p
-                              id={`multi-period-metric-name-error-${state.proposalId}-${mapping.columnIndex}`}
-                              className="text-xs text-warning mt-1"
-                            >
-                              Metric name is required.
-                            </p>
+                            {metricNameIsBlank && (
+                              <p id={metricNameErrorId} className="text-xs text-warning mt-1">
+                                Metric name is required.
+                              </p>
+                            )}
                           </div>
                         )}
                         {mapping.invalidReason && (
