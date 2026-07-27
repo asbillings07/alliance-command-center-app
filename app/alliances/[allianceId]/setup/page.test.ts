@@ -165,4 +165,34 @@ describe("AllianceSetupPage", () => {
       '<a href="/alliances/all_1/periods" class="block p-4"><div class="flex items-start gap-3"><div class="mt-0.5"><div class="w-5 h-5 rounded-full border-2 border-border-hover"></div></div><div class="flex-1"><div class="font-medium text-text-primary">Import Evaluation Results</div>',
     );
   });
+
+  it("does not offer spreadsheet import CTA to viewers without IMPORT_METRICS", async () => {
+    vi.mocked(requireAllianceAccess).mockResolvedValue({
+      permissions: {
+        canViewAlliance: true,
+        canViewMembers: true,
+        canImportMetrics: false,
+        canImportMembers: false,
+        canConfigureMetrics: false,
+        canConfigurePeriods: false,
+        canInviteCollaborators: false,
+      },
+    } as Awaited<ReturnType<typeof requireAllianceAccess>>);
+
+    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+      id: "all_1",
+      name: "Alliance One",
+    } as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+    mockFreshAllianceCounts();
+
+    const page = await AllianceSetupPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+    });
+
+    const html = renderToStaticMarkup(page);
+
+    expect(html).not.toContain("/alliances/all_1/setup/import");
+    expect(html).toContain("Ask alliance leadership to run the spreadsheet import");
+    expect(html).toContain('href="#manual-setup"');
+  });
 });

@@ -175,6 +175,7 @@ export default async function AllianceSetupPage({ params }: Params) {
   // not just those visible to the current user. This prevents roles that
   // can't see any required tasks from incorrectly seeing "complete".
   const allRequiredComplete = status.isComplete;
+  const canStartSpreadsheetImport = auth.permissions.canImportMetrics;
 
   return (
     <PageLayout
@@ -197,13 +198,21 @@ export default async function AllianceSetupPage({ params }: Params) {
           and results in one guided flow. Or walk through each step manually below.
         </p>
         <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3">
-          <Button
-            variant="primary"
-            size="lg"
-            href={`/alliances/${allianceId}/setup/import`}
-          >
-            Start with a spreadsheet
-          </Button>
+          {canStartSpreadsheetImport ? (
+            <Button
+              variant="primary"
+              size="lg"
+              href={`/alliances/${allianceId}/setup/import`}
+            >
+              Start with a spreadsheet
+            </Button>
+          ) : (
+            <p className="text-sm text-text-secondary">
+              Uploading evaluation results requires a Leader, Admin, or Owner role.
+              Ask alliance leadership to run the spreadsheet import, or continue with
+              manual setup below.
+            </p>
+          )}
           <Link
             href="#manual-setup"
             className="text-sm font-medium text-primary-light hover:text-primary hover:underline text-center sm:text-left"

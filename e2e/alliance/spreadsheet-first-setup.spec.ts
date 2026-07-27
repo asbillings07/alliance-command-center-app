@@ -200,16 +200,58 @@ test.describe("Spreadsheet-first setup (#185 PR 3)", () => {
     await login({ email, password, displayName: "Admin User" });
     await page.goto(`/alliances/${allianceId}/setup`);
 
-    await page.keyboard.press("Tab");
-    const focused = page.locator(":focus");
-    await expect(focused).toBeVisible();
-
-    const spreadsheetLink = page.getByRole("link", { name: "Start with a spreadsheet" });
-    await spreadsheetLink.focus();
-    await expect(spreadsheetLink).toBeFocused();
-
     const manualLink = page.getByRole("link", { name: "Set up manually" });
-    await manualLink.focus();
+
+    let focusedHref = "";
+    for (let i = 0; i < 30; i += 1) {
+      await page.keyboard.press("Tab");
+      focusedHref =
+        (await page.evaluate(() =>
+          document.activeElement instanceof HTMLAnchorElement
+            ? document.activeElement.href
+            : "",
+        )) ?? "";
+      if (focusedHref.endsWith(`/alliances/${allianceId}/setup/import`)) {
+        break;
+      }
+    }
+    expect(focusedHref).toContain(`/alliances/${allianceId}/setup/import`);
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(`/alliances/${allianceId}/setup/import`);
+
+    await page.goto(`/alliances/${allianceId}/setup`);
+    for (let i = 0; i < 30; i += 1) {
+      await page.keyboard.press("Tab");
+      const href = await page.evaluate(() =>
+        document.activeElement instanceof HTMLAnchorElement
+          ? document.activeElement.getAttribute("href")
+          : null,
+      );
+      if (href === "#manual-setup") {
+        break;
+      }
+    }
     await expect(manualLink).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#manual-setup")).toBeInViewport();
+  });
+
+  test("setup entry choice and checklist remain usable on a narrow viewport", async ({
+    page,
+    login,
+    adminScenario,
+  }) => {
+    const { allianceId, email, password } = adminScenario;
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await login({ email, password, displayName: "Admin User" });
+    await page.goto(`/alliances/${allianceId}/setup`);
+
+    await expect(
+      page.getByRole("link", { name: "Start with a spreadsheet" }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "Set up manually" })).toBeVisible();
+    await expect(page.locator("#manual-setup")).toBeAttached();
+    await expect(page.getByText("Create Evaluation Period")).toBeVisible();
   });
 });
