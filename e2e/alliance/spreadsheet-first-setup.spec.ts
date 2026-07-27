@@ -86,6 +86,9 @@ test.describe("Spreadsheet-first setup (#185 PR 3)", () => {
     await expect(page.getByText("Workbook analysis")).toBeVisible();
     await page.getByRole("button", { name: "Continue to Column Mapping" }).click();
 
+    const periodSelect = page.locator('select[id^="multi-period-target-"]').first();
+    await periodSelect.selectOption({ value: "__create_period__" });
+
     const periodName = `Setup Period ${Date.now()}`;
     await page.locator('input[id^="multi-period-target-"][id$="-name"]').fill(periodName);
 
