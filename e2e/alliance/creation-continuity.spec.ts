@@ -32,7 +32,7 @@ test.describe("Creation continuity (#200 PR 2)", () => {
 
     await page.getByRole("button", { name: "+ Create Period" }).click();
     const periodName = `Continuity Period ${Date.now()}`;
-    await page.getByLabel(/^name$/i).fill(periodName);
+    await page.getByLabel(/^name/i).fill(periodName);
     await page.getByRole("button", { name: "Create Period" }).click();
 
     await expect(page.getByText("Evaluation period created.")).toBeVisible();
@@ -43,7 +43,7 @@ test.describe("Creation continuity (#200 PR 2)", () => {
 
     await page.getByRole("button", { name: "+ Create Metric" }).click();
     const metricName = `Continuity Metric ${Date.now()}`;
-    await page.getByLabel(/^name$/i).fill(metricName);
+    await page.getByLabel(/^name/i).fill(metricName);
     await page.getByRole("button", { name: "Create Metric" }).click();
 
     await expect(page.getByText("Continue configuring this period")).toBeVisible();
@@ -60,7 +60,9 @@ test.describe("Creation continuity (#200 PR 2)", () => {
     await page.getByRole("button", { name: /^add$/i }).click();
     await expect(page.locator("dialog")).not.toBeVisible();
 
-    const configuredMetricRow = page.locator("li").filter({ hasText: metricName });
+    const configuredMetricRow = page
+      .locator("li.border.border-border.rounded-md")
+      .filter({ hasText: metricName });
     await expect(configuredMetricRow).toBeVisible();
     await expect(configuredMetricRow.getByText("Weight: 10")).toBeVisible();
     await expect(
@@ -90,7 +92,7 @@ test.describe("Creation continuity (#200 PR 2)", () => {
 
     await page.getByRole("button", { name: "+ Create Metric" }).click();
     const metricName = `Continuity Metric ${Date.now()}`;
-    await page.getByLabel(/^name$/i).fill(metricName);
+    await page.getByLabel(/^name/i).fill(metricName);
     await page.getByRole("button", { name: "Create Metric" }).click();
 
     await expect(
