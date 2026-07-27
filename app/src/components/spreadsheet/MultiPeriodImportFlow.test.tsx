@@ -18,6 +18,9 @@ import {
 import type { ParsedWorkbook } from "@/app/src/lib/workbookParser";
 import type { TableBoundsResult } from "@/app/src/lib/memberMatcher";
 import { detectTableBounds, analyzeRows, cellAddress } from "@/app/src/lib/memberMatcher";
+import { importMultiPeriodMetrics } from "@/app/alliances/[allianceId]/periods/[periodId]/import/multiPeriodAction";
+
+const importMock = vi.mocked(importMultiPeriodMetrics);
 
 const mockRefresh = vi.fn();
 
@@ -138,6 +141,19 @@ async function selectOptionValue(select: HTMLSelectElement, nextValue: string) {
     )?.set;
     nativeSelectValueSetter?.call(select, nextValue);
     select.dispatchEvent(new Event("change", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 10));
+  });
+}
+
+async function fillInputElement(input: HTMLInputElement, nextValue: string) {
+  await act(async () => {
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    nativeInputValueSetter?.call(input, nextValue);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
     await new Promise((r) => setTimeout(r, 10));
   });
 }
@@ -629,6 +645,91 @@ describe("MultiPeriodImportFlow [component]", () => {
       'select[id^="multi-period-target-"]',
     ) as HTMLSelectElement;
     expect(periodSelect.value).toBe(UNCONFIRMED_PERIOD_SELECT_VALUE);
+  });
+
+  it("requires typing a metric name for explicit create and carries it through preview and import", async () => {
+    importMock.mockResolvedValue({
+      success: true,
+      totalCount: 1,
+      periods: [],
+    });
+
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Jan 27 - Feb 1"],
+      ["Dragon", "1500"],
+    ]);
+    const review = buildPeriodMappingReview({
+      sheetName: "Season 7 2026",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: "A1",
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "Jan 27 - Feb 1",
+          headerAddress: "B1",
+          isNumeric: true,
+        },
+      ],
+    });
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      routePeriodId: null,
+      alliancePeriods: [],
+      resolvedProposals: resolveImportProposals(review),
+    });
+
+    const metricSelect = container.querySelector(
+      'select[aria-label="Metric for Jan 27 - Feb 1"]',
+    ) as HTMLSelectElement;
+    const previewButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Preview Multi-Period Import"),
+    ) as HTMLButtonElement;
+
+    await selectOptionValue(metricSelect, "create");
+    expect(previewButton.disabled).toBe(true);
+
+    const metricNameInput = container.querySelector(
+      'input[aria-label="New metric name for Jan 27 - Feb 1"]',
+    ) as HTMLInputElement;
+    expect(metricNameInput).not.toBeNull();
+    expect(metricNameInput.value).toBe("");
+
+    await fillInputElement(metricNameInput, "Weekly Kills");
+    expect(previewButton.disabled).toBe(false);
+
+    await act(async () => {
+      previewButton.click();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+
+    expect(container.textContent).toContain("Weekly Kills");
+    expect(container.textContent).toContain("Planned Multi-Period Import");
+
+    const confirmButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.match(/Confirm Multi-Period Import/i),
+    ) as HTMLButtonElement;
+
+    await act(async () => {
+      confirmButton.click();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+
+    expect(importMock).toHaveBeenCalledTimes(1);
+    const payload = importMock.mock.calls[0]?.[0];
+    expect(payload?.groups[0]?.mappings[0]?.target).toEqual({
+      kind: "create",
+      name: "Weekly Kills",
+    });
   });
 });
 

@@ -133,6 +133,13 @@ function requiresExplicitMetricConfirmation(proposedMetricName: string): boolean
   );
 }
 
+function requiresExplicitCreateMetricName(
+  proposedMetricName: string,
+  target: ColumnTarget,
+): boolean {
+  return target.kind === "create" && requiresExplicitMetricConfirmation(proposedMetricName);
+}
+
 function proposalRequiresExplicitMapping(
   proposal: PeriodMappingProposal,
   routePeriodId: string | null | undefined,
@@ -287,6 +294,9 @@ function shouldShowColumnCreateFields(
 }
 
 function mappingTargetToToken(mapping: ColumnMetricMapping): string {
+  if (mapping.target.kind === "create") {
+    return "create";
+  }
   if (mapping.confirmationStatus === "unconfirmed") {
     return UNCONFIRMED_TARGET_TOKEN;
   }
@@ -760,11 +770,42 @@ export function MultiPeriodImportFlow({
       ...state,
       columnMappings: state.columnMappings.map((m) => {
         if (m.columnIndex !== columnIndex) return m;
-        if (token === UNCONFIRMED_TARGET_TOKEN) return m;
+        if (token === UNCONFIRMED_TARGET_TOKEN) {
+          return {
+            ...m,
+            target: { kind: "skip" as const },
+            confirmationStatus: "unconfirmed" as const,
+          };
+        }
         const target = tokenToTarget(token, proposedMetricName);
         const confirmationStatus: ColumnConfirmationStatus =
-          target.kind === "skip" ? "confirmed_skip" : "confirmed_metric";
+          target.kind === "skip"
+            ? "confirmed_skip"
+            : target.kind === "create" && !target.name.trim()
+              ? "unconfirmed"
+              : "confirmed_metric";
         return { ...m, target, confirmationStatus };
+      }),
+    }));
+  };
+
+  const handleColumnCreateMetricNameChange = (
+    proposalId: string,
+    columnIndex: number,
+    name: string,
+  ) => {
+    updateProposalState(proposalId, (state) => ({
+      ...state,
+      columnMappings: state.columnMappings.map((mapping) => {
+        if (mapping.columnIndex !== columnIndex || mapping.target.kind !== "create") {
+          return mapping;
+        }
+        const nextTarget = { ...mapping.target, name };
+        return {
+          ...mapping,
+          target: nextTarget,
+          confirmationStatus: name.trim() ? "confirmed_metric" : "unconfirmed",
+        };
       }),
     }));
   };
@@ -792,6 +833,10 @@ export function MultiPeriodImportFlow({
       mapping.target.kind !== "skip" &&
       mapping.periodTarget.mode === "create" &&
       !mapping.periodTarget.name.trim(),
+  );
+
+  const hasBlankCreateMetricNames = activeColumnMappings.some(
+    (mapping) => mapping.target.kind === "create" && !mapping.target.name.trim(),
   );
 
   const activeCreateTargets = useMemo(() => {
@@ -843,7 +888,8 @@ export function MultiPeriodImportFlow({
     !periodMetricCollision &&
     !invalidCreatePeriodNames &&
     !hasInvalidCreatePeriodFields &&
-    !hasUnconfirmedPeriodTarget;
+    !hasUnconfirmedPeriodTarget &&
+    !hasBlankCreateMetricNames;
 
   const displayNameFor = (target: ColumnTarget, proposedMetricName: string): string => {
     if (target.kind === "existing" || target.kind === "attach") {
@@ -1496,6 +1542,15 @@ export function MultiPeriodImportFlow({
                       ? createTargetErrors.get(periodTargetGroupKey(columnCreateTarget))
                       : null;
 
+                    const columnCreateMetricTarget =
+                      mapping.target.kind === "create" &&
+                      requiresExplicitCreateMetricName(
+                        mapping.proposedMetricName,
+                        mapping.target,
+                      )
+                        ? mapping.target
+                        : null;
+
                     return (
                       <div
                         key={mapping.columnIndex}
@@ -1675,9 +1730,42 @@ export function MultiPeriodImportFlow({
                             </option>
                           )}
                         </select>
-                        {mapping.confirmationStatus === "unconfirmed" && (
+                        {columnCreateMetricTarget && (
+                          <div>
+                            <label
+                              htmlFor={`multi-period-metric-name-${state.proposalId}-${mapping.columnIndex}`}
+                              className="text-xs font-medium text-text-primary block mb-1"
+                            >
+                              New metric name
+                            </label>
+                            <input
+                              id={`multi-period-metric-name-${state.proposalId}-${mapping.columnIndex}`}
+                              type="text"
+                              value={columnCreateMetricTarget.name}
+                              onChange={(e) =>
+                                handleColumnCreateMetricNameChange(
+                                  state.proposalId,
+                                  mapping.columnIndex,
+                                  e.target.value,
+                                )
+                              }
+                              aria-label={`New metric name for ${mapping.columnName}`}
+                              className="w-full rounded-md border border-border p-2 text-sm bg-surface"
+                            />
+                            {!columnCreateMetricTarget.name.trim() && (
+                              <p className="text-xs text-warning mt-1">Metric name is required.</p>
+                            )}
+                          </div>
+                        )}
+                        {mapping.confirmationStatus === "unconfirmed" &&
+                          mapping.target.kind !== "create" && (
                           <p className="text-xs text-warning">
                             Choose a metric or explicitly select Do not import.
+                          </p>
+                        )}
+                        {columnCreateMetricTarget && !columnCreateMetricTarget.name.trim() && (
+                          <p className="text-xs text-warning">
+                            Enter a metric name to continue.
                           </p>
                         )}
                       </div>
