@@ -40,18 +40,19 @@ test.describe("Visual Regression", () => {
     await page.goto(`/alliances/${testAllianceId}/members`);
     await page.waitForLoadState("networkidle");
 
-    // Clip to the stable top chrome (breadcrumb, header, filter tabs, column
-    // headers) and mask the data-dependent parts: the member table rows and
-    // the "N members" count both change as other CRUD tests create members.
-    // A full-page capture is non-deterministic for the same reason.
-    // The small maxDiffPixelRatio absorbs the changing filter-tab count digits
-    // while still catching design-wide regressions (which recolor the clip).
+    // Clip to the stable top chrome (breadcrumb, header, filter tabs, period
+    // selector, column headers) and mask the data-dependent parts: the member
+    // table rows, the "N members" count, and the period selector (option labels
+    // vary by seeded period names). A full-page capture is non-deterministic
+    // for the same reason. The small maxDiffPixelRatio absorbs the changing
+    // filter-tab count digits while still catching design-wide regressions.
     await expect(page).toHaveScreenshot("members-table.png", {
-      clip: { x: 0, y: 0, width: 1280, height: 320 },
+      clip: { x: 0, y: 0, width: 1280, height: 380 },
       animations: "disabled",
       mask: [
         page.getByRole("table"),
         page.getByText(/\d+ members/i),
+        page.getByLabel("Evaluation period"),
       ],
       maxDiffPixelRatio: 0.02,
     });
