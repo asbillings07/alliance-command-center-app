@@ -8,7 +8,7 @@ import {
 
 type SourceColumnTranslationsSectionProps = {
   translations: ColumnTranslation[];
-  children: React.ReactNode;
+  children?: React.ReactNode;
 };
 
 export function SourceColumnTranslationsSection({

@@ -68,7 +68,7 @@ test.describe("Results import preview progressive disclosure", () => {
       "Player,Kill Points,Hero Power",
       "DisclosureHero,1000,200",
       "DisclosurePhoenix,2000,400",
-      "GhostPlayer,999,111",
+      "GhostPlayer,999,",
     ].join("\n");
 
     await page.locator('input[type="file"]').setInputFiles({
@@ -152,6 +152,6 @@ test.describe("Results import preview progressive disclosure", () => {
 
     await metricPreview.locator("summary").click();
     await expect(metricPreview).toHaveAttribute("open", "");
-    await expect(page.getByRole("cell", { name: "DisclosureHero" })).toBeVisible();
+    await expect(metricPreview.getByRole("cell", { name: "DisclosureHero" }).first()).toBeVisible();
   });
 });
