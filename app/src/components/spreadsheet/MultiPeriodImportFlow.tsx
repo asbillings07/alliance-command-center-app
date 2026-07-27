@@ -100,12 +100,14 @@ type FlowStep = "map" | "preview" | "complete";
 
 /** Distinct from confirmed skip (`skip`) so native change events fire from the initial state. */
 export const UNCONFIRMED_TARGET_TOKEN = "__unconfirmed__";
+export const UNCONFIRMED_PERIOD_SELECT_VALUE = "__unconfirmed_period__";
 export const CREATE_PERIOD_SELECT_VALUE = "__create_period__";
 const SKIP_TARGET_TOKEN = "skip";
 
 type PeriodTargetState =
   | { mode: "existing"; periodId: string }
-  | { mode: "create"; name: string; startsAt: string; endsAt: string };
+  | { mode: "create"; name: string; startsAt: string; endsAt: string }
+  | { mode: "unconfirmed" };
 
 function metricIdentity(col: ColumnPeriodEvidence): string {
   return col.proposedMetricName || col.headerText;
@@ -141,10 +143,16 @@ function createPeriodTargetFromProposal(proposal: PeriodMappingProposal): Period
 }
 
 function periodTargetToSelectValue(target: PeriodTargetState): string {
+  if (target.mode === "unconfirmed") {
+    return UNCONFIRMED_PERIOD_SELECT_VALUE;
+  }
   return target.mode === "existing" ? target.periodId : CREATE_PERIOD_SELECT_VALUE;
 }
 
 function periodTargetGroupKey(target: PeriodTargetState): string {
+  if (target.mode === "unconfirmed") {
+    return "unconfirmed";
+  }
   if (target.mode === "existing") {
     return `existing:${target.periodId}`;
   }
@@ -152,6 +160,9 @@ function periodTargetGroupKey(target: PeriodTargetState): string {
 }
 
 function periodTargetToWireTarget(target: PeriodTargetState): MultiPeriodGroupTarget {
+  if (target.mode === "unconfirmed") {
+    throw new Error("Cannot wire an unconfirmed period target");
+  }
   if (target.mode === "existing") {
     return { kind: "existing", periodId: target.periodId };
   }
@@ -172,6 +183,14 @@ function resolvePeriodContext(
   attachableLibrary: MetricOption[];
   displayName: string;
 } {
+  if (periodTarget.mode === "unconfirmed") {
+    return {
+      periodMetrics: [],
+      attachableLibrary: [],
+      displayName: "Choose target period",
+    };
+  }
+
   if (periodTarget.mode === "existing") {
     const period = sortedPeriods.find((item) => item.id === periodTarget.periodId);
     return {
@@ -196,7 +215,13 @@ function parsePeriodSelectValue(
   value: string,
   proposal: PeriodMappingProposal,
 ): PeriodTargetState {
+  if (value === UNCONFIRMED_PERIOD_SELECT_VALUE) {
+    return { mode: "unconfirmed" };
+  }
   if (value === CREATE_PERIOD_SELECT_VALUE) {
+    if (proposal.source === "unassigned") {
+      return { mode: "create", name: "", startsAt: "", endsAt: "" };
+    }
     return createPeriodTargetFromProposal(proposal);
   }
   return { mode: "existing", periodId: value };
@@ -318,6 +343,7 @@ function buildColumnMappingsForProposal(
   allianceLibraryMetrics: MetricOption[],
   canAttachMetrics: boolean,
   canCreateMetrics: boolean,
+  autoConfirmMetrics = true,
 ): ColumnMetricMapping[] {
   const { periodMetrics, attachableLibrary } = resolvePeriodContext(
     periodTarget,
@@ -333,6 +359,19 @@ function buildColumnMappingsForProposal(
       periodMetrics,
       libraryMetrics: attachableLibrary,
     });
+
+    if (!autoConfirmMetrics) {
+      return {
+        columnIndex: col.columnIndex,
+        columnName: col.headerText,
+        proposedMetricName,
+        periodTarget,
+        periodTargetExplicit: false,
+        classification,
+        target: { kind: "skip" },
+        confirmationStatus: "unconfirmed",
+      };
+    }
 
     if (
       classification.reason === "matches_existing_metric" &&
@@ -415,6 +454,11 @@ function defaultPeriodTargetForProposal(
     return createPeriodTargetFromProposal(proposal);
   }
 
+  // Supplemental mixed-confidence columns stay unassigned until the leader chooses.
+  if (proposal.source === "unassigned") {
+    return { mode: "unconfirmed" };
+  }
+
   const suggestedPeriod = pickSuggestedAlliancePeriod(sortedPeriods);
   if (suggestedPeriod) {
     return { mode: "existing", periodId: suggestedPeriod.id };
@@ -454,6 +498,7 @@ function initialProposalStates(
         allianceLibraryMetrics,
         canAttachMetrics,
         canCreateMetrics,
+        proposal.source !== "unassigned",
       ),
     };
   });
@@ -563,6 +608,7 @@ export function MultiPeriodImportFlow({
         allianceLibraryMetrics,
         canAttachMetrics,
         canCreateMetrics,
+        proposal.source !== "unassigned",
       ),
     }));
   };
@@ -610,6 +656,7 @@ export function MultiPeriodImportFlow({
           allianceLibraryMetrics,
           canAttachMetrics,
           canCreateMetrics,
+          proposal.source !== "unassigned",
         )[0];
         return {
           ...rebuilt,
@@ -747,13 +794,18 @@ export function MultiPeriodImportFlow({
     (m) => m.confirmationStatus === "confirmed_metric" && m.target.kind !== "skip",
   );
 
+  const hasUnconfirmedPeriodTarget =
+    activeStates.some((state) => state.periodTarget.mode === "unconfirmed") ||
+    activeColumnMappings.some((mapping) => mapping.periodTarget.mode === "unconfirmed");
+
   const canProceedToPreview =
     activeStates.length > 0 &&
     allColumnsConfirmed &&
     hasConfirmedMetricImport &&
     !periodMetricCollision &&
     !invalidCreatePeriodNames &&
-    !hasInvalidCreatePeriodFields;
+    !hasInvalidCreatePeriodFields &&
+    !hasUnconfirmedPeriodTarget;
 
   const displayNameFor = (target: ColumnTarget, proposedMetricName: string): string => {
     if (target.kind === "existing" || target.kind === "attach") {
@@ -1274,6 +1326,14 @@ export function MultiPeriodImportFlow({
               </label>
             </div>
 
+            {proposal.warnings.length > 0 && (
+              <div className="p-3 rounded-md bg-warning/10 border border-warning/30 text-xs text-text-secondary space-y-1">
+                {proposal.warnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+              </div>
+            )}
+
             {!state.excluded && (
               <>
                 <div>
@@ -1289,6 +1349,11 @@ export function MultiPeriodImportFlow({
                     onChange={(e) => handlePeriodChange(state.proposalId, e.target.value)}
                     className="w-full rounded-md border border-border p-2 text-sm bg-surface"
                   >
+                    {proposal.source === "unassigned" && (
+                      <option value={UNCONFIRMED_PERIOD_SELECT_VALUE}>
+                        Choose a target period...
+                      </option>
+                    )}
                     {sortedPeriods.map((period) => (
                       <option key={period.id} value={period.id}>
                         {formatPeriodLabel(period)}
@@ -1423,6 +1488,11 @@ export function MultiPeriodImportFlow({
                             }
                             className="w-full rounded-md border border-border p-2 text-sm bg-surface"
                           >
+                            {proposal.source === "unassigned" && (
+                              <option value={UNCONFIRMED_PERIOD_SELECT_VALUE}>
+                                Choose a target period...
+                              </option>
+                            )}
                             {sortedPeriods.map((period) => (
                               <option key={period.id} value={period.id}>
                                 {formatPeriodLabel(period)}

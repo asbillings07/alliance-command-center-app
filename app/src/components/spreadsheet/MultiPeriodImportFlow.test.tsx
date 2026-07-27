@@ -5,6 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import {
   MultiPeriodImportFlow,
   CREATE_PERIOD_SELECT_VALUE,
+  UNCONFIRMED_PERIOD_SELECT_VALUE,
+  UNCONFIRMED_TARGET_TOKEN,
 } from "./MultiPeriodImportFlow";
 import {
   buildManualFallbackProposal,
@@ -415,6 +417,100 @@ describe("MultiPeriodImportFlow [component]", () => {
 
     expect(container.textContent).not.toContain("Evaluation period configuration required");
     expect(container.querySelector('select[id^="multi-period-target-"]')).not.toBeNull();
+  });
+
+  it("keeps preview disabled for supplemental unassigned columns until period and metrics are explicit", async () => {
+    const existingPeriodId = "period-existing";
+    const workbook = buildWorkbookFromRows([
+      ["Player", "Kills on 3/29", "Kills on 4/13", "Hero Power", "Kills on 3/4"],
+      ["Dragon", "1500", "2000", "9000", "300"],
+    ]);
+    const review = buildPeriodMappingReview({
+      sheetName: "March 2026",
+      headerRowIndex: 0,
+      headers: [
+        {
+          columnIndex: 0,
+          headerText: "Player",
+          headerAddress: "A1",
+          isPlayerColumn: true,
+        },
+        {
+          columnIndex: 1,
+          headerText: "Kills on 3/29",
+          headerAddress: "B1",
+          isNumeric: true,
+        },
+        {
+          columnIndex: 2,
+          headerText: "Kills on 4/13",
+          headerAddress: "C1",
+          isNumeric: true,
+        },
+        {
+          columnIndex: 3,
+          headerText: "Hero Power",
+          headerAddress: "D1",
+          isNumeric: true,
+        },
+        {
+          columnIndex: 4,
+          headerText: "Kills on 3/4",
+          headerAddress: "E1",
+          isNumeric: true,
+        },
+      ],
+    });
+    const { tableBounds, playerColumnIndex } = buildTableContext(workbook);
+    const resolved = resolveImportProposals(review);
+
+    await renderFlow({
+      review,
+      parsedWorkbook: workbook,
+      tableBounds,
+      playerColumnIndex,
+      routePeriodId: null,
+      alliancePeriods: [
+        {
+          id: existingPeriodId,
+          name: "Latest Period",
+          startsAt: "2026-03-01T00:00:00.000Z",
+          endsAt: null,
+          metrics: [],
+        },
+      ],
+      resolvedProposals: resolved,
+    });
+
+    const unassignedPeriodSelect = container.querySelector(
+      'select[id="multi-period-target-unassigned-columns"]',
+    ) as HTMLSelectElement;
+    expect(unassignedPeriodSelect).not.toBeNull();
+    expect(unassignedPeriodSelect.value).toBe(UNCONFIRMED_PERIOD_SELECT_VALUE);
+
+    const unassignedMetricSelects = Array.from(
+      container.querySelectorAll(
+        'select[aria-label="Metric for Hero Power"], select[aria-label="Metric for Kills on 3/4"]',
+      ),
+    ) as HTMLSelectElement[];
+    expect(unassignedMetricSelects).toHaveLength(2);
+    for (const select of unassignedMetricSelects) {
+      expect(select.value).toBe(UNCONFIRMED_TARGET_TOKEN);
+    }
+
+    const previewButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Preview Multi-Period Import"),
+    ) as HTMLButtonElement;
+    expect(previewButton.disabled).toBe(true);
+
+    await selectOptionValue(unassignedPeriodSelect, existingPeriodId);
+    expect(previewButton.disabled).toBe(true);
+
+    const heroPowerMetricSelect = container.querySelector(
+      'select[aria-label="Metric for Hero Power"]',
+    ) as HTMLSelectElement;
+    await selectOptionValue(heroPowerMetricSelect, "create");
+    expect(previewButton.disabled).toBe(true);
   });
 });
 

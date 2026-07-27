@@ -567,7 +567,8 @@ describe("resolveImportProposals", () => {
     const resolved = resolveImportProposals(review);
     expect(resolved.length).toBeGreaterThanOrEqual(3);
     const unassigned = resolved.find((p) => p.proposalId === "unassigned-columns");
-    expect(unassigned?.source).toBe("manual_fallback");
+    expect(unassigned?.source).toBe("unassigned");
+    expect(unassigned?.warnings.length).toBeGreaterThan(0);
     expect(unassigned?.columns.map((c) => c.headerText)).toEqual(
       expect.arrayContaining(["Hero Power", "Kills on 3/4"]),
     );

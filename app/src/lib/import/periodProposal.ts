@@ -72,7 +72,7 @@ export type PeriodMappingProposal = {
   startsAtISO: string | null;
   endsAtISO: string | null;
   confidence: "high" | "medium" | "low";
-  source: "detected" | "manual_fallback";
+  source: "detected" | "manual_fallback" | "unassigned";
   columns: ColumnPeriodEvidence[];
   warnings: string[];
 };
@@ -531,9 +531,11 @@ function buildUnassignedColumnsProposal(
     startsAtISO: null,
     endsAtISO: null,
     confidence: "low",
-    source: "manual_fallback",
+    source: "unassigned",
     columns,
-    warnings: [],
+    warnings: [
+      "These columns lack confident date evidence alongside the detected period groups. Choose a target evaluation period and confirm or exclude each column before import.",
+    ],
   };
 }
 
