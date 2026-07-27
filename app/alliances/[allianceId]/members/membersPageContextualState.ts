@@ -18,8 +18,8 @@ type ResolveMembersContextualBannerInput = {
 /**
  * Picks exactly one contextual banner for the members list, following precedence:
  * 1. Active-member prerequisite is handled separately (empty state, not a banner).
- * 2. Invalid period deep link
- * 3. No evaluation periods exist
+ * 2. No evaluation periods exist
+ * 3. Invalid period deep link
  * 4. Selected period has no configured metrics
  * 5. Selected period has metrics but none recorded for members in this view
  */
@@ -41,12 +41,12 @@ export function resolveMembersContextualBanner(
     return { kind: "none" };
   }
 
-  if (requestedPeriodId && !selectedPeriodId) {
-    return { kind: "invalid-period" };
-  }
-
   if (totalPeriodCount === 0 && !selectedPeriodId) {
     return { kind: "no-periods" };
+  }
+
+  if (requestedPeriodId && !selectedPeriodId) {
+    return { kind: "invalid-period" };
   }
 
   if (selectedPeriodId && periodMetricCount === 0) {

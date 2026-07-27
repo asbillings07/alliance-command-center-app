@@ -5,7 +5,7 @@ import {
 } from "./membersPageContextualState";
 
 describe("resolveMembersContextualBanner", () => {
-  it("returns invalid-period when periodId is missing, even with zero periods", () => {
+  it("returns no-periods when zero periods overlap with an invalid deep link", () => {
     expect(
       resolveMembersContextualBanner({
         filter: "active",
@@ -16,10 +16,10 @@ describe("resolveMembersContextualBanner", () => {
         periodMetricCount: 0,
         hasResultsInView: false,
       }),
-    ).toEqual({ kind: "invalid-period" });
+    ).toEqual({ kind: "no-periods" });
   });
 
-  it("returns no-periods only when there is no invalid deep link", () => {
+  it("returns no-periods when there are zero periods and no deep link", () => {
     expect(
       resolveMembersContextualBanner({
         filter: "active",

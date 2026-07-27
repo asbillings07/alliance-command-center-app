@@ -176,6 +176,13 @@ test.describe("Members period results (#200 PR 4)", () => {
     const { allianceId, email, password } = adminScenario;
 
     await seedMember(allianceId);
+    await prisma.metricPeriod.create({
+      data: {
+        allianceId,
+        name: `Members E2E Existing ${Date.now()}`,
+        active: true,
+      },
+    });
     await login({ email, password, displayName: "Admin User" });
     await page.goto(`/alliances/${allianceId}/members?periodId=missing-period-id`);
 

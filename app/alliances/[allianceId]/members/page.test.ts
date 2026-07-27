@@ -261,7 +261,7 @@ describe("MembersPage", () => {
     expect(html).not.toContain("Create an evaluation period before viewing member results");
   });
 
-  it("prefers invalid-period banner over no-periods when both conditions apply", async () => {
+  it("prefers no-periods banner over invalid-period when both conditions apply", async () => {
     vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
       id: "all_1",
       name: "Alliance One",
@@ -281,8 +281,8 @@ describe("MembersPage", () => {
     });
     const html = renderToStaticMarkup(page);
 
-    expect(html).toContain("This evaluation period is not available");
-    expect(html).not.toContain("Create an evaluation period before viewing member results");
+    expect(html).toContain("Create an evaluation period before viewing member results");
+    expect(html).not.toContain("This evaluation period is not available");
   });
 
   it("still renders archived metric columns and values when the metric is inactive", async () => {
