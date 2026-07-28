@@ -174,8 +174,11 @@ test.describe("Dual-role operator navigation", () => {
       ).toHaveCount(0);
 
       await page.goto(`/alliances/${allianceId}`);
-      await page.waitForURL("/app", { timeout: 15000 });
-      expect(page.url()).toMatch(/\/app$/);
+      // requireAllianceAccess sends non-members to /app; live platform admins
+      // then route to the console — the important guard is a single clean chain,
+      // not an infinite /app <-> /alliances ping-pong.
+      await page.waitForURL(/\/platform\/overview$/, { timeout: 15000 });
+      expect(page.url()).toMatch(/\/platform\/overview$/);
     } finally {
       await cleanupDualRoleFixture(fixture);
     }
