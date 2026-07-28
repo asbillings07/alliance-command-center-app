@@ -2,7 +2,9 @@ import { randomUUID, randomBytes } from "node:crypto";
 import { prisma } from "./prisma";
 import { getRedeemUrl } from "./appUrl";
 import type { BetaInvitation } from "@/app/generated/prisma/client";
+import type { Prisma } from "@/app/generated/prisma/client";
 import { normalizeEmail } from "./email/normalize";
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 
 function generateBetaCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -25,6 +27,48 @@ function addDays(date: Date, days: number): Date {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
+}
+
+const ACCEPT_MAX_RETRIES = 3;
+
+const ACCEPT_TRANSACTION_OPTIONS = {
+  isolationLevel: "Serializable" as const,
+  maxWait: 5000,
+  timeout: 10000,
+};
+
+/**
+ * Postgres serialization failure (40001 / Prisma P2034).
+ */
+function isSerializationFailure(error: unknown): boolean {
+  if (
+    error instanceof PrismaClientKnownRequestError &&
+    error.code === "P2034"
+  ) {
+    return true;
+  }
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as { code?: string }).code === "P2034"
+  );
+}
+
+/**
+ * Unique violation on BetaParticipant.userId (23505 / Prisma P2002).
+ */
+function isBetaParticipantUserIdUniqueViolation(error: unknown): boolean {
+  if (!(error instanceof PrismaClientKnownRequestError) || error.code !== "P2002") {
+    return false;
+  }
+  const target = error.meta?.target;
+  if (Array.isArray(target)) {
+    return target.includes("userId");
+  }
+  if (typeof target === "string") {
+    return target.includes("userId");
+  }
+  return false;
 }
 
 export type IssueBetaInvitationResult = {
@@ -113,58 +157,71 @@ export async function issueBetaInvitation(
   const token = randomUUID();
   const code = generateBetaCode();
 
-  // The "one pending invitation per email" invariant cannot be expressed as a
-  // database constraint: a partial unique index can't reference expiresAt
-  // (pending-ness is time-dependent), and a full unique index would break
-  // re-issuing after an invitation expires or is revoked. A plain read-then-
-  // create also races: two concurrent callers can both see no pending
-  // invitation and both insert. A serializable transaction closes that gap by
-  // forcing conflicting check+create pairs to serialize (one will fail to commit
-  // and retry, then observe the other's pending invitation).
-  const invitation = await prisma.$transaction(
-    async (tx) => {
-      // Only one pending invitation per email
-      const pending = await tx.betaInvitation.findFirst({
-        where: pendingInvitationWhere(normalizedEmail, now),
-        orderBy: { issuedAt: "desc" },
-      });
-      if (pending) {
-        throw new Error(
-          "A pending beta invitation already exists for this email"
-        );
-      }
+  const issueAttempt = () =>
+    prisma.$transaction(
+      async (tx) => {
+        // Only one pending invitation per email
+        const pending = await tx.betaInvitation.findFirst({
+          where: pendingInvitationWhere(normalizedEmail, now),
+          orderBy: { issuedAt: "desc" },
+        });
+        if (pending) {
+          throw new Error(
+            "A pending beta invitation already exists for this email"
+          );
+        }
 
-      // Cannot invite a user who already has alliance access
-      const existingUser = await tx.user.findUnique({
-        where: { email: normalizedEmail },
-      });
-
-      if (existingUser) {
-        const membership = await tx.allianceMembership.findFirst({
-          where: { userId: existingUser.id },
+        // Cannot invite a user who already has alliance access
+        const existingUser = await tx.user.findUnique({
+          where: { email: normalizedEmail },
         });
 
-        if (membership) {
-          throw new Error("This user already has access to an alliance");
-        }
-      }
+        if (existingUser) {
+          const membership = await tx.allianceMembership.findFirst({
+            where: { userId: existingUser.id },
+          });
 
-      // Always create a new record - never mutate history
-      return tx.betaInvitation.create({
-        data: {
-          email: normalizedEmail,
-          token,
-          code,
-          notes: options?.notes?.trim() || null,
-          campaign: options?.campaign?.trim() || null,
-          expiresAt: addDays(now, 30),
-          createdAt: now,
-          issuedAt: now,
-        },
-      });
-    },
-    { isolationLevel: "Serializable" }
-  );
+          if (membership) {
+            throw new Error("This user already has access to an alliance");
+          }
+        }
+
+        // Always create a new record - never mutate history
+        const participant = await tx.betaParticipant.create({ data: {} });
+
+        return tx.betaInvitation.create({
+          data: {
+            email: normalizedEmail,
+            token,
+            code,
+            notes: options?.notes?.trim() || null,
+            campaign: options?.campaign?.trim() || null,
+            expiresAt: addDays(now, 30),
+            createdAt: now,
+            issuedAt: now,
+            participantId: participant.id,
+          },
+        });
+      },
+      { isolationLevel: "Serializable" }
+    );
+
+  let invitation: BetaInvitation | null = null;
+  for (let attempt = 0; attempt < ACCEPT_MAX_RETRIES; attempt++) {
+    try {
+      invitation = await issueAttempt();
+      break;
+    } catch (error) {
+      if (isSerializationFailure(error) && attempt < ACCEPT_MAX_RETRIES - 1) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (!invitation) {
+    throw new Error("Failed to issue beta invitation after retries");
+  }
 
   return buildInvitationResult(invitation);
 }
@@ -297,6 +354,211 @@ export async function validateBetaCode(
 }
 
 /**
+ * Reassign every invitation from `sourceParticipantId` onto
+ * `targetParticipantId`, then delete the now-empty source row.
+ */
+async function mergeBetaParticipantsWithTx(
+  tx: Prisma.TransactionClient,
+  sourceParticipantId: string,
+  targetParticipantId: string,
+): Promise<void> {
+  if (sourceParticipantId === targetParticipantId) {
+    return;
+  }
+
+  await tx.betaInvitation.updateMany({
+    where: { participantId: sourceParticipantId },
+    data: { participantId: targetParticipantId },
+  });
+
+  await tx.betaParticipant.delete({
+    where: { id: sourceParticipantId },
+  });
+}
+
+/**
+ * Claim `userId` on a participant, merging into an existing participant when
+ * another row already holds that userId.
+ */
+async function claimBetaParticipantUserIdWithTx(
+  tx: Prisma.TransactionClient,
+  participantId: string,
+  userId: string,
+): Promise<void> {
+  const participant = await tx.betaParticipant.findUnique({
+    where: { id: participantId },
+    select: { id: true, userId: true },
+  });
+
+  if (!participant) {
+    throw new Error("Beta participant not found");
+  }
+
+  if (participant.userId === userId) {
+    return;
+  }
+
+  if (participant.userId && participant.userId !== userId) {
+    throw new Error("Beta participant identity conflict");
+  }
+
+  const existingHolder = await tx.betaParticipant.findFirst({
+    where: { userId },
+    select: { id: true },
+  });
+
+  if (existingHolder && existingHolder.id !== participantId) {
+    await mergeBetaParticipantsWithTx(tx, participantId, existingHolder.id);
+    return;
+  }
+
+  await tx.betaParticipant.update({
+    where: { id: participantId },
+    data: { userId },
+  });
+}
+
+/**
+ * After a unique-violation abort, refetch the winning participant and merge
+ * this invitation's participant into it inside a fresh transaction.
+ */
+async function mergeBetaParticipantUserIdAfterUniqueViolation(
+  invitationId: string,
+  userId: string,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const invitation = await tx.betaInvitation.findUnique({
+      where: { id: invitationId },
+      select: { participantId: true },
+    });
+
+    if (!invitation?.participantId) {
+      throw new Error("Beta invitation not found");
+    }
+
+    const winner = await tx.betaParticipant.findFirst({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!winner) {
+      throw new Error("Expected participant holding userId after unique violation");
+    }
+
+    await mergeBetaParticipantsWithTx(
+      tx,
+      invitation.participantId,
+      winner.id,
+    );
+  }, ACCEPT_TRANSACTION_OPTIONS);
+}
+
+async function runAcceptWithRetry(
+  invitationId: string,
+  userId: string,
+  run: () => Promise<BetaInvitation>,
+): Promise<BetaInvitation> {
+  for (let attempt = 0; attempt < ACCEPT_MAX_RETRIES; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      if (isBetaParticipantUserIdUniqueViolation(error)) {
+        await mergeBetaParticipantUserIdAfterUniqueViolation(invitationId, userId);
+        return run();
+      }
+      if (isSerializationFailure(error) && attempt < ACCEPT_MAX_RETRIES - 1) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error("Failed to accept beta invitation after retries");
+}
+
+/**
+ * Core accept-and-identity logic, executed inside a caller-supplied transaction.
+ * Creates or reuses BetaParticipant identity and sets userId on first acceptance.
+ */
+export async function acceptBetaInvitationWithTx(
+  tx: Prisma.TransactionClient,
+  invitationId: string,
+  userId: string,
+): Promise<BetaInvitation> {
+  const invitation = await tx.betaInvitation.findUnique({
+    where: { id: invitationId },
+  });
+
+  if (!invitation) {
+    throw new Error("Beta invitation not found");
+  }
+
+  if (invitation.acceptedAt) {
+    if (invitation.acceptedByUserId === userId) {
+      return invitation;
+    }
+    throw new Error("This beta invitation has already been accepted");
+  }
+
+  if (invitation.revokedAt) {
+    throw new Error("This beta invitation has been revoked");
+  }
+
+  if (invitation.expiresAt < new Date()) {
+    throw new Error("This beta invitation has expired");
+  }
+
+  const now = new Date();
+
+  const updated = await tx.betaInvitation.updateMany({
+    where: {
+      id: invitationId,
+      acceptedAt: null,
+      revokedAt: null,
+    },
+    data: {
+      acceptedAt: now,
+      acceptedByUserId: userId,
+    },
+  });
+
+  if (updated.count !== 1) {
+    const current = await tx.betaInvitation.findUnique({
+      where: { id: invitationId },
+    });
+    if (current && current.acceptedByUserId === userId) {
+      return current;
+    }
+    if (current?.revokedAt) {
+      throw new Error("This beta invitation has been revoked");
+    }
+    throw new Error("This beta invitation has already been accepted");
+  }
+
+  let participantId = invitation.participantId;
+  if (!participantId) {
+    const participant = await tx.betaParticipant.create({ data: {} });
+    participantId = participant.id;
+    await tx.betaInvitation.update({
+      where: { id: invitationId },
+      data: { participantId },
+    });
+  }
+
+  await claimBetaParticipantUserIdWithTx(tx, participantId, userId);
+
+  const accepted = await tx.betaInvitation.findUnique({
+    where: { id: invitationId },
+  });
+
+  if (!accepted) {
+    throw new Error("Beta invitation not found");
+  }
+
+  return accepted;
+}
+
+/**
  * Accept a beta invitation for a user.
  * Called when a user completes the /redeem flow.
  */
@@ -327,44 +589,12 @@ export async function acceptBetaInvitation(
     throw new Error("This beta invitation has expired");
   }
 
-  const now = new Date();
-
-  // Atomic update: only accept if still valid (not accepted, not revoked)
-  const updated = await prisma.betaInvitation.updateMany({
-    where: {
-      id: invitationId,
-      acceptedAt: null,
-      revokedAt: null,
-    },
-    data: {
-      acceptedAt: now,
-      acceptedByUserId: userId,
-    },
-  });
-
-  if (updated.count !== 1) {
-    // Re-fetch to determine why update failed
-    const current = await prisma.betaInvitation.findUnique({
-      where: { id: invitationId },
-    });
-    if (current && current.acceptedByUserId === userId) {
-      return current;
-    }
-    if (current?.revokedAt) {
-      throw new Error("This beta invitation has been revoked");
-    }
-    throw new Error("This beta invitation has already been accepted");
-  }
-
-  const accepted = await prisma.betaInvitation.findUnique({
-    where: { id: invitationId },
-  });
-
-  if (!accepted) {
-    throw new Error("Beta invitation not found");
-  }
-
-  return accepted;
+  return runAcceptWithRetry(invitationId, userId, () =>
+    prisma.$transaction(
+      (tx) => acceptBetaInvitationWithTx(tx, invitationId, userId),
+      ACCEPT_TRANSACTION_OPTIONS,
+    ),
+  );
 }
 
 /**

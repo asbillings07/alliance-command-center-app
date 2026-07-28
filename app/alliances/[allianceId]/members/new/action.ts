@@ -2,6 +2,7 @@
 
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
+import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/app/generated/prisma/client";
 
@@ -83,7 +84,7 @@ export async function addMember(formData: FormData): Promise<AddMemberResult> {
                     throw new Error("Your alliance has 100 active members, so you can add 0 more.");
                 }
 
-                return await tx.allianceMember.create({
+                const member = await tx.allianceMember.create({
                     data: {
                         allianceId,
                         playerName,
@@ -93,6 +94,8 @@ export async function addMember(formData: FormData): Promise<AddMemberResult> {
                         joinedAt: new Date(),
                     },
                 });
+                await touchAllianceSetupActivity(tx, allianceId);
+                return member;
             }
         );
 
@@ -158,10 +161,12 @@ export async function restoreMember(formData: FormData): Promise<AddMemberResult
                     throw new Error("Your alliance has 100 active members, so you can add 0 more.");
                 }
 
-                return await tx.allianceMember.update({
+                const member = await tx.allianceMember.update({
                     where: { id: memberId },
                     data: { archivedAt: null },
                 });
+                await touchAllianceSetupActivity(tx, allianceId);
+                return member;
             }
         );
 

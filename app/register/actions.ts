@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import {
   validateBetaToken,
   validateBetaCode,
+  acceptBetaInvitationWithTx,
 } from "@/app/src/lib/betaInvitation";
 import { sanitizeCallbackUrl } from "@/app/src/lib/auth/callbackUrl";
 import { validateDisplayName, validatePassword } from "@/app/src/lib/account";
@@ -105,45 +106,55 @@ export async function register(
     try {
       const passwordHash = await bcrypt.hash(password, 12);
 
-      // Use a transaction to ensure user creation and invitation acceptance
-      // are atomic. If either fails, the entire operation rolls back.
-      // This prevents orphaned users if acceptBetaInvitation fails.
-      await prisma.$transaction(async (tx) => {
-        const user = await tx.user.create({
-          data: {
-            email,
-            displayName,
-            passwordHash,
-          },
-        });
+      const registerTransactionOptions = {
+        isolationLevel: "Serializable" as const,
+        maxWait: 5000,
+        timeout: 10000,
+      };
 
-        // Auto-accept the beta invitation with a race-safe update.
-        // Require the invitation to still be unaccepted AND unrevoked: it may
-        // have been revoked after validation but before this transaction ran.
-        const result = await tx.betaInvitation.updateMany({
-          where: {
-            id: betaInvitation.id,
-            acceptedAt: null,
-            revokedAt: null,
-          },
-          data: {
-            acceptedAt: new Date(),
-            acceptedByUserId: user.id,
-          },
-        });
+      const maxRegisterAttempts = 3;
+      let registered = false;
+      for (let attempt = 0; attempt < maxRegisterAttempts && !registered; attempt++) {
+        try {
+          // User creation and invitation acceptance are atomic so a failed
+          // accept never leaves an orphaned account (#174).
+          await prisma.$transaction(async (tx) => {
+            const user = await tx.user.create({
+              data: {
+                email,
+                displayName,
+                passwordHash,
+              },
+            });
 
-        // No rows updated means the invitation changed state between validation
-        // and this transaction. Determine why so we can surface an accurate error.
-        if (result.count === 0) {
-          const current = await tx.betaInvitation.findUnique({
-            where: { id: betaInvitation.id },
-            select: { revokedAt: true },
-          });
-          throw new Error(
-            current?.revokedAt ? "INVITATION_REVOKED" : "INVITATION_ALREADY_ACCEPTED"
-          );
+            await acceptBetaInvitationWithTx(tx, betaInvitation.id, user.id);
+          }, registerTransactionOptions);
+          registered = true;
+        } catch (error) {
+          const isSerializationFailure =
+            error instanceof Error &&
+            "code" in error &&
+            (error as { code?: string }).code === "P2034";
+          if (isSerializationFailure && attempt < maxRegisterAttempts - 1) {
+            continue;
+          }
+          if (error instanceof Error) {
+            if (error.message === "This beta invitation has been revoked") {
+              return { error: "This beta invitation has been revoked" };
+            }
+            if (
+              error.message === "This beta invitation has already been accepted"
+            ) {
+              return { error: "This beta invitation has already been accepted" };
+            }
+          }
+          throw error;
         }
-      });
+      }
+
+      if (!registered) {
+        return { error: "Failed to create account" };
+      }
 
       await signIn("credentials", {
         email,
@@ -151,14 +162,6 @@ export async function register(
         redirect: false,
       });
     } catch (error) {
-      if (error instanceof Error) {
-        if (error.message === "INVITATION_REVOKED") {
-          return { error: "This beta invitation has been revoked" };
-        }
-        if (error.message === "INVITATION_ALREADY_ACCEPTED") {
-          return { error: "This beta invitation has already been accepted" };
-        }
-      }
       console.error("Error creating account", error);
       return { error: "Failed to create account" };
     }

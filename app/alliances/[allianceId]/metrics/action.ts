@@ -4,6 +4,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
+import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidatePath } from "next/cache";
 
 export type MetricActionResult = {
@@ -64,13 +65,16 @@ export async function createMetric(
   }
 
   try {
-    await prisma.metric.create({
-      data: {
-        allianceId,
-        name: name.trim(),
-        description,
-        type,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.metric.create({
+        data: {
+          allianceId,
+          name: name.trim(),
+          description,
+          type,
+        },
+      });
+      await touchAllianceSetupActivity(tx, allianceId);
     });
   } catch (err) {
     console.error("Failed to create metric:", err);
@@ -130,13 +134,16 @@ export async function editMetric(
   }
 
   try {
-    await prisma.metric.update({
-      where: { id: metricId },
-      data: {
-        name: name.trim(),
-        description,
-        type,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.metric.update({
+        where: { id: metricId },
+        data: {
+          name: name.trim(),
+          description,
+          type,
+        },
+      });
+      await touchAllianceSetupActivity(tx, allianceId);
     });
   } catch (err) {
     console.error("Failed to update metric:", err);
@@ -176,9 +183,12 @@ export async function archiveMetric(
   }
 
   try {
-    await prisma.metric.update({
-      where: { id: metricId },
-      data: { active: false },
+    await prisma.$transaction(async (tx) => {
+      await tx.metric.update({
+        where: { id: metricId },
+        data: { active: false },
+      });
+      await touchAllianceSetupActivity(tx, allianceId);
     });
   } catch (err) {
     console.error("Failed to archive metric:", err);
@@ -218,9 +228,12 @@ export async function restoreMetric(
   }
 
   try {
-    await prisma.metric.update({
-      where: { id: metricId },
-      data: { active: true },
+    await prisma.$transaction(async (tx) => {
+      await tx.metric.update({
+        where: { id: metricId },
+        data: { active: true },
+      });
+      await touchAllianceSetupActivity(tx, allianceId);
     });
   } catch (err) {
     console.error("Failed to restore metric:", err);

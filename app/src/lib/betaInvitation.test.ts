@@ -20,6 +20,13 @@ vi.mock("./prisma", () => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    betaParticipant: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
     user: {
       findUnique: vi.fn(),
     },
@@ -39,6 +46,13 @@ const mockPrisma = prisma as unknown as {
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
+  };
+  betaParticipant: {
+    findUnique: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
   };
   user: {
     findUnique: ReturnType<typeof vi.fn>;
@@ -75,6 +89,13 @@ function makeInvitation(
     acceptedByUserId: null,
     revokedAt: null,
     allianceId: null,
+    participantId: "participant-1",
+    issuedByUserId: null,
+    revokedByUserId: null,
+    reissuedFromInvitationId: null,
+    resendClaimedAt: null,
+    resendClaimId: null,
+    updatedAt: now,
     ...overrides,
   };
 }
@@ -134,6 +155,10 @@ describe("getPendingInvitation", () => {
 });
 
 describe("issueBetaInvitation", () => {
+  beforeEach(() => {
+    mockPrisma.betaParticipant.create.mockResolvedValue({ id: "participant-1" });
+  });
+
   it("creates a new invitation with token and code", async () => {
     mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
     mockPrisma.user.findUnique.mockResolvedValue(null);
@@ -371,51 +396,56 @@ describe("validateBetaCode", () => {
 
 describe("acceptBetaInvitation", () => {
   it("accepts a pending invitation", async () => {
-    const invitation = {
-      id: "inv-1",
-      acceptedAt: null,
-      acceptedByUserId: null,
-      expiresAt: new Date(Date.now() + 86400000),
-    };
-    const acceptedInvitation = {
-      id: "inv-1",
+    const invitation = makeInvitation();
+    const acceptedInvitation = makeInvitation({
       acceptedAt: new Date(),
       acceptedByUserId: "user-1",
-      expiresAt: invitation.expiresAt,
-    };
+    });
     mockPrisma.betaInvitation.findUnique
+      .mockResolvedValueOnce(invitation)
       .mockResolvedValueOnce(invitation)
       .mockResolvedValueOnce(acceptedInvitation);
     mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.betaParticipant.findUnique.mockResolvedValue({
+      id: "participant-1",
+      userId: null,
+    });
+    mockPrisma.betaParticipant.findFirst.mockResolvedValue(null);
+    mockPrisma.betaParticipant.update.mockResolvedValue({
+      id: "participant-1",
+      userId: "user-1",
+    });
 
     const result = await acceptBetaInvitation("inv-1", "user-1");
 
     expect(result.acceptedByUserId).toBe("user-1");
     expect(result.acceptedAt).toBeDefined();
+    expect(mockPrisma.betaParticipant.update).toHaveBeenCalledWith({
+      where: { id: "participant-1" },
+      data: { userId: "user-1" },
+    });
   });
 
   it("returns existing invitation if already accepted by same user (idempotent)", async () => {
-    const invitation = {
-      id: "inv-1",
+    const invitation = makeInvitation({
       acceptedAt: new Date(),
       acceptedByUserId: "user-1",
-      expiresAt: new Date(Date.now() + 86400000),
-    };
+    });
     mockPrisma.betaInvitation.findUnique.mockResolvedValue(invitation);
 
     const result = await acceptBetaInvitation("inv-1", "user-1");
 
     expect(result).toEqual(invitation);
-    expect(mockPrisma.betaInvitation.update).not.toHaveBeenCalled();
+    expect(mockPrisma.betaInvitation.updateMany).not.toHaveBeenCalled();
   });
 
   it("throws if already accepted by different user", async () => {
-    mockPrisma.betaInvitation.findUnique.mockResolvedValue({
-      id: "inv-1",
-      acceptedAt: new Date(),
-      acceptedByUserId: "other-user",
-      expiresAt: new Date(Date.now() + 86400000),
-    });
+    mockPrisma.betaInvitation.findUnique.mockResolvedValue(
+      makeInvitation({
+        acceptedAt: new Date(),
+        acceptedByUserId: "other-user",
+      }),
+    );
 
     await expect(acceptBetaInvitation("inv-1", "user-1")).rejects.toThrow(
       "This beta invitation has already been accepted"
@@ -431,12 +461,11 @@ describe("acceptBetaInvitation", () => {
   });
 
   it("throws if invitation expired", async () => {
-    mockPrisma.betaInvitation.findUnique.mockResolvedValue({
-      id: "inv-1",
-      acceptedAt: null,
-      acceptedByUserId: null,
-      expiresAt: new Date(Date.now() - 86400000),
-    });
+    mockPrisma.betaInvitation.findUnique.mockResolvedValue(
+      makeInvitation({
+        expiresAt: new Date(Date.now() - 86400000),
+      }),
+    );
 
     await expect(acceptBetaInvitation("inv-1", "user-1")).rejects.toThrow(
       "This beta invitation has expired"
@@ -570,12 +599,9 @@ describe("validateBetaCode - revoked status", () => {
 
 describe("acceptBetaInvitation - revoked handling", () => {
   it("throws if invitation is revoked", async () => {
-    mockPrisma.betaInvitation.findUnique.mockResolvedValue({
-      id: "inv-1",
-      acceptedAt: null,
-      revokedAt: new Date(),
-      expiresAt: new Date(Date.now() + 86400000),
-    });
+    mockPrisma.betaInvitation.findUnique.mockResolvedValue(
+      makeInvitation({ revokedAt: new Date() }),
+    );
 
     await expect(acceptBetaInvitation("inv-1", "user-1")).rejects.toThrow(
       "This beta invitation has been revoked"
@@ -584,22 +610,88 @@ describe("acceptBetaInvitation - revoked handling", () => {
 
   it("throws revoked error if race condition revokes during accept", async () => {
     mockPrisma.betaInvitation.findUnique
-      .mockResolvedValueOnce({
-        id: "inv-1",
-        acceptedAt: null,
-        revokedAt: null,
-        expiresAt: new Date(Date.now() + 86400000),
-      })
-      .mockResolvedValueOnce({
-        id: "inv-1",
-        acceptedAt: null,
-        revokedAt: new Date(),
-        acceptedByUserId: null,
-      });
+      .mockResolvedValueOnce(makeInvitation())
+      .mockResolvedValueOnce(
+        makeInvitation({ revokedAt: new Date(), acceptedByUserId: null }),
+      );
     mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(acceptBetaInvitation("inv-1", "user-1")).rejects.toThrow(
       "This beta invitation has been revoked"
     );
+  });
+});
+
+describe("acceptBetaInvitation - userId unique violation recovery", () => {
+  it("refetch-and-merges in a fresh transaction after P2002 on userId claim", async () => {
+    const invitation = makeInvitation();
+    const acceptedInvitation = makeInvitation({
+      acceptedAt: new Date(),
+      acceptedByUserId: "user-1",
+      participantId: "participant-winner",
+    });
+
+    mockPrisma.betaInvitation.findUnique
+      .mockResolvedValueOnce(invitation)
+      .mockResolvedValueOnce(invitation)
+      .mockResolvedValueOnce(acceptedInvitation)
+      .mockResolvedValueOnce({ participantId: "participant-loser" })
+      .mockResolvedValueOnce(acceptedInvitation);
+    mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.betaParticipant.findUnique.mockResolvedValue({
+      id: "participant-loser",
+      userId: null,
+    });
+    mockPrisma.betaParticipant.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "participant-winner" });
+    mockPrisma.betaParticipant.update.mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed"), {
+        code: "P2002",
+        meta: { target: ["userId"] },
+        name: "PrismaClientKnownRequestError",
+      }),
+    );
+    mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 1 });
+
+    let transactionCalls = 0;
+    mockPrisma.$transaction.mockImplementation(async (fn) => {
+      transactionCalls++;
+      if (transactionCalls === 1) {
+        try {
+          return await fn(prisma);
+        } catch (error) {
+          if (
+            error instanceof Error &&
+            "code" in error &&
+            (error as { code?: string }).code === "P2002"
+          ) {
+            throw error;
+          }
+          throw error;
+        }
+      }
+      await fn(prisma);
+      return acceptedInvitation;
+    });
+
+    const { PrismaClientKnownRequestError } = await import(
+      "@prisma/client/runtime/client"
+    );
+    mockPrisma.betaParticipant.update.mockRejectedValue(
+      new PrismaClientKnownRequestError("Unique constraint failed", {
+        code: "P2002",
+        clientVersion: "test",
+        meta: { target: ["userId"] },
+      }),
+    );
+    mockPrisma.betaInvitation.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 2 });
+
+    const result = await acceptBetaInvitation("inv-1", "user-1");
+
+    expect(result.acceptedByUserId).toBe("user-1");
+    expect(transactionCalls).toBeGreaterThanOrEqual(2);
   });
 });

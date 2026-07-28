@@ -16,6 +16,7 @@ import {
   resolveMetricTargets,
 } from "@/app/src/lib/metricResolution";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
+import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { classifyColumn } from "@/app/src/lib/columnClassifier";
 
 type ImportMetricsInput = {
@@ -183,6 +184,8 @@ export async function importMemberMetrics(
         })),
       });
     }
+
+    await touchAllianceSetupActivity(tx, allianceId);
 
     return { plan, resolved };
   });

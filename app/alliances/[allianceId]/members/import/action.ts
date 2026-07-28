@@ -4,6 +4,7 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { normalizeName } from "@/app/src/lib/memberMatcher";
 import { parseStrictInteger } from "@/app/src/lib/numberParser";
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
+import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 
 export type RosterEntry = {
@@ -247,6 +248,8 @@ export async function importMembers(
                     });
                     restoredCount++;
                 }
+
+                await touchAllianceSetupActivity(tx, allianceId);
 
                 return {
                     created: createdCount,

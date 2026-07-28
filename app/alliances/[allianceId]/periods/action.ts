@@ -3,6 +3,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { validateMetricPeriodFields } from "@/app/src/lib/metricPeriodValidation";
+import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidatePath } from "next/cache";
 
 export type CreatePeriodResult =
@@ -110,13 +111,17 @@ export async function createMetricPeriod(
   });
 
   try {
-    const period = await prisma.metricPeriod.create({
-      data: {
-        allianceId,
-        name,
-        startsAt,
-        endsAt,
-      },
+    const period = await prisma.$transaction(async (tx) => {
+      const created = await tx.metricPeriod.create({
+        data: {
+          allianceId,
+          name,
+          startsAt,
+          endsAt,
+        },
+      });
+      await touchAllianceSetupActivity(tx, allianceId);
+      return created;
     });
 
     revalidatePeriodPaths(allianceId);
@@ -151,13 +156,16 @@ export async function editMetricPeriod(
   }
 
   try {
-    await prisma.metricPeriod.update({
-      where: { id: periodId },
-      data: {
-        name,
-        startsAt,
-        endsAt,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.metricPeriod.update({
+        where: { id: periodId },
+        data: {
+          name,
+          startsAt,
+          endsAt,
+        },
+      });
+      await touchAllianceSetupActivity(tx, allianceId);
     });
   } catch (err) {
     console.error("Failed to update period:", err);
@@ -192,9 +200,12 @@ export async function archiveMetricPeriod(
   }
 
   try {
-    await prisma.metricPeriod.update({
-      where: { id: periodId },
-      data: { active: false },
+    await prisma.$transaction(async (tx) => {
+      await tx.metricPeriod.update({
+        where: { id: periodId },
+        data: { active: false },
+      });
+      await touchAllianceSetupActivity(tx, allianceId);
     });
   } catch (err) {
     console.error("Failed to archive period:", err);
@@ -229,9 +240,12 @@ export async function restoreMetricPeriod(
   }
 
   try {
-    await prisma.metricPeriod.update({
-      where: { id: periodId },
-      data: { active: true },
+    await prisma.$transaction(async (tx) => {
+      await tx.metricPeriod.update({
+        where: { id: periodId },
+        data: { active: true },
+      });
+      await touchAllianceSetupActivity(tx, allianceId);
     });
   } catch (err) {
     console.error("Failed to restore period:", err);

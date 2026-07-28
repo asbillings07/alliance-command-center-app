@@ -2,6 +2,7 @@
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
+import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidatePath } from "next/cache";
 
 type RecordMemberMetricsInput = {
@@ -79,13 +80,16 @@ export async function recordMemberMetrics(
     throw new Error("One or more members do not belong to this alliance");
   }
 
-  await prisma.memberMetricEntry.createMany({
-    data: entries.map((entry) => ({
-      allianceMemberId: entry.memberId,
-      periodId,
-      metricId,
-      value: entry.value,
-    })),
+  await prisma.$transaction(async (tx) => {
+    await tx.memberMetricEntry.createMany({
+      data: entries.map((entry) => ({
+        allianceMemberId: entry.memberId,
+        periodId,
+        metricId,
+        value: entry.value,
+      })),
+    });
+    await touchAllianceSetupActivity(tx, allianceId);
   });
 
   revalidatePath(`/alliances/${period.allianceId}/periods/${period.id}/record`);
