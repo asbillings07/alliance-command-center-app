@@ -86,3 +86,9 @@ export {
   canInitializePlatform,
   verifyBootstrapSecret,
 } from "./bootstrap";
+
+// Admin workspace navigation
+export {
+  getAdminAllianceWorkspaceDestination,
+  type AdminAllianceWorkspace,
+} from "./adminWorkspace";

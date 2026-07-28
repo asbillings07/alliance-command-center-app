@@ -11,6 +11,8 @@ type SignOutButtonProps = {
   variant?: ButtonVariant;
   /** Stretch the button to fill its container (e.g. sidebar nav). */
   fullWidth?: boolean;
+  /** Icon-only below md so compact headers fit narrow viewports. */
+  compact?: boolean;
   /**
    * Content alignment. Use `start` in stacked nav footers so "Sign Out" lines
    * up with the adjacent Account link rather than centering.
@@ -29,6 +31,7 @@ type SignOutButtonProps = {
 export function SignOutButton({
   variant = "ghost",
   fullWidth = false,
+  compact = false,
   align = "center",
 }: SignOutButtonProps) {
   return (
@@ -39,18 +42,23 @@ export function SignOutButton({
         size="sm"
         fullWidth={fullWidth}
         align={align}
+        aria-label={compact ? "Sign Out" : undefined}
       >
-        <SignOutGlyph />
-        Sign Out
+        <SignOutGlyph compact={compact} />
+        {compact ? (
+          <span className="hidden md:inline">Sign Out</span>
+        ) : (
+          "Sign Out"
+        )}
       </Button>
     </form>
   );
 }
 
-function SignOutGlyph() {
+function SignOutGlyph({ compact }: { compact: boolean }) {
   return (
     <svg
-      className="mr-2 h-4 w-4"
+      className={compact ? "h-4 w-4 md:mr-2" : "mr-2 h-4 w-4"}
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"

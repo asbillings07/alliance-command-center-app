@@ -1,9 +1,6 @@
 import { requirePlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
-import {
-  AccountNavLink,
-  FeedbackWidget,
-  SignOutButton,
-} from "@/app/src/components/client";
+import { getAdminAllianceWorkspaceDestination } from "@/app/src/lib/platform/adminWorkspace";
+import { FeedbackWidget } from "@/app/src/components/client";
 import { PlatformNav } from "./components/PlatformNav";
 import { PlatformSearch } from "./components/PlatformSearch";
 import { PlatformFooter } from "./components/PlatformFooter";
@@ -19,7 +16,8 @@ export default async function PlatformLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await requirePlatformAdmin();
+  const session = await requirePlatformAdmin();
+  const workspace = await getAdminAllianceWorkspaceDestination(session.id);
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -28,7 +26,7 @@ export default async function PlatformLayout({
         <div className="flex items-center justify-between px-4 py-3 lg:px-6">
           <div className="flex items-center gap-3">
             {/* Mobile menu button */}
-            <MobileNavWrapper />
+            <MobileNavWrapper workspace={workspace} />
             <h1 className="text-lg font-semibold text-text-primary">
               Platform Operations
             </h1>
@@ -43,11 +41,7 @@ export default async function PlatformLayout({
       <div className="flex flex-1">
         {/* Desktop Sidebar Navigation */}
         <aside className="hidden lg:flex lg:w-56 lg:flex-col lg:border-r lg:border-border lg:bg-surface">
-          <PlatformNav />
-          <div className="border-t border-border p-3 space-y-1">
-            <AccountNavLink fullWidth />
-            <SignOutButton variant="ghost" fullWidth align="start" />
-          </div>
+          <PlatformNav workspace={workspace} />
         </aside>
 
         {/* Main Content */}

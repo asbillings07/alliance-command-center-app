@@ -1,9 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import type { AdminAllianceWorkspace } from "@/app/src/lib/platform/adminWorkspace";
 import { PlatformNavMobile } from "./PlatformNav";
 
-export function MobileNavWrapper() {
+export function MobileNavWrapper({
+  workspace,
+}: {
+  workspace: AdminAllianceWorkspace;
+}) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -30,7 +35,11 @@ export function MobileNavWrapper() {
       </button>
 
       {/* Mobile navigation drawer */}
-      <PlatformNavMobile isOpen={isOpen} onClose={() => setIsOpen(false)} />
+      <PlatformNavMobile
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+        workspace={workspace}
+      />
     </>
   );
 }

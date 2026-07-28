@@ -62,6 +62,14 @@ export async function getPostLoginRedirect(
   //    console rather than an alliance they happen to belong to. Role is an
   //    input here, not the routing mechanism.
   //
+  //    Interim dual-role landing policy for #164: when a user is both a live
+  //    platform admin and an alliance member, platform admin wins here (after
+  //    pending work is cleared). Explicit nav links — "Alliance workspace" /
+  //    "My alliances" in the console and "Platform Console" in the tenant
+  //    header — are how dual-role operators reach the other surface. This will
+  //    likely be revisited once #6 (or a future lastActiveSurface concept)
+  //    adds real persistence.
+  //
   //    The session hint is a routing optimization, but /platform/* enforces
   //    admin from the DB (requirePlatformAdmin). If admin was revoked mid-
   //    session the hint goes stale, and trusting it here would ping-pong the
