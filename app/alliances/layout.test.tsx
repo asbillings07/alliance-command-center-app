@@ -34,6 +34,11 @@ vi.mock("@/app/src/components/client", () => ({
   FeedbackWidget: () => null,
 }));
 
+vi.mock("./components/PlatformConsoleNavLink", () => ({
+  PlatformConsoleNavLink: () =>
+    React.createElement("a", { href: "/platform/overview" }, "Platform Console"),
+}));
+
 vi.mock("driver.js/dist/driver.css", () => ({}));
 
 import type { Session } from "next-auth";
@@ -95,5 +100,15 @@ describe("AlliancesLayout", () => {
 
     expect(html).not.toContain("Platform Console");
     expect(isPlatformAdmin).toHaveBeenCalledWith("member-1");
+  });
+
+  it("marks the brand link for narrow-viewport accessibility", async () => {
+    vi.mocked(isPlatformAdmin).mockResolvedValue(false);
+
+    const layout = await AlliancesLayout({ children: <div>Content</div> });
+    const html = renderToStaticMarkup(layout);
+
+    expect(html).toContain('aria-label="Alliance Command Center"');
+    expect(html).toContain("hidden truncate sm:inline");
   });
 });

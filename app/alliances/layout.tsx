@@ -2,12 +2,12 @@ import Link from "next/link";
 import Image from "next/image";
 import { auth } from "@/app/src/lib/auth";
 import { isPlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
-import { Button } from "@/app/src/components/Button";
 import {
   AccountNavLink,
   FeedbackWidget,
   SignOutButton,
 } from "@/app/src/components/client";
+import { PlatformConsoleNavLink } from "./components/PlatformConsoleNavLink";
 // Driver.js ships global CSS. Importing it here (a layout, the Next-sanctioned
 // place for global styles) scopes it to the authenticated /alliances routes
 // where contextual tours run, and keeps it off auth/marketing/platform pages.
@@ -46,29 +46,28 @@ export default async function AlliancesLayout({
     // the sticky header, push the page past 100vh (extra scroll/whitespace).
     <div className="bg-background">
       <header className="sticky top-0 z-30 border-b border-border bg-surface">
-        <div className="flex items-center justify-between px-4 py-3 lg:px-6">
+        <div className="flex min-w-0 items-center justify-between gap-2 px-4 py-3 lg:px-6">
           <Link
             href="/app"
-            className="flex items-center gap-2.5 text-sm font-semibold text-text-primary transition-colors hover:text-primary"
+            aria-label="Alliance Command Center"
+            className="flex min-w-0 shrink items-center gap-2.5 text-sm font-semibold text-text-primary transition-colors hover:text-primary"
           >
             <Image
               src="/icon.png"
               alt=""
               width={24}
               height={24}
-              className="w-6 h-6 rounded-md object-cover"
+              className="h-6 w-6 shrink-0 rounded-md object-cover"
             />
-            Alliance Command Center
+            <span className="hidden truncate sm:inline">
+              Alliance Command Center
+            </span>
           </Link>
           {session?.user && (
-            <div className="flex items-center gap-1">
-              {showPlatformConsole && (
-                <Button href="/platform/overview" variant="ghost" size="sm">
-                  Platform Console
-                </Button>
-              )}
-              <AccountNavLink />
-              <SignOutButton variant="ghost" />
+            <div className="flex shrink-0 items-center gap-0.5 md:gap-1">
+              {showPlatformConsole && <PlatformConsoleNavLink compact />}
+              <AccountNavLink compact />
+              <SignOutButton variant="ghost" compact />
             </div>
           )}
         </div>

@@ -5,6 +5,8 @@ import { Button } from "./Button";
 type AccountNavLinkProps = {
   /** Stretch to fill its container and left-align, for stacked nav footers. */
   fullWidth?: boolean;
+  /** Icon-only below md so compact headers fit narrow viewports. */
+  compact?: boolean;
   /** Called on navigation, e.g. to close a mobile drawer. */
   onClick?: () => void;
 };
@@ -18,7 +20,11 @@ type AccountNavLinkProps = {
  * (desktop sidebar, mobile drawer, top header). Pass `fullWidth` in stacked
  * footers so both rows left-align and match height.
  */
-export function AccountNavLink({ fullWidth = false, onClick }: AccountNavLinkProps) {
+export function AccountNavLink({
+  fullWidth = false,
+  compact = false,
+  onClick,
+}: AccountNavLinkProps) {
   return (
     <Button
       href="/account"
@@ -27,17 +33,22 @@ export function AccountNavLink({ fullWidth = false, onClick }: AccountNavLinkPro
       fullWidth={fullWidth}
       align={fullWidth ? "start" : "center"}
       onClick={onClick}
+      aria-label={compact ? "Account" : undefined}
     >
-      <AccountGlyph />
-      Account
+      <AccountGlyph compact={compact} />
+      {compact ? (
+        <span className="hidden md:inline">Account</span>
+      ) : (
+        "Account"
+      )}
     </Button>
   );
 }
 
-function AccountGlyph() {
+function AccountGlyph({ compact }: { compact: boolean }) {
   return (
     <svg
-      className="mr-2 h-4 w-4"
+      className={compact ? "h-4 w-4 md:mr-2" : "mr-2 h-4 w-4"}
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"

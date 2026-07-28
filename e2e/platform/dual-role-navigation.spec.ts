@@ -143,6 +143,58 @@ test.describe("Dual-role operator navigation", () => {
     }
   });
 
+  test("tenant header actions remain reachable on narrow viewports without overflow", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}-${Math.random().toString(36).slice(2, 8)}`;
+    const fixture = await createDualRoleFixture({ suffix, membershipCount: 1 });
+
+    try {
+      await loginDualRoleUser(page, fixture);
+      await page.waitForURL("/platform/overview");
+      await page.setViewportSize({ width: 1280, height: 800 });
+
+      await page.getByRole("link", { name: "Alliance workspace", exact: true }).click();
+      await page.waitForURL(new RegExp(`/alliances/${fixture.allianceIds[0]}(/|$)`));
+
+      for (const width of [375, 320] as const) {
+        await page.setViewportSize({ width, height: 667 });
+
+        const brand = page.getByRole("link", {
+          name: "Alliance Command Center",
+          exact: true,
+        });
+        const platformConsole = page.getByRole("link", {
+          name: "Platform Console",
+          exact: true,
+        });
+        const account = page.getByRole("link", { name: "Account", exact: true });
+        const signOut = page.getByRole("button", { name: "Sign Out", exact: true });
+
+        await expect(brand).toBeVisible();
+        await expect(platformConsole).toBeVisible();
+        await expect(account).toBeVisible();
+        await expect(signOut).toBeVisible();
+
+        for (const control of [brand, platformConsole, account, signOut]) {
+          const box = await control.boundingBox();
+          expect(box).not.toBeNull();
+          expect(box!.x).toBeGreaterThanOrEqual(0);
+          expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+        }
+
+        const hasHorizontalOverflow = await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth >
+            document.documentElement.clientWidth
+        );
+        expect(hasHorizontalOverflow).toBe(false);
+      }
+    } finally {
+      await cleanupDualRoleFixture(fixture);
+    }
+  });
+
   test("hides workspace link after membership revocation and avoids redirect loops", async ({
     page,
   }, testInfo) => {
