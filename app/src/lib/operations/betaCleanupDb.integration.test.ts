@@ -30,6 +30,7 @@ const runDb = process.env.INTEGRATION_DB === "true";
 describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
   const createdAccessRequestIds: string[] = [];
   const createdBetaInvitationIds: string[] = [];
+  const createdParticipantIds: string[] = [];
   const createdAllianceIds: string[] = [];
   const createdUserIds: string[] = [];
   const manifestPaths: string[] = [];
@@ -78,6 +79,10 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
       },
     });
     createdUserIds.push(user.id);
+    const participant = await prisma.betaParticipant.create({
+      data: { userId: user.id },
+    });
+    createdParticipantIds.push(participant.id);
     const invitation = await prisma.betaInvitation.create({
       data: {
         email: user.email,
@@ -86,6 +91,7 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
         expiresAt: new Date(Date.now() + 3600_000),
         acceptedAt: new Date(),
         acceptedByUserId: user.id,
+        participantId: participant.id,
       },
     });
     createdBetaInvitationIds.push(invitation.id);
@@ -223,6 +229,10 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
     if (createdBetaInvitationIds.length > 0) {
       await prisma.betaInvitation.deleteMany({ where: { id: { in: createdBetaInvitationIds } } });
       createdBetaInvitationIds.length = 0;
+    }
+    if (createdParticipantIds.length > 0) {
+      await prisma.betaParticipant.deleteMany({ where: { id: { in: createdParticipantIds } } });
+      createdParticipantIds.length = 0;
     }
     if (createdAllianceIds.length > 0) {
       const allianceIds = [...createdAllianceIds];

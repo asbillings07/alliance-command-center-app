@@ -80,15 +80,19 @@ describe.skipIf(!runDb)("beta participant migration [integration]", () => {
     expect(participantUserId[0].is_nullable).toBe("YES");
   });
 
-  it("leaves existing BetaInvitation and Alliance rows readable with null participantId", async () => {
-    const legacyInvitation = await prisma.betaInvitation.findFirst({
-      where: { participantId: null },
-      select: { id: true, participantId: true, updatedAt: true },
-    });
+  it("leaves existing BetaInvitation rows readable (legacy NULL participantId until backfill)", async () => {
+    const legacyRows = await prisma.$queryRaw<
+      Array<{ id: string; participantId: string | null; updatedAt: Date }>
+    >`
+      SELECT id, "participantId", "updatedAt"
+      FROM "BetaInvitation"
+      WHERE "participantId" IS NULL
+      LIMIT 1
+    `;
 
-    if (legacyInvitation) {
-      expect(legacyInvitation.participantId).toBeNull();
-      expect(legacyInvitation.updatedAt).toBeInstanceOf(Date);
+    if (legacyRows.length > 0) {
+      expect(legacyRows[0].participantId).toBeNull();
+      expect(legacyRows[0].updatedAt).toBeInstanceOf(Date);
     }
 
     let alliance = await prisma.alliance.findFirst({
