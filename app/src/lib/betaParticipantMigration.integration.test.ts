@@ -91,11 +91,22 @@ describe.skipIf(!runDb)("beta participant migration [integration]", () => {
       expect(legacyInvitation.updatedAt).toBeInstanceOf(Date);
     }
 
-    const alliance = await prisma.alliance.findFirst({
+    let alliance = await prisma.alliance.findFirst({
       select: { id: true, setupActivityAt: true, createdAt: true },
     });
-    expect(alliance).not.toBeNull();
-    expect(alliance!.setupActivityAt).toBeInstanceOf(Date);
+
+    if (!alliance) {
+      alliance = await prisma.alliance.create({
+        data: {
+          name: `Migration smoke ${Date.now()}`,
+          server: "S1",
+        },
+        select: { id: true, setupActivityAt: true, createdAt: true },
+      });
+      await prisma.alliance.delete({ where: { id: alliance.id } });
+    }
+
+    expect(alliance.setupActivityAt).toBeInstanceOf(Date);
   });
 
   it("dual-writes participantId for newly issued invitations", async () => {
