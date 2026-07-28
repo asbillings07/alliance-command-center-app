@@ -12,19 +12,19 @@
 export {
   getAllianceHealth,
   getAllianceReadiness,
+  getAllianceSetupStatusById,
   getAllianceReadinessSummary,
   getAllAlliances,
   getAllianceTimeline,
   getAllianceById,
-  getJumpLinks,
   type AllianceHealth,
   type AllianceReadinessItem,
   type AllianceReadinessSummary,
   type AllianceReadinessStatus,
+  type AlliancePlatformSetupStatus,
   type AllianceFilters,
   type AllianceTimeline,
   type TimelineEvent,
-  type JumpLink,
 } from "./alliances";
 
 // Invitations domain

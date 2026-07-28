@@ -193,6 +193,34 @@ test.describe("Platform Operations Console", () => {
       // Page must have at least one of these sections
       expect(hasNeedsHelp || hasAllAlliances).toBe(true);
     });
+
+    test("navigates from alliance card to support detail without self-referential action", async ({
+      page,
+    }) => {
+      await page.goto("/platform/support");
+
+      const supportDetailLink = page
+        .getByRole("link", { name: /View support details/i })
+        .first();
+
+      await expect(supportDetailLink).toBeVisible();
+      await supportDetailLink.click();
+      await page.waitForURL(/\/platform\/support\/alliance\/.+/);
+
+      const detailPath = new URL(page.url()).pathname;
+      expect(detailPath).toMatch(/\/platform\/support\/alliance\/.+/);
+
+      await expect(page.getByText("Open in ACC")).not.toBeVisible();
+      await expect(page.getByText("View Details")).not.toBeVisible();
+
+      const selfReferentialLinks = page.locator(`a[href="${detailPath}"]`);
+      await expect(selfReferentialLinks).toHaveCount(0);
+
+      const setupBadge = page.getByText(
+        /Setup complete|Setup incomplete|Status unavailable/
+      );
+      await expect(setupBadge).toBeVisible();
+    });
   });
 
   test.describe("Activity Page", () => {
