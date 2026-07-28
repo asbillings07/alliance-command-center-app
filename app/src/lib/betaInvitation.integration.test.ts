@@ -191,21 +191,70 @@ describe.skipIf(!runDb)("betaInvitation accept identity [integration]", () => {
     });
     createdInvitationIds.push(invitationOlder.id, invitationNewer.id);
 
-    await prisma.$transaction(
-      (tx) => acceptBetaInvitationWithTx(tx, invitationNewer.id, user.id),
-      { isolationLevel: "Serializable" },
-    );
-    await prisma.$transaction(
-      (tx) => acceptBetaInvitationWithTx(tx, invitationOlder.id, user.id),
-      { isolationLevel: "Serializable" },
+    await prisma.$executeRawUnsafe(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "BetaParticipant_userId_test_unique"
+       ON "BetaParticipant" ("userId") WHERE "userId" IS NOT NULL`,
     );
 
-    const survivor = await prisma.betaParticipant.findFirst({
-      where: { userId: user.id },
+    try {
+      await prisma.$transaction(
+        (tx) => acceptBetaInvitationWithTx(tx, invitationNewer.id, user.id),
+        { isolationLevel: "Serializable" },
+      );
+      await prisma.$transaction(
+        (tx) => acceptBetaInvitationWithTx(tx, invitationOlder.id, user.id),
+        { isolationLevel: "Serializable" },
+      );
+
+      const survivor = await prisma.betaParticipant.findFirst({
+        where: { userId: user.id },
+      });
+      expect(survivor?.id).toBe(olderParticipant.id);
+      expect(
+        await prisma.betaParticipant.findUnique({
+          where: { id: newerParticipant.id },
+        }),
+      ).toBeNull();
+    } finally {
+      await prisma.$executeRawUnsafe(
+        `DROP INDEX IF EXISTS "BetaParticipant_userId_test_unique"`,
+      );
+    }
+  });
+
+  it("rejects issuance when recycled email history conflicts with current user participant", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const email = `recycled-${suffix}@example.test`;
+
+    const user = await prisma.user.create({
+      data: {
+        email,
+        displayName: "Recycled Email Holder",
+        passwordHash: "placeholder-hash-not-a-real-password",
+        sessionVersion: 0,
+      },
     });
-    expect(survivor?.id).toBe(olderParticipant.id);
-    expect(
-      await prisma.betaParticipant.findUnique({ where: { id: newerParticipant.id } }),
-    ).toBeNull();
+    createdUserIds.push(user.id);
+
+    const userParticipant = await prisma.betaParticipant.create({
+      data: { userId: user.id },
+    });
+    const otherParticipant = await prisma.betaParticipant.create({ data: {} });
+    createdParticipantIds.push(userParticipant.id, otherParticipant.id);
+
+    const staleInvitation = await prisma.betaInvitation.create({
+      data: {
+        email,
+        token: `stale-${suffix}`,
+        code: `STL-${suffix.slice(0, 3).toUpperCase()}`,
+        expiresAt: new Date(Date.now() - 86400000),
+        participantId: otherParticipant.id,
+      },
+    });
+    createdInvitationIds.push(staleInvitation.id);
+
+    await expect(issueBetaInvitation(email)).rejects.toThrow(
+      "different beta participant than the current account holder",
+    );
   });
 });

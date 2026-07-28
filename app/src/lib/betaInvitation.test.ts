@@ -280,6 +280,43 @@ describe("issueBetaInvitation", () => {
     expect(mockPrisma.betaParticipant.create).not.toHaveBeenCalled();
   });
 
+  it("throws when email invitation history and current user participant disagree", async () => {
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue({ id: "user-1" });
+    mockPrisma.allianceMembership.findFirst.mockResolvedValue(null);
+    mockPrisma.betaParticipant.findFirst
+      .mockResolvedValueOnce({ id: "participant-email-history" })
+      .mockResolvedValueOnce({ id: "participant-current-user" });
+    mockPrisma.betaInvitation.create.mockResolvedValue({ id: "inv-should-not-run" });
+
+    await expect(issueBetaInvitation("test@example.com")).rejects.toThrow(
+      "different beta participant than the current account holder",
+    );
+    expect(mockPrisma.betaInvitation.create).not.toHaveBeenCalled();
+  });
+
+  it("reuses participant when email history and current user participant agree", async () => {
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue({ id: "user-1" });
+    mockPrisma.allianceMembership.findFirst.mockResolvedValue(null);
+    mockPrisma.betaParticipant.findFirst
+      .mockResolvedValueOnce({ id: "participant-shared" })
+      .mockResolvedValueOnce({ id: "participant-shared" });
+    mockPrisma.betaInvitation.create.mockImplementation(async ({ data }) => ({
+      id: "inv-2",
+      ...data,
+      acceptedAt: null,
+      acceptedByUserId: null,
+      revokedAt: null,
+      allianceId: null,
+    }));
+
+    const result = await issueBetaInvitation("test@example.com");
+
+    expect(result.invitation.participantId).toBe("participant-shared");
+    expect(mockPrisma.betaParticipant.create).not.toHaveBeenCalled();
+  });
+
   it("enforces the pending check and create in a serializable transaction", async () => {
     mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
     mockPrisma.user.findUnique.mockResolvedValue(null);

@@ -192,6 +192,7 @@ export async function issueBetaInvitation(
         const participantId = await resolveCanonicalParticipantIdForIssuance(
           tx,
           normalizedEmail,
+          existingUser?.id ?? null,
         );
 
         return tx.betaInvitation.create({
@@ -365,10 +366,12 @@ const PARTICIPANT_SURVIVOR_ORDER: Prisma.BetaParticipantOrderByWithRelationInput
  * Resolve the canonical BetaParticipant for a new invitation row.
  * Reuses the oldest linked participant for this email or user identity so
  * terminal/accepted-no-alliance history does not split one person (#174).
+ * Fails closed when email history and the current user's participant disagree.
  */
 async function resolveCanonicalParticipantIdForIssuance(
   tx: Prisma.TransactionClient,
   normalizedEmail: string,
+  existingUserId: string | null = null,
 ): Promise<string> {
   const fromEmailHistory = await tx.betaParticipant.findFirst({
     where: {
@@ -377,23 +380,39 @@ async function resolveCanonicalParticipantIdForIssuance(
     orderBy: PARTICIPANT_SURVIVOR_ORDER,
     select: { id: true },
   });
+
+  let fromUser: { id: string } | null = null;
+  let userId = existingUserId;
+  if (!userId) {
+    const existingUser = await tx.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true },
+    });
+    userId = existingUser?.id ?? null;
+  }
+  if (userId) {
+    fromUser = await tx.betaParticipant.findFirst({
+      where: { userId },
+      orderBy: PARTICIPANT_SURVIVOR_ORDER,
+      select: { id: true },
+    });
+  }
+
+  if (fromEmailHistory && fromUser) {
+    if (fromEmailHistory.id !== fromUser.id) {
+      throw new Error(
+        "This email's invitation history belongs to a different beta participant than the current account holder",
+      );
+    }
+    return fromEmailHistory.id;
+  }
+
   if (fromEmailHistory) {
     return fromEmailHistory.id;
   }
 
-  const existingUser = await tx.user.findUnique({
-    where: { email: normalizedEmail },
-    select: { id: true },
-  });
-  if (existingUser) {
-    const fromUser = await tx.betaParticipant.findFirst({
-      where: { userId: existingUser.id },
-      orderBy: PARTICIPANT_SURVIVOR_ORDER,
-      select: { id: true },
-    });
-    if (fromUser) {
-      return fromUser.id;
-    }
+  if (fromUser) {
+    return fromUser.id;
   }
 
   const created = await tx.betaParticipant.create({ data: {} });
@@ -454,11 +473,22 @@ async function mergeBetaParticipantsWithTx(
     data: { participantId: survivorId },
   });
 
-  if (mergedAway?.userId && !survivor?.userId) {
-    await tx.betaParticipant.update({
-      where: { id: survivorId },
-      data: { userId: mergedAway.userId },
-    });
+  if (mergedAway?.userId) {
+    if (survivor?.userId && survivor.userId !== mergedAway.userId) {
+      throw new Error("Beta participant identity conflict");
+    }
+    if (!survivor?.userId) {
+      // Clear the merged-away holder before assigning the survivor so PR 1b's
+      // userId unique constraint cannot see two rows claiming the same user.
+      await tx.betaParticipant.update({
+        where: { id: mergedAwayId },
+        data: { userId: null },
+      });
+      await tx.betaParticipant.update({
+        where: { id: survivorId },
+        data: { userId: mergedAway.userId },
+      });
+    }
   }
 
   await tx.betaParticipant.delete({
