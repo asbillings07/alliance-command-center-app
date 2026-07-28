@@ -1,6 +1,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { auth } from "@/app/src/lib/auth";
+import { isPlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
+import { Button } from "@/app/src/components/Button";
 import {
   AccountNavLink,
   FeedbackWidget,
@@ -34,6 +36,8 @@ export default async function AlliancesLayout({
   children: React.ReactNode;
 }) {
   const session = await auth();
+  const showPlatformConsole =
+    session?.user?.id != null && (await isPlatformAdmin(session.user.id));
 
   return (
     // No min-h-screen here: the pages under /alliances already own the full
@@ -58,6 +62,11 @@ export default async function AlliancesLayout({
           </Link>
           {session?.user && (
             <div className="flex items-center gap-1">
+              {showPlatformConsole && (
+                <Button href="/platform/overview" variant="ghost" size="sm">
+                  Platform Console
+                </Button>
+              )}
               <AccountNavLink />
               <SignOutButton variant="ghost" />
             </div>

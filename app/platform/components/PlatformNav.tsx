@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { AdminAllianceWorkspace } from "@/app/src/lib/platform/adminWorkspace";
+import { Button } from "@/app/src/components/Button";
 import { AccountNavLink, SignOutButton } from "@/app/src/components/client";
 
 type NavItem = {
@@ -38,21 +40,72 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-export function PlatformNav() {
+function WorkspaceNavLink({
+  workspace,
+  fullWidth = false,
+  onClick,
+}: {
+  workspace: AdminAllianceWorkspace;
+  fullWidth?: boolean;
+  onClick?: () => void;
+}) {
+  if (workspace.kind === "none") {
+    return null;
+  }
+
+  const label =
+    workspace.kind === "single" ? "Alliance workspace" : "My alliances";
+
+  return (
+    <Button
+      href={workspace.href}
+      variant="ghost"
+      size="sm"
+      fullWidth={fullWidth}
+      align={fullWidth ? "start" : "center"}
+      onClick={onClick}
+    >
+      {label}
+    </Button>
+  );
+}
+
+function PlatformNavFooter({
+  workspace,
+  onNavigate,
+}: {
+  workspace: AdminAllianceWorkspace;
+  onNavigate?: () => void;
+}) {
+  return (
+    <div className="border-t border-border p-3 space-y-1">
+      <WorkspaceNavLink workspace={workspace} fullWidth onClick={onNavigate} />
+      <AccountNavLink fullWidth onClick={onNavigate} />
+      <SignOutButton variant="ghost" fullWidth align="start" />
+    </div>
+  );
+}
+
+export function PlatformNav({
+  workspace,
+}: {
+  workspace: AdminAllianceWorkspace;
+}) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex-1 py-4">
-      <ul className="space-y-1 px-3">
-        {NAV_ITEMS.map((item) => {
-          const isActive =
-            pathname === item.href || pathname.startsWith(`${item.href}/`);
+    <div className="flex flex-col flex-1">
+      <nav className="flex-1 py-4">
+        <ul className="space-y-1 px-3">
+          {NAV_ITEMS.map((item) => {
+            const isActive =
+              pathname === item.href || pathname.startsWith(`${item.href}/`);
 
-          return (
-            <li key={item.href}>
-              <Link
-                href={item.href}
-                className={`
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={`
                   block px-3 py-2 rounded-lg text-sm transition-colors
                   ${
                     isActive
@@ -60,23 +113,28 @@ export function PlatformNav() {
                       : "text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
                   }
                 `}
-              >
-                {item.label}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
+                >
+                  {item.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      <PlatformNavFooter workspace={workspace} />
+    </div>
   );
 }
 
 export function PlatformNavMobile({
   isOpen,
   onClose,
+  workspace,
 }: {
   isOpen: boolean;
   onClose: () => void;
+  workspace: AdminAllianceWorkspace;
 }) {
   const pathname = usePathname();
 
@@ -135,10 +193,7 @@ export function PlatformNavMobile({
           </ul>
         </nav>
 
-        <div className="border-t border-border p-3 space-y-1">
-          <AccountNavLink fullWidth onClick={onClose} />
-          <SignOutButton variant="ghost" fullWidth align="start" />
-        </div>
+        <PlatformNavFooter workspace={workspace} onNavigate={onClose} />
       </div>
     </>
   );
