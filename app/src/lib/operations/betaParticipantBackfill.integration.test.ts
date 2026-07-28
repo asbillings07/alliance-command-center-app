@@ -28,6 +28,17 @@ const CONTRACT_PREFLIGHT_SQL = CONTRACT_MIGRATION_SQL.split(
   "-- CreateIndex",
 )[0]!.trim();
 
+async function isParticipantIdNullable(prisma: PrismaClient): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ is_nullable: string }>>`
+    SELECT is_nullable
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'BetaInvitation'
+      AND column_name = 'participantId'
+  `;
+  return rows[0]?.is_nullable === "YES";
+}
+
 describe.skipIf(!runDb)("beta participant backfill and contract gate [integration]", () => {
   const createdUserIds: string[] = [];
   const createdParticipantIds: string[] = [];
@@ -35,11 +46,13 @@ describe.skipIf(!runDb)("beta participant backfill and contract gate [integratio
   const createdAllianceIds: string[] = [];
 
   let prisma: PrismaClient;
+  let preContractDb = false;
 
   beforeAll(async () => {
     ({ prisma } = (await import("../prisma")) as unknown as {
       prisma: PrismaClient;
     });
+    preContractDb = await isParticipantIdNullable(prisma);
   });
 
   afterEach(async () => {
@@ -111,7 +124,11 @@ describe.skipIf(!runDb)("beta participant backfill and contract gate [integratio
     return { id, email };
   }
 
-  it("backfills legacy NULL participantId rows and passes validation", async () => {
+  it("backfills legacy NULL participantId rows and passes validation", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `backfill-clean-${suffix}@example.test`;
     const user = await makeUser("backfill-clean");
@@ -135,7 +152,11 @@ describe.skipIf(!runDb)("beta participant backfill and contract gate [integratio
     expect(results.every((result) => result.rows.length === 0)).toBe(true);
   });
 
-  it("splits two accepted users and marks ambiguous remainder", async () => {
+  it("splits two accepted users and marks ambiguous remainder", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `backfill-split-${suffix}@example.test`;
     const userA = await makeUser("split-a");
@@ -174,7 +195,11 @@ describe.skipIf(!runDb)("beta participant backfill and contract gate [integratio
     }
   });
 
-  it("is idempotent when run twice", async () => {
+  it("is idempotent when run twice", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `backfill-idempotent-${suffix}@example.test`;
     await makeLegacyInvitation(email);
@@ -203,7 +228,11 @@ describe.skipIf(!runDb)("beta participant backfill and contract gate [integratio
     }
   });
 
-  it("pre-flight guard passes after backfill on clean legacy data", async () => {
+  it("pre-flight guard passes after backfill on clean legacy data", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `contract-clean-${suffix}@example.test`;
     await makeLegacyInvitation(email);
@@ -225,7 +254,11 @@ describe.skipIf(!runDb)("beta participant backfill and contract gate [integratio
     }
   });
 
-  it("contract migration pre-flight guard rejects remaining NULL participantId", async () => {
+  it("contract migration pre-flight guard rejects remaining NULL participantId", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     await makeLegacyInvitation(`contract-block-${suffix}@example.test`);
 
@@ -234,7 +267,11 @@ describe.skipIf(!runDb)("beta participant backfill and contract gate [integratio
     ).rejects.toThrow(/participantId IS NULL rows remain/);
   });
 
-  it("contract migration pre-flight guard rejects colliding userId claims", async () => {
+  it("contract migration pre-flight guard rejects colliding userId claims", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const user = await makeUser("collision");
     const participantAId = `collision-a-${suffix}`;
@@ -252,5 +289,10 @@ describe.skipIf(!runDb)("beta participant backfill and contract gate [integratio
     await expect(
       prisma.$executeRawUnsafe(CONTRACT_PREFLIGHT_SQL),
     ).rejects.toThrow(/colliding BetaParticipant.userId/);
+  });
+
+  it("validation passes on post-contract CI database", async () => {
+    const results = await runAllBetaParticipantValidationChecks(prisma);
+    expect(results.every((result) => result.rows.length === 0)).toBe(true);
   });
 });
