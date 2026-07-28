@@ -3,10 +3,11 @@
 -- Nullable participantId and userId without unique constraints — contract step is PR 1b.
 
 -- AlterTable: monotonic setup-activity clock on Alliance
+-- Existing alliances receive migration-run time as their baseline (DEFAULT
+-- CURRENT_TIMESTAMP below), NOT createdAt. That deliberately grants every
+-- legacy incomplete alliance a seven-day setup_stalled grace period counted
+-- from deploy time rather than from unknowable historical activity (#174).
 ALTER TABLE "Alliance" ADD COLUMN "setupActivityAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
-
--- Backfill existing alliances: use createdAt as the initial activity baseline
-UPDATE "Alliance" SET "setupActivityAt" = "createdAt";
 
 -- CreateTable: canonical beta participant identity
 CREATE TABLE "BetaParticipant" (

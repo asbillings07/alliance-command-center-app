@@ -109,6 +109,47 @@ describe.skipIf(!runDb)("beta participant migration [integration]", () => {
     expect(alliance.setupActivityAt).toBeInstanceOf(Date);
   });
 
+  it("uses migration-run setupActivityAt baseline rather than backdating to createdAt", async () => {
+    const createdAt = new Date("2019-06-01T00:00:00.000Z");
+    const alliance = await prisma.alliance.create({
+      data: {
+        name: `Grace baseline ${Date.now()}`,
+        server: "S1",
+        createdAt,
+      },
+      select: { id: true, setupActivityAt: true, createdAt: true },
+    });
+
+    expect(alliance.setupActivityAt.getTime()).toBeGreaterThan(
+      alliance.createdAt.getTime(),
+    );
+
+    await prisma.alliance.delete({ where: { id: alliance.id } });
+  });
+
+  it("reuses participant when re-issuing after an expired invitation", async () => {
+    const { issueBetaInvitation } = await import("./betaInvitation");
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const email = `reuse-expired-${suffix}@example.test`;
+    const first = await issueBetaInvitation(email);
+    await prisma.betaInvitation.update({
+      where: { id: first.invitation.id },
+      data: { expiresAt: new Date(Date.now() - 86400000) },
+    });
+
+    const second = await issueBetaInvitation(email);
+    expect(second.invitation.participantId).toBe(first.invitation.participantId);
+
+    await prisma.betaInvitation.deleteMany({
+      where: { email },
+    });
+    if (first.invitation.participantId) {
+      await prisma.betaParticipant.delete({
+        where: { id: first.invitation.participantId },
+      });
+    }
+  });
+
   it("dual-writes participantId for newly issued invitations", async () => {
     const { issueBetaInvitation } = await import("./betaInvitation");
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;

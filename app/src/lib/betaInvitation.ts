@@ -186,8 +186,13 @@ export async function issueBetaInvitation(
           }
         }
 
-        // Always create a new record - never mutate history
-        const participant = await tx.betaParticipant.create({ data: {} });
+        // Always create a new invitation row — never mutate history — but reuse
+        // the established canonical participant when this email/user already
+        // has beta history (expired/revoked/accepted-no-alliance attempts).
+        const participantId = await resolveCanonicalParticipantIdForIssuance(
+          tx,
+          normalizedEmail,
+        );
 
         return tx.betaInvitation.create({
           data: {
@@ -199,7 +204,7 @@ export async function issueBetaInvitation(
             expiresAt: addDays(now, 30),
             createdAt: now,
             issuedAt: now,
-            participantId: participant.id,
+            participantId,
           },
         });
       },
@@ -353,26 +358,111 @@ export async function validateBetaCode(
   return { status: "valid", invitation };
 }
 
+const PARTICIPANT_SURVIVOR_ORDER: Prisma.BetaParticipantOrderByWithRelationInput[] =
+  [{ createdAt: "asc" }, { id: "asc" }];
+
 /**
- * Reassign every invitation from `sourceParticipantId` onto
- * `targetParticipantId`, then delete the now-empty source row.
+ * Resolve the canonical BetaParticipant for a new invitation row.
+ * Reuses the oldest linked participant for this email or user identity so
+ * terminal/accepted-no-alliance history does not split one person (#174).
+ */
+async function resolveCanonicalParticipantIdForIssuance(
+  tx: Prisma.TransactionClient,
+  normalizedEmail: string,
+): Promise<string> {
+  const fromEmailHistory = await tx.betaParticipant.findFirst({
+    where: {
+      invitations: { some: { email: normalizedEmail } },
+    },
+    orderBy: PARTICIPANT_SURVIVOR_ORDER,
+    select: { id: true },
+  });
+  if (fromEmailHistory) {
+    return fromEmailHistory.id;
+  }
+
+  const existingUser = await tx.user.findUnique({
+    where: { email: normalizedEmail },
+    select: { id: true },
+  });
+  if (existingUser) {
+    const fromUser = await tx.betaParticipant.findFirst({
+      where: { userId: existingUser.id },
+      orderBy: PARTICIPANT_SURVIVOR_ORDER,
+      select: { id: true },
+    });
+    if (fromUser) {
+      return fromUser.id;
+    }
+  }
+
+  const created = await tx.betaParticipant.create({ data: {} });
+  return created.id;
+}
+
+/**
+ * Pick the stable merge survivor: createdAt ASC, id ASC (#174).
+ */
+async function pickMergeSurvivorParticipantId(
+  tx: Prisma.TransactionClient,
+  participantIdA: string,
+  participantIdB: string,
+): Promise<{ survivorId: string; mergedAwayId: string }> {
+  if (participantIdA === participantIdB) {
+    return { survivorId: participantIdA, mergedAwayId: participantIdB };
+  }
+
+  const rows = await tx.betaParticipant.findMany({
+    where: { id: { in: [participantIdA, participantIdB] } },
+    select: { id: true },
+    orderBy: PARTICIPANT_SURVIVOR_ORDER,
+  });
+
+  if (rows.length < 2) {
+    throw new Error("Beta participant not found for merge");
+  }
+
+  return { survivorId: rows[0].id, mergedAwayId: rows[1].id };
+}
+
+/**
+ * Reassign invitations onto the survivor and delete the merged-away row.
+ * Transfers userId onto the survivor when only the merged-away row holds it.
  */
 async function mergeBetaParticipantsWithTx(
   tx: Prisma.TransactionClient,
-  sourceParticipantId: string,
-  targetParticipantId: string,
+  mergedAwayId: string,
+  survivorId: string,
 ): Promise<void> {
-  if (sourceParticipantId === targetParticipantId) {
+  if (mergedAwayId === survivorId) {
     return;
   }
 
+  const [mergedAway, survivor] = await Promise.all([
+    tx.betaParticipant.findUnique({
+      where: { id: mergedAwayId },
+      select: { userId: true },
+    }),
+    tx.betaParticipant.findUnique({
+      where: { id: survivorId },
+      select: { userId: true },
+    }),
+  ]);
+
   await tx.betaInvitation.updateMany({
-    where: { participantId: sourceParticipantId },
-    data: { participantId: targetParticipantId },
+    where: { participantId: mergedAwayId },
+    data: { participantId: survivorId },
   });
 
+  if (mergedAway?.userId && !survivor?.userId) {
+    await tx.betaParticipant.update({
+      where: { id: survivorId },
+      data: { userId: mergedAway.userId },
+    });
+  }
+
   await tx.betaParticipant.delete({
-    where: { id: sourceParticipantId },
+    where: { id: mergedAwayId },
   });
 }
 
@@ -405,10 +495,16 @@ async function claimBetaParticipantUserIdWithTx(
   const existingHolder = await tx.betaParticipant.findFirst({
     where: { userId },
     select: { id: true },
+    orderBy: PARTICIPANT_SURVIVOR_ORDER,
   });
 
   if (existingHolder && existingHolder.id !== participantId) {
-    await mergeBetaParticipantsWithTx(tx, participantId, existingHolder.id);
+    const { survivorId, mergedAwayId } = await pickMergeSurvivorParticipantId(
+      tx,
+      participantId,
+      existingHolder.id,
+    );
+    await mergeBetaParticipantsWithTx(tx, mergedAwayId, survivorId);
     return;
   }
 
@@ -439,17 +535,20 @@ async function mergeBetaParticipantUserIdAfterUniqueViolation(
     const winner = await tx.betaParticipant.findFirst({
       where: { userId },
       select: { id: true },
+      orderBy: PARTICIPANT_SURVIVOR_ORDER,
     });
 
     if (!winner) {
       throw new Error("Expected participant holding userId after unique violation");
     }
 
-    await mergeBetaParticipantsWithTx(
+    const { survivorId, mergedAwayId } = await pickMergeSurvivorParticipantId(
       tx,
       invitation.participantId,
       winner.id,
     );
+
+    await mergeBetaParticipantsWithTx(tx, mergedAwayId, survivorId);
   }, ACCEPT_TRANSACTION_OPTIONS);
 }
 

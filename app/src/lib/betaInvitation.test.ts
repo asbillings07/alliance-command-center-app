@@ -156,6 +156,7 @@ describe("getPendingInvitation", () => {
 
 describe("issueBetaInvitation", () => {
   beforeEach(() => {
+    mockPrisma.betaParticipant.findFirst.mockResolvedValue(null);
     mockPrisma.betaParticipant.create.mockResolvedValue({ id: "participant-1" });
   });
 
@@ -256,6 +257,27 @@ describe("issueBetaInvitation", () => {
       "This user already has access to an alliance"
     );
     expect(mockPrisma.betaInvitation.create).not.toHaveBeenCalled();
+  });
+
+  it("reuses established participant when email already has invitation history", async () => {
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.betaParticipant.findFirst.mockResolvedValue({
+      id: "participant-existing",
+    });
+    mockPrisma.betaInvitation.create.mockImplementation(async ({ data }) => ({
+      id: "inv-2",
+      ...data,
+      acceptedAt: null,
+      acceptedByUserId: null,
+      revokedAt: null,
+      allianceId: null,
+    }));
+
+    const result = await issueBetaInvitation("test@example.com");
+
+    expect(result.invitation.participantId).toBe("participant-existing");
+    expect(mockPrisma.betaParticipant.create).not.toHaveBeenCalled();
   });
 
   it("enforces the pending check and create in a serializable transaction", async () => {

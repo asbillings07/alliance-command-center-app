@@ -140,13 +140,14 @@ describe.skipIf(!runDb)("betaInvitation accept identity [integration]", () => {
     }
   });
 
-  it("merges a second participant into the holder after the first accept claims userId", async () => {
+  it("merges a second invitation onto the canonical participant after re-issue", async () => {
     const user = await makeUser();
     const invitationA = await issueTrackedInvitation(user.email);
     await acceptBetaInvitation(invitationA.id, user.id);
 
     const invitationB = await issueTrackedInvitation(user.email);
-    const participantB = invitationB.participantId!;
+
+    expect(invitationB.participantId).toBe(invitationA.participantId);
 
     await acceptBetaInvitation(invitationB.id, user.id);
 
@@ -155,15 +156,56 @@ describe.skipIf(!runDb)("betaInvitation accept identity [integration]", () => {
     });
     expect(holders).toHaveLength(1);
     expect(holders[0].id).toBe(invitationA.participantId);
+  });
 
-    const reassignedB = await prisma.betaInvitation.findUniqueOrThrow({
-      where: { id: invitationB.id },
-    });
-    expect(reassignedB.participantId).toBe(holders[0].id);
+  it("keeps the older participant as merge survivor when newer is accepted first", async () => {
+    const user = await makeUser();
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const expiresAt = new Date(Date.now() + 86400000);
 
-    const deleted = await prisma.betaParticipant.findUnique({
-      where: { id: participantB },
+    const olderParticipant = await prisma.betaParticipant.create({
+      data: { createdAt: new Date("2020-01-01T00:00:00.000Z") },
     });
-    expect(deleted).toBeNull();
+    const newerParticipant = await prisma.betaParticipant.create({
+      data: { createdAt: new Date("2025-01-01T00:00:00.000Z") },
+    });
+    createdParticipantIds.push(olderParticipant.id, newerParticipant.id);
+
+    const invitationOlder = await prisma.betaInvitation.create({
+      data: {
+        email: `older-${suffix}@example.test`,
+        token: `token-old-${suffix}`,
+        code: `OLD-${suffix.slice(0, 3).toUpperCase()}`,
+        expiresAt,
+        participantId: olderParticipant.id,
+      },
+    });
+    const invitationNewer = await prisma.betaInvitation.create({
+      data: {
+        email: `newer-${suffix}@example.test`,
+        token: `token-new-${suffix}`,
+        code: `NEW-${suffix.slice(0, 3).toUpperCase()}`,
+        expiresAt,
+        participantId: newerParticipant.id,
+      },
+    });
+    createdInvitationIds.push(invitationOlder.id, invitationNewer.id);
+
+    await prisma.$transaction(
+      (tx) => acceptBetaInvitationWithTx(tx, invitationNewer.id, user.id),
+      { isolationLevel: "Serializable" },
+    );
+    await prisma.$transaction(
+      (tx) => acceptBetaInvitationWithTx(tx, invitationOlder.id, user.id),
+      { isolationLevel: "Serializable" },
+    );
+
+    const survivor = await prisma.betaParticipant.findFirst({
+      where: { userId: user.id },
+    });
+    expect(survivor?.id).toBe(olderParticipant.id);
+    expect(
+      await prisma.betaParticipant.findUnique({ where: { id: newerParticipant.id } }),
+    ).toBeNull();
   });
 });
