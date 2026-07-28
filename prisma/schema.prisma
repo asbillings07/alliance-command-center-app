@@ -43,6 +43,9 @@ model Alliance {
   server    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Monotonic setup-activity clock; bumped via touchAllianceSetupActivity()'s
+  // atomic GREATEST() update on every setup-domain write (#174).
+  setupActivityAt DateTime @default(now())
   allianceMembers  AllianceMember[]
   metrics          Metric[]
   memberships      AllianceMembership[]
@@ -132,6 +135,9 @@ model User {
   invitationsSent Invitation[] @relation("InvitationsSent")
   invitationsAccepted Invitation[] @relation("InvitationsAccepted")
   betaInvitationsAccepted BetaInvitation[] @relation("BetaInvitationsAccepted")
+  betaInvitationsIssued   BetaInvitation[] @relation("BetaInvitationsIssued")
+  betaInvitationsRevoked  BetaInvitation[] @relation("BetaInvitationsRevoked")
+  betaParticipant         BetaParticipant?
   feedback Feedback[]
   emailChangeRequests EmailChangeRequest[]
   passwordResetTokens PasswordResetToken[]
@@ -304,6 +310,17 @@ model Invitation {
   @@index([allianceId, email])
 }
 
+model BetaParticipant {
+  id                String   @id @default(cuid())
+  createdAt         DateTime @default(now())
+  // DB-level @unique contract lands in PR 1b (#174); required here for Prisma's
+  // one-to-one relation shape.
+  userId            String?  @unique
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  identityAmbiguous Boolean  @default(false)
+  invitations       BetaInvitation[]
+}
+
 model BetaInvitation {
   id        String   @id @default(cuid())
   email     String
@@ -314,6 +331,25 @@ model BetaInvitation {
   expiresAt DateTime
   createdAt DateTime @default(now())
   issuedAt  DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  participantId String?
+  participant   BetaParticipant? @relation(fields: [participantId], references: [id])
+
+  issuedByUserId String?
+  issuedBy       User?   @relation("BetaInvitationsIssued", fields: [issuedByUserId], references: [id], onDelete: SetNull)
+
+  revokedByUserId String?
+  revokedBy       User?   @relation("BetaInvitationsRevoked", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+
+  // DB-level @unique contract lands in PR 1b (#174); required here for Prisma's
+  // one-to-one reissue successor relation.
+  reissuedFromInvitationId String?          @unique
+  reissuedFrom             BetaInvitation?  @relation("BetaInvitationReissue", fields: [reissuedFromInvitationId], references: [id])
+  reissuedTo               BetaInvitation?  @relation("BetaInvitationReissue")
+
+  resendClaimedAt DateTime?
+  resendClaimId   String?
 
   acceptedAt       DateTime?
   acceptedByUserId String?
@@ -325,6 +361,7 @@ model BetaInvitation {
   alliance   Alliance? @relation(fields: [allianceId], references: [id])
 
   @@index([email])
+  @@index([participantId])
 }
 
 // A prospective user expressing interest in the beta. Intentionally separate

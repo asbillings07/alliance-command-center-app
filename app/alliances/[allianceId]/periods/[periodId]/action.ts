@@ -2,6 +2,7 @@
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
+import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { prisma } from "@/app/src/lib/prisma";
 
 export type PeriodMetricActionResult = {
@@ -78,13 +79,16 @@ export async function addMetricToPeriod(
   }
 
   try {
-    await prisma.metricPeriodMetric.create({
-      data: {
-        periodId,
-        metricId,
-        weight,
-        required,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.metricPeriodMetric.create({
+        data: {
+          periodId,
+          metricId,
+          weight,
+          required,
+        },
+      });
+      await touchAllianceSetupActivity(tx, allianceId);
     });
   } catch (err) {
     console.error("Failed to add metric to period:", err);
@@ -132,9 +136,12 @@ export async function editPeriodMetric(
   }
 
   try {
-    await prisma.metricPeriodMetric.update({
-      where: { periodId_metricId: { periodId, metricId } },
-      data: { weight, required },
+    await prisma.$transaction(async (tx) => {
+      await tx.metricPeriodMetric.update({
+        where: { periodId_metricId: { periodId, metricId } },
+        data: { weight, required },
+      });
+      await touchAllianceSetupActivity(tx, allianceId);
     });
   } catch (err) {
     console.error("Failed to update period metric:", err);

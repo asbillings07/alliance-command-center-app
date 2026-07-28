@@ -3,6 +3,7 @@
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { prisma } from "@/app/src/lib/prisma";
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
+import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/app/generated/prisma/client";
 
@@ -51,9 +52,12 @@ export async function archiveMember(
         return { success: false, error: "Member is already archived" };
     }
 
-    await prisma.allianceMember.update({
-        where: { id: memberId },
-        data: { archivedAt: new Date() },
+    await prisma.$transaction(async (tx) => {
+        await tx.allianceMember.update({
+            where: { id: memberId },
+            data: { archivedAt: new Date() },
+        });
+        await touchAllianceSetupActivity(tx, allianceId);
     });
 
     revalidatePath(`/alliances/${allianceId}/members`);
@@ -106,6 +110,7 @@ export async function restoreMember(
                     where: { id: memberId },
                     data: { archivedAt: null },
                 });
+                await touchAllianceSetupActivity(tx, allianceId);
             }
         );
 

@@ -13,6 +13,10 @@ vi.mock("@/app/src/lib/cache/revalidateAllianceData", () => ({
   revalidateAllianceData: vi.fn(),
 }));
 
+vi.mock("@/app/src/lib/touchAllianceSetupActivity", () => ({
+  touchAllianceSetupActivity: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("@/app/src/lib/prisma", () => ({
   prisma: {
     metricPeriod: {
@@ -25,6 +29,7 @@ vi.mock("@/app/src/lib/prisma", () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -37,9 +42,13 @@ const mockPeriodFindFirst = prisma.metricPeriod.findFirst as ReturnType<
 const mockMetricFindFirst = prisma.metric.findFirst as ReturnType<typeof vi.fn>;
 const mockCreate = prisma.metricPeriodMetric.create as ReturnType<typeof vi.fn>;
 const mockUpdate = prisma.metricPeriodMetric.update as ReturnType<typeof vi.fn>;
+const mockTransaction = prisma.$transaction as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockTransaction.mockImplementation(async (fn: (tx: typeof prisma) => unknown) =>
+    fn(prisma),
+  );
 });
 
 function buildFormData(fields: Record<string, string>): FormData {

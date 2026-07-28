@@ -11,6 +11,7 @@ import {
 import { resolveMetricTargets } from "@/app/src/lib/metricResolution";
 import { classifyColumn } from "@/app/src/lib/columnClassifier";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
+import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { validateMetricPeriodFields } from "@/app/src/lib/metricPeriodValidation";
 import {
   aggregateRequiredPermissions,
@@ -233,6 +234,8 @@ export async function importMultiPeriodMetrics(
         resolved,
       });
     }
+
+    await touchAllianceSetupActivity(tx, allianceId);
 
     return results;
   });
