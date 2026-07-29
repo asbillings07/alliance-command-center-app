@@ -153,6 +153,11 @@ export const test = base.extend<TestFixtures>({
         expiresAt,
         acceptedAt: new Date(), // Already accepted
         acceptedByUserId: user.id,
+        participantId: (
+          await prisma.betaParticipant.create({
+            data: { userId: user.id },
+          })
+        ).id,
       },
     });
 

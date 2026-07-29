@@ -313,7 +313,7 @@ model Invitation {
 model BetaParticipant {
   id                String   @id @default(cuid())
   createdAt         DateTime @default(now())
-  // DB-level @unique contract lands in PR 1b (#174); required here for Prisma's
+  // DB-level @unique contract lands in PR 1c (#174); required here for Prisma's
   // one-to-one relation shape.
   userId            String?  @unique
   user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -342,7 +342,7 @@ model BetaInvitation {
   revokedByUserId String?
   revokedBy       User?   @relation("BetaInvitationsRevoked", fields: [revokedByUserId], references: [id], onDelete: SetNull)
 
-  // DB-level @unique contract lands in PR 1b (#174); required here for Prisma's
+  // DB-level @unique contract lands in PR 1c (#174); required here for Prisma's
   // one-to-one reissue successor relation.
   reissuedFromInvitationId String?          @unique
   reissuedFrom             BetaInvitation?  @relation("BetaInvitationReissue", fields: [reissuedFromInvitationId], references: [id])
