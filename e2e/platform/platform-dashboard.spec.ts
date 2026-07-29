@@ -414,7 +414,9 @@ test.describe("Platform Operations Console", () => {
       page.on("dialog", (dialog) => dialog.accept());
       await revokeButton.click();
 
-      await expect(row.getByText(/Revoked/i)).toBeVisible({
+      await expect(
+        row.getByText("Revoked", { exact: true }),
+      ).toBeVisible({
         timeout: 10000,
       });
     });
