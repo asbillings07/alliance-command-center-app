@@ -175,8 +175,24 @@ describeIntegration("betaParticipants unified query [integration]", () => {
       `beta-page-c-${suffix}@example.test`,
     ];
 
+    const invitations = [];
     for (const email of emails) {
-      await trackInvitation(email);
+      invitations.push(await trackInvitation(email));
+    }
+
+    const issuedTimes = [
+      new Date("2026-07-01T12:00:00Z"),
+      new Date("2026-07-15T12:00:00Z"),
+      new Date("2026-07-29T12:00:00Z"),
+    ];
+    for (let i = 0; i < invitations.length; i++) {
+      await prisma.betaInvitation.update({
+        where: { id: invitations[i]!.id },
+        data: {
+          issuedAt: issuedTimes[i],
+          createdAt: issuedTimes[i],
+        },
+      });
     }
 
     const page1 = await listBetaParticipants({ search: suffix }, 1, 2);
@@ -184,11 +200,48 @@ describeIntegration("betaParticipants unified query [integration]", () => {
     const pageBeyond = await listBetaParticipants({ search: suffix }, 99, 2);
 
     expect(page1.items).toHaveLength(2);
-    expect(page2.items.length).toBeGreaterThanOrEqual(1);
+    expect(page1.items.map((i) => i.latestAttempt.id)).toEqual([
+      invitations[2]!.id,
+      invitations[1]!.id,
+    ]);
+    expect(page2.items.map((i) => i.latestAttempt.id)).toEqual([
+      invitations[0]!.id,
+    ]);
     expect(pageBeyond.items).toHaveLength(0);
 
     const ids = [...page1.items, ...page2.items].map((i) => i.participantId);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("returns items in exact issuedAt/createdAt/id order when timestamps tie", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const tiedTime = new Date("2026-07-15T12:00:00Z");
+
+    const invA = await trackInvitation(`beta-order-a-${suffix}@example.test`);
+    const invB = await trackInvitation(`beta-order-b-${suffix}@example.test`);
+    const invC = await trackInvitation(`beta-order-c-${suffix}@example.test`);
+
+    await prisma.betaInvitation.update({
+      where: { id: invC.id },
+      data: {
+        issuedAt: new Date("2026-07-29T12:00:00Z"),
+        createdAt: new Date("2026-07-29T12:00:00Z"),
+      },
+    });
+    await prisma.betaInvitation.updateMany({
+      where: { id: { in: [invA.id, invB.id] } },
+      data: { issuedAt: tiedTime, createdAt: tiedTime },
+    });
+
+    const result = await listBetaParticipants({ search: suffix }, 1, 10);
+    const attemptIds = result.items.map((item) => item.latestAttempt.id);
+
+    expect(attemptIds).toHaveLength(3);
+    expect(attemptIds[0]).toBe(invC.id);
+
+    const tiedIds = [invA.id, invB.id].sort((a, b) => b.localeCompare(a));
+    expect(attemptIds[1]).toBe(tiedIds[0]);
+    expect(attemptIds[2]).toBe(tiedIds[1]);
   });
 
   it("escapes ILIKE wildcards in search", async () => {
