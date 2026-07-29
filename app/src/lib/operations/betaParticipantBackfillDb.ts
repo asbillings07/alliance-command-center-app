@@ -498,7 +498,6 @@ function assertLivePlanMatchesManifest(
       `Refusing to execute: live plan for ${email} does not match reviewed manifest`,
     );
   }
-  const liveRecord = toBackfillEmailPlanRecord(live, nullCount);
   if (!emailPlansEqual(live, nullCount, approved)) {
     throw new Error(
       `Refusing to execute: live plan for ${email} does not match reviewed manifest`,
