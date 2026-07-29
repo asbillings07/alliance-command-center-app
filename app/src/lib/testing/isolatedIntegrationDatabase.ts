@@ -25,6 +25,27 @@ function isolatedConnectionString(
   return parsed.toString();
 }
 
+async function dropIsolatedDatabase(
+  adminUrl: string,
+  databaseName: string,
+): Promise<void> {
+  const dropPool = new Pool({ connectionString: adminUrl });
+  try {
+    await dropPool.query(
+      `
+        SELECT pg_terminate_backend(pid)
+        FROM pg_stat_activity
+        WHERE datname = $1
+          AND pid <> pg_backend_pid()
+      `,
+      [databaseName],
+    );
+    await dropPool.query(`DROP DATABASE IF EXISTS "${databaseName}"`);
+  } finally {
+    await dropPool.end();
+  }
+}
+
 /**
  * Creates a disposable Postgres database, applies the full migration stack, and
  * returns a dedicated Prisma client. Drop the database via `dispose()` when done.
@@ -48,32 +69,23 @@ export async function createIsolatedIntegrationDatabase(
     await createPool.end();
   }
 
-  execSync("npx prisma migrate deploy", {
-    env: { ...process.env, DATABASE_URL: connectionString },
-    stdio: "pipe",
-  });
+  let prisma: PrismaClient;
+  try {
+    execSync("npx prisma migrate deploy", {
+      env: { ...process.env, DATABASE_URL: connectionString },
+      stdio: "pipe",
+    });
 
-  const adapter = new PrismaPg({ connectionString });
-  const prisma = new PrismaClient({ adapter });
+    const adapter = new PrismaPg({ connectionString });
+    prisma = new PrismaClient({ adapter });
+  } catch (error) {
+    await dropIsolatedDatabase(adminUrl, databaseName);
+    throw error;
+  }
 
   async function dispose(): Promise<void> {
     await prisma.$disconnect();
-
-    const dropPool = new Pool({ connectionString: adminUrl });
-    try {
-      await dropPool.query(
-        `
-          SELECT pg_terminate_backend(pid)
-          FROM pg_stat_activity
-          WHERE datname = $1
-            AND pid <> pg_backend_pid()
-        `,
-        [databaseName],
-      );
-      await dropPool.query(`DROP DATABASE IF EXISTS "${databaseName}"`);
-    } finally {
-      await dropPool.end();
-    }
+    await dropIsolatedDatabase(adminUrl, databaseName);
   }
 
   return { prisma, databaseName, connectionString, dispose };
