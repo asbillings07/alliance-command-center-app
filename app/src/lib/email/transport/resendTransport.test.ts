@@ -34,7 +34,8 @@ describe("ResendTransport", () => {
         from: "noreply@example.com",
         to: request.to,
         subject: request.subject,
-      })
+      }),
+      undefined,
     );
   });
 
@@ -50,7 +51,8 @@ describe("ResendTransport", () => {
         to: request.to,
         subject: request.subject,
         replyTo: "support@alliancehq.app",
-      })
+      }),
+      undefined,
     );
   });
 

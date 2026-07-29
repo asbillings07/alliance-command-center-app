@@ -18,15 +18,26 @@ export class ResendTransport implements EmailTransport {
   }
 
   async deliver(request: DeliverEmailRequest): Promise<EmailResult> {
+    if (request.signal?.aborted) {
+      return { status: "failed", error: "Email delivery aborted" };
+    }
+
     try {
-      const { data, error } = await this.client.emails.send({
-        from: this.from,
-        to: request.to,
-        subject: request.subject,
-        html: request.html,
-        text: request.text,
-        replyTo: request.replyTo,
-      });
+      const { data, error } = await this.client.emails.send(
+        {
+          from: this.from,
+          to: request.to,
+          subject: request.subject,
+          html: request.html,
+          text: request.text,
+          replyTo: request.replyTo,
+        },
+        request.signal
+          ? ({ signal: request.signal } as Parameters<
+              typeof this.client.emails.send
+            >[1])
+          : undefined,
+      );
 
       if (error) {
         console.error("[email] Resend rejected send", {
@@ -40,6 +51,9 @@ export class ResendTransport implements EmailTransport {
 
       return { status: "sent", messageId: data?.id };
     } catch (err) {
+      if (request.signal?.aborted) {
+        return { status: "failed", error: "Email delivery aborted" };
+      }
       const message = err instanceof Error ? err.message : "Unknown error";
       console.error("[email] Resend send threw", {
         error: err,

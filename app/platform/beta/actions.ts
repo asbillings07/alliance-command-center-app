@@ -3,8 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { requirePlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import {
+  deliverBetaInvitationEmail,
+  deliverBetaInvitationEmailWithClaim,
   issueBetaInvitation,
   isPendingInvitation,
+  reissueBetaInvitation,
   revokeBetaInvitation,
 } from "@/app/src/lib/betaInvitation";
 import {
@@ -66,6 +69,16 @@ export type ResendInvitationEmailResult =
   | { success: true; emailStatus: EmailStatus }
   | { success: false; error: string };
 
+export type ReissueInvitationResult =
+  | {
+      success: true;
+      inviteCode: string;
+      inviteUrl: string;
+      email: string;
+      emailStatus: EmailStatus;
+    }
+  | { success: false; error: string };
+
 export type PriorAttemptsResult =
   | {
       success: true;
@@ -88,7 +101,7 @@ export async function createInvitationAction(
   notes?: string,
   wave?: string,
 ): Promise<CreateInvitationResult> {
-  await requirePlatformAdmin();
+  const session = await requirePlatformAdmin();
 
   if (!isValidEmail(email)) {
     return { success: false, error: "Please enter a valid email address" };
@@ -98,22 +111,15 @@ export async function createInvitationAction(
     const result = await issueBetaInvitation(email, {
       notes,
       campaign: wave?.trim() || undefined,
+      issuedByUserId: session.id,
     });
     revalidatePath("/platform/beta");
 
-    // Email is a notification, not part of issuing the invitation. Delivery
-    // failures must never invalidate a persisted invitation, so we send after
-    // the fact and surface status instead of throwing.
-    const { status: emailStatus } = await emailService.sendBetaInvitation({
-      to: result.invitation.email,
-      invitation: {
-        id: result.invitation.id,
-        email: result.invitation.email,
-        inviteUrl: result.inviteUrl,
-        inviteCode: result.inviteCode,
-        expiresAt: result.invitation.expiresAt,
-      },
-    });
+    const emailStatus = await deliverBetaInvitationEmail(
+      result.invitation,
+      result.inviteUrl,
+      (input) => emailService.sendBetaInvitation(input),
+    );
 
     return {
       success: true,
@@ -132,13 +138,60 @@ export async function createInvitationAction(
 }
 
 /**
+ * Reissue a beta invitation for an existing participant whose latest attempt
+ * is terminal (expired or revoked).
+ */
+export async function reissueInvitationAction(
+  participantId: string,
+  wave?: string,
+): Promise<ReissueInvitationResult> {
+  const session = await requirePlatformAdmin();
+
+  if (!participantId) {
+    return { success: false, error: "Participant not found" };
+  }
+
+  try {
+    const result = await reissueBetaInvitation(participantId, session.id, {
+      campaign: wave,
+    });
+    revalidatePath("/platform/beta");
+
+    let emailStatus: EmailStatus = "failed";
+    try {
+      emailStatus = await deliverBetaInvitationEmailWithClaim(
+        result.invitation,
+        result.inviteUrl,
+        (input) => emailService.sendBetaInvitation(input),
+      );
+    } catch {
+      // Persisted reissue stands; only notification/claim failed (#174).
+    }
+
+    return {
+      success: true,
+      inviteCode: result.inviteCode,
+      inviteUrl: result.inviteUrl,
+      email: result.invitation.email,
+      emailStatus,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Failed to reissue invitation",
+    };
+  }
+}
+
+/**
  * Resend the invitation email for an existing pending invitation.
  *
  * Does not mutate the invitation; it only re-delivers the notification. Only
  * pending invitations can be resent (accepted/expired/revoked are terminal).
  */
 export async function resendInvitationEmailAction(
-  invitationId: string
+  invitationId: string,
 ): Promise<ResendInvitationEmailResult> {
   await requirePlatformAdmin();
 
@@ -158,16 +211,11 @@ export async function resendInvitationEmailAction(
       };
     }
 
-    const { status: emailStatus } = await emailService.sendBetaInvitation({
-      to: invitation.email,
-      invitation: {
-        id: invitation.id,
-        email: invitation.email,
-        inviteUrl: getRedeemUrl(invitation.token),
-        inviteCode: invitation.code,
-        expiresAt: invitation.expiresAt,
-      },
-    });
+    const emailStatus = await deliverBetaInvitationEmailWithClaim(
+      invitation,
+      getRedeemUrl(invitation.token),
+      (input) => emailService.sendBetaInvitation(input),
+    );
 
     return { success: true, emailStatus };
   } catch (error) {
@@ -184,12 +232,12 @@ export async function resendInvitationEmailAction(
  * Sets revokedAt timestamp, preserving audit history.
  */
 export async function revokeInvitationAction(
-  invitationId: string
+  invitationId: string,
 ): Promise<RevokeInvitationResult> {
-  await requirePlatformAdmin();
+  const session = await requirePlatformAdmin();
 
   try {
-    await revokeBetaInvitation(invitationId);
+    await revokeBetaInvitation(invitationId, session.id);
     revalidatePath("/platform/beta");
 
     return { success: true };

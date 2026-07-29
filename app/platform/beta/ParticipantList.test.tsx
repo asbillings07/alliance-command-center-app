@@ -20,6 +20,11 @@ vi.mock("./InvitationActions", () => ({
   InvitationCardActions: () => createElement("div", null, "Card Actions"),
 }));
 
+vi.mock("./ReissueActions", () => ({
+  ReissueActions: ({ variant }: { variant: string }) =>
+    createElement("div", { "data-testid": "reissue-actions" }, `Reissue ${variant}`),
+}));
+
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let container: HTMLDivElement;
@@ -199,5 +204,30 @@ describe("ParticipantCard prior attempts pagination", () => {
     expect(container.textContent).toContain("Attempt 11");
     expect(container.textContent).toContain("Attempt 17");
     expect(container.textContent).toContain("Page 2 of 2");
+  });
+
+  it("shows reissue actions for terminal latest attempts", async () => {
+    await act(async () => {
+      root.render(
+        createElement(ParticipantCard, {
+          item: buildParticipant({
+            latestAttempt: buildAttempt({
+              status: "revoked",
+              revokedAt: new Date("2026-07-10T12:00:00Z"),
+            }),
+          }),
+        }),
+      );
+    });
+
+    expect(container.querySelector('[data-testid="reissue-actions"]')).toBeTruthy();
+  });
+
+  it("does not show reissue actions for pending latest attempts", async () => {
+    await act(async () => {
+      root.render(createElement(ParticipantCard, { item: buildParticipant() }));
+    });
+
+    expect(container.querySelector('[data-testid="reissue-actions"]')).toBeNull();
   });
 });

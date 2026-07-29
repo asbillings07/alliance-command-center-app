@@ -15,6 +15,7 @@ import type {
   BetaParticipantListItem,
 } from "@/app/src/lib/platform/betaParticipants";
 import { InvitationActions, InvitationCardActions } from "./InvitationActions";
+import { ReissueActions } from "./ReissueActions";
 
 const journeyStageLabels: Record<BetaJourneyStage, string> = {
   invited: "Invited",
@@ -246,21 +247,33 @@ function LatestAttemptBlock({
   const attempt = item.latestAttempt;
   const config = statusConfig[attempt.status];
 
-  const actions =
+  const pendingActions =
     attempt.status === "pending" ? (
       variant === "card" ? (
         <InvitationCardActions
           invitationId={attempt.id}
           code={attempt.code}
           inviteUrl={attempt.inviteUrl}
+          identityAmbiguous={item.identityAmbiguous}
         />
       ) : (
         <InvitationActions
           invitationId={attempt.id}
           code={attempt.code}
           inviteUrl={attempt.inviteUrl}
+          identityAmbiguous={item.identityAmbiguous}
         />
       )
+    ) : null;
+
+  const reissueActions =
+    attempt.status === "expired" || attempt.status === "revoked" ? (
+      <ReissueActions
+        participantId={item.participantId}
+        identityAmbiguous={item.identityAmbiguous}
+        defaultWave={attempt.campaign ?? ""}
+        variant={variant}
+      />
     ) : null;
 
   return (
@@ -296,7 +309,8 @@ function LatestAttemptBlock({
       ) : (
         <p className="text-xs text-text-disabled mt-1">Notes: —</p>
       )}
-      {actions}
+      {pendingActions}
+      {reissueActions}
       <PriorAttemptsDisclosure
         participantId={item.participantId}
         priorAttemptCount={item.priorAttemptCount}

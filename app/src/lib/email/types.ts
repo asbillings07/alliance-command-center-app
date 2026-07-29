@@ -44,6 +44,8 @@ export type DeliverEmailRequest = {
   text: string;
   replyTo?: string | string[];
   metadata?: EmailMetadata;
+  /** When aborted, the transport must stop in-flight delivery (#174). */
+  signal?: AbortSignal;
 };
 
 /**
@@ -117,6 +119,8 @@ export type BetaInvitationView = {
 export type BetaInvitationEmailInput = {
   to: string;
   invitation: BetaInvitationView;
+  /** Aborts in-flight provider delivery when timed out or cancelled (#174). */
+  signal?: AbortSignal;
 };
 
 /** View model for the access-request confirmation email. */

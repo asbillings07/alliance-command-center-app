@@ -17,14 +17,16 @@ describeIntegration("betaParticipants unified query [integration]", () => {
 
   let prisma: PrismaClient;
   let issueBetaInvitation: (typeof import("../betaInvitation"))["issueBetaInvitation"];
+  let reissueBetaInvitation: (typeof import("../betaInvitation"))["reissueBetaInvitation"];
   let acceptBetaInvitation: (typeof import("../betaInvitation"))["acceptBetaInvitation"];
 
   beforeAll(async () => {
-    process.env.NEXTAUTH_URL ??= "http://localhost:3000";
+    process.env.NEXTAUTH_URL = "http://localhost:3000";
     ({ prisma } = (await import("../prisma")) as unknown as {
       prisma: PrismaClient;
     });
-    ({ issueBetaInvitation, acceptBetaInvitation } = await import("../betaInvitation"));
+    ({ issueBetaInvitation, reissueBetaInvitation, acceptBetaInvitation } =
+      await import("../betaInvitation"));
   });
 
   afterEach(async () => {
@@ -59,6 +61,25 @@ describeIntegration("betaParticipants unified query [integration]", () => {
     const result = await issueBetaInvitation(email, { campaign });
     createdInvitationIds.push(result.invitation.id);
     createdParticipantIds.push(result.invitation.participantId);
+    return result.invitation;
+  }
+
+  async function trackReissue(participantId: string, issuedByUserId?: string) {
+    let operatorId = issuedByUserId;
+    if (!operatorId) {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const operator = await prisma.user.create({
+        data: {
+          email: `reissue-operator-${suffix}@example.test`,
+          displayName: "Reissue Operator",
+          passwordHash: "hash",
+        },
+      });
+      createdUserIds.push(operator.id);
+      operatorId = operator.id;
+    }
+    const result = await reissueBetaInvitation(participantId, operatorId);
+    createdInvitationIds.push(result.invitation.id);
     return result.invitation;
   }
 
@@ -268,9 +289,7 @@ describeIntegration("betaParticipants unified query [integration]", () => {
       data: { revokedAt: new Date() },
     });
 
-    const second = await trackInvitation(email);
-    expect(second.participantId).toBe(first.participantId);
-    createdInvitationIds.push(second.id);
+    const second = await trackReissue(first.participantId);
 
     const history = await listBetaParticipantPriorAttempts(
       first.participantId,
@@ -301,8 +320,7 @@ describeIntegration("betaParticipants unified query [integration]", () => {
       data: { revokedAt: new Date(), issuedAt: new Date("2026-06-01T12:00:00Z") },
     });
 
-    const reissue = await trackInvitation(email);
-    expect(reissue.participantId).toBe(invitation.participantId);
+    const reissue = await trackReissue(invitation.participantId, user.id);
 
     await acceptBetaInvitation(reissue.id, user.id);
     await prisma.betaParticipant.update({
@@ -338,8 +356,7 @@ describeIntegration("betaParticipants unified query [integration]", () => {
       },
     });
 
-    const second = await trackInvitation(email);
-    createdInvitationIds.push(second.id);
+    await trackReissue(first.participantId, operator.id);
 
     const history = await listBetaParticipantPriorAttempts(
       first.participantId,

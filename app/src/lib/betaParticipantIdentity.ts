@@ -61,6 +61,52 @@ export async function resolveCanonicalParticipantIdForIssuance(
 }
 
 /**
+ * Resolve an existing canonical participant for an identity without creating one.
+ * Used to reject generic "invite new participant" when history already exists (#174).
+ */
+export async function findExistingParticipantIdForIdentity(
+  tx: Prisma.TransactionClient,
+  normalizedEmail: string,
+  existingUserId: string | null = null,
+): Promise<string | null> {
+  const fromEmailHistory = await tx.betaParticipant.findFirst({
+    where: {
+      invitations: { some: { email: normalizedEmail } },
+    },
+    orderBy: PARTICIPANT_SURVIVOR_ORDER,
+    select: { id: true },
+  });
+
+  let fromUser: { id: string } | null = null;
+  let userId = existingUserId;
+  if (!userId) {
+    const existingUser = await tx.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true },
+    });
+    userId = existingUser?.id ?? null;
+  }
+  if (userId) {
+    fromUser = await tx.betaParticipant.findFirst({
+      where: { userId },
+      orderBy: PARTICIPANT_SURVIVOR_ORDER,
+      select: { id: true },
+    });
+  }
+
+  if (fromEmailHistory && fromUser) {
+    if (fromEmailHistory.id !== fromUser.id) {
+      throw new Error(
+        "This email's invitation history belongs to a different beta participant than the current account holder",
+      );
+    }
+    return fromEmailHistory.id;
+  }
+
+  return fromEmailHistory?.id ?? fromUser?.id ?? null;
+}
+
+/**
  * Pick the stable merge survivor: createdAt ASC, id ASC (#174).
  */
 export async function pickMergeSurvivorParticipantId(

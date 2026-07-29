@@ -13,6 +13,7 @@ describe.skipIf(!runDb)("beta participant migration [integration]", () => {
   let prisma: PrismaClient;
 
   beforeAll(async () => {
+    process.env.NEXTAUTH_URL = "http://localhost:3000";
     ({ prisma } = (await import("./prisma")) as unknown as {
       prisma: PrismaClient;
     });
@@ -134,17 +135,29 @@ describe.skipIf(!runDb)("beta participant migration [integration]", () => {
     await prisma.alliance.delete({ where: { id: alliance.id } });
   });
 
-  it("reuses participant when re-issuing after an expired invitation", async () => {
-    const { issueBetaInvitation } = await import("./betaInvitation");
+  it("reissue keeps the same participant after an expired invitation", async () => {
+    const { issueBetaInvitation, reissueBetaInvitation } = await import(
+      "./betaInvitation"
+    );
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `reuse-expired-${suffix}@example.test`;
+    const operator = await prisma.user.create({
+      data: {
+        email: `operator-${suffix}@example.test`,
+        displayName: "Migration Operator",
+        passwordHash: "hash",
+      },
+    });
     const first = await issueBetaInvitation(email);
     await prisma.betaInvitation.update({
       where: { id: first.invitation.id },
       data: { expiresAt: new Date(Date.now() - 86400000) },
     });
 
-    const second = await issueBetaInvitation(email);
+    const second = await reissueBetaInvitation(
+      first.invitation.participantId,
+      operator.id,
+    );
     expect(second.invitation.participantId).toBe(first.invitation.participantId);
 
     await prisma.betaInvitation.deleteMany({
@@ -155,6 +168,7 @@ describe.skipIf(!runDb)("beta participant migration [integration]", () => {
         where: { id: first.invitation.participantId },
       });
     }
+    await prisma.user.delete({ where: { id: operator.id } });
   });
 
   it("dual-writes participantId for newly issued invitations", async () => {
