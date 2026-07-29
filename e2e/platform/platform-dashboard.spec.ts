@@ -1,4 +1,7 @@
 import { test, expect } from "../shared/fixtures";
+import { checkA11yWithOptions } from "../shared/accessibility";
+import { prisma } from "@/app/src/lib/prisma";
+import crypto from "crypto";
 
 /**
  * Platform Operations Console E2E Tests
@@ -106,6 +109,148 @@ test.describe("Platform Operations Console", () => {
       const hasEmptyState = await page.getByText(/no items require attention/i).isVisible();
 
       expect(hasItems || hasEmptyState).toBe(true);
+    });
+
+    test("links Action Required beta item to filtered beta participants list", async ({
+      page,
+    }, testInfo) => {
+      const suffix = `${Date.now()}-${testInfo.retry}-${Math.random().toString(36).slice(2, 8)}`;
+      const email = `e2e-expired-attention-${suffix}@example.test`;
+      const now = Date.now();
+      const participant = await prisma.betaParticipant.create({ data: {} });
+      const invitation = await prisma.betaInvitation.create({
+        data: {
+          participantId: participant.id,
+          email,
+          code: `E2E-${suffix.slice(0, 6).toUpperCase()}`,
+          token: crypto.randomUUID(),
+          issuedAt: new Date(now - 10 * 24 * 60 * 60 * 1000),
+          expiresAt: new Date(now - 2 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      try {
+        await page.goto("/platform/overview");
+
+        const betaActionLink = page.getByRole("link").filter({ hasText: email });
+        await expect(betaActionLink).toBeVisible({ timeout: 10000 });
+        await expect(betaActionLink).toHaveAttribute(
+          "href",
+          "/platform/beta?attentionReason=invitation_expired",
+        );
+
+        await betaActionLink.click();
+        await page.waitForURL(/\/platform\/beta\?attentionReason=invitation_expired/);
+        await expect(page.getByLabel(/^Attention$/i)).toHaveValue(
+          "invitation_expired",
+        );
+        const participantRow = page.locator("table tbody tr").filter({ hasText: email });
+        await expect(participantRow).toBeVisible();
+      } finally {
+        await prisma.betaInvitation.delete({ where: { id: invitation.id } });
+        await prisma.betaParticipant.delete({ where: { id: participant.id } });
+      }
+    });
+
+    async function seedExpiredBetaAttentionItem(
+      testInfo: { retry: number },
+    ): Promise<{ email: string; participantId: string; invitationId: string }> {
+      const suffix = `${Date.now()}-${testInfo.retry}-${Math.random().toString(36).slice(2, 8)}`;
+      const email = `e2e-expired-attention-${suffix}@example.test`;
+      const now = Date.now();
+      const participant = await prisma.betaParticipant.create({ data: {} });
+      const invitation = await prisma.betaInvitation.create({
+        data: {
+          participantId: participant.id,
+          email,
+          code: `E2E-${suffix.slice(0, 6).toUpperCase()}`,
+          token: crypto.randomUUID(),
+          issuedAt: new Date(now - 10 * 24 * 60 * 60 * 1000),
+          expiresAt: new Date(now - 2 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      return {
+        email,
+        participantId: participant.id,
+        invitationId: invitation.id,
+      };
+    }
+
+    test("activates Action Required beta link via keyboard", async ({
+      page,
+    }, testInfo) => {
+      const seeded = await seedExpiredBetaAttentionItem(testInfo);
+
+      try {
+        await page.goto("/platform/overview");
+
+        const betaActionLink = page.getByRole("link").filter({
+          hasText: seeded.email,
+        });
+        await expect(betaActionLink).toBeVisible({ timeout: 10000 });
+        await betaActionLink.focus();
+        await expect(betaActionLink).toBeFocused();
+        await page.keyboard.press("Enter");
+        await page.waitForURL(/\/platform\/beta\?attentionReason=invitation_expired/);
+        await expect(page.getByLabel(/^Attention$/i)).toHaveValue(
+          "invitation_expired",
+        );
+      } finally {
+        await prisma.betaInvitation.delete({ where: { id: seeded.invitationId } });
+        await prisma.betaParticipant.delete({ where: { id: seeded.participantId } });
+      }
+    });
+
+    test("shows and navigates Action Required beta item on mobile viewport", async ({
+      page,
+    }, testInfo) => {
+      const seeded = await seedExpiredBetaAttentionItem(testInfo);
+
+      try {
+        await page.setViewportSize({ width: 375, height: 667 });
+        await page.goto("/platform/overview");
+
+        const betaActionLink = page.getByRole("link").filter({
+          hasText: seeded.email,
+        });
+        await expect(betaActionLink).toBeVisible({ timeout: 10000 });
+        await expect(betaActionLink).toHaveAttribute(
+          "href",
+          "/platform/beta?attentionReason=invitation_expired",
+        );
+
+        await betaActionLink.click();
+        await page.waitForURL(/\/platform\/beta\?attentionReason=invitation_expired/);
+        await expect(page.getByLabel(/^Attention$/i)).toHaveValue(
+          "invitation_expired",
+        );
+      } finally {
+        await prisma.betaInvitation.delete({ where: { id: seeded.invitationId } });
+        await prisma.betaParticipant.delete({ where: { id: seeded.participantId } });
+      }
+    });
+
+    test("@a11y platform overview with Action Required beta item meets accessibility standards", async ({
+      page,
+    }, testInfo) => {
+      const seeded = await seedExpiredBetaAttentionItem(testInfo);
+
+      try {
+        await page.goto("/platform/overview");
+        await expect(
+          page.getByRole("link").filter({ hasText: seeded.email }),
+        ).toBeVisible({ timeout: 10000 });
+        await page.waitForLoadState("networkidle");
+
+        await checkA11yWithOptions(page, {
+          runOnly: ["wcag2a", "wcag2aa"],
+          include: ['[data-testid="action-required-section"]'],
+        });
+      } finally {
+        await prisma.betaInvitation.delete({ where: { id: seeded.invitationId } });
+        await prisma.betaParticipant.delete({ where: { id: seeded.participantId } });
+      }
     });
 
     test("displays Beta Health stats", async ({ page }) => {
@@ -492,6 +637,70 @@ test.describe("Platform Operations Console", () => {
       await expect(
         page.getByRole("heading", { name: /Invite Beta Tester/i })
       ).toBeVisible();
+    });
+
+    test("shows journey stage labels for invited and accepted participants", async ({
+      page,
+    }, testInfo) => {
+      const suffix = `${Date.now()}-${testInfo.retry}-${Math.random().toString(36).slice(2, 8)}`;
+      const invitedEmail = `e2e-journey-invited-${suffix}@example.test`;
+      const acceptedEmail = `e2e-journey-accepted-${suffix}@example.test`;
+
+      const invitedParticipant = await prisma.betaParticipant.create({ data: {} });
+      const invitedInvitation = await prisma.betaInvitation.create({
+        data: {
+          participantId: invitedParticipant.id,
+          email: invitedEmail,
+          code: `INV-${suffix.slice(0, 6).toUpperCase()}`,
+          token: crypto.randomUUID(),
+          issuedAt: new Date(),
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      const acceptedUser = await prisma.user.create({
+        data: {
+          email: acceptedEmail,
+          displayName: `Accepted Journey ${suffix}`,
+          passwordHash: "hash",
+        },
+      });
+      const acceptedParticipant = await prisma.betaParticipant.create({
+        data: { userId: acceptedUser.id },
+      });
+      const acceptedInvitation = await prisma.betaInvitation.create({
+        data: {
+          participantId: acceptedParticipant.id,
+          email: acceptedEmail,
+          code: `ACC-${suffix.slice(0, 6).toUpperCase()}`,
+          token: crypto.randomUUID(),
+          issuedAt: new Date(),
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          acceptedAt: new Date(),
+          acceptedByUserId: acceptedUser.id,
+        },
+      });
+
+      try {
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.goto(`/platform/beta?search=${suffix}`);
+
+        const invitedRow = page.locator("table tbody tr").filter({ hasText: invitedEmail });
+        const acceptedRow = page.locator("table tbody tr").filter({ hasText: acceptedEmail });
+
+        await expect(invitedRow).toBeVisible();
+        await expect(invitedRow.locator("td").nth(2)).toContainText("Invited");
+        await expect(acceptedRow).toBeVisible();
+        await expect(acceptedRow.locator("td").nth(2)).toContainText("Accepted");
+      } finally {
+        await prisma.betaInvitation.deleteMany({
+          where: { id: { in: [invitedInvitation.id, acceptedInvitation.id] } },
+        });
+        await prisma.betaParticipant.deleteMany({
+          where: { id: { in: [invitedParticipant.id, acceptedParticipant.id] } },
+        });
+        await prisma.user.delete({ where: { id: acceptedUser.id } });
+      }
     });
   });
 

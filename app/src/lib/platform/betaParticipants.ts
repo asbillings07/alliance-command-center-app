@@ -3,13 +3,15 @@ import { prisma } from "../prisma";
 import { getAppOrigin } from "../appUrl";
 
 /** Version marker for the embedded SQL CTE — bump when derivation logic changes. */
-export const BETA_PARTICIPANTS_CTE_VERSION = 1;
+export const BETA_PARTICIPANTS_CTE_VERSION = 2;
 
 export const BETA_PARTICIPANTS_PAGE_SIZE_MIN = 1;
 export const BETA_PARTICIPANTS_PAGE_SIZE_MAX = 50;
 export const BETA_PARTICIPANTS_MAX_OFFSET = 10_000;
 export const BETA_PARTICIPANTS_INPUT_MAX_LENGTH = 200;
 export const BETA_PARTICIPANTS_ATTENTION_STALE_DAYS = 7;
+/** Max participants returned for platform Action Required beta items. */
+export const BETA_PARTICIPANTS_ATTENTION_LIST_LIMIT = 50;
 
 export type BetaJourneyStage =
   | "invited"
@@ -79,6 +81,20 @@ export type BetaParticipantListItem = {
     token: string;
     inviteUrl: string;
   };
+};
+
+/** Minimal projection for platform Action Required beta items — no invitation secrets. */
+export type BetaParticipantAttentionRow = {
+  participantId: string;
+  identityAmbiguous: boolean;
+  displayName: string | null;
+  currentEmail: string | null;
+  latestAttemptEmail: string;
+  attentionReason: BetaAttentionReason;
+  attentionSince: Date | null;
+  allianceAmbiguous: boolean;
+  allianceId: string | null;
+  allianceName: string | null;
 };
 
 export type BetaParticipantSummary = {
@@ -277,7 +293,15 @@ export function betaParticipantsDerivationCte(now: Date): Prisma.Sql {
   return Prisma.sql`
   latest_attempt AS (
     SELECT DISTINCT ON (bi."participantId")
-      bi.*
+      bi.id,
+      bi."participantId",
+      bi.email,
+      bi."issuedAt",
+      bi."createdAt",
+      bi."expiresAt",
+      bi."acceptedAt",
+      bi."revokedAt",
+      bi.campaign
     FROM "BetaInvitation" bi
     ORDER BY
       bi."participantId",
@@ -439,24 +463,12 @@ export function betaParticipantsDerivationCte(now: Date): Prisma.Sql {
       u.email AS current_email,
       la.id AS latest_attempt_id,
       la.email AS latest_email,
-      la.code AS latest_code,
-      la.token AS latest_token,
       la.campaign AS latest_campaign,
-      la.notes AS latest_notes,
       la."issuedAt" AS latest_issued_at,
       la."createdAt" AS latest_created_at,
       la."expiresAt" AS latest_expires_at,
       la."acceptedAt" AS latest_accepted_at,
       la."revokedAt" AS latest_revoked_at,
-      la."issuedByUserId" AS latest_issued_by_user_id,
-      issued_by."displayName" AS latest_issued_by_display_name,
-      issued_by.email AS latest_issued_by_email,
-      la."revokedByUserId" AS latest_revoked_by_user_id,
-      revoked_by."displayName" AS latest_revoked_by_display_name,
-      revoked_by.email AS latest_revoked_by_email,
-      la."acceptedByUserId" AS latest_accepted_by_user_id,
-      accepted_by."displayName" AS latest_accepted_by_display_name,
-      accepted_by.email AS latest_accepted_by_email,
       COALESCE(ac.attempt_count, 1)::int AS attempt_count,
       GREATEST(COALESCE(ac.attempt_count, 1) - 1, 0) AS prior_attempt_count,
       als.alliance_id,
@@ -568,9 +580,6 @@ export function betaParticipantsDerivationCte(now: Date): Prisma.Sql {
     LEFT JOIN attempt_counts ac ON ac."participantId" = bp.id
     LEFT JOIN participant_accepted pa ON pa."participantId" = bp.id
     LEFT JOIN "User" u ON u.id = bp."userId"
-    LEFT JOIN "User" issued_by ON issued_by.id = la."issuedByUserId"
-    LEFT JOIN "User" revoked_by ON revoked_by.id = la."revokedByUserId"
-    LEFT JOIN "User" accepted_by ON accepted_by.id = la."acceptedByUserId"
     JOIN alliance_setup als ON als.participant_id = bp.id
     LEFT JOIN "Alliance" al ON al.id = als.alliance_id
   )
@@ -584,15 +593,27 @@ type DerivedRow = {
   current_email: string | null;
   latest_attempt_id: string;
   latest_email: string;
-  latest_code: string;
-  latest_token: string;
   latest_campaign: string | null;
-  latest_notes: string | null;
   latest_issued_at: Date;
   latest_created_at: Date;
   latest_expires_at: Date;
   latest_accepted_at: Date | null;
   latest_revoked_at: Date | null;
+  prior_attempt_count: number;
+  alliance_id: string | null;
+  alliance_ambiguous: boolean;
+  alliance_name: string | null;
+  journey_stage: BetaJourneyStage;
+  attention_reason: BetaAttentionReason | null;
+  attention_since: Date | null;
+  latest_status: BetaInvitationAttemptStatus;
+};
+
+/** Latest-attempt secrets and operator attribution — hydrated only on paginated list rows. */
+type HydratedDerivedRow = DerivedRow & {
+  latest_code: string;
+  latest_token: string;
+  latest_notes: string | null;
   latest_issued_by_user_id: string | null;
   latest_issued_by_display_name: string | null;
   latest_issued_by_email: string | null;
@@ -602,14 +623,6 @@ type DerivedRow = {
   latest_accepted_by_user_id: string | null;
   latest_accepted_by_display_name: string | null;
   latest_accepted_by_email: string | null;
-  prior_attempt_count: number;
-  alliance_id: string | null;
-  alliance_ambiguous: boolean;
-  alliance_name: string | null;
-  journey_stage: BetaJourneyStage;
-  attention_reason: BetaAttentionReason | null;
-  attention_since: Date | null;
-  latest_status: BetaInvitationAttemptStatus;
 };
 
 function mapAttemptOperator(
@@ -628,7 +641,10 @@ function mapAttemptOperator(
   };
 }
 
-function mapDerivedRow(row: DerivedRow, origin: string): BetaParticipantListItem {
+function mapDerivedRow(
+  row: HydratedDerivedRow,
+  origin: string,
+): BetaParticipantListItem {
   return {
     participantId: row.participant_id,
     identityAmbiguous: row.identity_ambiguous,
@@ -736,7 +752,7 @@ export async function listBetaParticipants(
 
   const cte = betaParticipantsDerivationCte(now);
 
-  type UnifiedListRow = DerivedRow & {
+  type UnifiedListRow = HydratedDerivedRow & {
     total: bigint;
     total_participants: bigint;
     needs_attention: bigint;
@@ -765,8 +781,44 @@ export async function listBetaParticipants(
       FROM filtered f
     ),
     page AS (
-      SELECT f.*
+      SELECT
+        f.participant_id,
+        f.identity_ambiguous,
+        f.display_name,
+        f.current_email,
+        f.latest_attempt_id,
+        f.latest_email,
+        bi.code AS latest_code,
+        bi.token AS latest_token,
+        f.latest_campaign,
+        bi.notes AS latest_notes,
+        f.latest_issued_at,
+        f.latest_created_at,
+        f.latest_expires_at,
+        f.latest_accepted_at,
+        f.latest_revoked_at,
+        bi."issuedByUserId" AS latest_issued_by_user_id,
+        issued_by."displayName" AS latest_issued_by_display_name,
+        issued_by.email AS latest_issued_by_email,
+        bi."revokedByUserId" AS latest_revoked_by_user_id,
+        revoked_by."displayName" AS latest_revoked_by_display_name,
+        revoked_by.email AS latest_revoked_by_email,
+        bi."acceptedByUserId" AS latest_accepted_by_user_id,
+        accepted_by."displayName" AS latest_accepted_by_display_name,
+        accepted_by.email AS latest_accepted_by_email,
+        f.prior_attempt_count,
+        f.alliance_id,
+        f.alliance_ambiguous,
+        f.alliance_name,
+        f.journey_stage,
+        f.attention_reason,
+        f.attention_since,
+        f.latest_status
       FROM filtered f
+      JOIN "BetaInvitation" bi ON bi.id = f.latest_attempt_id
+      LEFT JOIN "User" issued_by ON issued_by.id = bi."issuedByUserId"
+      LEFT JOIN "User" revoked_by ON revoked_by.id = bi."revokedByUserId"
+      LEFT JOIN "User" accepted_by ON accepted_by.id = bi."acceptedByUserId"
       ORDER BY
         f.latest_issued_at DESC,
         f.latest_created_at DESC,
@@ -1084,6 +1136,90 @@ export async function listBetaParticipantPriorAttempts(
     page: clampedPage,
     pageSize: clampedPageSize,
   };
+}
+
+type AttentionDerivedRow = {
+  participant_id: string;
+  identity_ambiguous: boolean;
+  display_name: string | null;
+  current_email: string | null;
+  latest_email: string;
+  alliance_id: string | null;
+  alliance_ambiguous: boolean;
+  alliance_name: string | null;
+  attention_reason: BetaAttentionReason;
+  attention_since: Date | null;
+  latest_issued_at: Date;
+  latest_created_at: Date;
+  latest_attempt_id: string;
+};
+
+function mapAttentionDerivedRow(
+  row: AttentionDerivedRow,
+): BetaParticipantAttentionRow {
+  return {
+    participantId: row.participant_id,
+    identityAmbiguous: row.identity_ambiguous,
+    displayName: row.display_name,
+    currentEmail: row.current_email,
+    latestAttemptEmail: row.latest_email,
+    attentionReason: row.attention_reason,
+    attentionSince: row.attention_since,
+    allianceAmbiguous: row.alliance_ambiguous,
+    allianceId: row.alliance_id,
+    allianceName: row.alliance_name,
+  };
+}
+
+/**
+ * Participants with a non-null attention reason from the shared derivation CTE.
+ * Used by the platform Action Required feed — one row per participant.
+ * Selects only identity, attention, and alliance fields — no invitation secrets.
+ */
+export async function listBetaParticipantsNeedingAttention(
+  options: { limit?: number; now?: Date } = {},
+): Promise<BetaParticipantAttentionRow[]> {
+  const now = options.now ?? new Date();
+  const limit = Math.min(
+    options.limit ?? BETA_PARTICIPANTS_ATTENTION_LIST_LIMIT,
+    BETA_PARTICIPANTS_ATTENTION_LIST_LIMIT,
+  );
+  const cte = betaParticipantsDerivationCte(now);
+
+  const rows = await prisma.$queryRaw<AttentionDerivedRow[]>`
+    WITH ${cte}
+    SELECT
+      d.participant_id,
+      d.identity_ambiguous,
+      d.display_name,
+      d.current_email,
+      d.latest_email,
+      d.alliance_id,
+      d.alliance_ambiguous,
+      d.alliance_name,
+      d.attention_reason,
+      d.attention_since,
+      d.latest_issued_at,
+      d.latest_created_at,
+      d.latest_attempt_id
+    FROM derived d
+    WHERE d.attention_reason IS NOT NULL
+    ORDER BY
+      CASE d.attention_reason
+        WHEN 'accepted_no_alliance' THEN 1
+        WHEN 'setup_stalled' THEN 2
+        WHEN 'invitation_expired' THEN 3
+        WHEN 'invitation_pending_stale' THEN 4
+        ELSE 5
+      END ASC,
+      d.attention_since ASC NULLS LAST,
+      d.latest_issued_at DESC,
+      d.latest_created_at DESC,
+      d.latest_attempt_id DESC
+    LIMIT ${limit}
+  `;
+
+  return rows.map(mapAttentionDerivedRow);
 }
 
 /** Execute only the derivation CTE for parity testing against TS helpers. */
