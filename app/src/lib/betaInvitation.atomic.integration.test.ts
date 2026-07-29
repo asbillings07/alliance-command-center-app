@@ -269,4 +269,53 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
       reissueBetaInvitation(invitation.participantId, operator.id),
     ).rejects.toThrow("A delivery attempt is in progress for the latest invitation");
   });
+
+  it("rejects resend claim when a newer attempt already exists", async () => {
+    const operator = await makeOperator();
+    const first = await issueTracked();
+
+    await prisma.betaInvitation.update({
+      where: { id: first.id },
+      data: { revokedAt: new Date() },
+    });
+
+    const second = await reissueBetaInvitation(first.participantId, operator.id);
+    createdInvitationIds.push(second.invitation.id);
+
+    await expect(claimBetaInvitationResend(first.id)).rejects.toThrow(
+      "latest invitation attempt",
+    );
+  });
+
+  it("rejects revoke on a superseded attempt after reissue", async () => {
+    const operator = await makeOperator();
+    const first = await issueTracked();
+
+    await prisma.betaInvitation.update({
+      where: { id: first.id },
+      data: { revokedAt: new Date() },
+    });
+
+    const second = await reissueBetaInvitation(first.participantId, operator.id);
+    createdInvitationIds.push(second.invitation.id);
+
+    await expect(revokeBetaInvitation(first.id, operator.id)).rejects.toThrow(
+      "latest invitation attempt",
+    );
+  });
+
+  it("revoke wins over an in-flight resend claim", async () => {
+    const operator = await makeOperator();
+    const invitation = await issueTracked();
+
+    const claim = await claimBetaInvitationResend(invitation.id);
+
+    await expect(revokeBetaInvitation(invitation.id, operator.id)).rejects.toThrow(
+      "A delivery attempt is in progress",
+    );
+
+    await releaseBetaInvitationResend(invitation.id, claim.claimId);
+
+    await expect(revokeBetaInvitation(invitation.id, operator.id)).resolves.toBeUndefined();
+  });
 });

@@ -42,6 +42,7 @@ vi.mock("./prisma", () => ({
       findFirst: vi.fn(),
     },
     $transaction: vi.fn(),
+    $executeRaw: vi.fn(),
   },
 }));
 
@@ -69,6 +70,7 @@ const mockPrisma = prisma as unknown as {
     findFirst: ReturnType<typeof vi.fn>;
   };
   $transaction: ReturnType<typeof vi.fn>;
+  $executeRaw: ReturnType<typeof vi.fn>;
 };
 
 beforeEach(() => {
@@ -609,32 +611,17 @@ describe("getPendingAllianceCreation", () => {
 });
 
 describe("revokeBetaInvitation", () => {
-  beforeEach(() => {
-    mockPrisma.betaInvitation.findFirst.mockResolvedValue(makeInvitation());
-  });
-
-  it("successfully revokes a pending invitation (atomic)", async () => {
+  it("successfully revokes a pending invitation (atomic latest-attempt SQL)", async () => {
     mockPrisma.betaInvitation.findUnique.mockResolvedValue(makeInvitation());
-    mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.$executeRaw.mockResolvedValue(1);
 
     await revokeBetaInvitation("inv-1", "admin-1");
 
-    expect(mockPrisma.betaInvitation.updateMany).toHaveBeenCalledWith({
-      where: expect.objectContaining({
-        id: "inv-1",
-        acceptedAt: null,
-        revokedAt: null,
-      }),
-      data: {
-        revokedAt: expect.any(Date),
-        revokedByUserId: "admin-1",
-      },
-    });
+    expect(mockPrisma.$executeRaw).toHaveBeenCalled();
   });
 
   it("throws if invitation not found", async () => {
     mockPrisma.betaInvitation.findUnique.mockResolvedValue(null);
-    mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(revokeBetaInvitation("inv-1")).rejects.toThrow(
       "Beta invitation not found"
@@ -652,7 +639,8 @@ describe("revokeBetaInvitation", () => {
         resendClaimedAt: null,
         participantId: "participant-1",
       });
-    mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 0 });
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(makeInvitation());
+    mockPrisma.$executeRaw.mockResolvedValue(0);
 
     await expect(revokeBetaInvitation("inv-1")).rejects.toThrow(
       "Cannot revoke an accepted invitation"
@@ -667,7 +655,8 @@ describe("revokeBetaInvitation", () => {
         resendClaimedAt: new Date(),
         resendClaimId: "claim-1",
       });
-    mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 0 });
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(makeInvitation());
+    mockPrisma.$executeRaw.mockResolvedValue(0);
 
     await expect(revokeBetaInvitation("inv-1")).rejects.toThrow(
       "A delivery attempt is in progress",
@@ -688,10 +677,24 @@ describe("revokeBetaInvitation", () => {
     mockPrisma.betaInvitation.findFirst.mockResolvedValue(
       makeInvitation({ revokedAt: new Date() }),
     );
-    mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 0 });
+    mockPrisma.$executeRaw.mockResolvedValue(0);
 
     await expect(revokeBetaInvitation("inv-1")).rejects.toThrow(
       "Invitation has already been revoked"
+    );
+  });
+
+  it("throws when the target is no longer the latest attempt", async () => {
+    mockPrisma.betaInvitation.findUnique
+      .mockResolvedValueOnce(makeInvitation())
+      .mockResolvedValueOnce(makeInvitation());
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(
+      makeInvitation({ id: "inv-2" }),
+    );
+    mockPrisma.$executeRaw.mockResolvedValue(0);
+
+    await expect(revokeBetaInvitation("inv-1")).rejects.toThrow(
+      "latest invitation attempt",
     );
   });
 });
@@ -873,17 +876,13 @@ describe("resend claim helpers", () => {
 
   it("claims and releases with compare-and-set ownership", async () => {
     const pending = makeInvitation();
-    mockPrisma.betaInvitation.findUnique
-      .mockResolvedValueOnce(pending)
-      .mockResolvedValueOnce(pending)
-      .mockResolvedValueOnce(pending);
+    mockPrisma.betaInvitation.findUnique.mockResolvedValue(pending);
     mockPrisma.betaInvitation.findFirst.mockResolvedValue(pending);
     mockPrisma.betaParticipant.findUnique.mockResolvedValue({
       identityAmbiguous: false,
     });
-    mockPrisma.betaInvitation.updateMany
-      .mockResolvedValueOnce({ count: 1 })
-      .mockResolvedValueOnce({ count: 1 });
+    mockPrisma.$executeRaw.mockResolvedValue(1);
+    mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 1 });
 
     const claim = await claimBetaInvitationResend("inv-1");
     expect(claim.claimId).toBeTruthy();
@@ -894,6 +893,24 @@ describe("resend claim helpers", () => {
       where: { id: "inv-1", resendClaimId: claim.claimId },
       data: { resendClaimedAt: null, resendClaimId: null },
     });
+  });
+
+  it("rejects resend claim when the attempt is no longer latest", async () => {
+    const pending = makeInvitation();
+    mockPrisma.betaInvitation.findUnique
+      .mockResolvedValueOnce(pending)
+      .mockResolvedValueOnce(pending);
+    mockPrisma.betaParticipant.findUnique.mockResolvedValue({
+      identityAmbiguous: false,
+    });
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(
+      makeInvitation({ id: "inv-2" }),
+    );
+    mockPrisma.$executeRaw.mockResolvedValue(0);
+
+    await expect(claimBetaInvitationResend("inv-1")).rejects.toThrow(
+      "latest invitation attempt",
+    );
   });
 
   it("rejects resend claim when identity is ambiguous", async () => {

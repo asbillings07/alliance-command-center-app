@@ -46,6 +46,12 @@ export const BETA_RESEND_CLAIM_LEASE_MS = 30_000;
  */
 export const BETA_EMAIL_PROVIDER_TIMEOUT_MS = 20_000;
 
+/**
+ * Grace period after the provider timeout for awaiting in-flight settlement
+ * before releasing a resend claim (#174).
+ */
+export const BETA_EMAIL_SETTLEMENT_GRACE_MS = 5_000;
+
 const LATEST_ATTEMPT_ORDER: Prisma.BetaInvitationOrderByWithRelationInput[] = [
   { issuedAt: "desc" },
   { createdAt: "desc" },
@@ -64,16 +70,6 @@ assertResendTimeoutInvariant();
 
 function resendClaimEligibilityCutoff(now: Date): Date {
   return new Date(now.getTime() - BETA_RESEND_CLAIM_LEASE_MS);
-}
-
-function liveResendClaimWhere(now: Date): Prisma.BetaInvitationWhereInput {
-  const claimTimeoutCutoff = resendClaimEligibilityCutoff(now);
-  return {
-    OR: [
-      { resendClaimedAt: null },
-      { resendClaimedAt: { lt: claimTimeoutCutoff } },
-    ],
-  };
 }
 
 async function findLatestInvitationForParticipant(
@@ -137,9 +133,7 @@ export async function assertInvitationIsLatestAttempt(
   );
 
   if (!latest || latest.id !== invitationId) {
-    throw new Error(
-      "This action applies only to the participant's latest invitation attempt",
-    );
+    throw new Error(LATEST_ATTEMPT_ONLY_ERROR);
   }
 
   return invitation;
@@ -191,15 +185,183 @@ export type IssueBetaInvitationResult = {
  *
  * This is the single source of truth for the "pending" business rule.
  */
-export function isPendingInvitation(invitation: BetaInvitation): boolean {
+export function isPendingInvitation(
+  invitation: BetaInvitation,
+  now: Date = new Date(),
+): boolean {
   // Expiry boundary matches the rest of the module: an invitation is expired
   // only when expiresAt < now (validateBetaToken/validateBetaCode), so it is
   // still valid — and therefore pending — when expiresAt >= now.
   return (
     !invitation.acceptedAt &&
     !invitation.revokedAt &&
-    invitation.expiresAt >= new Date()
+    invitation.expiresAt >= now
   );
+}
+
+const LATEST_ATTEMPT_ONLY_ERROR =
+  "This action applies only to the participant's latest invitation attempt";
+
+/**
+ * Atomic resend-claim update: succeeds only when the row is still the
+ * participant's latest pending attempt at commit time (#174).
+ */
+async function atomicClaimResendIfLatestAttempt(
+  db: Prisma.TransactionClient | typeof prisma,
+  invitationId: string,
+  participantId: string,
+  claimId: string,
+  now: Date,
+): Promise<number> {
+  const claimTimeoutCutoff = resendClaimEligibilityCutoff(now);
+  return Number(
+    await db.$executeRaw`
+      UPDATE "BetaInvitation" AS bi
+      SET
+        "resendClaimedAt" = ${now},
+        "resendClaimId" = ${claimId},
+        "updatedAt" = ${now}
+      WHERE bi.id = ${invitationId}
+        AND bi."participantId" = ${participantId}
+        AND bi."acceptedAt" IS NULL
+        AND bi."revokedAt" IS NULL
+        AND bi."expiresAt" >= ${now}
+        AND (
+          bi."resendClaimedAt" IS NULL
+          OR bi."resendClaimedAt" < ${claimTimeoutCutoff}
+        )
+        AND bi.id = (
+          SELECT bi2.id
+          FROM "BetaInvitation" bi2
+          WHERE bi2."participantId" = ${participantId}
+          ORDER BY bi2."issuedAt" DESC, bi2."createdAt" DESC, bi2.id DESC
+          LIMIT 1
+        )
+    `,
+  );
+}
+
+/**
+ * Atomic revoke update: succeeds only when the row is still the participant's
+ * latest pending attempt at commit time (#174).
+ */
+async function atomicRevokeIfLatestAttempt(
+  db: Prisma.TransactionClient | typeof prisma,
+  invitationId: string,
+  participantId: string,
+  revokedByUserId: string | null,
+  now: Date,
+): Promise<number> {
+  const claimTimeoutCutoff = resendClaimEligibilityCutoff(now);
+  return Number(
+    await db.$executeRaw`
+      UPDATE "BetaInvitation" AS bi
+      SET
+        "revokedAt" = ${now},
+        "revokedByUserId" = ${revokedByUserId},
+        "updatedAt" = ${now}
+      WHERE bi.id = ${invitationId}
+        AND bi."participantId" = ${participantId}
+        AND bi."acceptedAt" IS NULL
+        AND bi."revokedAt" IS NULL
+        AND bi."expiresAt" >= ${now}
+        AND (
+          bi."resendClaimedAt" IS NULL
+          OR bi."resendClaimedAt" < ${claimTimeoutCutoff}
+        )
+        AND bi.id = (
+          SELECT bi2.id
+          FROM "BetaInvitation" bi2
+          WHERE bi2."participantId" = ${participantId}
+          ORDER BY bi2."issuedAt" DESC, bi2."createdAt" DESC, bi2.id DESC
+          LIMIT 1
+        )
+    `,
+  );
+}
+
+async function throwResendClaimFailure(
+  db: Prisma.TransactionClient | typeof prisma,
+  invitationId: string,
+  participantId: string,
+  now: Date,
+): Promise<never> {
+  const [current, latest] = await Promise.all([
+    db.betaInvitation.findUnique({ where: { id: invitationId } }),
+    findLatestInvitationForParticipant(db, participantId),
+  ]);
+
+  if (!current) {
+    throw new Error("Beta invitation not found");
+  }
+
+  if (!latest || latest.id !== invitationId) {
+    throw new Error(LATEST_ATTEMPT_ONLY_ERROR);
+  }
+
+  if (current.revokedAt) {
+    throw new Error("This beta invitation has been revoked");
+  }
+
+  if (current.expiresAt < now) {
+    throw new Error("This beta invitation has expired");
+  }
+
+  const claimTimeoutCutoff = resendClaimEligibilityCutoff(now);
+  if (
+    current.resendClaimedAt &&
+    current.resendClaimedAt >= claimTimeoutCutoff
+  ) {
+    throw new Error(
+      "A delivery attempt is already in progress for this invitation — try again shortly",
+    );
+  }
+
+  throw new Error("Only pending invitations can be resent");
+}
+
+async function throwRevokeFailure(
+  db: Prisma.TransactionClient | typeof prisma,
+  invitationId: string,
+  participantId: string,
+  now: Date,
+): Promise<never> {
+  const [invitation, latest] = await Promise.all([
+    db.betaInvitation.findUnique({ where: { id: invitationId } }),
+    findLatestInvitationForParticipant(db, participantId),
+  ]);
+
+  if (!invitation) {
+    throw new Error("Beta invitation not found");
+  }
+
+  if (!latest || latest.id !== invitationId) {
+    throw new Error(LATEST_ATTEMPT_ONLY_ERROR);
+  }
+
+  if (invitation.acceptedAt) {
+    throw new Error("Cannot revoke an accepted invitation");
+  }
+
+  if (invitation.revokedAt) {
+    throw new Error("Invitation has already been revoked");
+  }
+
+  if (invitation.expiresAt < now) {
+    throw new Error("Cannot revoke an expired invitation");
+  }
+
+  const claimTimeoutCutoff = resendClaimEligibilityCutoff(now);
+  if (
+    invitation.resendClaimedAt &&
+    invitation.resendClaimedAt >= claimTimeoutCutoff
+  ) {
+    throw new Error(
+      "A delivery attempt is in progress for this invitation — try again shortly",
+    );
+  }
+
+  throw new Error("Failed to revoke invitation");
 }
 
 /**
@@ -371,56 +533,31 @@ export async function revokeBetaInvitation(
   invitationId: string,
   revokedByUserId?: string,
 ): Promise<void> {
-  const now = new Date();
-
-  await assertInvitationIsLatestAttempt(invitationId);
-
-  const result = await prisma.betaInvitation.updateMany({
-    where: {
-      id: invitationId,
-      acceptedAt: null,
-      revokedAt: null,
-      expiresAt: { gte: now },
-      ...liveResendClaimWhere(now),
-    },
-    data: {
-      revokedAt: now,
-      revokedByUserId: revokedByUserId ?? null,
-    },
+  const invitation = await prisma.betaInvitation.findUnique({
+    where: { id: invitationId },
+    select: { id: true, participantId: true },
   });
 
-  if (result.count === 0) {
-    const invitation = await prisma.betaInvitation.findUnique({
-      where: { id: invitationId },
-    });
+  if (!invitation) {
+    throw new Error("Beta invitation not found");
+  }
 
-    if (!invitation) {
-      throw new Error("Beta invitation not found");
-    }
+  const now = new Date();
+  const result = await atomicRevokeIfLatestAttempt(
+    prisma,
+    invitationId,
+    invitation.participantId,
+    revokedByUserId ?? null,
+    now,
+  );
 
-    if (invitation.acceptedAt) {
-      throw new Error("Cannot revoke an accepted invitation");
-    }
-
-    if (invitation.revokedAt) {
-      throw new Error("Invitation has already been revoked");
-    }
-
-    if (invitation.expiresAt < now) {
-      throw new Error("Cannot revoke an expired invitation");
-    }
-
-    const claimTimeoutCutoff = resendClaimEligibilityCutoff(now);
-    if (
-      invitation.resendClaimedAt &&
-      invitation.resendClaimedAt >= claimTimeoutCutoff
-    ) {
-      throw new Error(
-        "A delivery attempt is in progress for this invitation — try again shortly",
-      );
-    }
-
-    throw new Error("Failed to revoke invitation");
+  if (result === 0) {
+    await throwRevokeFailure(
+      prisma,
+      invitationId,
+      invitation.participantId,
+      now,
+    );
   }
 }
 
@@ -439,7 +576,6 @@ export async function reissueBetaInvitation(
   issuedByUserId: string,
   options?: ReissueBetaInvitationOptions,
 ): Promise<IssueBetaInvitationResult> {
-  const now = new Date();
   const token = randomUUID();
   const code = generateBetaCode();
   const campaignOverrideProvided = options?.campaign !== undefined;
@@ -447,6 +583,12 @@ export async function reissueBetaInvitation(
   const reissueAttempt = () =>
     prisma.$transaction(
       async (tx) => {
+        await tx.$executeRaw`
+          SELECT id FROM "BetaParticipant" WHERE id = ${participantId} FOR UPDATE
+        `;
+
+        const txNow = new Date();
+
         const participant = await tx.betaParticipant.findUnique({
           where: { id: participantId },
           select: { id: true, identityAmbiguous: true },
@@ -468,7 +610,7 @@ export async function reissueBetaInvitation(
           throw new Error("No invitation attempts found for this participant");
         }
 
-        if (isPendingInvitation(latest)) {
+        if (isPendingInvitation(latest, txNow)) {
           throw new Error(
             "Cannot reissue while the latest attempt is still pending — resend or revoke it instead",
           );
@@ -480,13 +622,13 @@ export async function reissueBetaInvitation(
           );
         }
 
-        if (!isReissueEligibleTerminalInvitation(latest, now)) {
+        if (!isReissueEligibleTerminalInvitation(latest, txNow)) {
           throw new Error(
             "Reissue is only allowed when the latest attempt is expired or revoked",
           );
         }
 
-        const claimTimeoutCutoff = resendClaimEligibilityCutoff(now);
+        const claimTimeoutCutoff = resendClaimEligibilityCutoff(txNow);
         if (
           latest.resendClaimedAt &&
           latest.resendClaimedAt >= claimTimeoutCutoff
@@ -518,9 +660,9 @@ export async function reissueBetaInvitation(
             code,
             notes: null,
             campaign: carriedCampaign,
-            expiresAt: addDays(now, 30),
-            createdAt: now,
-            issuedAt: now,
+            expiresAt: addDays(txNow, 30),
+            createdAt: txNow,
+            issuedAt: txNow,
             participantId,
             issuedByUserId,
             reissuedFromInvitationId: latest.id,
@@ -566,10 +708,7 @@ export type ResendBetaInvitationClaim = {
 export async function claimBetaInvitationResend(
   invitationId: string,
 ): Promise<ResendBetaInvitationClaim> {
-  const now = new Date();
   const claimId = randomUUID();
-
-  await assertInvitationIsLatestAttempt(invitationId);
 
   const invitation = await prisma.betaInvitation.findUnique({
     where: { id: invitationId },
@@ -586,7 +725,17 @@ export async function claimBetaInvitationResend(
     throw new Error("Beta invitation not found");
   }
 
-  if (!isPendingInvitation(invitation as BetaInvitation)) {
+  const now = new Date();
+
+  const latest = await findLatestInvitationForParticipant(
+    prisma,
+    invitation.participantId,
+  );
+  if (!latest || latest.id !== invitationId) {
+    throw new Error(LATEST_ATTEMPT_ONLY_ERROR);
+  }
+
+  if (!isPendingInvitation(invitation as BetaInvitation, now)) {
     throw new Error("Only pending invitations can be resent");
   }
 
@@ -601,51 +750,39 @@ export async function claimBetaInvitationResend(
     );
   }
 
-  const claimResult = await prisma.betaInvitation.updateMany({
-    where: {
-      id: invitationId,
-      acceptedAt: null,
-      revokedAt: null,
-      expiresAt: { gte: now },
-      ...liveResendClaimWhere(now),
-    },
-    data: {
-      resendClaimedAt: now,
-      resendClaimId: claimId,
-    },
-  });
+  const claimResult = await atomicClaimResendIfLatestAttempt(
+    prisma,
+    invitationId,
+    invitation.participantId,
+    claimId,
+    now,
+  );
 
-  if (claimResult.count === 0) {
-    const current = await prisma.betaInvitation.findUnique({
-      where: { id: invitationId },
-    });
-
-    if (!current) {
-      throw new Error("Beta invitation not found");
-    }
-
-    if (current.revokedAt) {
-      throw new Error("This beta invitation has been revoked");
-    }
-
-    if (current.expiresAt < now) {
-      throw new Error("This beta invitation has expired");
-    }
-
-    const claimTimeoutCutoff = resendClaimEligibilityCutoff(now);
-    if (
-      current.resendClaimedAt &&
-      current.resendClaimedAt >= claimTimeoutCutoff
-    ) {
-      throw new Error(
-        "A delivery attempt is already in progress for this invitation — try again shortly",
-      );
-    }
-
-    throw new Error("Only pending invitations can be resent");
+  if (claimResult === 0) {
+    await throwResendClaimFailure(
+      prisma,
+      invitationId,
+      invitation.participantId,
+      now,
+    );
   }
 
   return { invitationId, claimId };
+}
+
+/**
+ * Extend a live resend claim lease while awaiting provider settlement (#174).
+ */
+export async function refreshBetaInvitationResendClaim(
+  invitationId: string,
+  claimId: string,
+): Promise<boolean> {
+  const now = new Date();
+  const result = await prisma.betaInvitation.updateMany({
+    where: { id: invitationId, resendClaimId: claimId },
+    data: { resendClaimedAt: now },
+  });
+  return result.count === 1;
 }
 
 /**
@@ -699,6 +836,43 @@ export async function awaitEmailDeliverySettlement<T>(
     return await promise;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Heartbeat the resend claim, await bounded provider settlement, then release
+ * the owned claim (#174).
+ */
+export async function releaseResendClaimAfterDeliverySettled(
+  claim: ResendBetaInvitationClaim,
+  deliveryPromise: Promise<unknown> | null,
+): Promise<void> {
+  if (!deliveryPromise) {
+    await releaseBetaInvitationResend(claim.invitationId, claim.claimId);
+    return;
+  }
+
+  const heartbeatMs = Math.max(
+    1_000,
+    Math.floor(BETA_RESEND_CLAIM_LEASE_MS / 3),
+  );
+  const maxSettlementMs =
+    BETA_EMAIL_PROVIDER_TIMEOUT_MS + BETA_EMAIL_SETTLEMENT_GRACE_MS;
+
+  const heartbeat = setInterval(() => {
+    void refreshBetaInvitationResendClaim(claim.invitationId, claim.claimId);
+  }, heartbeatMs);
+
+  try {
+    await Promise.race([
+      awaitEmailDeliverySettlement(deliveryPromise),
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, maxSettlementMs);
+      }),
+    ]);
+  } finally {
+    clearInterval(heartbeat);
+    await releaseBetaInvitationResend(claim.invitationId, claim.claimId);
   }
 }
 

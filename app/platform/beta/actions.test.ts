@@ -5,8 +5,7 @@ const mockRequirePlatformAdmin = vi.fn();
 const mockIssueBetaInvitation = vi.fn();
 const mockReissueBetaInvitation = vi.fn();
 const mockClaimBetaInvitationResend = vi.fn();
-const mockReleaseBetaInvitationResend = vi.fn();
-const mockAwaitEmailDeliverySettlement = vi.fn();
+const mockReleaseResendClaimAfterDeliverySettled = vi.fn();
 const mockWithEmailProviderTimeout = vi.fn();
 const mockRevalidatePath = vi.fn();
 const mockSendBetaInvitation = vi.fn();
@@ -21,10 +20,8 @@ vi.mock("@/app/src/lib/betaInvitation", () => ({
   reissueBetaInvitation: (...args: unknown[]) => mockReissueBetaInvitation(...args),
   claimBetaInvitationResend: (...args: unknown[]) =>
     mockClaimBetaInvitationResend(...args),
-  releaseBetaInvitationResend: (...args: unknown[]) =>
-    mockReleaseBetaInvitationResend(...args),
-  awaitEmailDeliverySettlement: (...args: unknown[]) =>
-    mockAwaitEmailDeliverySettlement(...args),
+  releaseResendClaimAfterDeliverySettled: (...args: unknown[]) =>
+    mockReleaseResendClaimAfterDeliverySettled(...args),
   withEmailProviderTimeout: (...args: unknown[]) =>
     mockWithEmailProviderTimeout(...args),
   isPendingInvitation: (invitation: {
@@ -70,8 +67,7 @@ describe("platform beta actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequirePlatformAdmin.mockResolvedValue({ id: "operator-1" });
-    mockAwaitEmailDeliverySettlement.mockImplementation(async (promise) => promise);
-    mockReleaseBetaInvitationResend.mockResolvedValue(undefined);
+    mockReleaseResendClaimAfterDeliverySettled.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -124,7 +120,7 @@ describe("platform beta actions", () => {
     });
   });
 
-  it("retains resend claim until email delivery settles after timeout", async () => {
+  it("releases resend claim via bounded settlement helper after timeout", async () => {
     mockClaimBetaInvitationResend.mockResolvedValue({
       invitationId: "inv-1",
       claimId: "claim-1",
@@ -148,27 +144,27 @@ describe("platform beta actions", () => {
       new Error("Email delivery timed out"),
     );
 
-    const releaseOrder: string[] = [];
-    mockAwaitEmailDeliverySettlement.mockImplementation(async (promise) => {
-      releaseOrder.push("settlement-start");
-      const result = await promise;
-      releaseOrder.push("settlement-end");
-      return result;
-    });
-    mockReleaseBetaInvitationResend.mockImplementation(async () => {
-      releaseOrder.push("release");
-    });
+    let releaseCalled = false;
+    mockReleaseResendClaimAfterDeliverySettled.mockImplementation(
+      async (claim, promise) => {
+        await promise;
+        releaseCalled = true;
+      },
+    );
 
     const actionPromise = resendInvitationEmailAction("inv-1");
 
     await Promise.resolve();
-    expect(mockReleaseBetaInvitationResend).not.toHaveBeenCalled();
+    expect(releaseCalled).toBe(false);
 
     resolveSend({ status: "sent" });
     const result = await actionPromise;
 
     expect(result).toEqual({ success: false, error: "Email delivery timed out" });
-    expect(mockAwaitEmailDeliverySettlement).toHaveBeenCalledWith(underlyingSend);
-    expect(releaseOrder).toEqual(["settlement-start", "settlement-end", "release"]);
+    expect(mockReleaseResendClaimAfterDeliverySettled).toHaveBeenCalledWith(
+      { invitationId: "inv-1", claimId: "claim-1" },
+      underlyingSend,
+    );
+    expect(releaseCalled).toBe(true);
   });
 });

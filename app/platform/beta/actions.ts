@@ -3,12 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { requirePlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import {
-  awaitEmailDeliverySettlement,
   claimBetaInvitationResend,
   issueBetaInvitation,
   isPendingInvitation,
   reissueBetaInvitation,
-  releaseBetaInvitationResend,
+  releaseResendClaimAfterDeliverySettled,
   revokeBetaInvitation,
   withEmailProviderTimeout,
 } from "@/app/src/lib/betaInvitation";
@@ -255,11 +254,8 @@ export async function resendInvitationEmailAction(
         error instanceof Error ? error.message : "Failed to resend email",
     };
   } finally {
-    if (deliveryPromise) {
-      await awaitEmailDeliverySettlement(deliveryPromise);
-    }
     if (claim) {
-      await releaseBetaInvitationResend(claim.invitationId, claim.claimId);
+      await releaseResendClaimAfterDeliverySettled(claim, deliveryPromise);
     }
   }
 }
