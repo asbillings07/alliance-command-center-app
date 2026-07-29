@@ -2,8 +2,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
 
 /**
- * Confirms Deployment A (#174 PR 1a) schema objects exist with expected
- * nullability and that legacy rows remain valid after migration.
+ * Confirms Deployment A/B (#174 PR 1a/1c) schema objects exist with expected
+ * nullability and constraints after CI applies the full migration stack.
  *
  * Run locally with: INTEGRATION_DB=true npm run test:integration
  */
@@ -18,7 +18,7 @@ describe.skipIf(!runDb)("beta participant migration [integration]", () => {
     });
   });
 
-  it("exposes BetaParticipant and nullable BetaInvitation.participantId", async () => {
+  it("exposes BetaParticipant and BetaInvitation columns with post-contract shape", async () => {
     const columns = await prisma.$queryRaw<
       Array<{ column_name: string; is_nullable: string }>
     >`
@@ -40,7 +40,6 @@ describe.skipIf(!runDb)("beta participant migration [integration]", () => {
 
     expect(columns).toHaveLength(7);
     const nullableColumns = new Set([
-      "participantId",
       "issuedByUserId",
       "revokedByUserId",
       "reissuedFromInvitationId",
@@ -50,6 +49,8 @@ describe.skipIf(!runDb)("beta participant migration [integration]", () => {
     for (const column of columns) {
       if (nullableColumns.has(column.column_name)) {
         expect(column.is_nullable).toBe("YES");
+      } else if (column.column_name === "participantId") {
+        expect(column.is_nullable).toBe("NO");
       } else if (column.column_name === "updatedAt") {
         expect(column.is_nullable).toBe("NO");
       }
@@ -78,22 +79,24 @@ describe.skipIf(!runDb)("beta participant migration [integration]", () => {
     `;
     expect(participantUserId).toHaveLength(1);
     expect(participantUserId[0].is_nullable).toBe("YES");
+
+    const userIdUniqueIndex = await prisma.$queryRaw<Array<{ indexname: string }>>`
+      SELECT indexname
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND tablename = 'BetaParticipant'
+        AND indexname = 'BetaParticipant_userId_key'
+    `;
+    expect(userIdUniqueIndex).toHaveLength(1);
   });
 
-  it("leaves existing BetaInvitation rows readable with null participantId", async () => {
-    const legacyRows = await prisma.$queryRaw<
-      Array<{ id: string; participantId: string | null; updatedAt: Date }>
-    >`
-      SELECT id, "participantId", "updatedAt"
+  it("has no legacy NULL participantId rows after contract migration", async () => {
+    const legacyRows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*)::bigint AS count
       FROM "BetaInvitation"
       WHERE "participantId" IS NULL
-      LIMIT 1
     `;
-
-    if (legacyRows.length > 0) {
-      expect(legacyRows[0].participantId).toBeNull();
-      expect(legacyRows[0].updatedAt).toBeInstanceOf(Date);
-    }
+    expect(Number(legacyRows[0]?.count ?? 0)).toBe(0);
 
     let alliance = await prisma.alliance.findFirst({
       select: { id: true, setupActivityAt: true, createdAt: true },
