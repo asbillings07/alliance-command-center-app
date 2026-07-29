@@ -1,15 +1,14 @@
 /**
- * Validate beta participant invariants before Deployment B (#174 PR 1b).
+ * Validate beta participant invariants before Deployment B / PR 1c (#174).
  *
  * MANUAL OPERATIONS SEQUENCE (do not skip):
  *   1. Deploy PR 1a (expand + dual-write).
- *   2. Deploy this PR (scripts + contract migration file).
- *   3. Run `npm run beta:backfill-participants -- --execute` in production.
- *   4. Run THIS script in production — all four checks must return zero rows
- *      (exit code 0) before proceeding.
- *   5. ONLY THEN apply the contract migration via `npm run migrateProd`.
+ *   2. Deploy PR 1b (this script + backfill script — no migration).
+ *   3. Run `npm run beta:backfill-participants -- --execute ...` in production.
+ *   4. Run THIS script in production — all four checks must return zero rows.
+ *   5. ONLY THEN merge/deploy PR 1c (contract migration).
  *
- * Exit code 0 = safe to apply contract migration. Non-zero = halt rollout.
+ * Exit code 0 = safe to apply PR 1c contract migration. Non-zero = halt rollout.
  *
  * Usage:
  *   npm run beta:validate-participants

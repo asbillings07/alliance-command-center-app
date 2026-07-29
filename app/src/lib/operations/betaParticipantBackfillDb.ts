@@ -1,12 +1,16 @@
+import { createHash } from "node:crypto";
 import type { PrismaClient } from "@/app/generated/prisma/client";
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
 import {
   mergeBetaParticipantsWithTx,
   pickMergeSurvivorParticipantId,
 } from "../betaParticipantIdentity";
+import { connectionIdentity, productionIdentities } from "../productionDb";
 import {
   planBackfillForEmailGroup,
   summarizeBackfillEmailPlan,
   type BackfillEmailPlan,
+  type BackfillEmailPlanSummary,
   type BackfillInvitationSnapshot,
   type BackfillParticipantTarget,
 } from "./betaParticipantBackfill";
@@ -24,9 +28,102 @@ export type BackfillRunSummary = {
   participantsCreated: number;
   mergesPerformed: number;
   ambiguousFlagsSet: number;
+  emailPlans: BackfillEmailPlanSummary[];
+};
+
+export type BackfillManifest = {
+  version: 1;
+  generatedAt: string;
+  dbIdentity: string;
+  pendingNullInvitationCount: number;
+  dryRun: true;
+  checksum: string;
+  emailPlans: BackfillEmailPlanSummary[];
+  totals: Omit<BackfillRunSummary, "dryRun" | "emailPlans">;
 };
 
 const DEFAULT_BATCH_SIZE = 50;
+const MAX_SERIALIZABLE_RETRIES = 3;
+
+const SERIALIZABLE_TRANSACTION_OPTIONS = {
+  isolationLevel: "Serializable" as const,
+  maxWait: 5000,
+  timeout: 10000,
+};
+
+type TxClient = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
+
+function isSerializationFailure(error: unknown): boolean {
+  if (
+    error instanceof PrismaClientKnownRequestError &&
+    error.code === "P2034"
+  ) {
+    return true;
+  }
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as { code?: string }).code === "P2034"
+  );
+}
+
+/** Re-exported for the backfill CLI's production-safety boundary. */
+export function resolveBackfillTargetIdentity(): {
+  identity: string;
+  isProduction: boolean;
+  hostname: string;
+} {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    throw new Error("DATABASE_URL is required.");
+  }
+  const identity = connectionIdentity(dbUrl);
+  const directUrl = process.env.DIRECT_URL;
+  if (directUrl && connectionIdentity(directUrl) !== identity) {
+    throw new Error(
+      "DATABASE_URL and DIRECT_URL resolve to different databases; refusing to run.",
+    );
+  }
+  let hostname: string;
+  try {
+    hostname = new URL(dbUrl).hostname;
+  } catch {
+    hostname = identity;
+  }
+  const allow = productionIdentities(process.env.PRODUCTION_DB_HOSTS);
+  return { identity, isProduction: allow.includes(identity), hostname };
+}
+
+export function buildBackfillManifestChecksum(payload: unknown): string {
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+}
+
+export function buildBackfillManifest(input: {
+  dbIdentity: string;
+  pendingNullInvitationCount: number;
+  summary: BackfillRunSummary;
+}): BackfillManifest {
+  const payload = {
+    version: 1 as const,
+    generatedAt: new Date().toISOString(),
+    dbIdentity: input.dbIdentity,
+    pendingNullInvitationCount: input.pendingNullInvitationCount,
+    dryRun: true as const,
+    emailPlans: input.summary.emailPlans,
+    totals: {
+      emailsProcessed: input.summary.emailsProcessed,
+      emailsSkipped: input.summary.emailsSkipped,
+      invitationsAssigned: input.summary.invitationsAssigned,
+      participantsCreated: input.summary.participantsCreated,
+      mergesPerformed: input.summary.mergesPerformed,
+      ambiguousFlagsSet: input.summary.ambiguousFlagsSet,
+    },
+  };
+  return {
+    ...payload,
+    checksum: buildBackfillManifestChecksum(payload),
+  };
+}
 
 export async function countNullParticipantInvitations(
   prisma: PrismaClient,
@@ -39,25 +136,23 @@ export async function countNullParticipantInvitations(
   return Number(rows[0]?.count ?? 0);
 }
 
-export async function fetchEmailsNeedingBackfill(
+export async function fetchAllEmailsNeedingBackfill(
   prisma: PrismaClient,
-  limit: number,
 ): Promise<string[]> {
   const rows = await prisma.$queryRaw<Array<{ email: string }>>`
     SELECT DISTINCT email
     FROM "BetaInvitation"
     WHERE "participantId" IS NULL
     ORDER BY email ASC
-    LIMIT ${limit}
   `;
   return rows.map((row) => row.email);
 }
 
 async function loadEmailInvitations(
-  prisma: PrismaClient,
+  tx: TxClient,
   email: string,
 ): Promise<BackfillInvitationSnapshot[]> {
-  return prisma.betaInvitation.findMany({
+  return tx.betaInvitation.findMany({
     where: { email },
     select: {
       id: true,
@@ -70,7 +165,7 @@ async function loadEmailInvitations(
 }
 
 async function resolveTargetParticipantId(
-  tx: Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0],
+  tx: TxClient,
   target: BackfillParticipantTarget,
   createdSlotIds: Map<string, string>,
 ): Promise<string> {
@@ -95,7 +190,7 @@ async function resolveTargetParticipantId(
 }
 
 async function applyEmailBackfillPlan(
-  tx: Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0],
+  tx: TxClient,
   plan: BackfillEmailPlan,
   dryRun: boolean,
 ): Promise<{
@@ -189,13 +284,13 @@ async function applyEmailBackfillPlan(
   };
 }
 
-export async function backfillEmailGroup(
+async function backfillEmailGroupInTransaction(
   prisma: PrismaClient,
   email: string,
-  options: Pick<BackfillRunOptions, "dryRun">,
+  dryRun: boolean,
 ): Promise<{
   plan: BackfillEmailPlan | null;
-  stats: ReturnType<typeof summarizeBackfillEmailPlan> | null;
+  stats: BackfillEmailPlanSummary | null;
   applied: {
     invitationsAssigned: number;
     participantsCreated: number;
@@ -203,27 +298,56 @@ export async function backfillEmailGroup(
     ambiguousFlagsSet: number;
   } | null;
 }> {
-  const invitations = await loadEmailInvitations(prisma, email);
-  const nullCount = invitations.filter((row) => !row.participantId).length;
-  const plan = planBackfillForEmailGroup(email, invitations);
-  if (!plan) {
-    return { plan: null, stats: null, applied: null };
+  for (let attempt = 0; attempt < MAX_SERIALIZABLE_RETRIES; attempt++) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const invitations = await loadEmailInvitations(tx, email);
+        const nullCount = invitations.filter((row) => !row.participantId).length;
+        const plan = planBackfillForEmailGroup(email, invitations);
+        if (!plan) {
+          return { plan: null, stats: null, applied: null };
+        }
+
+        const stats = summarizeBackfillEmailPlan(plan, nullCount);
+        const applied = await applyEmailBackfillPlan(tx, plan, dryRun);
+        return { plan, stats, applied };
+      }, SERIALIZABLE_TRANSACTION_OPTIONS);
+    } catch (error) {
+      if (
+        isSerializationFailure(error) &&
+        attempt < MAX_SERIALIZABLE_RETRIES - 1
+      ) {
+        continue;
+      }
+      throw error;
+    }
   }
 
-  const stats = summarizeBackfillEmailPlan(plan, nullCount);
-  const applied = await prisma.$transaction(async (tx) =>
-    applyEmailBackfillPlan(tx, plan, options.dryRun),
-  );
+  throw new Error(`Failed to backfill email group after retries: ${email}`);
+}
 
-  return { plan, stats, applied };
+export async function backfillEmailGroup(
+  prisma: PrismaClient,
+  email: string,
+  options: Pick<BackfillRunOptions, "dryRun">,
+): Promise<{
+  plan: BackfillEmailPlan | null;
+  stats: BackfillEmailPlanSummary | null;
+  applied: {
+    invitationsAssigned: number;
+    participantsCreated: number;
+    mergesPerformed: number;
+    ambiguousFlagsSet: number;
+  } | null;
+}> {
+  return backfillEmailGroupInTransaction(prisma, email, options.dryRun ?? false);
 }
 
 export async function runBetaParticipantBackfill(
   prisma: PrismaClient,
   options: Partial<BackfillRunOptions> = {},
 ): Promise<BackfillRunSummary> {
-  const dryRun = options.dryRun ?? false;
-  const emailBatchSize = options.emailBatchSize ?? DEFAULT_BATCH_SIZE;
+  const dryRun = options.dryRun ?? true;
 
   const summary: BackfillRunSummary = {
     dryRun,
@@ -233,32 +357,24 @@ export async function runBetaParticipantBackfill(
     participantsCreated: 0,
     mergesPerformed: 0,
     ambiguousFlagsSet: 0,
+    emailPlans: [],
   };
 
-  while (true) {
-    const emails = await fetchEmailsNeedingBackfill(prisma, emailBatchSize);
-    if (emails.length === 0) {
-      break;
+  const emails = await fetchAllEmailsNeedingBackfill(prisma);
+  for (const email of emails) {
+    const result = await backfillEmailGroupInTransaction(prisma, email, dryRun);
+    if (!result.plan || !result.stats) {
+      summary.emailsSkipped += 1;
+      continue;
     }
 
-    for (const email of emails) {
-      const result = await backfillEmailGroup(prisma, email, { dryRun });
-      if (!result.plan) {
-        summary.emailsSkipped += 1;
-        continue;
-      }
-
-      summary.emailsProcessed += 1;
-      if (result.applied) {
-        summary.invitationsAssigned += result.applied.invitationsAssigned;
-        summary.participantsCreated += result.applied.participantsCreated;
-        summary.mergesPerformed += result.applied.mergesPerformed;
-        summary.ambiguousFlagsSet += result.applied.ambiguousFlagsSet;
-      }
-    }
-
-    if (dryRun) {
-      break;
+    summary.emailsProcessed += 1;
+    summary.emailPlans.push(result.stats);
+    if (result.applied) {
+      summary.invitationsAssigned += result.applied.invitationsAssigned;
+      summary.participantsCreated += result.applied.participantsCreated;
+      summary.mergesPerformed += result.applied.mergesPerformed;
+      summary.ambiguousFlagsSet += result.applied.ambiguousFlagsSet;
     }
   }
 
