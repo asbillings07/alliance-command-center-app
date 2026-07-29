@@ -379,10 +379,9 @@ test.describe("Platform Operations Console", () => {
       await page.setViewportSize({ width: 1280, height: 800 });
 
       const participantTable = page.locator("table tbody");
-      await expect(participantTable.getByText(uniqueEmail)).toBeVisible();
-      await expect(
-        participantTable.getByRole("button", { name: /Revoke/i })
-      ).toBeVisible();
+      const row = participantTable.locator("tr").filter({ hasText: uniqueEmail });
+      await expect(row).toBeVisible();
+      await expect(row.getByRole("button", { name: /Revoke/i })).toBeVisible();
     });
 
     test("revoke updates participant latest attempt status", async ({ page }) => {
@@ -400,15 +399,16 @@ test.describe("Platform Operations Console", () => {
       await page.setViewportSize({ width: 1280, height: 800 });
 
       const participantTable = page.locator("table tbody");
-      await expect(participantTable.getByText(uniqueEmail)).toBeVisible();
+      const row = participantTable.locator("tr").filter({ hasText: uniqueEmail });
+      await expect(row).toBeVisible();
 
-      const revokeButton = participantTable.getByRole("button", { name: /Revoke/i });
+      const revokeButton = row.getByRole("button", { name: /Revoke/i });
       await expect(revokeButton).toBeVisible();
 
       page.on("dialog", (dialog) => dialog.accept());
       await revokeButton.click();
 
-      await expect(participantTable.getByText(/Revoked/i)).toBeVisible({
+      await expect(row.getByText(/Revoked/i)).toBeVisible({
         timeout: 10000,
       });
     });
