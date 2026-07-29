@@ -3,8 +3,9 @@ import type { PrismaClient } from "@/app/generated/prisma/client";
 import type * as BetaInvitationModule from "./betaInvitation";
 
 const runDb = process.env.INTEGRATION_DB === "true";
+const describeIntegration = runDb ? describe.sequential : describe.skip;
 
-describe.skipIf(!runDb)("betaInvitation atomic actions [integration]", () => {
+describeIntegration("betaInvitation atomic actions [integration]", () => {
   const createdUserIds: string[] = [];
   const createdParticipantIds: string[] = [];
   const createdInvitationIds: string[] = [];
