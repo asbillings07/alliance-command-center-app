@@ -83,6 +83,20 @@ export type BetaParticipantListItem = {
   };
 };
 
+/** Minimal projection for platform Action Required beta items — no invitation secrets. */
+export type BetaParticipantAttentionRow = {
+  participantId: string;
+  identityAmbiguous: boolean;
+  displayName: string | null;
+  currentEmail: string | null;
+  latestAttemptEmail: string;
+  attentionReason: BetaAttentionReason;
+  attentionSince: Date | null;
+  allianceAmbiguous: boolean;
+  allianceId: string | null;
+  allianceName: string | null;
+};
+
 export type BetaParticipantSummary = {
   totalParticipants: number;
   totalInvitationAttempts: number;
@@ -1088,56 +1102,70 @@ export async function listBetaParticipantPriorAttempts(
   };
 }
 
+type AttentionDerivedRow = {
+  participant_id: string;
+  identity_ambiguous: boolean;
+  display_name: string | null;
+  current_email: string | null;
+  latest_email: string;
+  alliance_id: string | null;
+  alliance_ambiguous: boolean;
+  alliance_name: string | null;
+  attention_reason: BetaAttentionReason;
+  attention_since: Date | null;
+  latest_issued_at: Date;
+  latest_created_at: Date;
+  latest_attempt_id: string;
+};
+
+function mapAttentionDerivedRow(
+  row: AttentionDerivedRow,
+): BetaParticipantAttentionRow {
+  return {
+    participantId: row.participant_id,
+    identityAmbiguous: row.identity_ambiguous,
+    displayName: row.display_name,
+    currentEmail: row.current_email,
+    latestAttemptEmail: row.latest_email,
+    attentionReason: row.attention_reason,
+    attentionSince: row.attention_since,
+    allianceAmbiguous: row.alliance_ambiguous,
+    allianceId: row.alliance_id,
+    allianceName: row.alliance_name,
+  };
+}
+
 /**
  * Participants with a non-null attention reason from the shared derivation CTE.
  * Used by the platform Action Required feed — one row per participant.
+ * Selects only identity, attention, and alliance fields — no invitation secrets.
  */
 export async function listBetaParticipantsNeedingAttention(
   options: { limit?: number; now?: Date } = {},
-): Promise<BetaParticipantListItem[]> {
+): Promise<BetaParticipantAttentionRow[]> {
   const now = options.now ?? new Date();
   const limit = Math.min(
     options.limit ?? BETA_PARTICIPANTS_ATTENTION_LIST_LIMIT,
     BETA_PARTICIPANTS_ATTENTION_LIST_LIMIT,
   );
   const cte = betaParticipantsDerivationCte(now);
-  const origin = getAppOrigin();
 
-  const rows = await prisma.$queryRaw<DerivedRow[]>`
+  const rows = await prisma.$queryRaw<AttentionDerivedRow[]>`
     WITH ${cte}
     SELECT
       d.participant_id,
       d.identity_ambiguous,
       d.display_name,
       d.current_email,
-      d.latest_attempt_id,
       d.latest_email,
-      d.latest_code,
-      d.latest_token,
-      d.latest_campaign,
-      d.latest_notes,
-      d.latest_issued_at,
-      d.latest_created_at,
-      d.latest_expires_at,
-      d.latest_accepted_at,
-      d.latest_revoked_at,
-      d.latest_issued_by_user_id,
-      d.latest_issued_by_display_name,
-      d.latest_issued_by_email,
-      d.latest_revoked_by_user_id,
-      d.latest_revoked_by_display_name,
-      d.latest_revoked_by_email,
-      d.latest_accepted_by_user_id,
-      d.latest_accepted_by_display_name,
-      d.latest_accepted_by_email,
-      d.prior_attempt_count,
       d.alliance_id,
       d.alliance_ambiguous,
       d.alliance_name,
-      d.journey_stage,
       d.attention_reason,
       d.attention_since,
-      d.latest_status
+      d.latest_issued_at,
+      d.latest_created_at,
+      d.latest_attempt_id
     FROM derived d
     WHERE d.attention_reason IS NOT NULL
     ORDER BY
@@ -1155,7 +1183,7 @@ export async function listBetaParticipantsNeedingAttention(
     LIMIT ${limit}
   `;
 
-  return rows.map((row) => mapDerivedRow(row, origin));
+  return rows.map(mapAttentionDerivedRow);
 }
 
 /** Execute only the derivation CTE for parity testing against TS helpers. */

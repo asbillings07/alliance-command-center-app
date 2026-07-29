@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
-import { getActionRequired } from "./attention";
+import { getActionRequired, getActionRequiredBySeverity } from "./attention";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -205,5 +205,32 @@ describeIntegration("attention beta consolidation [integration]", () => {
 
     expect(infoItem?.severity).toBe("info");
     expect(infoItem?.title).toBe("No metrics configured");
+  });
+
+  it("returns non-beta items and flags unavailable when beta attention query fails", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const now = new Date("2026-07-29T12:00:00Z");
+
+    const alliance = await prisma.alliance.create({
+      data: {
+        name: `Beta Fail No Metrics ${suffix}`,
+        server: "1003",
+        createdAt: new Date("2026-07-25T12:00:00Z"),
+      },
+    });
+    createdAllianceIds.push(alliance.id);
+
+    const queryRawSpy = vi
+      .spyOn(prisma, "$queryRaw")
+      .mockRejectedValueOnce(new Error("simulated beta attention failure"));
+
+    const grouped = await getActionRequiredBySeverity(now);
+
+    expect(grouped.betaAttentionUnavailable).toBe(true);
+    expect(grouped.info.some((item) => item.id === `no-metrics-${alliance.id}`)).toBe(
+      true,
+    );
+
+    queryRawSpy.mockRestore();
   });
 });

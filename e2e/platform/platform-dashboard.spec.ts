@@ -1,4 +1,5 @@
 import { test, expect } from "../shared/fixtures";
+import { checkA11yLevelAA } from "../shared/accessibility";
 import { prisma } from "@/app/src/lib/prisma";
 import crypto from "crypto";
 
@@ -148,6 +149,104 @@ test.describe("Platform Operations Console", () => {
       } finally {
         await prisma.betaInvitation.delete({ where: { id: invitation.id } });
         await prisma.betaParticipant.delete({ where: { id: participant.id } });
+      }
+    });
+
+    async function seedExpiredBetaAttentionItem(
+      testInfo: { retry: number },
+    ): Promise<{ email: string; participantId: string; invitationId: string }> {
+      const suffix = `${Date.now()}-${testInfo.retry}-${Math.random().toString(36).slice(2, 8)}`;
+      const email = `e2e-expired-attention-${suffix}@example.test`;
+      const now = Date.now();
+      const participant = await prisma.betaParticipant.create({ data: {} });
+      const invitation = await prisma.betaInvitation.create({
+        data: {
+          participantId: participant.id,
+          email,
+          code: `E2E-${suffix.slice(0, 6).toUpperCase()}`,
+          token: crypto.randomUUID(),
+          issuedAt: new Date(now - 10 * 24 * 60 * 60 * 1000),
+          expiresAt: new Date(now - 2 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      return {
+        email,
+        participantId: participant.id,
+        invitationId: invitation.id,
+      };
+    }
+
+    test("activates Action Required beta link via keyboard", async ({
+      page,
+    }, testInfo) => {
+      const seeded = await seedExpiredBetaAttentionItem(testInfo);
+
+      try {
+        await page.goto("/platform/overview");
+
+        const betaActionLink = page.getByRole("link").filter({
+          hasText: seeded.email,
+        });
+        await expect(betaActionLink).toBeVisible({ timeout: 10000 });
+        await betaActionLink.focus();
+        await expect(betaActionLink).toBeFocused();
+        await page.keyboard.press("Enter");
+        await page.waitForURL(/\/platform\/beta\?attentionReason=invitation_expired/);
+        await expect(page.getByLabel(/^Attention$/i)).toHaveValue(
+          "invitation_expired",
+        );
+      } finally {
+        await prisma.betaInvitation.delete({ where: { id: seeded.invitationId } });
+        await prisma.betaParticipant.delete({ where: { id: seeded.participantId } });
+      }
+    });
+
+    test("shows and navigates Action Required beta item on mobile viewport", async ({
+      page,
+    }, testInfo) => {
+      const seeded = await seedExpiredBetaAttentionItem(testInfo);
+
+      try {
+        await page.setViewportSize({ width: 375, height: 667 });
+        await page.goto("/platform/overview");
+
+        const betaActionLink = page.getByRole("link").filter({
+          hasText: seeded.email,
+        });
+        await expect(betaActionLink).toBeVisible({ timeout: 10000 });
+        await expect(betaActionLink).toHaveAttribute(
+          "href",
+          "/platform/beta?attentionReason=invitation_expired",
+        );
+
+        await betaActionLink.click();
+        await page.waitForURL(/\/platform\/beta\?attentionReason=invitation_expired/);
+        await expect(page.getByLabel(/^Attention$/i)).toHaveValue(
+          "invitation_expired",
+        );
+      } finally {
+        await prisma.betaInvitation.delete({ where: { id: seeded.invitationId } });
+        await prisma.betaParticipant.delete({ where: { id: seeded.participantId } });
+      }
+    });
+
+    test("@a11y platform overview with Action Required beta item meets accessibility standards", async ({
+      page,
+    }, testInfo) => {
+      const seeded = await seedExpiredBetaAttentionItem(testInfo);
+
+      try {
+        await page.goto("/platform/overview");
+        await expect(
+          page.getByRole("link").filter({ hasText: seeded.email }),
+        ).toBeVisible({ timeout: 10000 });
+        await page.waitForLoadState("networkidle");
+
+        await checkA11yLevelAA(page);
+      } finally {
+        await prisma.betaInvitation.delete({ where: { id: seeded.invitationId } });
+        await prisma.betaParticipant.delete({ where: { id: seeded.participantId } });
       }
     });
 

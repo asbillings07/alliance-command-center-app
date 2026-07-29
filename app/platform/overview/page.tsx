@@ -151,6 +151,7 @@ export default async function PlatformOverview() {
   const hasWarning = actionRequired.warning.length > 0;
   const hasInfo = actionRequired.info.length > 0;
   const hasActionRequired = hasCritical || hasWarning || hasInfo;
+  const betaAttentionUnavailable = actionRequired.betaAttentionUnavailable;
 
   return (
     <div className="space-y-8 max-w-5xl">
@@ -160,7 +161,33 @@ export default async function PlatformOverview() {
           Action Required
         </h2>
         <div className="bg-surface rounded-lg border border-border p-4">
-          {!hasActionRequired ? (
+          {betaAttentionUnavailable && (
+            <div
+              role="alert"
+              data-testid="beta-attention-unavailable"
+              className="mb-4 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2"
+            >
+              <p className="text-sm text-text-primary">
+                Beta attention is temporarily unavailable. Other items below are
+                still current.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-3 text-sm">
+                <Link
+                  href="/platform/beta"
+                  className="text-primary hover:text-primary-hover"
+                >
+                  Open Beta Participants
+                </Link>
+                <Link
+                  href="/platform/overview"
+                  className="text-primary hover:text-primary-hover"
+                >
+                  Retry
+                </Link>
+              </div>
+            </div>
+          )}
+          {!hasActionRequired && !betaAttentionUnavailable ? (
             <div className="flex items-center gap-2 text-text-muted">
               <svg
                 className="w-5 h-5 text-success"

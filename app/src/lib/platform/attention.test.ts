@@ -1,41 +1,45 @@
-import { describe, it, expect } from "vitest";
-import { mapBetaParticipantToActionRequired } from "./attention";
-import type { BetaParticipantListItem } from "./betaParticipants";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import {
+  getActionRequired,
+  getActionRequiredBySeverity,
+  mapBetaParticipantToActionRequired,
+} from "./attention";
+import type { BetaParticipantAttentionRow } from "./betaParticipants";
+
+vi.mock("../prisma", () => ({
+  prisma: {
+    invitation: { findMany: vi.fn() },
+    alliance: { findMany: vi.fn() },
+  },
+}));
+
+vi.mock("./betaParticipants", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./betaParticipants")>();
+  return {
+    ...actual,
+    listBetaParticipantsNeedingAttention: vi.fn(),
+  };
+});
+
+import { prisma } from "../prisma";
+import { listBetaParticipantsNeedingAttention } from "./betaParticipants";
 
 function buildParticipant(
-  overrides: Partial<BetaParticipantListItem> = {},
-): BetaParticipantListItem {
+  overrides: Partial<BetaParticipantAttentionRow> = {},
+): BetaParticipantAttentionRow {
   return {
     participantId: "participant-1",
     identityAmbiguous: false,
     displayName: null,
     currentEmail: null,
-    wave: null,
-    journeyStage: "invited",
+    latestAttemptEmail: "beta@example.test",
     attentionReason: "invitation_expired",
     attentionSince: new Date("2026-07-20T12:00:00Z"),
     allianceAmbiguous: false,
     allianceId: null,
     allianceName: null,
-    priorAttemptCount: 0,
-    latestAttempt: {
-      id: "inv-1",
-      email: "beta@example.test",
-      code: "CODE",
-      token: "token",
-      inviteUrl: "http://localhost/redeem/token",
-      status: "expired",
-      campaign: null,
-      notes: null,
-      issuedAt: new Date("2026-07-01T12:00:00Z"),
-      createdAt: new Date("2026-07-01T12:00:00Z"),
-      expiresAt: new Date("2026-07-20T12:00:00Z"),
-      acceptedAt: null,
-      revokedAt: null,
-      issuedBy: null,
-      revokedBy: null,
-      acceptedBy: null,
-    },
     ...overrides,
   };
 }
@@ -48,12 +52,6 @@ describe("mapBetaParticipantToActionRequired", () => {
       buildParticipant({
         attentionReason: "accepted_no_alliance",
         attentionSince: new Date("2026-07-20T12:00:00Z"),
-        journeyStage: "accepted",
-        latestAttempt: {
-          ...buildParticipant().latestAttempt,
-          status: "accepted",
-          acceptedAt: new Date("2026-07-20T12:00:00Z"),
-        },
       }),
       now,
     );
@@ -79,11 +77,6 @@ describe("mapBetaParticipantToActionRequired", () => {
       buildParticipant({
         attentionReason: "invitation_pending_stale",
         attentionSince: new Date("2026-07-20T12:00:00Z"),
-        latestAttempt: {
-          ...buildParticipant().latestAttempt,
-          status: "pending",
-          expiresAt: new Date("2026-08-20T12:00:00Z"),
-        },
       }),
       now,
     );
@@ -102,7 +95,6 @@ describe("mapBetaParticipantToActionRequired", () => {
         attentionSince: new Date("2026-07-20T12:00:00Z"),
         allianceId: "alliance-1",
         allianceName: "Stalled Alliance",
-        journeyStage: "alliance_created",
       }),
       now,
     );
@@ -120,7 +112,6 @@ describe("mapBetaParticipantToActionRequired", () => {
         attentionSince: new Date("2026-07-20T12:00:00Z"),
         allianceAmbiguous: true,
         allianceId: null,
-        journeyStage: "accepted",
       }),
       now,
     );
@@ -138,5 +129,85 @@ describe("mapBetaParticipantToActionRequired", () => {
     );
 
     expect(item.description).toContain("Beta Tester");
+  });
+});
+
+describe("getActionRequired beta isolation", () => {
+  const now = new Date("2026-07-29T12:00:00Z");
+
+  beforeEach(() => {
+    vi.mocked(prisma.invitation.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.alliance.findMany).mockResolvedValue([
+      {
+        id: "alliance-no-metrics",
+        name: "Recent Alliance",
+        createdAt: new Date("2026-07-25T12:00:00Z"),
+      },
+    ] as never);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns non-beta items when beta attention query throws", async () => {
+    vi.mocked(listBetaParticipantsNeedingAttention).mockRejectedValue(
+      new Error("beta query failed"),
+    );
+
+    const items = await getActionRequired(now);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.id).toBe("no-metrics-alliance-no-metrics");
+  });
+
+  it("flags betaAttentionUnavailable without silently reporting zero beta items", async () => {
+    vi.mocked(listBetaParticipantsNeedingAttention).mockRejectedValue(
+      new Error("beta query failed"),
+    );
+
+    const grouped = await getActionRequiredBySeverity(now);
+
+    expect(grouped.betaAttentionUnavailable).toBe(true);
+    expect(grouped.info).toHaveLength(1);
+    expect(grouped.totalCount).toBe(1);
+  });
+
+  it("recovers beta items when the query succeeds after a prior failure", async () => {
+    vi.mocked(listBetaParticipantsNeedingAttention)
+      .mockRejectedValueOnce(new Error("beta query failed"))
+      .mockResolvedValueOnce([
+        buildParticipant({ participantId: "participant-recovered" }),
+      ]);
+
+    const failed = await getActionRequiredBySeverity(now);
+    expect(failed.betaAttentionUnavailable).toBe(true);
+    expect(failed.warning).toHaveLength(0);
+
+    const recovered = await getActionRequiredBySeverity(now);
+    expect(recovered.betaAttentionUnavailable).toBe(false);
+    expect(recovered.warning).toHaveLength(1);
+    expect(recovered.warning[0]?.id).toBe("beta-attention-participant-recovered");
+  });
+});
+
+describe("listBetaParticipantsNeedingAttention narrow projection", () => {
+  it("does not select invitation secrets or call getAppOrigin", () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname, "betaParticipants.ts"),
+      "utf8",
+    );
+    const fnStart = source.indexOf("export async function listBetaParticipantsNeedingAttention");
+    const fnEnd = source.indexOf("/** Execute only the derivation CTE", fnStart);
+    const fnSource = source.slice(fnStart, fnEnd);
+
+    expect(fnSource).not.toContain("getAppOrigin");
+    expect(fnSource).not.toContain("latest_code");
+    expect(fnSource).not.toContain("latest_token");
+    expect(fnSource).not.toContain("latest_notes");
+    expect(fnSource).not.toContain("issued_by");
+    expect(fnSource).not.toContain("mapDerivedRow");
+    expect(fnSource).toContain("mapAttentionDerivedRow");
+    expect(fnSource).toContain("BetaParticipantAttentionRow");
   });
 });

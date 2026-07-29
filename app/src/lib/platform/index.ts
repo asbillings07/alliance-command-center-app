@@ -57,6 +57,7 @@ export {
   deriveLatestAttemptStatus,
   type BetaParticipantFilters,
   type BetaParticipantListItem,
+  type BetaParticipantAttentionRow,
   type BetaParticipantListResult,
   type BetaParticipantSummary,
   type BetaParticipantPriorAttempt,

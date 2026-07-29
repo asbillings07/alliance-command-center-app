@@ -1,8 +1,7 @@
 import { prisma } from "../prisma";
 import {
   listBetaParticipantsNeedingAttention,
-  type BetaAttentionReason,
-  type BetaParticipantListItem,
+  type BetaParticipantAttentionRow,
 } from "./betaParticipants";
 
 /**
@@ -30,15 +29,17 @@ export type GroupedActionRequired = {
   warning: ActionRequiredItem[];
   info: ActionRequiredItem[];
   totalCount: number;
+  /** True when the beta attention query failed; non-beta items are still present. */
+  betaAttentionUnavailable: boolean;
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-function participantIdentity(participant: BetaParticipantListItem): string {
+function participantIdentity(participant: BetaParticipantAttentionRow): string {
   return (
     participant.displayName ??
     participant.currentEmail ??
-    participant.latestAttempt.email
+    participant.latestAttemptEmail
   );
 }
 
@@ -49,8 +50,8 @@ function daysSinceAttention(now: Date, since: Date | null): number {
   return Math.floor((now.getTime() - since.getTime()) / MS_PER_DAY);
 }
 
-function betaAttentionHref(participant: BetaParticipantListItem): string {
-  const reason = participant.attentionReason!;
+function betaAttentionHref(participant: BetaParticipantAttentionRow): string {
+  const reason = participant.attentionReason;
   if (
     reason === "setup_stalled" &&
     participant.allianceId &&
@@ -61,15 +62,15 @@ function betaAttentionHref(participant: BetaParticipantListItem): string {
   return `/platform/beta?attentionReason=${reason}`;
 }
 
-/** Maps one authoritative beta participant projection row to an Action Required item. */
+/** Maps one authoritative beta participant attention row to an Action Required item. */
 export function mapBetaParticipantToActionRequired(
-  participant: BetaParticipantListItem,
+  participant: BetaParticipantAttentionRow,
   now: Date,
 ): ActionRequiredItem {
   const identity = participantIdentity(participant);
   const days = daysSinceAttention(now, participant.attentionSince);
   const dayLabel = days === 1 ? "day" : "days";
-  const reason = participant.attentionReason as BetaAttentionReason;
+  const reason = participant.attentionReason;
   const metadata = {
     participantId: participant.participantId,
     attentionReason: reason,
@@ -121,24 +122,34 @@ export function mapBetaParticipantToActionRequired(
   }
 }
 
-async function getBetaActionRequiredItems(now: Date): Promise<ActionRequiredItem[]> {
-  const participants = await listBetaParticipantsNeedingAttention({ now });
-  return participants.map((participant) =>
-    mapBetaParticipantToActionRequired(participant, now),
-  );
+type BetaAttentionLoadResult = {
+  items: ActionRequiredItem[];
+  unavailable: boolean;
+};
+
+async function loadBetaActionRequiredItems(
+  now: Date,
+): Promise<BetaAttentionLoadResult> {
+  try {
+    const participants = await listBetaParticipantsNeedingAttention({ now });
+    return {
+      items: participants.map((participant) =>
+        mapBetaParticipantToActionRequired(participant, now),
+      ),
+      unavailable: false,
+    };
+  } catch (error) {
+    console.error("Beta attention query failed:", error);
+    return { items: [], unavailable: true };
+  }
 }
 
-/**
- * Get all items requiring action, with severity.
- */
-export async function getActionRequired(
-  now: Date = new Date(),
+async function getNonBetaActionRequiredItems(
+  now: Date,
 ): Promise<ActionRequiredItem[]> {
   const items: ActionRequiredItem[] = [];
   const weekAgo = new Date(now);
   weekAgo.setDate(weekAgo.getDate() - 7);
-
-  items.push(...(await getBetaActionRequiredItems(now)));
 
   // WARNING: Pending collaborator invitations older than 7 days
   const oldCollabInvites = await prisma.invitation.findMany({
@@ -198,18 +209,39 @@ export async function getActionRequired(
 }
 
 /**
+ * Get all items requiring action, with severity.
+ * Beta attention failures are isolated — non-beta items are still returned.
+ */
+export async function getActionRequired(
+  now: Date = new Date(),
+): Promise<ActionRequiredItem[]> {
+  const [beta, nonBeta] = await Promise.all([
+    loadBetaActionRequiredItems(now),
+    getNonBetaActionRequiredItems(now),
+  ]);
+
+  return [...beta.items, ...nonBeta];
+}
+
+/**
  * Get action required items grouped by severity.
  */
 export async function getActionRequiredBySeverity(
   now: Date = new Date(),
 ): Promise<GroupedActionRequired> {
-  const items = await getActionRequired(now);
+  const [beta, nonBeta] = await Promise.all([
+    loadBetaActionRequiredItems(now),
+    getNonBetaActionRequiredItems(now),
+  ]);
+
+  const items = [...beta.items, ...nonBeta];
 
   return {
     critical: items.filter((i) => i.severity === "critical"),
     warning: items.filter((i) => i.severity === "warning"),
     info: items.filter((i) => i.severity === "info"),
     totalCount: items.length,
+    betaAttentionUnavailable: beta.unavailable,
   };
 }
 

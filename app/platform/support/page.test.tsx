@@ -30,6 +30,7 @@ describe("PlatformSupportPage", () => {
       warning: [],
       info: [],
       totalCount: 0,
+      betaAttentionUnavailable: false,
     });
   });
 
