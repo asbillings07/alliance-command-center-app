@@ -90,7 +90,7 @@ test.describe("Platform Operations Console", () => {
       await page.getByRole("link", { name: "Beta", exact: true }).click();
       await page.waitForURL("/platform/beta");
       await expect(
-        page.getByRole("heading", { name: /Beta Invitations/i })
+        page.getByRole("heading", { name: /Beta Participants/i })
       ).toBeVisible();
     });
   });
@@ -247,11 +247,17 @@ test.describe("Platform Operations Console", () => {
     test("displays Beta Participants summary", async ({ page }) => {
       await page.goto("/platform/beta");
 
-      await expect(page.getByText(/Beta Participants/i).first()).toBeVisible();
-      await expect(page.getByText(/^Participants$/i)).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: /Beta Participants/i })
+      ).toBeVisible();
+      await expect(
+        page.locator("div").filter({ hasText: /^Participants$/ }).first()
+      ).toBeVisible();
       await expect(page.getByText(/Needs attention/i)).toBeVisible();
       await expect(page.getByText(/Alliances created/i)).toBeVisible();
-      await expect(page.getByText(/Setup complete/i)).toBeVisible();
+      await expect(
+        page.locator("div").filter({ hasText: /^Setup complete$/ }).first()
+      ).toBeVisible();
     });
 
     test("displays Invite Beta Tester form with beta wave field", async ({ page }) => {
@@ -372,8 +378,11 @@ test.describe("Platform Operations Console", () => {
       await page.getByRole("button", { name: /Invite Another/i }).click();
       await page.setViewportSize({ width: 1280, height: 800 });
 
-      await expect(page.getByText(uniqueEmail).first()).toBeVisible();
-      await expect(page.getByRole("button", { name: /Revoke/i }).first()).toBeVisible();
+      const participantTable = page.locator("table tbody");
+      await expect(participantTable.getByText(uniqueEmail)).toBeVisible();
+      await expect(
+        participantTable.getByRole("button", { name: /Revoke/i })
+      ).toBeVisible();
     });
 
     test("revoke updates participant latest attempt status", async ({ page }) => {
@@ -390,15 +399,18 @@ test.describe("Platform Operations Console", () => {
       await page.getByRole("button", { name: /Invite Another/i }).click();
       await page.setViewportSize({ width: 1280, height: 800 });
 
-      await expect(page.getByText(uniqueEmail).first()).toBeVisible();
+      const participantTable = page.locator("table tbody");
+      await expect(participantTable.getByText(uniqueEmail)).toBeVisible();
 
-      const revokeButton = page.getByRole("button", { name: /Revoke/i }).first();
+      const revokeButton = participantTable.getByRole("button", { name: /Revoke/i });
       await expect(revokeButton).toBeVisible();
 
       page.on("dialog", (dialog) => dialog.accept());
       await revokeButton.click();
 
-      await expect(page.getByText(/Revoked/i).first()).toBeVisible({ timeout: 10000 });
+      await expect(participantTable.getByText(/Revoked/i)).toBeVisible({
+        timeout: 10000,
+      });
     });
 
     test("participant filters round-trip via URL", async ({ page }) => {
