@@ -11,6 +11,9 @@ import { backfillEmailGroup } from "./betaParticipantBackfillDb";
  * Seeds legacy NULL participantId rows, backfills, validates, then applies the
  * contract migration DDL and asserts constraints land correctly.
  *
+ * File is prefixed zz- so it runs after other integration tests; it temporarily
+ * reverts post-contract DDL to exercise the full backfill → validate → migrate path.
+ *
  * Run locally with: INTEGRATION_DB=true npm run test:integration
  */
 const runDb = process.env.INTEGRATION_DB === "true";
@@ -120,7 +123,7 @@ async function contractIndexesExist(prisma: PrismaClient): Promise<boolean> {
       const now = new Date();
       const id = `contract-inv-${suffix}`;
       const token = `token-${suffix}`;
-      const code = `K${suffix.slice(0, 6).toUpperCase()}`;
+      const code = `K${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
       const expiresAt = new Date(now.getTime() + 86400000);
       const acceptedAt = overrides.acceptedAt ?? null;
       const acceptedByUserId = overrides.acceptedByUserId ?? null;
@@ -173,13 +176,13 @@ async function contractIndexesExist(prisma: PrismaClient): Promise<boolean> {
       expect(await contractIndexesExist(prisma)).toBe(true);
 
       const participant = await prisma.betaParticipant.create({
-        data: { userId: user.id },
+        data: { userId: (await makeUser("contract-dup")).id },
       });
       createdParticipantIds.push(participant.id);
 
       await expect(
         prisma.betaParticipant.create({
-          data: { userId: user.id },
+          data: { userId: participant.userId! },
         }),
       ).rejects.toThrow();
 

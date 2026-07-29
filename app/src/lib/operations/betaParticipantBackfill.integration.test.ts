@@ -405,7 +405,11 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     );
   });
 
-  it("validation flags colliding userId claims", async () => {
+  it("validation flags colliding userId claims", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const user = await makeUser("collision");
     const participantAId = `collision-a-${suffix}`;
