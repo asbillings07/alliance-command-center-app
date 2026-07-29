@@ -394,7 +394,7 @@ test.describe("Platform Operations Console", () => {
         timeout: 10000,
       });
 
-      await page.getByRole("button", { name: /Invite Another/i }).click();
+      // Invite form is already visible after the first "Invite Another" — no success card to reset.
       await page.getByLabel(/email/i).fill(uniqueEmail);
       await page.getByRole("button", { name: /Create Invitation/i }).click();
 
