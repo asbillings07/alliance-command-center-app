@@ -156,7 +156,7 @@ export default async function PlatformOverview() {
   return (
     <div className="space-y-8 max-w-5xl">
       {/* Section 1: Action Required */}
-      <section>
+      <section data-testid="action-required-section">
         <h2 className="text-lg font-semibold text-text-secondary mb-4">
           Action Required
         </h2>

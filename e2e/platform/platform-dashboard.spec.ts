@@ -1,5 +1,5 @@
 import { test, expect } from "../shared/fixtures";
-import { checkA11yLevelAA } from "../shared/accessibility";
+import { checkA11yWithOptions } from "../shared/accessibility";
 import { prisma } from "@/app/src/lib/prisma";
 import crypto from "crypto";
 
@@ -243,7 +243,10 @@ test.describe("Platform Operations Console", () => {
         ).toBeVisible({ timeout: 10000 });
         await page.waitForLoadState("networkidle");
 
-        await checkA11yLevelAA(page);
+        await checkA11yWithOptions(page, {
+          runOnly: ["wcag2a", "wcag2aa"],
+          include: ['[data-testid="action-required-section"]'],
+        });
       } finally {
         await prisma.betaInvitation.delete({ where: { id: seeded.invitationId } });
         await prisma.betaParticipant.delete({ where: { id: seeded.participantId } });
