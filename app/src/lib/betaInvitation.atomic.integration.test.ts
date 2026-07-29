@@ -9,6 +9,14 @@ import {
 const runDb = process.env.INTEGRATION_DB === "true";
 const describeIntegration = runDb ? describe.sequential : describe.skip;
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 describeIntegration("betaInvitation atomic actions [integration]", () => {
   const createdUserIds: string[] = [];
   const createdParticipantIds: string[] = [];
@@ -20,7 +28,6 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
   let revokeBetaInvitation: typeof BetaInvitationModule.revokeBetaInvitation;
   let claimBetaInvitationResend: typeof BetaInvitationModule.claimBetaInvitationResend;
   let releaseBetaInvitationResend: typeof BetaInvitationModule.releaseBetaInvitationResend;
-  let   deliverBetaInvitationEmailWithClaim: typeof BetaInvitationModule.deliverBetaInvitationEmailWithClaim;
   let BETA_RESEND_CLAIM_LEASE_MS: number;
 
   beforeAll(async () => {
@@ -386,11 +393,11 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
     const operator = await makeOperator();
     const invitation = await issueTracked();
 
-    const revokeLocked = Promise.withResolvers<void>();
-    const releaseRevoke = Promise.withResolvers<void>();
+    const revokeLocked = createDeferred<void>();
+    const releaseRevoke = createDeferred<void>();
     setBetaInvitationAfterParticipantLockHook(async (ctx) => {
       if (ctx.operation === "revoke") {
-        revokeLocked.resolve();
+        revokeLocked.resolve(undefined);
         await releaseRevoke.promise;
       }
     });
@@ -414,8 +421,53 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(reissueDone).toBe(false);
 
-    releaseRevoke.resolve();
+    releaseRevoke.resolve(undefined);
     await revokePromise;
+
+    await reissuePromise;
+    expect(reissueDone).toBe(true);
+  });
+
+  it("blocks reissue while claim holds the participant lock", async () => {
+    process.env.BETA_INVITATION_TEST_HOOKS = "true";
+    const operator = await makeOperator();
+    const invitation = await issueTracked();
+
+    await prisma.betaInvitation.update({
+      where: { id: invitation.id },
+      data: { revokedAt: new Date() },
+    });
+
+    const claimLocked = createDeferred<void>();
+    const releaseClaim = createDeferred<void>();
+    setBetaInvitationAfterParticipantLockHook(async (ctx) => {
+      if (ctx.operation === "claim") {
+        claimLocked.resolve(undefined);
+        await releaseClaim.promise;
+      }
+    });
+
+    const claimPromise = claimBetaInvitationResend(invitation.id);
+    await claimLocked.promise;
+
+    let reissueDone = false;
+    const reissuePromise = reissueBetaInvitation(
+      invitation.participantId,
+      operator.id,
+    )
+      .then((result) => {
+        createdInvitationIds.push(result.invitation.id);
+        return result;
+      })
+      .finally(() => {
+        reissueDone = true;
+      });
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(reissueDone).toBe(false);
+
+    releaseClaim.resolve(undefined);
+    await expect(claimPromise).rejects.toThrow("Only pending invitations can be resent");
 
     await reissuePromise;
     expect(reissueDone).toBe(true);
