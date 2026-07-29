@@ -2,17 +2,15 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PrismaClient } from "@/app/generated/prisma/client";
+import { createIsolatedIntegrationDatabase } from "../testing/isolatedIntegrationDatabase";
 import { runAllBetaParticipantValidationChecks } from "./betaParticipantValidation";
 import { backfillEmailGroup } from "./betaParticipantBackfillDb";
 
 /**
  * End-to-end contract migration test for #174 PR 1c.
  *
- * Seeds legacy NULL participantId rows, backfills, validates, then applies the
- * contract migration DDL and asserts constraints land correctly.
- *
- * File is prefixed zz- so it runs after other integration tests; it temporarily
- * reverts post-contract DDL to exercise the full backfill → validate → migrate path.
+ * Runs in a disposable isolated database so reverting pre-contract DDL and
+ * applying the contract migration cannot poison the shared integration suite DB.
  *
  * Run locally with: INTEGRATION_DB=true npm run test:integration
  */
@@ -59,42 +57,21 @@ async function contractIndexesExist(prisma: PrismaClient): Promise<boolean> {
 (runDb ? describe.sequential : describe.skip)(
   "beta participant contract migration [integration]",
   () => {
-    const createdUserIds: string[] = [];
-    const createdParticipantIds: string[] = [];
-    const createdInvitationIds: string[] = [];
-
     let prisma: PrismaClient;
-    let revertedContractForTest = false;
+    let disposeIsolatedDatabase: (() => Promise<void>) | null = null;
 
     beforeAll(async () => {
-      ({ prisma } = (await import("../prisma")) as unknown as {
-        prisma: PrismaClient;
-      });
+      const isolated = await createIsolatedIntegrationDatabase("contract");
+      prisma = isolated.prisma;
+      disposeIsolatedDatabase = isolated.dispose;
 
-      const nullable = await isParticipantIdNullable(prisma);
-      if (!nullable) {
-        await prisma.$executeRawUnsafe(REVERT_CONTRACT_SQL);
-        revertedContractForTest = true;
-      }
+      await prisma.$executeRawUnsafe(REVERT_CONTRACT_SQL);
     });
 
     afterAll(async () => {
-      if (createdInvitationIds.length > 0) {
-        await prisma.betaInvitation.deleteMany({
-          where: { id: { in: createdInvitationIds } },
-        });
-      }
-      if (createdParticipantIds.length > 0) {
-        await prisma.betaParticipant.deleteMany({
-          where: { id: { in: createdParticipantIds } },
-        });
-      }
-      if (createdUserIds.length > 0) {
-        await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
-      }
-
-      if (revertedContractForTest) {
-        await prisma.$executeRawUnsafe(CONTRACT_MIGRATION_SQL);
+      if (disposeIsolatedDatabase) {
+        await disposeIsolatedDatabase();
+        disposeIsolatedDatabase = null;
       }
     });
 
@@ -108,7 +85,6 @@ async function contractIndexesExist(prisma: PrismaClient): Promise<boolean> {
           sessionVersion: 0,
         },
       });
-      createdUserIds.push(user.id);
       return user;
     }
 
@@ -138,7 +114,6 @@ async function contractIndexesExist(prisma: PrismaClient): Promise<boolean> {
           NULL, ${acceptedAt}, ${acceptedByUserId}
         )
       `;
-      createdInvitationIds.push(id);
       return { id, email };
     }
 
@@ -175,10 +150,10 @@ async function contractIndexesExist(prisma: PrismaClient): Promise<boolean> {
       expect(await isParticipantIdNullable(prisma)).toBe(false);
       expect(await contractIndexesExist(prisma)).toBe(true);
 
+      const duplicateUser = await makeUser("contract-dup");
       const participant = await prisma.betaParticipant.create({
-        data: { userId: (await makeUser("contract-dup")).id },
+        data: { userId: duplicateUser.id },
       });
-      createdParticipantIds.push(participant.id);
 
       await expect(
         prisma.betaParticipant.create({
@@ -186,15 +161,11 @@ async function contractIndexesExist(prisma: PrismaClient): Promise<boolean> {
         }),
       ).rejects.toThrow();
 
-      const rows = await prisma.betaInvitation.findMany({
-        where: { email },
-        select: { participantId: true },
+      const backfilled = await prisma.betaInvitation.findFirst({
+        where: { email, acceptedByUserId: user.id },
+        include: { participant: true },
       });
-      for (const row of rows) {
-        createdParticipantIds.push(row.participantId);
-      }
-
-      revertedContractForTest = false;
+      expect(backfilled?.participant?.userId).toBe(user.id);
     });
   },
 );

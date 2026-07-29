@@ -5,8 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     exclude: ["**/node_modules/**", "**/e2e/**"],
-    // Integration tests share one Postgres database and the contract migration
-    // test temporarily reverts DDL — run files sequentially when gated on.
+    // Integration tests share one Postgres database; serialize files to avoid races.
     ...(process.env.INTEGRATION_DB === "true" ? { fileParallelism: false } : {}),
   },
   resolve: {
