@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requirePlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import {
+  awaitEmailDeliverySettlement,
   claimBetaInvitationResend,
   issueBetaInvitation,
   isPendingInvitation,
@@ -102,7 +103,7 @@ export async function createInvitationAction(
   notes?: string,
   wave?: string,
 ): Promise<CreateInvitationResult> {
-  await requirePlatformAdmin();
+  const session = await requirePlatformAdmin();
 
   if (!isValidEmail(email)) {
     return { success: false, error: "Please enter a valid email address" };
@@ -112,6 +113,7 @@ export async function createInvitationAction(
     const result = await issueBetaInvitation(email, {
       notes,
       campaign: wave?.trim() || undefined,
+      issuedByUserId: session.id,
     });
     revalidatePath("/platform/beta");
 
@@ -162,18 +164,24 @@ export async function reissueInvitationAction(
     });
     revalidatePath("/platform/beta");
 
-    const { status: emailStatus } = await withEmailProviderTimeout(
-      emailService.sendBetaInvitation({
-        to: result.invitation.email,
-        invitation: {
-          id: result.invitation.id,
-          email: result.invitation.email,
-          inviteUrl: result.inviteUrl,
-          inviteCode: result.inviteCode,
-          expiresAt: result.invitation.expiresAt,
-        },
-      }),
-    );
+    let emailStatus: EmailStatus = "failed";
+    try {
+      const emailResult = await withEmailProviderTimeout(
+        emailService.sendBetaInvitation({
+          to: result.invitation.email,
+          invitation: {
+            id: result.invitation.id,
+            email: result.invitation.email,
+            inviteUrl: result.inviteUrl,
+            inviteCode: result.inviteCode,
+            expiresAt: result.invitation.expiresAt,
+          },
+        }),
+      );
+      emailStatus = emailResult.status;
+    } catch {
+      // Reissue persisted; return credentials so the operator can recover manually.
+    }
 
     return {
       success: true,
@@ -203,6 +211,8 @@ export async function resendInvitationEmailAction(
   await requirePlatformAdmin();
 
   let claim: { invitationId: string; claimId: string } | null = null;
+  let deliveryPromise: ReturnType<typeof emailService.sendBetaInvitation> | null =
+    null;
 
   try {
     claim = await claimBetaInvitationResend(invitationId);
@@ -222,17 +232,19 @@ export async function resendInvitationEmailAction(
       };
     }
 
+    deliveryPromise = emailService.sendBetaInvitation({
+      to: invitation.email,
+      invitation: {
+        id: invitation.id,
+        email: invitation.email,
+        inviteUrl: getRedeemUrl(invitation.token),
+        inviteCode: invitation.code,
+        expiresAt: invitation.expiresAt,
+      },
+    });
+
     const { status: emailStatus } = await withEmailProviderTimeout(
-      emailService.sendBetaInvitation({
-        to: invitation.email,
-        invitation: {
-          id: invitation.id,
-          email: invitation.email,
-          inviteUrl: getRedeemUrl(invitation.token),
-          inviteCode: invitation.code,
-          expiresAt: invitation.expiresAt,
-        },
-      }),
+      deliveryPromise,
     );
 
     return { success: true, emailStatus };
@@ -243,6 +255,9 @@ export async function resendInvitationEmailAction(
         error instanceof Error ? error.message : "Failed to resend email",
     };
   } finally {
+    if (deliveryPromise) {
+      await awaitEmailDeliverySettlement(deliveryPromise);
+    }
     if (claim) {
       await releaseBetaInvitationResend(claim.invitationId, claim.claimId);
     }

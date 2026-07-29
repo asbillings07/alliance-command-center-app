@@ -251,4 +251,22 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
 
     await expect(revokeBetaInvitation(invitation.id, operator.id)).resolves.toBeUndefined();
   });
+
+  it("rejects reissue while a live resend claim exists even if the attempt is expired", async () => {
+    const operator = await makeOperator();
+    const invitation = await issueTracked();
+
+    await prisma.betaInvitation.update({
+      where: { id: invitation.id },
+      data: {
+        expiresAt: new Date(Date.now() - 1000),
+        resendClaimedAt: new Date(),
+        resendClaimId: "live-claim-test",
+      },
+    });
+
+    await expect(
+      reissueBetaInvitation(invitation.participantId, operator.id),
+    ).rejects.toThrow("A delivery attempt is in progress for the latest invitation");
+  });
 });

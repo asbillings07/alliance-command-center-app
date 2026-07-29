@@ -14,6 +14,8 @@ import {
   getPendingAllianceCreation,
   BETA_EMAIL_PROVIDER_TIMEOUT_MS,
   BETA_RESEND_CLAIM_LEASE_MS,
+  awaitEmailDeliverySettlement,
+  withEmailProviderTimeout,
 } from "./betaInvitation";
 import type { BetaInvitation } from "@/app/generated/prisma/client";
 
@@ -224,6 +226,31 @@ describe("issueBetaInvitation", () => {
 
     expect(result.invitation.notes).toBe("Met at conference");
     expect(result.invitation.campaign).toBe("Wave 1");
+  });
+
+  it("persists issuedByUserId when provided", async () => {
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.betaInvitation.create.mockImplementation(async ({ data }) => ({
+      id: "inv-1",
+      ...data,
+      acceptedAt: null,
+      acceptedByUserId: null,
+      revokedAt: null,
+      allianceId: null,
+    }));
+
+    await issueBetaInvitation("test@example.com", {
+      issuedByUserId: "operator-1",
+    });
+
+    expect(mockPrisma.betaInvitation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          issuedByUserId: "operator-1",
+        }),
+      }),
+    );
   });
 
   it("always creates a new record (never mutates history)", async () => {
@@ -779,6 +806,26 @@ describe("reissueBetaInvitation", () => {
       "Cannot reissue while participant identity is ambiguous",
     );
   });
+
+  it("rejects when the latest attempt has a live resend claim", async () => {
+    mockPrisma.betaParticipant.findUnique.mockResolvedValue({
+      id: "participant-1",
+      identityAmbiguous: false,
+    });
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(
+      makeInvitation({
+        id: "inv-latest",
+        revokedAt: new Date(),
+        resendClaimedAt: new Date(),
+        resendClaimId: "claim-live",
+      }),
+    );
+
+    await expect(reissueBetaInvitation("participant-1", "admin-1")).rejects.toThrow(
+      "A delivery attempt is in progress for the latest invitation",
+    );
+    expect(mockPrisma.betaInvitation.create).not.toHaveBeenCalled();
+  });
 });
 
 describe("resend claim helpers", () => {
@@ -786,6 +833,42 @@ describe("resend claim helpers", () => {
     expect(BETA_EMAIL_PROVIDER_TIMEOUT_MS).toBeLessThan(
       BETA_RESEND_CLAIM_LEASE_MS,
     );
+  });
+
+  it("awaitEmailDeliverySettlement waits for a slow underlying promise", async () => {
+    let resolve!: (value: string) => void;
+    const underlying = new Promise<string>((r) => {
+      resolve = r;
+    });
+
+    const settlement = awaitEmailDeliverySettlement(underlying);
+    resolve("done");
+
+    await expect(settlement).resolves.toBe("done");
+  });
+
+  it("withEmailProviderTimeout rejects before a slow promise settles", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolve!: (value: string) => void;
+      const underlying = new Promise<string>((r) => {
+        resolve = r;
+      });
+
+      const caught = withEmailProviderTimeout(underlying, 100).catch(
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(100);
+
+      const error = await caught;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe("Email delivery timed out");
+
+      resolve("late");
+      await expect(awaitEmailDeliverySettlement(underlying)).resolves.toBe("late");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("claims and releases with compare-and-set ownership", async () => {

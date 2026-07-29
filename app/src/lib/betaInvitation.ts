@@ -240,6 +240,8 @@ export async function getPendingInvitation(
 export type IssueBetaInvitationOptions = {
   notes?: string;
   campaign?: string;
+  /** Platform operator who issued the invitation (#174 attribution). */
+  issuedByUserId?: string;
 };
 
 /**
@@ -318,6 +320,7 @@ export async function issueBetaInvitation(
             createdAt: now,
             issuedAt: now,
             participantId: participant.id,
+            issuedByUserId: options?.issuedByUserId ?? null,
           },
         });
       },
@@ -480,6 +483,16 @@ export async function reissueBetaInvitation(
         if (!isReissueEligibleTerminalInvitation(latest, now)) {
           throw new Error(
             "Reissue is only allowed when the latest attempt is expired or revoked",
+          );
+        }
+
+        const claimTimeoutCutoff = resendClaimEligibilityCutoff(now);
+        if (
+          latest.resendClaimedAt &&
+          latest.resendClaimedAt >= claimTimeoutCutoff
+        ) {
+          throw new Error(
+            "A delivery attempt is in progress for the latest invitation — try again shortly",
           );
         }
 
@@ -650,6 +663,9 @@ export async function releaseBetaInvitationResend(
 
 /**
  * Run an async function with a hard timeout (used for email provider calls).
+ * The underlying promise keeps running after a timeout — callers that hold
+ * exclusive resources (e.g. a resend claim) must await settlement via
+ * {@link awaitEmailDeliverySettlement} before releasing them (#174).
  */
 export async function withEmailProviderTimeout<T>(
   promise: Promise<T>,
@@ -669,6 +685,20 @@ export async function withEmailProviderTimeout<T>(
     if (timeoutHandle) {
       clearTimeout(timeoutHandle);
     }
+  }
+}
+
+/**
+ * Wait for an in-flight email delivery to settle (success or failure).
+ * Used to retain resend-claim ownership until the provider call completes.
+ */
+export async function awaitEmailDeliverySettlement<T>(
+  promise: Promise<T>,
+): Promise<T | undefined> {
+  try {
+    return await promise;
+  } catch {
+    return undefined;
   }
 }
 
