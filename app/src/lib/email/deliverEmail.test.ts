@@ -38,6 +38,18 @@ describe("deliverEmail", () => {
     expect(request.text).toBe(content.text);
   });
 
+  it("forwards abort signal to the transport", async () => {
+    const controller = new AbortController();
+    await deliverEmail({
+      to: "user@example.com",
+      subject: "Hi",
+      content,
+      signal: controller.signal,
+    });
+
+    expect(deliverMock.mock.calls[0][0].signal).toBe(controller.signal);
+  });
+
   it("forwards replyTo option to the transport", async () => {
     await deliverEmail({
       to: "user@example.com",

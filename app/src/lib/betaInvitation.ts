@@ -5,6 +5,8 @@ import type { BetaInvitation } from "@/app/generated/prisma/client";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { normalizeEmail } from "./email/normalize";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
+import { runBetaInvitationAfterParticipantLockHook } from "./betaInvitationTestHooks";
+import type { EmailResult, EmailStatus } from "./email/types";
 
 function generateBetaCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -46,11 +48,11 @@ export const BETA_RESEND_CLAIM_LEASE_MS = 30_000;
  */
 export const BETA_EMAIL_PROVIDER_TIMEOUT_MS = 20_000;
 
-/**
- * Grace period after the provider timeout for awaiting in-flight settlement
- * before releasing a resend claim (#174).
- */
-export const BETA_EMAIL_SETTLEMENT_GRACE_MS = 5_000;
+const PARTICIPANT_MUTATION_TRANSACTION_OPTIONS = {
+  isolationLevel: "ReadCommitted" as const,
+  maxWait: 5000,
+  timeout: 10000,
+};
 
 const LATEST_ATTEMPT_ORDER: Prisma.BetaInvitationOrderByWithRelationInput[] = [
   { issuedAt: "desc" },
@@ -80,6 +82,18 @@ async function findLatestInvitationForParticipant(
     where: { participantId },
     orderBy: LATEST_ATTEMPT_ORDER,
   });
+}
+
+/**
+ * Participant-scoped serialization for claim, revoke, and reissue (#174).
+ */
+async function lockBetaParticipantRow(
+  tx: Prisma.TransactionClient,
+  participantId: string,
+): Promise<void> {
+  await tx.$executeRaw`
+    SELECT id FROM "BetaParticipant" WHERE id = ${participantId} FOR UPDATE
+  `;
 }
 
 /**
@@ -542,23 +556,31 @@ export async function revokeBetaInvitation(
     throw new Error("Beta invitation not found");
   }
 
-  const now = new Date();
-  const result = await atomicRevokeIfLatestAttempt(
-    prisma,
-    invitationId,
-    invitation.participantId,
-    revokedByUserId ?? null,
-    now,
-  );
+  await prisma.$transaction(async (tx) => {
+    await lockBetaParticipantRow(tx, invitation.participantId);
+    await runBetaInvitationAfterParticipantLockHook({
+      participantId: invitation.participantId,
+      operation: "revoke",
+    });
 
-  if (result === 0) {
-    await throwRevokeFailure(
-      prisma,
+    const txNow = new Date();
+    const result = await atomicRevokeIfLatestAttempt(
+      tx,
       invitationId,
       invitation.participantId,
-      now,
+      revokedByUserId ?? null,
+      txNow,
     );
-  }
+
+    if (result === 0) {
+      await throwRevokeFailure(
+        tx,
+        invitationId,
+        invitation.participantId,
+        txNow,
+      );
+    }
+  }, PARTICIPANT_MUTATION_TRANSACTION_OPTIONS);
 }
 
 export type ReissueBetaInvitationOptions = {
@@ -583,9 +605,11 @@ export async function reissueBetaInvitation(
   const reissueAttempt = () =>
     prisma.$transaction(
       async (tx) => {
-        await tx.$executeRaw`
-          SELECT id FROM "BetaParticipant" WHERE id = ${participantId} FOR UPDATE
-        `;
+        await lockBetaParticipantRow(tx, participantId);
+        await runBetaInvitationAfterParticipantLockHook({
+          participantId,
+          operation: "reissue",
+        });
 
         const txNow = new Date();
 
@@ -669,7 +693,7 @@ export async function reissueBetaInvitation(
           },
         });
       },
-      { isolationLevel: "Serializable" },
+      PARTICIPANT_MUTATION_TRANSACTION_OPTIONS,
     );
 
   let invitation: BetaInvitation | null = null;
@@ -714,29 +738,12 @@ export async function claimBetaInvitationResend(
     where: { id: invitationId },
     select: {
       id: true,
-      acceptedAt: true,
-      revokedAt: true,
-      expiresAt: true,
       participantId: true,
     },
   });
 
   if (!invitation) {
     throw new Error("Beta invitation not found");
-  }
-
-  const now = new Date();
-
-  const latest = await findLatestInvitationForParticipant(
-    prisma,
-    invitation.participantId,
-  );
-  if (!latest || latest.id !== invitationId) {
-    throw new Error(LATEST_ATTEMPT_ONLY_ERROR);
-  }
-
-  if (!isPendingInvitation(invitation as BetaInvitation, now)) {
-    throw new Error("Only pending invitations can be resent");
   }
 
   const participant = await prisma.betaParticipant.findUnique({
@@ -750,39 +757,46 @@ export async function claimBetaInvitationResend(
     );
   }
 
-  const claimResult = await atomicClaimResendIfLatestAttempt(
-    prisma,
-    invitationId,
-    invitation.participantId,
-    claimId,
-    now,
-  );
+  return prisma.$transaction(async (tx) => {
+    await lockBetaParticipantRow(tx, invitation.participantId);
+    await runBetaInvitationAfterParticipantLockHook({
+      participantId: invitation.participantId,
+      operation: "claim",
+    });
 
-  if (claimResult === 0) {
-    await throwResendClaimFailure(
-      prisma,
+    const txNow = new Date();
+    const latest = await findLatestInvitationForParticipant(
+      tx,
+      invitation.participantId,
+    );
+
+    if (!latest || latest.id !== invitationId) {
+      throw new Error(LATEST_ATTEMPT_ONLY_ERROR);
+    }
+
+    if (!isPendingInvitation(latest, txNow)) {
+      throw new Error("Only pending invitations can be resent");
+    }
+
+    const claimResult = await atomicClaimResendIfLatestAttempt(
+      tx,
       invitationId,
       invitation.participantId,
-      now,
+      claimId,
+      txNow,
     );
-  }
 
-  return { invitationId, claimId };
-}
+    if (claimResult === 0) {
+      await throwResendClaimFailure(
+        tx,
+        invitationId,
+        invitation.participantId,
+        txNow,
+      );
+    }
 
-/**
- * Extend a live resend claim lease while awaiting provider settlement (#174).
- */
-export async function refreshBetaInvitationResendClaim(
-  invitationId: string,
-  claimId: string,
-): Promise<boolean> {
-  const now = new Date();
-  const result = await prisma.betaInvitation.updateMany({
-    where: { id: invitationId, resendClaimId: claimId },
-    data: { resendClaimedAt: now },
-  });
-  return result.count === 1;
+    return { invitationId, claimId };
+  }, PARTICIPANT_MUTATION_TRANSACTION_OPTIONS);
 }
 
 /**
@@ -798,81 +812,93 @@ export async function releaseBetaInvitationResend(
   });
 }
 
+export type BetaInvitationEmailSender = (input: {
+  to: string;
+  invitation: {
+    id: string;
+    email: string;
+    inviteUrl: string;
+    inviteCode: string;
+    expiresAt: Date;
+  };
+  signal: AbortSignal;
+}) => Promise<EmailResult>;
+
 /**
- * Run an async function with a hard timeout (used for email provider calls).
- * The underlying promise keeps running after a timeout — callers that hold
- * exclusive resources (e.g. a resend claim) must await settlement via
- * {@link awaitEmailDeliverySettlement} before releasing them (#174).
+ * Claim, deliver with an abortable provider deadline, then release the owned
+ * claim only after the underlying send promise settles (#174).
  */
-export async function withEmailProviderTimeout<T>(
-  promise: Promise<T>,
+export async function deliverBetaInvitationEmailWithClaim(
+  invitation: Pick<BetaInvitation, "id" | "email" | "code" | "expiresAt"> & {
+    token: string;
+  },
+  inviteUrl: string,
+  send: BetaInvitationEmailSender,
   timeoutMs: number = BETA_EMAIL_PROVIDER_TIMEOUT_MS,
-): Promise<T> {
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timeoutHandle = setTimeout(() => {
-          reject(new Error("Email delivery timed out"));
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
-  }
-}
+): Promise<EmailStatus> {
+  const claim = await claimBetaInvitationResend(invitation.id);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const deliveryPromise = send({
+    to: invitation.email,
+    invitation: {
+      id: invitation.id,
+      email: invitation.email,
+      inviteUrl,
+      inviteCode: invitation.code,
+      expiresAt: invitation.expiresAt,
+    },
+    signal: controller.signal,
+  });
 
-/**
- * Wait for an in-flight email delivery to settle (success or failure).
- * Used to retain resend-claim ownership until the provider call completes.
- */
-export async function awaitEmailDeliverySettlement<T>(
-  promise: Promise<T>,
-): Promise<T | undefined> {
   try {
-    return await promise;
+    const result = await deliveryPromise;
+    return result.status;
   } catch {
-    return undefined;
+    return "failed";
+  } finally {
+    clearTimeout(timeoutId);
+    await deliveryPromise.catch(() => undefined);
+    await releaseBetaInvitationResend(claim.invitationId, claim.claimId);
   }
 }
 
 /**
- * Heartbeat the resend claim, await bounded provider settlement, then release
- * the owned claim (#174).
+ * Deliver beta invitation email with an abortable provider deadline (#174).
+ * Used when no resend claim is required (e.g. first invite on create).
  */
-export async function releaseResendClaimAfterDeliverySettled(
-  claim: ResendBetaInvitationClaim,
-  deliveryPromise: Promise<unknown> | null,
-): Promise<void> {
-  if (!deliveryPromise) {
-    await releaseBetaInvitationResend(claim.invitationId, claim.claimId);
-    return;
-  }
-
-  const heartbeatMs = Math.max(
-    1_000,
-    Math.floor(BETA_RESEND_CLAIM_LEASE_MS / 3),
+export async function deliverBetaInvitationEmail(
+  invitation: Pick<BetaInvitation, "id" | "email" | "code" | "expiresAt"> & {
+    token: string;
+  },
+  inviteUrl: string,
+  send: BetaInvitationEmailSender,
+): Promise<EmailStatus> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    BETA_EMAIL_PROVIDER_TIMEOUT_MS,
   );
-  const maxSettlementMs =
-    BETA_EMAIL_PROVIDER_TIMEOUT_MS + BETA_EMAIL_SETTLEMENT_GRACE_MS;
-
-  const heartbeat = setInterval(() => {
-    void refreshBetaInvitationResendClaim(claim.invitationId, claim.claimId);
-  }, heartbeatMs);
+  const deliveryPromise = send({
+    to: invitation.email,
+    invitation: {
+      id: invitation.id,
+      email: invitation.email,
+      inviteUrl,
+      inviteCode: invitation.code,
+      expiresAt: invitation.expiresAt,
+    },
+    signal: controller.signal,
+  });
 
   try {
-    await Promise.race([
-      awaitEmailDeliverySettlement(deliveryPromise),
-      new Promise<void>((resolve) => {
-        setTimeout(resolve, maxSettlementMs);
-      }),
-    ]);
+    const result = await deliveryPromise;
+    return result.status;
+  } catch {
+    return "failed";
   } finally {
-    clearInterval(heartbeat);
-    await releaseBetaInvitationResend(claim.invitationId, claim.claimId);
+    clearTimeout(timeoutId);
+    await deliveryPromise.catch(() => undefined);
   }
 }
 

@@ -1,15 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { EmailResult } from "@/app/src/lib/email";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockRequirePlatformAdmin = vi.fn();
 const mockIssueBetaInvitation = vi.fn();
 const mockReissueBetaInvitation = vi.fn();
-const mockClaimBetaInvitationResend = vi.fn();
-const mockReleaseResendClaimAfterDeliverySettled = vi.fn();
-const mockWithEmailProviderTimeout = vi.fn();
+const mockDeliverBetaInvitationEmail = vi.fn();
+const mockDeliverBetaInvitationEmailWithClaim = vi.fn();
 const mockRevalidatePath = vi.fn();
-const mockSendBetaInvitation = vi.fn();
-const mockFindUnique = vi.fn();
 
 vi.mock("@/app/src/lib/auth/requirePlatformAdmin", () => ({
   requirePlatformAdmin: () => mockRequirePlatformAdmin(),
@@ -18,12 +14,10 @@ vi.mock("@/app/src/lib/auth/requirePlatformAdmin", () => ({
 vi.mock("@/app/src/lib/betaInvitation", () => ({
   issueBetaInvitation: (...args: unknown[]) => mockIssueBetaInvitation(...args),
   reissueBetaInvitation: (...args: unknown[]) => mockReissueBetaInvitation(...args),
-  claimBetaInvitationResend: (...args: unknown[]) =>
-    mockClaimBetaInvitationResend(...args),
-  releaseResendClaimAfterDeliverySettled: (...args: unknown[]) =>
-    mockReleaseResendClaimAfterDeliverySettled(...args),
-  withEmailProviderTimeout: (...args: unknown[]) =>
-    mockWithEmailProviderTimeout(...args),
+  deliverBetaInvitationEmail: (...args: unknown[]) =>
+    mockDeliverBetaInvitationEmail(...args),
+  deliverBetaInvitationEmailWithClaim: (...args: unknown[]) =>
+    mockDeliverBetaInvitationEmailWithClaim(...args),
   isPendingInvitation: (invitation: {
     acceptedAt: Date | null;
     revokedAt: Date | null;
@@ -42,14 +36,14 @@ vi.mock("next/cache", () => ({
 vi.mock("@/app/src/lib/prisma", () => ({
   prisma: {
     betaInvitation: {
-      findUnique: (...args: unknown[]) => mockFindUnique(...args),
+      findUnique: vi.fn(),
     },
   },
 }));
 
 vi.mock("@/app/src/lib/email", () => ({
   emailService: {
-    sendBetaInvitation: (...args: unknown[]) => mockSendBetaInvitation(...args),
+    sendBetaInvitation: vi.fn(),
   },
 }));
 
@@ -62,16 +56,16 @@ import {
   reissueInvitationAction,
   resendInvitationEmailAction,
 } from "./actions";
+import { prisma } from "@/app/src/lib/prisma";
+
+const mockFindUnique = prisma.betaInvitation.findUnique as ReturnType<
+  typeof vi.fn
+>;
 
 describe("platform beta actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequirePlatformAdmin.mockResolvedValue({ id: "operator-1" });
-    mockReleaseResendClaimAfterDeliverySettled.mockResolvedValue(undefined);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it("passes issuedByUserId through createInvitationAction", async () => {
@@ -84,7 +78,7 @@ describe("platform beta actions", () => {
       inviteCode: "ABC-DEF",
       inviteUrl: "https://example.com/redeem/tok",
     });
-    mockSendBetaInvitation.mockResolvedValue({ status: "sent" });
+    mockDeliverBetaInvitationEmail.mockResolvedValue("sent");
 
     await createInvitationAction("test@example.com", "notes", "Wave 1");
 
@@ -93,9 +87,10 @@ describe("platform beta actions", () => {
       campaign: "Wave 1",
       issuedByUserId: "operator-1",
     });
+    expect(mockDeliverBetaInvitationEmail).toHaveBeenCalled();
   });
 
-  it("returns reissue credentials when email delivery times out", async () => {
+  it("returns reissue credentials when email delivery fails", async () => {
     mockReissueBetaInvitation.mockResolvedValue({
       invitation: {
         id: "inv-reissue",
@@ -105,9 +100,7 @@ describe("platform beta actions", () => {
       inviteCode: "NEW-CODE",
       inviteUrl: "https://example.com/redeem/new",
     });
-    mockWithEmailProviderTimeout.mockRejectedValue(
-      new Error("Email delivery timed out"),
-    );
+    mockDeliverBetaInvitationEmailWithClaim.mockResolvedValue("failed");
 
     const result = await reissueInvitationAction("participant-1", "Wave 2");
 
@@ -118,13 +111,10 @@ describe("platform beta actions", () => {
       email: "test@example.com",
       emailStatus: "failed",
     });
+    expect(mockDeliverBetaInvitationEmailWithClaim).toHaveBeenCalled();
   });
 
-  it("releases resend claim via bounded settlement helper after timeout", async () => {
-    mockClaimBetaInvitationResend.mockResolvedValue({
-      invitationId: "inv-1",
-      claimId: "claim-1",
-    });
+  it("resend uses claim-protected abortable delivery", async () => {
     mockFindUnique.mockResolvedValue({
       id: "inv-1",
       email: "test@example.com",
@@ -134,37 +124,11 @@ describe("platform beta actions", () => {
       acceptedAt: null,
       revokedAt: null,
     });
+    mockDeliverBetaInvitationEmailWithClaim.mockResolvedValue("sent");
 
-    let resolveSend!: (value: EmailResult) => void;
-    const underlyingSend = new Promise<EmailResult>((resolve) => {
-      resolveSend = resolve;
-    });
-    mockSendBetaInvitation.mockReturnValue(underlyingSend);
-    mockWithEmailProviderTimeout.mockRejectedValue(
-      new Error("Email delivery timed out"),
-    );
+    const result = await resendInvitationEmailAction("inv-1");
 
-    let releaseCalled = false;
-    mockReleaseResendClaimAfterDeliverySettled.mockImplementation(
-      async (claim, promise) => {
-        await promise;
-        releaseCalled = true;
-      },
-    );
-
-    const actionPromise = resendInvitationEmailAction("inv-1");
-
-    await Promise.resolve();
-    expect(releaseCalled).toBe(false);
-
-    resolveSend({ status: "sent" });
-    const result = await actionPromise;
-
-    expect(result).toEqual({ success: false, error: "Email delivery timed out" });
-    expect(mockReleaseResendClaimAfterDeliverySettled).toHaveBeenCalledWith(
-      { invitationId: "inv-1", claimId: "claim-1" },
-      underlyingSend,
-    );
-    expect(releaseCalled).toBe(true);
+    expect(result).toEqual({ success: true, emailStatus: "sent" });
+    expect(mockDeliverBetaInvitationEmailWithClaim).toHaveBeenCalled();
   });
 });

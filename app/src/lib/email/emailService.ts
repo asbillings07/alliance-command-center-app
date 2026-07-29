@@ -37,6 +37,7 @@ export const emailService: EmailService = {
   async sendBetaInvitation({
     to,
     invitation,
+    signal,
   }: BetaInvitationEmailInput): Promise<EmailResult> {
     return deliverEmail({
       to,
@@ -44,6 +45,7 @@ export const emailService: EmailService = {
       content: renderBetaInvitationEmail(invitation),
       replyTo: DEFAULT_REPLY_TO,
       metadata: { invitationId: invitation.id },
+      signal,
     });
   },
 

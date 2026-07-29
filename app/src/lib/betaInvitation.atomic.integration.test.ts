@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
 import type * as BetaInvitationModule from "./betaInvitation";
+import {
+  clearBetaInvitationTestHooks,
+  setBetaInvitationAfterParticipantLockHook,
+} from "./betaInvitationTestHooks";
 
 const runDb = process.env.INTEGRATION_DB === "true";
 const describeIntegration = runDb ? describe.sequential : describe.skip;
@@ -16,6 +20,7 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
   let revokeBetaInvitation: typeof BetaInvitationModule.revokeBetaInvitation;
   let claimBetaInvitationResend: typeof BetaInvitationModule.claimBetaInvitationResend;
   let releaseBetaInvitationResend: typeof BetaInvitationModule.releaseBetaInvitationResend;
+  let   deliverBetaInvitationEmailWithClaim: typeof BetaInvitationModule.deliverBetaInvitationEmailWithClaim;
   let BETA_RESEND_CLAIM_LEASE_MS: number;
 
   beforeAll(async () => {
@@ -34,6 +39,8 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
   });
 
   afterEach(async () => {
+    clearBetaInvitationTestHooks();
+    delete process.env.BETA_INVITATION_TEST_HOOKS;
     if (createdInvitationIds.length > 0) {
       await prisma.betaInvitation.deleteMany({
         where: { id: { in: createdInvitationIds } },
@@ -317,5 +324,100 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
     await releaseBetaInvitationResend(invitation.id, claim.claimId);
 
     await expect(revokeBetaInvitation(invitation.id, operator.id)).resolves.toBeUndefined();
+  });
+
+  it("blocks reissue until an overlapping participant lock is released", async () => {
+    const operator = await makeOperator();
+    const invitation = await issueTracked();
+
+    await prisma.betaInvitation.update({
+      where: { id: invitation.id },
+      data: { revokedAt: new Date() },
+    });
+
+    let reissueDone = false;
+    const reissuePromise = reissueBetaInvitation(
+      invitation.participantId,
+      operator.id,
+    )
+      .then((result) => {
+        createdInvitationIds.push(result.invitation.id);
+        return result;
+      })
+      .finally(() => {
+        reissueDone = true;
+      });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT id FROM "BetaParticipant" WHERE id = ${invitation.participantId} FOR UPDATE
+      `;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(reissueDone).toBe(false);
+    });
+
+    await reissuePromise;
+    expect(reissueDone).toBe(true);
+  });
+
+  it("blocks claim until an overlapping participant lock is released", async () => {
+    const invitation = await issueTracked();
+
+    let claimDone = false;
+    const claimPromise = claimBetaInvitationResend(invitation.id).finally(() => {
+      claimDone = true;
+    });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT id FROM "BetaParticipant" WHERE id = ${invitation.participantId} FOR UPDATE
+      `;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(claimDone).toBe(false);
+    });
+
+    const claim = await claimPromise;
+    expect(claimDone).toBe(true);
+    await releaseBetaInvitationResend(claim.invitationId, claim.claimId);
+  });
+
+  it("blocks reissue while revoke holds the participant lock", async () => {
+    process.env.BETA_INVITATION_TEST_HOOKS = "true";
+    const operator = await makeOperator();
+    const invitation = await issueTracked();
+
+    const revokeLocked = Promise.withResolvers<void>();
+    const releaseRevoke = Promise.withResolvers<void>();
+    setBetaInvitationAfterParticipantLockHook(async (ctx) => {
+      if (ctx.operation === "revoke") {
+        revokeLocked.resolve();
+        await releaseRevoke.promise;
+      }
+    });
+
+    const revokePromise = revokeBetaInvitation(invitation.id, operator.id);
+    await revokeLocked.promise;
+
+    let reissueDone = false;
+    const reissuePromise = reissueBetaInvitation(
+      invitation.participantId,
+      operator.id,
+    )
+      .then((result) => {
+        createdInvitationIds.push(result.invitation.id);
+        return result;
+      })
+      .finally(() => {
+        reissueDone = true;
+      });
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(reissueDone).toBe(false);
+
+    releaseRevoke.resolve();
+    await revokePromise;
+
+    await reissuePromise;
+    expect(reissueDone).toBe(true);
   });
 });

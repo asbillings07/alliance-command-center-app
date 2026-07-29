@@ -3,13 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { requirePlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import {
-  claimBetaInvitationResend,
+  deliverBetaInvitationEmail,
+  deliverBetaInvitationEmailWithClaim,
   issueBetaInvitation,
   isPendingInvitation,
   reissueBetaInvitation,
-  releaseResendClaimAfterDeliverySettled,
   revokeBetaInvitation,
-  withEmailProviderTimeout,
 } from "@/app/src/lib/betaInvitation";
 import {
   listBetaParticipantPriorAttempts,
@@ -116,16 +115,11 @@ export async function createInvitationAction(
     });
     revalidatePath("/platform/beta");
 
-    const { status: emailStatus } = await emailService.sendBetaInvitation({
-      to: result.invitation.email,
-      invitation: {
-        id: result.invitation.id,
-        email: result.invitation.email,
-        inviteUrl: result.inviteUrl,
-        inviteCode: result.inviteCode,
-        expiresAt: result.invitation.expiresAt,
-      },
-    });
+    const emailStatus = await deliverBetaInvitationEmail(
+      result.invitation,
+      result.inviteUrl,
+      (input) => emailService.sendBetaInvitation(input),
+    );
 
     return {
       success: true,
@@ -163,24 +157,11 @@ export async function reissueInvitationAction(
     });
     revalidatePath("/platform/beta");
 
-    let emailStatus: EmailStatus = "failed";
-    try {
-      const emailResult = await withEmailProviderTimeout(
-        emailService.sendBetaInvitation({
-          to: result.invitation.email,
-          invitation: {
-            id: result.invitation.id,
-            email: result.invitation.email,
-            inviteUrl: result.inviteUrl,
-            inviteCode: result.inviteCode,
-            expiresAt: result.invitation.expiresAt,
-          },
-        }),
-      );
-      emailStatus = emailResult.status;
-    } catch {
-      // Reissue persisted; return credentials so the operator can recover manually.
-    }
+    const emailStatus = await deliverBetaInvitationEmailWithClaim(
+      result.invitation,
+      result.inviteUrl,
+      (input) => emailService.sendBetaInvitation(input),
+    );
 
     return {
       success: true,
@@ -209,13 +190,7 @@ export async function resendInvitationEmailAction(
 ): Promise<ResendInvitationEmailResult> {
   await requirePlatformAdmin();
 
-  let claim: { invitationId: string; claimId: string } | null = null;
-  let deliveryPromise: ReturnType<typeof emailService.sendBetaInvitation> | null =
-    null;
-
   try {
-    claim = await claimBetaInvitationResend(invitationId);
-
     const invitation = await prisma.betaInvitation.findUnique({
       where: { id: invitationId },
     });
@@ -231,19 +206,10 @@ export async function resendInvitationEmailAction(
       };
     }
 
-    deliveryPromise = emailService.sendBetaInvitation({
-      to: invitation.email,
-      invitation: {
-        id: invitation.id,
-        email: invitation.email,
-        inviteUrl: getRedeemUrl(invitation.token),
-        inviteCode: invitation.code,
-        expiresAt: invitation.expiresAt,
-      },
-    });
-
-    const { status: emailStatus } = await withEmailProviderTimeout(
-      deliveryPromise,
+    const emailStatus = await deliverBetaInvitationEmailWithClaim(
+      invitation,
+      getRedeemUrl(invitation.token),
+      (input) => emailService.sendBetaInvitation(input),
     );
 
     return { success: true, emailStatus };
@@ -253,10 +219,6 @@ export async function resendInvitationEmailAction(
       error:
         error instanceof Error ? error.message : "Failed to resend email",
     };
-  } finally {
-    if (claim) {
-      await releaseResendClaimAfterDeliverySettled(claim, deliveryPromise);
-    }
   }
 }
 

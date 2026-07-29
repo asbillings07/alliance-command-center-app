@@ -13,6 +13,9 @@ import type { DeliverEmailRequest, EmailResult, EmailTransport } from "../types"
  */
 export class LoggingTransport implements EmailTransport {
   async deliver(request: DeliverEmailRequest): Promise<EmailResult> {
+    if (request.signal?.aborted) {
+      return { status: "failed", error: "Email delivery aborted" };
+    }
     if (isProduction()) {
       console.warn(
         "[email] (skipped - email not configured in production; body redacted)",

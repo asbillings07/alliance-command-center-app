@@ -7,6 +7,7 @@ export type DeliverEmailInput = {
   content: EmailContent;
   replyTo?: string | string[];
   metadata?: EmailMetadata;
+  signal?: AbortSignal;
 };
 
 /**
@@ -25,6 +26,7 @@ export async function deliverEmail({
   content,
   replyTo,
   metadata,
+  signal,
 }: DeliverEmailInput): Promise<EmailResult> {
   try {
     return await transport.deliver({
@@ -34,6 +36,7 @@ export async function deliverEmail({
       text: content.text,
       replyTo,
       metadata,
+      signal,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

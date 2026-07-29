@@ -11,11 +11,10 @@ import {
   reissueBetaInvitation,
   claimBetaInvitationResend,
   releaseBetaInvitationResend,
+  deliverBetaInvitationEmailWithClaim,
   getPendingAllianceCreation,
   BETA_EMAIL_PROVIDER_TIMEOUT_MS,
   BETA_RESEND_CLAIM_LEASE_MS,
-  awaitEmailDeliverySettlement,
-  withEmailProviderTimeout,
 } from "./betaInvitation";
 import type { BetaInvitation } from "@/app/generated/prisma/client";
 
@@ -611,12 +610,19 @@ describe("getPendingAllianceCreation", () => {
 });
 
 describe("revokeBetaInvitation", () => {
-  it("successfully revokes a pending invitation (atomic latest-attempt SQL)", async () => {
+  beforeEach(() => {
+    mockPrisma.$transaction.mockImplementation(
+      async (fn: (tx: typeof prisma) => unknown) => fn(prisma),
+    );
+  });
+
+  it("successfully revokes a pending invitation under participant lock", async () => {
     mockPrisma.betaInvitation.findUnique.mockResolvedValue(makeInvitation());
     mockPrisma.$executeRaw.mockResolvedValue(1);
 
     await revokeBetaInvitation("inv-1", "admin-1");
 
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
     expect(mockPrisma.$executeRaw).toHaveBeenCalled();
   });
 
@@ -832,46 +838,62 @@ describe("reissueBetaInvitation", () => {
 });
 
 describe("resend claim helpers", () => {
+  beforeEach(() => {
+    mockPrisma.$transaction.mockImplementation(
+      async (fn: (tx: typeof prisma) => unknown) => fn(prisma),
+    );
+  });
+
   it("enforces provider timeout is strictly less than claim lease", () => {
     expect(BETA_EMAIL_PROVIDER_TIMEOUT_MS).toBeLessThan(
       BETA_RESEND_CLAIM_LEASE_MS,
     );
   });
 
-  it("awaitEmailDeliverySettlement waits for a slow underlying promise", async () => {
-    let resolve!: (value: string) => void;
-    const underlying = new Promise<string>((r) => {
-      resolve = r;
+  it("deliverBetaInvitationEmailWithClaim aborts slow sends before releasing claim", async () => {
+    vi.useFakeTimers();
+    const pending = makeInvitation();
+    mockPrisma.betaInvitation.findUnique.mockResolvedValue(pending);
+    mockPrisma.betaInvitation.findFirst.mockResolvedValue(pending);
+    mockPrisma.betaParticipant.findUnique.mockResolvedValue({
+      identityAmbiguous: false,
+    });
+    mockPrisma.$executeRaw.mockResolvedValue(1);
+
+    let abortObserved = false;
+    let releaseCalled = false;
+    mockPrisma.betaInvitation.updateMany.mockImplementation(async () => {
+      releaseCalled = true;
+      return { count: 1 };
     });
 
-    const settlement = awaitEmailDeliverySettlement(underlying);
-    resolve("done");
+    const send = vi.fn(
+      ({ signal }: { signal: AbortSignal }) =>
+        new Promise<{ status: "failed" }>((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              abortObserved = true;
+              resolve({ status: "failed" });
+            },
+            { once: true },
+          );
+        }),
+    );
 
-    await expect(settlement).resolves.toBe("done");
-  });
+    const delivery = deliverBetaInvitationEmailWithClaim(
+      pending,
+      "https://example.com/redeem/tok",
+      send,
+    );
 
-  it("withEmailProviderTimeout rejects before a slow promise settles", async () => {
-    vi.useFakeTimers();
-    try {
-      let resolve!: (value: string) => void;
-      const underlying = new Promise<string>((r) => {
-        resolve = r;
-      });
+    await vi.advanceTimersByTimeAsync(BETA_EMAIL_PROVIDER_TIMEOUT_MS);
+    const status = await delivery;
 
-      const caught = withEmailProviderTimeout(underlying, 100).catch(
-        (error: unknown) => error,
-      );
-      await vi.advanceTimersByTimeAsync(100);
-
-      const error = await caught;
-      expect(error).toBeInstanceOf(Error);
-      expect((error as Error).message).toBe("Email delivery timed out");
-
-      resolve("late");
-      await expect(awaitEmailDeliverySettlement(underlying)).resolves.toBe("late");
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(status).toBe("failed");
+    expect(abortObserved).toBe(true);
+    expect(releaseCalled).toBe(true);
+    vi.useRealTimers();
   });
 
   it("claims and releases with compare-and-set ownership", async () => {
