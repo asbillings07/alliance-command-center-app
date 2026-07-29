@@ -27,7 +27,7 @@ export {
   type TimelineEvent,
 } from "./alliances";
 
-// Invitations domain
+// Invitations domain (legacy invitation-centric queries)
 export {
   getBetaInvitations,
   getCollaboratorInvitations,
@@ -38,6 +38,30 @@ export {
   type CollaboratorInvitationItem,
   type InvitationStats,
 } from "./invitations";
+
+// Beta participant operations (#174)
+export {
+  listBetaParticipants,
+  listBetaParticipantPriorAttempts,
+  queryBetaParticipantDerivationForTest,
+  betaParticipantsDerivationCte,
+  BETA_PARTICIPANTS_CTE_VERSION,
+  clampBetaParticipantsPagination,
+  boundBetaParticipantsInput,
+  escapeIlikePattern,
+  buildIlikeContainsPattern,
+  deriveJourneyStage,
+  deriveParticipantAttention,
+  deriveLatestAttemptStatus,
+  type BetaParticipantFilters,
+  type BetaParticipantListItem,
+  type BetaParticipantListResult,
+  type BetaParticipantSummary,
+  type BetaParticipantPriorAttempt,
+  type BetaJourneyStage,
+  type BetaAttentionReason,
+  type BetaInvitationAttemptStatus,
+} from "./betaParticipants";
 
 // Activity domain
 export {
