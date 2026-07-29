@@ -84,8 +84,11 @@ export async function createIsolatedIntegrationDatabase(
   }
 
   async function dispose(): Promise<void> {
-    await prisma.$disconnect();
-    await dropIsolatedDatabase(adminUrl, databaseName);
+    try {
+      await prisma.$disconnect();
+    } finally {
+      await dropIsolatedDatabase(adminUrl, databaseName);
+    }
   }
 
   return { prisma, databaseName, connectionString, dispose };
