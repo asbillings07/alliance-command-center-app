@@ -367,8 +367,64 @@ test.describe("Platform Operations Console", () => {
 
       // Should show error
       await expect(
-        page.getByText(/already exists/i)
+        page.getByText(/already has an active invitation/i)
       ).toBeVisible({ timeout: 10000 });
+    });
+
+    test("shows reissue guidance after revoking prior invitation", async ({ page }) => {
+      await page.goto("/platform/beta");
+
+      const uniqueEmail = `test-reissue-msg-${Date.now()}@example.com`;
+
+      await page.getByLabel(/email/i).fill(uniqueEmail);
+      await page.getByRole("button", { name: /Create Invitation/i }).click();
+      await expect(
+        page.getByRole("heading", { name: /Invitation Created/i })
+      ).toBeVisible({ timeout: 10000 });
+
+      await page.getByRole("button", { name: /Invite Another/i }).click();
+      await page.setViewportSize({ width: 1280, height: 800 });
+
+      const row = page.locator("table tbody tr").filter({ hasText: uniqueEmail });
+      await expect(row).toBeVisible();
+
+      page.on("dialog", (dialog) => dialog.accept());
+      await row.getByRole("button", { name: /Revoke/i }).click();
+      await expect(row.getByText("Revoked", { exact: true })).toBeVisible({
+        timeout: 10000,
+      });
+
+      await page.getByRole("button", { name: /Invite Another/i }).click();
+      await page.getByLabel(/email/i).fill(uniqueEmail);
+      await page.getByRole("button", { name: /Create Invitation/i }).click();
+
+      await expect(
+        page.getByText(/already a beta participant — use Reissue/i)
+      ).toBeVisible({ timeout: 10000 });
+    });
+
+    test("reissue button appears for revoked participants", async ({ page }) => {
+      await page.goto("/platform/beta");
+
+      const uniqueEmail = `test-reissue-btn-${Date.now()}@example.com`;
+
+      await page.getByLabel(/email/i).fill(uniqueEmail);
+      await page.getByRole("button", { name: /Create Invitation/i }).click();
+      await expect(
+        page.getByRole("heading", { name: /Invitation Created/i })
+      ).toBeVisible({ timeout: 10000 });
+
+      await page.getByRole("button", { name: /Invite Another/i }).click();
+      await page.setViewportSize({ width: 1280, height: 800 });
+
+      const row = page.locator("table tbody tr").filter({ hasText: uniqueEmail });
+      page.on("dialog", (dialog) => dialog.accept());
+      await row.getByRole("button", { name: /Revoke/i }).click();
+      await expect(row.getByText("Revoked", { exact: true })).toBeVisible({
+        timeout: 10000,
+      });
+
+      await expect(row.getByTestId("reissue-toggle")).toBeVisible();
     });
 
     test("pending participants show action buttons on latest attempt", async ({ page }) => {

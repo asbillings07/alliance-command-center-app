@@ -52,12 +52,14 @@ type InvitationActionsProps = {
   invitationId: string;
   code: string;
   inviteUrl: string;
+  identityAmbiguous?: boolean;
 };
 
 export function InvitationActions({
   invitationId,
   code,
   inviteUrl,
+  identityAmbiguous = false,
 }: InvitationActionsProps) {
   const [isPending, startTransition] = useTransition();
   const [isResending, startResend] = useTransition();
@@ -90,6 +92,13 @@ export function InvitationActions({
   };
 
   const handleResend = () => {
+    if (identityAmbiguous) {
+      setError(
+        "Resend is blocked while participant identity is ambiguous.",
+      );
+      return;
+    }
+
     setError(null);
     startResend(async () => {
       const result = await resendInvitationEmailAction(invitationId);
@@ -125,9 +134,14 @@ export function InvitationActions({
       <button
         type="button"
         onClick={handleResend}
-        disabled={isResending}
+        disabled={isResending || identityAmbiguous}
         className="text-xs text-primary hover:text-primary-hover disabled:opacity-50"
-        title="Resend invitation email"
+        title={
+          identityAmbiguous
+            ? "Resend blocked while identity is ambiguous"
+            : "Resend invitation email"
+        }
+        data-testid="resend-email-button"
       >
         {resendLabel(resendState, isResending)}
       </button>
@@ -157,6 +171,7 @@ export function InvitationCardActions({
   invitationId,
   code,
   inviteUrl,
+  identityAmbiguous = false,
 }: InvitationActionsProps) {
   const [isPending, startTransition] = useTransition();
   const [isResending, startResend] = useTransition();
@@ -189,6 +204,13 @@ export function InvitationCardActions({
   };
 
   const handleResend = () => {
+    if (identityAmbiguous) {
+      setError(
+        "Resend is blocked while participant identity is ambiguous.",
+      );
+      return;
+    }
+
     setError(null);
     startResend(async () => {
       const result = await resendInvitationEmailAction(invitationId);
@@ -220,8 +242,9 @@ export function InvitationCardActions({
       <button
         type="button"
         onClick={handleResend}
-        disabled={isResending}
+        disabled={isResending || identityAmbiguous}
         className="px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-tertiary border border-border rounded-lg transition-colors disabled:opacity-50"
+        data-testid="resend-email-button"
       >
         {isResending
           ? "Resending..."

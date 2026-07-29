@@ -21,6 +21,7 @@ describe.skipIf(!runDb)("betaInvitation accept identity [integration]", () => {
   let acceptBetaInvitationWithTx: typeof BetaInvitationModule.acceptBetaInvitationWithTx;
 
   beforeAll(async () => {
+    process.env.NEXTAUTH_URL = "http://localhost:3000";
     ({ prisma } = (await import("./prisma")) as unknown as {
       prisma: PrismaClient;
     });
@@ -140,14 +141,22 @@ describe.skipIf(!runDb)("betaInvitation accept identity [integration]", () => {
     }
   });
 
-  it("merges a second invitation onto the canonical participant after re-issue", async () => {
+  it("merges a second invitation onto the canonical participant when both are accepted", async () => {
     const user = await makeUser();
     const invitationA = await issueTrackedInvitation(user.email);
     await acceptBetaInvitation(invitationA.id, user.id);
 
-    const invitationB = await issueTrackedInvitation(user.email);
-
-    expect(invitationB.participantId).toBe(invitationA.participantId);
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const invitationB = await prisma.betaInvitation.create({
+      data: {
+        email: user.email,
+        token: `token-second-${suffix}`,
+        code: `SEC-${suffix.slice(0, 3).toUpperCase()}`,
+        expiresAt: new Date(Date.now() + 86400000),
+        participantId: invitationA.participantId,
+      },
+    });
+    createdInvitationIds.push(invitationB.id);
 
     await acceptBetaInvitation(invitationB.id, user.id);
 
