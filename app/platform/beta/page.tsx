@@ -84,12 +84,24 @@ export default async function PlatformBeta({ searchParams }: PageProps) {
         <h2 className="text-lg font-semibold text-text-secondary mb-4">
           Beta Participants
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
           <div className="bg-surface-secondary rounded-lg p-4 border border-border">
             <div className="text-2xl font-bold text-text-primary">
               {result.summary.totalParticipants}
             </div>
             <div className="text-sm text-text-muted">Participants</div>
+          </div>
+          <div className="bg-surface-secondary rounded-lg p-4 border border-border">
+            <div className="text-2xl font-bold text-text-primary">
+              {result.summary.totalInvitationAttempts}
+            </div>
+            <div className="text-sm text-text-muted">Invitation attempts</div>
+          </div>
+          <div className="bg-surface-secondary rounded-lg p-4 border border-border">
+            <div className="text-2xl font-bold text-text-primary">
+              {result.summary.acceptedParticipants}
+            </div>
+            <div className="text-sm text-text-muted">Accepted</div>
           </div>
           <div className="bg-warning/10 rounded-lg p-4 border border-warning/20">
             <div className="text-2xl font-bold text-warning">

@@ -76,6 +76,13 @@ describe("PlatformBeta page", () => {
             expiresAt: new Date("2026-08-01T12:00:00Z"),
             acceptedAt: null,
             revokedAt: null,
+            issuedBy: {
+              userId: "op-1",
+              displayName: "Operator One",
+              email: "operator@example.test",
+            },
+            revokedBy: null,
+            acceptedBy: null,
           },
         },
       ],
@@ -84,6 +91,8 @@ describe("PlatformBeta page", () => {
       pageSize: 25,
       summary: {
         totalParticipants: 1,
+        totalInvitationAttempts: 3,
+        acceptedParticipants: 0,
         needsAttention: 1,
         distinctAlliancesCreated: 0,
         distinctAlliancesSetupComplete: 0,
@@ -94,6 +103,8 @@ describe("PlatformBeta page", () => {
     const html = renderToStaticMarkup(page);
 
     expect(html).toContain("Beta Participants");
+    expect(html).toContain("Invitation attempts");
+    expect(html).toContain("Accepted");
     expect(html).toContain("Needs attention");
     expect(html).toContain("Alliances created");
     expect(html).toContain("Setup complete");
@@ -109,6 +120,8 @@ describe("PlatformBeta page", () => {
       pageSize: 25,
       summary: {
         totalParticipants: 0,
+        totalInvitationAttempts: 0,
+        acceptedParticipants: 0,
         needsAttention: 0,
         distinctAlliancesCreated: 0,
         distinctAlliancesSetupComplete: 0,

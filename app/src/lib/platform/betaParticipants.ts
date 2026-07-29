@@ -31,6 +31,30 @@ export type BetaInvitationAttemptStatus =
   | "expired"
   | "revoked";
 
+/** Resolved operator identity for attempt-level attribution (#174). */
+export type BetaAttemptOperator = {
+  userId: string | null;
+  displayName: string | null;
+  email: string | null;
+};
+
+export type BetaInvitationAttemptRecord = {
+  id: string;
+  email: string;
+  code: string;
+  status: BetaInvitationAttemptStatus;
+  campaign: string | null;
+  notes: string | null;
+  issuedAt: Date;
+  createdAt: Date;
+  expiresAt: Date;
+  acceptedAt: Date | null;
+  revokedAt: Date | null;
+  issuedBy: BetaAttemptOperator | null;
+  revokedBy: BetaAttemptOperator | null;
+  acceptedBy: BetaAttemptOperator | null;
+};
+
 export type BetaParticipantFilters = {
   search?: string;
   wave?: string;
@@ -51,25 +75,16 @@ export type BetaParticipantListItem = {
   allianceId: string | null;
   allianceName: string | null;
   priorAttemptCount: number;
-  latestAttempt: {
-    id: string;
-    email: string;
-    code: string;
+  latestAttempt: BetaInvitationAttemptRecord & {
     token: string;
     inviteUrl: string;
-    status: BetaInvitationAttemptStatus;
-    campaign: string | null;
-    notes: string | null;
-    issuedAt: Date;
-    createdAt: Date;
-    expiresAt: Date;
-    acceptedAt: Date | null;
-    revokedAt: Date | null;
   };
 };
 
 export type BetaParticipantSummary = {
   totalParticipants: number;
+  totalInvitationAttempts: number;
+  acceptedParticipants: number;
   needsAttention: number;
   distinctAlliancesCreated: number;
   distinctAlliancesSetupComplete: number;
@@ -83,19 +98,7 @@ export type BetaParticipantListResult = {
   summary: BetaParticipantSummary;
 };
 
-export type BetaParticipantPriorAttempt = {
-  id: string;
-  email: string;
-  code: string;
-  status: BetaInvitationAttemptStatus;
-  campaign: string | null;
-  notes: string | null;
-  issuedAt: Date;
-  createdAt: Date;
-  expiresAt: Date;
-  acceptedAt: Date | null;
-  revokedAt: Date | null;
-};
+export type BetaParticipantPriorAttempt = BetaInvitationAttemptRecord;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -445,6 +448,16 @@ export function betaParticipantsDerivationCte(now: Date): Prisma.Sql {
       la."expiresAt" AS latest_expires_at,
       la."acceptedAt" AS latest_accepted_at,
       la."revokedAt" AS latest_revoked_at,
+      la."issuedByUserId" AS latest_issued_by_user_id,
+      issued_by."displayName" AS latest_issued_by_display_name,
+      issued_by.email AS latest_issued_by_email,
+      la."revokedByUserId" AS latest_revoked_by_user_id,
+      revoked_by."displayName" AS latest_revoked_by_display_name,
+      revoked_by.email AS latest_revoked_by_email,
+      la."acceptedByUserId" AS latest_accepted_by_user_id,
+      accepted_by."displayName" AS latest_accepted_by_display_name,
+      accepted_by.email AS latest_accepted_by_email,
+      COALESCE(ac.attempt_count, 1)::int AS attempt_count,
       GREATEST(COALESCE(ac.attempt_count, 1) - 1, 0) AS prior_attempt_count,
       als.alliance_id,
       als.alliance_ambiguous,
@@ -555,6 +568,9 @@ export function betaParticipantsDerivationCte(now: Date): Prisma.Sql {
     LEFT JOIN attempt_counts ac ON ac."participantId" = bp.id
     LEFT JOIN participant_accepted pa ON pa."participantId" = bp.id
     LEFT JOIN "User" u ON u.id = bp."userId"
+    LEFT JOIN "User" issued_by ON issued_by.id = la."issuedByUserId"
+    LEFT JOIN "User" revoked_by ON revoked_by.id = la."revokedByUserId"
+    LEFT JOIN "User" accepted_by ON accepted_by.id = la."acceptedByUserId"
     JOIN alliance_setup als ON als.participant_id = bp.id
     LEFT JOIN "Alliance" al ON al.id = als.alliance_id
   )
@@ -577,6 +593,15 @@ type DerivedRow = {
   latest_expires_at: Date;
   latest_accepted_at: Date | null;
   latest_revoked_at: Date | null;
+  latest_issued_by_user_id: string | null;
+  latest_issued_by_display_name: string | null;
+  latest_issued_by_email: string | null;
+  latest_revoked_by_user_id: string | null;
+  latest_revoked_by_display_name: string | null;
+  latest_revoked_by_email: string | null;
+  latest_accepted_by_user_id: string | null;
+  latest_accepted_by_display_name: string | null;
+  latest_accepted_by_email: string | null;
   prior_attempt_count: number;
   alliance_id: string | null;
   alliance_ambiguous: boolean;
@@ -586,6 +611,22 @@ type DerivedRow = {
   attention_since: Date | null;
   latest_status: BetaInvitationAttemptStatus;
 };
+
+function mapAttemptOperator(
+  userId: string | null | undefined,
+  displayName: string | null | undefined,
+  email: string | null | undefined,
+): BetaAttemptOperator | null {
+  if (!userId && !displayName && !email) {
+    return null;
+  }
+
+  return {
+    userId: userId ?? null,
+    displayName: displayName ?? null,
+    email: email ?? null,
+  };
+}
 
 function mapDerivedRow(row: DerivedRow, origin: string): BetaParticipantListItem {
   return {
@@ -615,6 +656,21 @@ function mapDerivedRow(row: DerivedRow, origin: string): BetaParticipantListItem
       expiresAt: row.latest_expires_at,
       acceptedAt: row.latest_accepted_at,
       revokedAt: row.latest_revoked_at,
+      issuedBy: mapAttemptOperator(
+        row.latest_issued_by_user_id,
+        row.latest_issued_by_display_name,
+        row.latest_issued_by_email,
+      ),
+      revokedBy: mapAttemptOperator(
+        row.latest_revoked_by_user_id,
+        row.latest_revoked_by_display_name,
+        row.latest_revoked_by_email,
+      ),
+      acceptedBy: mapAttemptOperator(
+        row.latest_accepted_by_user_id,
+        row.latest_accepted_by_display_name,
+        row.latest_accepted_by_email,
+      ),
     },
   };
 }
@@ -631,6 +687,12 @@ function buildFilterSql(
       d.display_name ILIKE ${searchPattern} ESCAPE '\\'
       OR d.current_email ILIKE ${searchPattern} ESCAPE '\\'
       OR d.latest_email ILIKE ${searchPattern} ESCAPE '\\'
+      OR EXISTS (
+        SELECT 1
+        FROM "BetaInvitation" bi_search
+        WHERE bi_search."participantId" = d.participant_id
+          AND bi_search.email ILIKE ${searchPattern} ESCAPE '\\'
+      )
     )`);
   }
 
@@ -657,6 +719,7 @@ function buildFilterSql(
 
 /**
  * Paginated participant list with DB-bound filters against the shared CTE.
+ * Rows, total count, and summary aggregates come from one SQL round-trip.
  */
 export async function listBetaParticipants(
   filters: BetaParticipantFilters,
@@ -673,81 +736,156 @@ export async function listBetaParticipants(
 
   const cte = betaParticipantsDerivationCte(now);
 
-  const [rows, countRows, summaryRows] = await Promise.all([
-    prisma.$queryRaw<DerivedRow[]>`
-      WITH ${cte}
-      SELECT
-        d.participant_id,
-        d.identity_ambiguous,
-        d.display_name,
-        d.current_email,
-        d.latest_attempt_id,
-        d.latest_email,
-        d.latest_code,
-        d.latest_token,
-        d.latest_campaign,
-        d.latest_notes,
-        d.latest_issued_at,
-        d.latest_created_at,
-        d.latest_expires_at,
-        d.latest_accepted_at,
-        d.latest_revoked_at,
-        d.prior_attempt_count,
-        d.alliance_id,
-        d.alliance_ambiguous,
-        d.alliance_name,
-        d.journey_stage,
-        d.attention_reason,
-        d.attention_since,
-        d.latest_status
+  type UnifiedListRow = DerivedRow & {
+    total: bigint;
+    total_participants: bigint;
+    needs_attention: bigint;
+    alliances_created: bigint;
+    alliances_setup_complete: bigint;
+    total_invitation_attempts: bigint;
+    accepted_participants: bigint;
+  };
+
+  const unifiedRows = await prisma.$queryRaw<UnifiedListRow[]>`
+    WITH ${cte},
+    filtered AS (
+      SELECT d.*
       FROM derived d
       WHERE ${whereSql}
+    ),
+    stats AS (
+      SELECT
+        COUNT(*)::bigint AS total,
+        COUNT(*)::bigint AS total_participants,
+        COUNT(*) FILTER (WHERE f.attention_reason IS NOT NULL)::bigint AS needs_attention,
+        COUNT(DISTINCT f.alliance_id) FILTER (WHERE f.alliance_id IS NOT NULL)::bigint AS alliances_created,
+        COUNT(DISTINCT f.alliance_id) FILTER (WHERE f.is_complete)::bigint AS alliances_setup_complete,
+        COALESCE(SUM(f.attempt_count), 0)::bigint AS total_invitation_attempts,
+        COUNT(*) FILTER (WHERE f.has_accepted)::bigint AS accepted_participants
+      FROM filtered f
+    ),
+    page AS (
+      SELECT f.*
+      FROM filtered f
       ORDER BY
-        d.latest_issued_at DESC,
-        d.latest_created_at DESC,
-        d.latest_attempt_id DESC
+        f.latest_issued_at DESC,
+        f.latest_created_at DESC,
+        f.latest_attempt_id DESC
       LIMIT ${clampedPageSize}
       OFFSET ${offset}
-    `,
-    prisma.$queryRaw<Array<{ total: bigint }>>`
-      WITH ${cte}
-      SELECT COUNT(*)::bigint AS total
-      FROM derived d
-      WHERE ${whereSql}
-    `,
-    prisma.$queryRaw<
-      Array<{
-        total_participants: bigint;
-        needs_attention: bigint;
-        alliances_created: bigint;
-        alliances_setup_complete: bigint;
-      }>
-    >`
-      WITH ${cte}
-      SELECT
-        COUNT(*)::bigint AS total_participants,
-        COUNT(*) FILTER (WHERE d.attention_reason IS NOT NULL)::bigint AS needs_attention,
-        COUNT(DISTINCT d.alliance_id) FILTER (WHERE d.alliance_id IS NOT NULL)::bigint AS alliances_created,
-        COUNT(DISTINCT d.alliance_id) FILTER (WHERE d.is_complete)::bigint AS alliances_setup_complete
-      FROM derived d
-      WHERE ${whereSql}
-    `,
-  ]);
+    )
+    SELECT
+      p.participant_id,
+      p.identity_ambiguous,
+      p.display_name,
+      p.current_email,
+      p.latest_attempt_id,
+      p.latest_email,
+      p.latest_code,
+      p.latest_token,
+      p.latest_campaign,
+      p.latest_notes,
+      p.latest_issued_at,
+      p.latest_created_at,
+      p.latest_expires_at,
+      p.latest_accepted_at,
+      p.latest_revoked_at,
+      p.latest_issued_by_user_id,
+      p.latest_issued_by_display_name,
+      p.latest_issued_by_email,
+      p.latest_revoked_by_user_id,
+      p.latest_revoked_by_display_name,
+      p.latest_revoked_by_email,
+      p.latest_accepted_by_user_id,
+      p.latest_accepted_by_display_name,
+      p.latest_accepted_by_email,
+      p.prior_attempt_count,
+      p.alliance_id,
+      p.alliance_ambiguous,
+      p.alliance_name,
+      p.journey_stage,
+      p.attention_reason,
+      p.attention_since,
+      p.latest_status,
+      s.total,
+      s.total_participants,
+      s.needs_attention,
+      s.alliances_created,
+      s.alliances_setup_complete,
+      s.total_invitation_attempts,
+      s.accepted_participants
+    FROM stats s
+    INNER JOIN page p ON TRUE
+    UNION ALL
+    SELECT
+      NULL AS participant_id,
+      NULL AS identity_ambiguous,
+      NULL AS display_name,
+      NULL AS current_email,
+      NULL AS latest_attempt_id,
+      NULL AS latest_email,
+      NULL AS latest_code,
+      NULL AS latest_token,
+      NULL AS latest_campaign,
+      NULL AS latest_notes,
+      NULL AS latest_issued_at,
+      NULL AS latest_created_at,
+      NULL AS latest_expires_at,
+      NULL AS latest_accepted_at,
+      NULL AS latest_revoked_at,
+      NULL AS latest_issued_by_user_id,
+      NULL AS latest_issued_by_display_name,
+      NULL AS latest_issued_by_email,
+      NULL AS latest_revoked_by_user_id,
+      NULL AS latest_revoked_by_display_name,
+      NULL AS latest_revoked_by_email,
+      NULL AS latest_accepted_by_user_id,
+      NULL AS latest_accepted_by_display_name,
+      NULL AS latest_accepted_by_email,
+      NULL AS prior_attempt_count,
+      NULL AS alliance_id,
+      NULL AS alliance_ambiguous,
+      NULL AS alliance_name,
+      NULL AS journey_stage,
+      NULL AS attention_reason,
+      NULL AS attention_since,
+      NULL AS latest_status,
+      s.total,
+      s.total_participants,
+      s.needs_attention,
+      s.alliances_created,
+      s.alliances_setup_complete,
+      s.total_invitation_attempts,
+      s.accepted_participants
+    FROM stats s
+    WHERE NOT EXISTS (SELECT 1 FROM page)
+  `;
 
-  const total = Number(countRows[0]?.total ?? BigInt(0));
-  const summaryRow = summaryRows[0];
+  const summarySource = unifiedRows[0];
+  const total = Number(summarySource?.total ?? BigInt(0));
+  const itemRows = unifiedRows.filter(
+    (row): row is UnifiedListRow => row.participant_id !== null,
+  );
 
   return {
-    items: rows.map((row) => mapDerivedRow(row, origin)),
+    items: itemRows.map((row) => mapDerivedRow(row, origin)),
     total,
     page: clampedPage,
     pageSize: clampedPageSize,
     summary: {
-      totalParticipants: Number(summaryRow?.total_participants ?? BigInt(0)),
-      needsAttention: Number(summaryRow?.needs_attention ?? BigInt(0)),
-      distinctAlliancesCreated: Number(summaryRow?.alliances_created ?? BigInt(0)),
+      totalParticipants: Number(summarySource?.total_participants ?? BigInt(0)),
+      totalInvitationAttempts: Number(
+        summarySource?.total_invitation_attempts ?? BigInt(0),
+      ),
+      acceptedParticipants: Number(
+        summarySource?.accepted_participants ?? BigInt(0),
+      ),
+      needsAttention: Number(summarySource?.needs_attention ?? BigInt(0)),
+      distinctAlliancesCreated: Number(
+        summarySource?.alliances_created ?? BigInt(0),
+      ),
       distinctAlliancesSetupComplete: Number(
-        summaryRow?.alliances_setup_complete ?? BigInt(0),
+        summarySource?.alliances_setup_complete ?? BigInt(0),
       ),
     },
   };
@@ -765,7 +903,47 @@ type PriorAttemptRow = {
   accepted_at: Date | null;
   revoked_at: Date | null;
   status: BetaInvitationAttemptStatus;
+  issued_by_user_id: string | null;
+  issued_by_display_name: string | null;
+  issued_by_email: string | null;
+  revoked_by_user_id: string | null;
+  revoked_by_display_name: string | null;
+  revoked_by_email: string | null;
+  accepted_by_user_id: string | null;
+  accepted_by_display_name: string | null;
+  accepted_by_email: string | null;
 };
+
+function mapPriorAttemptRow(row: PriorAttemptRow): BetaParticipantPriorAttempt {
+  return {
+    id: row.id,
+    email: row.email,
+    code: row.code,
+    status: row.status,
+    campaign: row.campaign,
+    notes: row.notes,
+    issuedAt: row.issued_at,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    acceptedAt: row.accepted_at,
+    revokedAt: row.revoked_at,
+    issuedBy: mapAttemptOperator(
+      row.issued_by_user_id,
+      row.issued_by_display_name,
+      row.issued_by_email,
+    ),
+    revokedBy: mapAttemptOperator(
+      row.revoked_by_user_id,
+      row.revoked_by_display_name,
+      row.revoked_by_email,
+    ),
+    acceptedBy: mapAttemptOperator(
+      row.accepted_by_user_id,
+      row.accepted_by_display_name,
+      row.accepted_by_email,
+    ),
+  };
+}
 
 /**
  * Paginated prior invitation attempts for one participant (excludes latest).
@@ -803,6 +981,15 @@ export async function listBetaParticipantPriorAttempts(
         bi."expiresAt" AS expires_at,
         bi."acceptedAt" AS accepted_at,
         bi."revokedAt" AS revoked_at,
+        bi."issuedByUserId" AS issued_by_user_id,
+        issued_by."displayName" AS issued_by_display_name,
+        issued_by.email AS issued_by_email,
+        bi."revokedByUserId" AS revoked_by_user_id,
+        revoked_by."displayName" AS revoked_by_display_name,
+        revoked_by.email AS revoked_by_email,
+        bi."acceptedByUserId" AS accepted_by_user_id,
+        accepted_by."displayName" AS accepted_by_display_name,
+        accepted_by.email AS accepted_by_email,
         CASE
           WHEN bi."acceptedAt" IS NOT NULL THEN 'accepted'
           WHEN bi."revokedAt" IS NOT NULL THEN 'revoked'
@@ -810,6 +997,9 @@ export async function listBetaParticipantPriorAttempts(
           ELSE 'pending'
         END AS status
       FROM "BetaInvitation" bi
+      LEFT JOIN "User" issued_by ON issued_by.id = bi."issuedByUserId"
+      LEFT JOIN "User" revoked_by ON revoked_by.id = bi."revokedByUserId"
+      LEFT JOIN "User" accepted_by ON accepted_by.id = bi."acceptedByUserId"
       WHERE bi."participantId" = ${participantId}
         AND bi.id NOT IN (SELECT id FROM latest)
       ORDER BY
@@ -839,19 +1029,7 @@ export async function listBetaParticipantPriorAttempts(
   ]);
 
   return {
-    items: rows.map((row) => ({
-      id: row.id,
-      email: row.email,
-      code: row.code,
-      status: row.status,
-      campaign: row.campaign,
-      notes: row.notes,
-      issuedAt: row.issued_at,
-      createdAt: row.created_at,
-      expiresAt: row.expires_at,
-      acceptedAt: row.accepted_at,
-      revokedAt: row.revoked_at,
-    })),
+    items: rows.map(mapPriorAttemptRow),
     total: Number(countRows[0]?.total ?? BigInt(0)),
     page: clampedPage,
     pageSize: clampedPageSize,

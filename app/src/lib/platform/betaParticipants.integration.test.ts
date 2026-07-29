@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
 import {
   listBetaParticipants,
@@ -63,6 +63,7 @@ describeIntegration("betaParticipants unified query [integration]", () => {
   }
 
   it("returns empty results when no participants exist for a unique search", async () => {
+    const queryRawSpy = vi.spyOn(prisma, "$queryRaw");
     const result = await listBetaParticipants(
       { search: `no-match-${Date.now()}@example.test` },
       1,
@@ -70,6 +71,57 @@ describeIntegration("betaParticipants unified query [integration]", () => {
     );
     expect(result.items).toEqual([]);
     expect(result.total).toBe(0);
+    expect(result.summary.totalParticipants).toBe(0);
+    expect(result.summary.totalInvitationAttempts).toBe(0);
+    expect(result.summary.acceptedParticipants).toBe(0);
+    expect(queryRawSpy).toHaveBeenCalledTimes(1);
+    queryRawSpy.mockRestore();
+  });
+
+  it("returns rows, total, and summary from one query round-trip", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await trackInvitation(`beta-unified-${suffix}@example.test`);
+
+    const queryRawSpy = vi.spyOn(prisma, "$queryRaw");
+    const result = await listBetaParticipants({ search: suffix }, 1, 50);
+
+    expect(queryRawSpy).toHaveBeenCalledTimes(1);
+    expect(result.summary.totalParticipants).toBe(result.total);
+    expect(result.items.length).toBeLessThanOrEqual(result.total);
+    queryRawSpy.mockRestore();
+  });
+
+  it("finds participants by any historical invitation email", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const oldEmail = `beta-old-${suffix}@example.test`;
+    const newEmail = `beta-new-${suffix}@example.test`;
+
+    const first = await trackInvitation(oldEmail);
+    await prisma.betaInvitation.update({
+      where: { id: first.id },
+      data: { revokedAt: new Date(), issuedAt: new Date("2026-06-01T12:00:00Z") },
+    });
+
+    const second = await prisma.betaInvitation.create({
+      data: {
+        participantId: first.participantId,
+        email: newEmail,
+        token: `token-new-${suffix}`,
+        code: `CODE-${suffix.slice(0, 6).toUpperCase()}`,
+        expiresAt: new Date("2026-12-01T12:00:00Z"),
+        issuedAt: new Date("2026-07-01T12:00:00Z"),
+      },
+    });
+    createdInvitationIds.push(second.id);
+
+    const byOldEmail = await listBetaParticipants({ search: oldEmail }, 1, 50);
+    expect(byOldEmail.total).toBe(1);
+    expect(byOldEmail.items[0]?.participantId).toBe(first.participantId);
+    expect(byOldEmail.items[0]?.latestAttempt.email).toBe(newEmail);
+
+    const byNewEmail = await listBetaParticipants({ search: newEmail }, 1, 50);
+    expect(byNewEmail.total).toBe(1);
+    expect(byNewEmail.items[0]?.participantId).toBe(first.participantId);
   });
 
   it("filters by search, wave, journey stage, and attention reason in SQL", async () => {
@@ -175,6 +227,76 @@ describeIntegration("betaParticipants unified query [integration]", () => {
     expect(history.total).toBe(1);
     expect(history.items[0]?.id).toBe(first.id);
     expect(history.items.some((i) => i.id === second.id)).toBe(false);
+  });
+
+  it("aggregates invitation attempts and accepted participants in summary", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const email = `beta-summary-${suffix}@example.test`;
+    const invitation = await trackInvitation(email);
+
+    const user = await prisma.user.create({
+      data: {
+        email: `accepted-${suffix}@example.test`,
+        displayName: "Accepted User",
+        passwordHash: "hash",
+      },
+    });
+    createdUserIds.push(user.id);
+
+    await prisma.betaInvitation.update({
+      where: { id: invitation.id },
+      data: { revokedAt: new Date(), issuedAt: new Date("2026-06-01T12:00:00Z") },
+    });
+
+    const reissue = await trackInvitation(email);
+    expect(reissue.participantId).toBe(invitation.participantId);
+
+    await acceptBetaInvitation(reissue.id, user.id);
+    await prisma.betaParticipant.update({
+      where: { id: invitation.participantId },
+      data: { userId: user.id },
+    });
+
+    const result = await listBetaParticipants({ search: suffix }, 1, 50);
+    expect(result.summary.totalParticipants).toBe(1);
+    expect(result.summary.totalInvitationAttempts).toBe(2);
+    expect(result.summary.acceptedParticipants).toBe(1);
+  });
+
+  it("returns attempt attribution fields for prior attempts", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const email = `beta-audit-${suffix}@example.test`;
+    const operator = await prisma.user.create({
+      data: {
+        email: `operator-${suffix}@example.test`,
+        displayName: "Beta Operator",
+        passwordHash: "hash",
+      },
+    });
+    createdUserIds.push(operator.id);
+
+    const first = await trackInvitation(email);
+    await prisma.betaInvitation.update({
+      where: { id: first.id },
+      data: {
+        revokedAt: new Date(),
+        revokedByUserId: operator.id,
+        notes: "First attempt notes",
+      },
+    });
+
+    const second = await trackInvitation(email);
+    createdInvitationIds.push(second.id);
+
+    const history = await listBetaParticipantPriorAttempts(
+      first.participantId,
+      1,
+      10,
+    );
+    expect(history.total).toBe(1);
+    expect(history.items[0]?.notes).toBe("First attempt notes");
+    expect(history.items[0]?.revokedBy?.displayName).toBe("Beta Operator");
+    expect(history.items[0]?.issuedBy).toBeNull();
   });
 
   it("uses COUNT(DISTINCT allianceId) in summary counts", async () => {

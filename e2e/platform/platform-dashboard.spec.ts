@@ -253,6 +253,12 @@ test.describe("Platform Operations Console", () => {
       await expect(
         page.locator("div").filter({ hasText: /^Participants$/ }).first()
       ).toBeVisible();
+      await expect(
+        page.locator("div").filter({ hasText: /^Invitation attempts$/ }).first()
+      ).toBeVisible();
+      await expect(
+        page.locator("div").filter({ hasText: /^Accepted$/ }).first()
+      ).toBeVisible();
       await expect(page.getByText(/Needs attention/i)).toBeVisible();
       await expect(page.getByText(/Alliances created/i)).toBeVisible();
       await expect(

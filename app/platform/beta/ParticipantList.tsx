@@ -8,6 +8,8 @@ import {
 } from "./actions";
 import type {
   BetaAttentionReason,
+  BetaAttemptOperator,
+  BetaInvitationAttemptRecord,
   BetaInvitationAttemptStatus,
   BetaJourneyStage,
   BetaParticipantListItem,
@@ -37,6 +39,8 @@ const statusConfig = {
   revoked: { variant: "warning" as const, label: "Revoked" },
 };
 
+const PRIOR_ATTEMPTS_PAGE_SIZE = 10;
+
 function formatDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleDateString("en-US", {
@@ -54,6 +58,62 @@ function formatDateTime(date: Date | string): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function formatOperatorLabel(
+  operator: BetaAttemptOperator | null,
+  action: string,
+): string {
+  if (!operator?.userId) {
+    return `${action}: Unknown (legacy)`;
+  }
+
+  const name = operator.displayName ?? operator.email ?? operator.userId;
+  return `${action}: ${name}`;
+}
+
+function AttemptAuditDetails({
+  attempt,
+}: {
+  attempt: BetaInvitationAttemptRecord;
+}) {
+  const config = statusConfig[attempt.status];
+
+  return (
+    <div className="text-xs text-text-muted space-y-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-text-primary">{attempt.email}</span>
+        <Badge variant={config.variant} size="sm">
+          {config.label}
+        </Badge>
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        <span>Issued {formatDateTime(attempt.issuedAt)}</span>
+        <span>Expires {formatDateTime(attempt.expiresAt)}</span>
+        {attempt.acceptedAt && (
+          <span>Accepted {formatDateTime(attempt.acceptedAt)}</span>
+        )}
+        {attempt.revokedAt && (
+          <span>Revoked {formatDateTime(attempt.revokedAt)}</span>
+        )}
+        {attempt.campaign && <span>Wave: {attempt.campaign}</span>}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        <span>{formatOperatorLabel(attempt.issuedBy, "Issued by")}</span>
+        {attempt.status === "revoked" && (
+          <span>{formatOperatorLabel(attempt.revokedBy, "Revoked by")}</span>
+        )}
+        {attempt.status === "accepted" && (
+          <span>{formatOperatorLabel(attempt.acceptedBy, "Accepted by")}</span>
+        )}
+      </div>
+      {attempt.notes ? (
+        <p className="italic">{attempt.notes}</p>
+      ) : (
+        <p className="text-text-disabled">Notes: —</p>
+      )}
+    </div>
+  );
 }
 
 function AttentionBadge({
@@ -80,11 +140,29 @@ function PriorAttemptsDisclosure({
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<PriorAttemptsResult | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
   if (priorAttemptCount === 0) {
     return null;
   }
+
+  const loadPage = (page: number) => {
+    startTransition(async () => {
+      const response = await fetchPriorAttemptsAction(
+        participantId,
+        page,
+        PRIOR_ATTEMPTS_PAGE_SIZE,
+      );
+      if (response.success) {
+        setResult(response);
+        setCurrentPage(response.page);
+        setError(null);
+      } else {
+        setError(response.error);
+      }
+    });
+  };
 
   const handleToggle = () => {
     if (open) {
@@ -93,20 +171,20 @@ function PriorAttemptsDisclosure({
     }
 
     setOpen(true);
-    if (result) {
+    if (result?.success) {
       return;
     }
 
-    startTransition(async () => {
-      const response = await fetchPriorAttemptsAction(participantId, 1, 10);
-      if (response.success) {
-        setResult(response);
-        setError(null);
-      } else {
-        setError(response.error);
-      }
-    });
+    loadPage(1);
   };
+
+  const totalPages =
+    result?.success && result.pageSize > 0
+      ? Math.max(1, Math.ceil(result.total / result.pageSize))
+      : Math.max(1, Math.ceil(priorAttemptCount / PRIOR_ATTEMPTS_PAGE_SIZE));
+
+  const canGoPrevious = currentPage > 1;
+  const canGoNext = currentPage < totalPages;
 
   return (
     <div className="mt-2">
@@ -120,27 +198,38 @@ function PriorAttemptsDisclosure({
         {priorAttemptCount === 1 ? "" : "s"}
       </button>
       {open && (
-        <div className="mt-2 pl-3 border-l-2 border-border space-y-2">
+        <div className="mt-2 pl-3 border-l-2 border-border space-y-3">
           {isPending && !result && (
             <p className="text-xs text-text-muted">Loading history…</p>
           )}
           {error && <p className="text-xs text-danger">{error}</p>}
           {result?.success &&
-            result.items.map((attempt) => {
-              const config = statusConfig[attempt.status];
-              return (
-                <div key={attempt.id} className="text-xs text-text-muted">
-                  <span className="text-text-primary">{attempt.email}</span>
-                  {" · "}
-                  <Badge variant={config.variant} size="sm">
-                    {config.label}
-                  </Badge>
-                  {" · "}
-                  Sent {formatDate(attempt.issuedAt)}
-                  {attempt.campaign && ` · Wave: ${attempt.campaign}`}
-                </div>
-              );
-            })}
+            result.items.map((attempt) => (
+              <AttemptAuditDetails key={attempt.id} attempt={attempt} />
+            ))}
+          {result?.success && totalPages > 1 && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => loadPage(currentPage - 1)}
+                disabled={!canGoPrevious || isPending}
+                className="text-xs text-primary hover:text-primary-hover disabled:text-text-disabled disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="text-xs text-text-muted">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => loadPage(currentPage + 1)}
+                disabled={!canGoNext || isPending}
+                className="text-xs text-primary hover:text-primary-hover disabled:text-text-disabled disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -181,15 +270,31 @@ function LatestAttemptBlock({
         <Badge variant={config.variant} size="sm">
           {config.label}
         </Badge>
-        <span className="text-text-muted">
-          Sent {formatDate(attempt.issuedAt)}
-        </span>
-        {attempt.campaign && (
-          <span className="text-text-muted">Wave: {attempt.campaign}</span>
+      </div>
+      <div className="mt-1 text-xs text-text-muted flex flex-wrap gap-x-3 gap-y-1">
+        <span>Issued {formatDateTime(attempt.issuedAt)}</span>
+        <span>Expires {formatDateTime(attempt.expiresAt)}</span>
+        {attempt.acceptedAt && (
+          <span>Accepted {formatDateTime(attempt.acceptedAt)}</span>
+        )}
+        {attempt.revokedAt && (
+          <span>Revoked {formatDateTime(attempt.revokedAt)}</span>
+        )}
+        {attempt.campaign && <span>Wave: {attempt.campaign}</span>}
+      </div>
+      <div className="mt-1 text-xs text-text-muted flex flex-wrap gap-x-3 gap-y-1">
+        <span>{formatOperatorLabel(attempt.issuedBy, "Issued by")}</span>
+        {attempt.status === "revoked" && (
+          <span>{formatOperatorLabel(attempt.revokedBy, "Revoked by")}</span>
+        )}
+        {attempt.status === "accepted" && (
+          <span>{formatOperatorLabel(attempt.acceptedBy, "Accepted by")}</span>
         )}
       </div>
-      {attempt.notes && (
+      {attempt.notes ? (
         <p className="text-xs text-text-muted italic mt-1">{attempt.notes}</p>
+      ) : (
+        <p className="text-xs text-text-disabled mt-1">Notes: —</p>
       )}
       {actions}
       <PriorAttemptsDisclosure
@@ -285,6 +390,8 @@ export {
   attentionLabels,
   formatDate,
   formatDateTime,
+  formatOperatorLabel,
+  AttemptAuditDetails,
 };
 
 export type { BetaInvitationAttemptStatus };
