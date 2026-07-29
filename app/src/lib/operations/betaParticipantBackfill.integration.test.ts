@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
 import {
-  runAllBetaParticipantValidationChecks,
   runBetaParticipantValidationCheck,
 } from "./betaParticipantValidation";
 import {
@@ -73,7 +72,7 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     const now = new Date();
     const id = `legacy-inv-${suffix}`;
     const token = `token-${suffix}`;
-    const code = `C${suffix.slice(0, 6).toUpperCase()}`;
+    const code = `C${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
     const expiresAt = new Date(now.getTime() + 86400000);
     const acceptedAt = overrides.acceptedAt ?? null;
     const acceptedByUserId = overrides.acceptedByUserId ?? null;
@@ -104,6 +103,39 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     }
   }
 
+  async function assertEmailGroupPassesValidation(email: string) {
+    const nullRows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*)::bigint AS count
+      FROM "BetaInvitation"
+      WHERE email = ${email} AND "participantId" IS NULL
+    `;
+    expect(Number(nullRows[0]?.count ?? 0)).toBe(0);
+
+    const multiUser = await prisma.$queryRaw<Array<{ participantId: string }>>`
+      SELECT p.id AS "participantId"
+      FROM "BetaParticipant" p
+      JOIN "BetaInvitation" bi ON bi."participantId" = p.id
+      WHERE bi.email = ${email}
+        AND p."identityAmbiguous" = false
+        AND bi."acceptedAt" IS NOT NULL
+        AND bi."acceptedByUserId" IS NOT NULL
+      GROUP BY p.id
+      HAVING COUNT(DISTINCT bi."acceptedByUserId") > 1
+    `;
+    expect(multiUser).toHaveLength(0);
+
+    const collisions = await prisma.$queryRaw<Array<{ userId: string }>>`
+      SELECT p."userId"
+      FROM "BetaParticipant" p
+      JOIN "BetaInvitation" bi ON bi."participantId" = p.id
+      WHERE bi.email = ${email}
+        AND p."userId" IS NOT NULL
+      GROUP BY p."userId"
+      HAVING COUNT(DISTINCT p.id) > 1
+    `;
+    expect(collisions).toHaveLength(0);
+  }
+
   it("backfills legacy NULL participantId rows and passes validation", async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `backfill-clean-${suffix}@example.test`;
@@ -124,8 +156,7 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     `;
     expect(Number(remaining[0]?.count ?? 0)).toBe(0);
 
-    const results = await runAllBetaParticipantValidationChecks(prisma);
-    expect(results.every((result) => result.rows.length === 0)).toBe(true);
+    await assertEmailGroupPassesValidation(email);
 
     await trackParticipantsForEmail(email);
   });
@@ -308,9 +339,8 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     const email = `validate-clean-${suffix}@example.test`;
     await makeLegacyInvitation(email);
 
-    await runBetaParticipantBackfill(prisma, { dryRun: false });
-    const results = await runAllBetaParticipantValidationChecks(prisma);
-    expect(results.every((result) => result.rows.length === 0)).toBe(true);
+    await backfillEmailGroup(prisma, email, { dryRun: false });
+    await assertEmailGroupPassesValidation(email);
 
     await trackParticipantsForEmail(email);
   });

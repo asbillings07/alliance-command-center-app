@@ -60,11 +60,18 @@ function isSerializationFailure(error: unknown): boolean {
   ) {
     return true;
   }
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    (error as { code?: string }).code === "P2034"
-  );
+  if (error instanceof Error) {
+    if ("code" in error && (error as { code?: string }).code === "P2034") {
+      return true;
+    }
+    if (
+      error.message.includes("TransactionWriteConflict") ||
+      error.name === "TransactionWriteConflict"
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Re-exported for the backfill CLI's production-safety boundary. */
