@@ -114,6 +114,32 @@ describe("platform beta actions", () => {
     expect(mockDeliverBetaInvitationEmailWithClaim).toHaveBeenCalled();
   });
 
+  it("returns reissue credentials when delivery claim contention throws", async () => {
+    mockReissueBetaInvitation.mockResolvedValue({
+      invitation: {
+        id: "inv-reissue",
+        email: "test@example.com",
+        expiresAt: new Date("2026-12-31"),
+      },
+      inviteCode: "NEW-CODE",
+      inviteUrl: "https://example.com/redeem/new",
+    });
+    mockDeliverBetaInvitationEmailWithClaim.mockRejectedValue(
+      new Error("A delivery attempt is in progress for the latest invitation — try again shortly"),
+    );
+
+    const result = await reissueInvitationAction("participant-1");
+
+    expect(result).toEqual({
+      success: true,
+      inviteCode: "NEW-CODE",
+      inviteUrl: "https://example.com/redeem/new",
+      email: "test@example.com",
+      emailStatus: "failed",
+    });
+    expect(mockReissueBetaInvitation).toHaveBeenCalled();
+  });
+
   it("resend uses claim-protected abortable delivery", async () => {
     mockFindUnique.mockResolvedValue({
       id: "inv-1",

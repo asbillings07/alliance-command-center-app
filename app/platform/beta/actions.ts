@@ -157,11 +157,16 @@ export async function reissueInvitationAction(
     });
     revalidatePath("/platform/beta");
 
-    const emailStatus = await deliverBetaInvitationEmailWithClaim(
-      result.invitation,
-      result.inviteUrl,
-      (input) => emailService.sendBetaInvitation(input),
-    );
+    let emailStatus: EmailStatus = "failed";
+    try {
+      emailStatus = await deliverBetaInvitationEmailWithClaim(
+        result.invitation,
+        result.inviteUrl,
+        (input) => emailService.sendBetaInvitation(input),
+      );
+    } catch {
+      // Persisted reissue stands; only notification/claim failed (#174).
+    }
 
     return {
       success: true,
