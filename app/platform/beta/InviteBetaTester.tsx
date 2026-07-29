@@ -146,17 +146,23 @@ export function InviteBetaTester() {
   const [result, setResult] = useState<CreateInvitationResult | null>(null);
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
+  const [wave, setWave] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     startTransition(async () => {
-      const response = await createInvitationAction(email, notes || undefined);
+      const response = await createInvitationAction(
+        email,
+        notes || undefined,
+        wave || undefined,
+      );
       setResult(response);
 
       if (response.success) {
         setEmail("");
         setNotes("");
+        setWave("");
       }
     });
   };
@@ -201,6 +207,22 @@ export function InviteBetaTester() {
             required
             disabled={isPending}
             placeholder="founder@example.com"
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="wave">
+            Beta wave{" "}
+            <span className="text-text-muted font-normal">(optional)</span>
+          </Label>
+          <Input
+            id="wave"
+            name="wave"
+            type="text"
+            value={wave}
+            onChange={(e) => setWave(e.target.value)}
+            disabled={isPending}
+            placeholder="e.g., Wave 1, Founders cohort"
           />
         </div>
 

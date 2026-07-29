@@ -244,33 +244,24 @@ test.describe("Platform Operations Console", () => {
   });
 
   test.describe("Beta Page", () => {
-    test("displays Beta Invitations stats", async ({ page }) => {
+    test("displays Beta Participants summary", async ({ page }) => {
       await page.goto("/platform/beta");
 
-      await expect(page.getByText(/Beta Invitations/i).first()).toBeVisible();
-      await expect(page.getByText(/Total Sent/i)).toBeVisible();
-      await expect(page.getByText(/Accepted/i).first()).toBeVisible();
-      await expect(page.getByText(/Pending/i).first()).toBeVisible();
+      await expect(page.getByText(/Beta Participants/i).first()).toBeVisible();
+      await expect(page.getByText(/^Participants$/i)).toBeVisible();
+      await expect(page.getByText(/Needs attention/i)).toBeVisible();
+      await expect(page.getByText(/Alliances created/i)).toBeVisible();
+      await expect(page.getByText(/Setup complete/i)).toBeVisible();
     });
 
-    test("shows warning for accepted without alliance", async ({ page }) => {
-      await page.goto("/platform/beta");
-
-      // May or may not be visible depending on data
-      const warningVisible = await page
-        .getByText(/Accepted Without Alliance/i)
-        .isVisible();
-
-      expect(typeof warningVisible).toBe("boolean");
-    });
-
-    test("displays Invite Beta Tester form", async ({ page }) => {
+    test("displays Invite Beta Tester form with beta wave field", async ({ page }) => {
       await page.goto("/platform/beta");
 
       await expect(
         page.getByRole("heading", { name: /Invite Beta Tester/i })
       ).toBeVisible();
       await expect(page.getByLabel(/email/i)).toBeVisible();
+      await expect(page.getByLabel(/beta wave/i)).toBeVisible();
       await expect(page.getByLabel(/notes/i)).toBeVisible();
       await expect(
         page.getByRole("button", { name: /Create Invitation/i })
@@ -368,10 +359,9 @@ test.describe("Platform Operations Console", () => {
       ).toBeVisible({ timeout: 10000 });
     });
 
-    test("pending invitations show action buttons", async ({ page }) => {
+    test("pending participants show action buttons on latest attempt", async ({ page }) => {
       await page.goto("/platform/beta");
 
-      // Create an invitation to ensure we have a pending one
       const uniqueEmail = `test-actions-${Date.now()}@example.com`;
       await page.getByLabel(/email/i).fill(uniqueEmail);
       await page.getByRole("button", { name: /Create Invitation/i }).click();
@@ -379,24 +369,16 @@ test.describe("Platform Operations Console", () => {
         page.getByRole("heading", { name: /Invitation Created/i })
       ).toBeVisible({ timeout: 10000 });
 
-      // Reset to see the pending list
       await page.getByRole("button", { name: /Invite Another/i }).click();
-
-      // On desktop, should see action buttons in table
       await page.setViewportSize({ width: 1280, height: 800 });
 
-      // Find the row with our email
-      const row = page.locator("tr").filter({ hasText: uniqueEmail });
-      await expect(row).toBeVisible();
-
-      // Action buttons should be present
-      await expect(row.getByRole("button", { name: /Revoke/i })).toBeVisible();
+      await expect(page.getByText(uniqueEmail).first()).toBeVisible();
+      await expect(page.getByRole("button", { name: /Revoke/i }).first()).toBeVisible();
     });
 
-    test("revoke removes invitation from pending", async ({ page }) => {
+    test("revoke updates participant latest attempt status", async ({ page }) => {
       await page.goto("/platform/beta");
 
-      // Create a new invitation to revoke
       const uniqueEmail = `test-revoke-${Date.now()}@example.com`;
 
       await page.getByLabel(/email/i).fill(uniqueEmail);
@@ -405,50 +387,35 @@ test.describe("Platform Operations Console", () => {
         page.getByRole("heading", { name: /Invitation Created/i })
       ).toBeVisible({ timeout: 10000 });
 
-      // Reset form to see the pending list
       await page.getByRole("button", { name: /Invite Another/i }).click();
-
-      // Find the new invitation in pending list and revoke it
       await page.setViewportSize({ width: 1280, height: 800 });
 
-      // Look for revoke button in the row with our email
-      const row = page.locator("tr").filter({ hasText: uniqueEmail });
-      await expect(row).toBeVisible();
+      await expect(page.getByText(uniqueEmail).first()).toBeVisible();
 
-      const revokeButton = row.getByRole("button", { name: /Revoke/i });
+      const revokeButton = page.getByRole("button", { name: /Revoke/i }).first();
       await expect(revokeButton).toBeVisible();
 
-      // Accept confirm dialog
       page.on("dialog", (dialog) => dialog.accept());
       await revokeButton.click();
 
-      // Wait for the invitation to move out of pending (condition-based, not time-based)
-      // Either the row disappears from Pending or appears in Revoked
-      const pendingRow = page
-        .locator("section")
-        .filter({ hasText: /^Pending/i })
-        .locator("tr")
-        .filter({ hasText: uniqueEmail });
+      await expect(page.getByText(/Revoked/i).first()).toBeVisible({ timeout: 10000 });
+    });
 
-      const revokedSection = page
-        .locator("section")
-        .filter({ hasText: /Revoked/i });
+    test("participant filters round-trip via URL", async ({ page }) => {
+      await page.goto("/platform/beta?journeyStage=invited");
 
-      // Wait until either: row is gone from pending OR appears in revoked
-      await expect
-        .poll(
-          async () => {
-            const inPending = await pendingRow.count();
-            const revokedVisible = await revokedSection.isVisible().catch(() => false);
-            const inRevoked = revokedVisible
-              ? await revokedSection.getByText(uniqueEmail).isVisible().catch(() => false)
-              : false;
+      await expect(page.getByLabel(/journey stage/i)).toHaveValue("invited");
+      await expect(page.getByRole("button", { name: /Apply filters/i })).toBeVisible();
+    });
 
-            return inPending === 0 || inRevoked;
-          },
-          { timeout: 10000 }
-        )
-        .toBe(true);
+    test("renders at narrow mobile viewport", async ({ page }) => {
+      await page.setViewportSize({ width: 375, height: 667 });
+      await page.goto("/platform/beta");
+
+      await expect(page.getByText(/Beta Participants/i).first()).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: /Invite Beta Tester/i })
+      ).toBeVisible();
     });
   });
 

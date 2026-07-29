@@ -7,6 +7,10 @@ import {
   isPendingInvitation,
   revokeBetaInvitation,
 } from "@/app/src/lib/betaInvitation";
+import {
+  listBetaParticipantPriorAttempts,
+  type BetaParticipantPriorAttempt,
+} from "@/app/src/lib/platform/betaParticipants";
 import { prisma } from "@/app/src/lib/prisma";
 import { getRedeemUrl } from "@/app/src/lib/appUrl";
 import { emailService } from "@/app/src/lib/email";
@@ -62,15 +66,27 @@ export type ResendInvitationEmailResult =
   | { success: true; emailStatus: EmailStatus }
   | { success: false; error: string };
 
+export type PriorAttemptsResult =
+  | {
+      success: true;
+      items: BetaParticipantPriorAttempt[];
+      total: number;
+      page: number;
+      pageSize: number;
+    }
+  | { success: false; error: string };
+
 /**
  * Create a beta invitation.
  *
  * @param email - Email address to invite
  * @param notes - Optional context (e.g., "Met at conference", "Alliance: DAY1")
+ * @param wave - Optional beta wave / campaign label
  */
 export async function createInvitationAction(
   email: string,
-  notes?: string
+  notes?: string,
+  wave?: string,
 ): Promise<CreateInvitationResult> {
   await requirePlatformAdmin();
 
@@ -79,7 +95,10 @@ export async function createInvitationAction(
   }
 
   try {
-    const result = await issueBetaInvitation(email, { notes });
+    const result = await issueBetaInvitation(email, {
+      notes,
+      campaign: wave?.trim() || undefined,
+    });
     revalidatePath("/platform/beta");
 
     // Email is a notification, not part of issuing the invitation. Delivery
@@ -179,6 +198,54 @@ export async function revokeInvitationAction(
       success: false,
       error:
         error instanceof Error ? error.message : "Failed to revoke invitation",
+    };
+  }
+}
+
+/**
+ * Load paginated prior invitation attempts for a participant (on-demand expand).
+ */
+export async function fetchPriorAttemptsAction(
+  participantId: string,
+  page = 1,
+  pageSize = 10,
+): Promise<PriorAttemptsResult> {
+  await requirePlatformAdmin();
+
+  if (!participantId) {
+    return { success: false, error: "Participant not found" };
+  }
+
+  try {
+    const participant = await prisma.betaParticipant.findUnique({
+      where: { id: participantId },
+      select: { id: true },
+    });
+
+    if (!participant) {
+      return { success: false, error: "Participant not found" };
+    }
+
+    const result = await listBetaParticipantPriorAttempts(
+      participantId,
+      page,
+      pageSize,
+    );
+
+    return {
+      success: true,
+      items: result.items,
+      total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to load prior attempts",
     };
   }
 }
