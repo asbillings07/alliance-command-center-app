@@ -222,7 +222,7 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     await trackParticipantsForEmail(email);
   });
 
-  it("does not split identity when issuance races backfill on the same email", async () => {
+  it("does not split identity when issuance interleaves during backfill snapshot read", async () => {
     const { issueBetaInvitation } = await import("../betaInvitation");
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `race-${suffix}@example.test`;
@@ -233,15 +233,27 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
       data: { expiresAt: new Date(Date.now() - 86400000) },
     });
 
-    const [, issued] = await Promise.all([
-      backfillEmailGroup(prisma, email, { dryRun: false }),
-      issueBetaInvitation(email),
-    ]);
+    let issuedDuringSnapshot = false;
+    const result = await backfillEmailGroup(prisma, email, {
+      dryRun: false,
+      hooks: {
+        afterSnapshotRead: async ({ attempt }) => {
+          if (issuedDuringSnapshot) {
+            return;
+          }
+          issuedDuringSnapshot = true;
+          const issued = await issueBetaInvitation(email);
+          createdInvitationIds.push(issued.invitation.id);
+          if (issued.invitation.participantId) {
+            createdParticipantIds.push(issued.invitation.participantId);
+          }
+          expect(attempt).toBe(0);
+        },
+      },
+    });
 
-    createdInvitationIds.push(issued.invitation.id);
-    if (issued.invitation.participantId) {
-      createdParticipantIds.push(issued.invitation.participantId);
-    }
+    expect(issuedDuringSnapshot).toBe(true);
+    expect(result.attemptsUsed).toBeGreaterThan(1);
 
     const rows = await prisma.betaInvitation.findMany({
       where: { email },
@@ -253,6 +265,61 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     expect(participantIds.size).toBe(1);
 
     await trackParticipantsForEmail(email);
+  });
+
+  it("merges three existing participants onto the oldest survivor", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const email = `merge-three-${suffix}@example.test`;
+    const now = new Date();
+
+    const oldest = await prisma.betaParticipant.create({
+      data: { createdAt: new Date(now.getTime() - 3000) },
+    });
+    const middle = await prisma.betaParticipant.create({
+      data: { createdAt: new Date(now.getTime() - 2000) },
+    });
+    const newest = await prisma.betaParticipant.create({
+      data: { createdAt: new Date(now.getTime() - 1000) },
+    });
+    createdParticipantIds.push(oldest.id, middle.id, newest.id);
+
+    const attach = async (participantId: string, label: string) => {
+      const id = `merge-inv-${label}-${suffix}`;
+      await prisma.betaInvitation.create({
+        data: {
+          id,
+          email,
+          token: `tok-${id}`,
+          code: `M${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+          expiresAt: new Date(now.getTime() + 86400000),
+          participantId,
+        },
+      });
+      createdInvitationIds.push(id);
+    };
+
+    await attach(newest.id, "newest");
+    await attach(middle.id, "middle");
+    await attach(oldest.id, "oldest");
+    await makeLegacyInvitation(email);
+
+    await backfillEmailGroup(prisma, email, { dryRun: false });
+
+    const rows = await prisma.betaInvitation.findMany({
+      where: { email },
+      select: { participantId: true },
+    });
+    const participantIds = new Set(
+      rows.map((row) => row.participantId).filter(Boolean),
+    );
+    expect(participantIds).toEqual(new Set([oldest.id]));
+
+    const remaining = await prisma.betaParticipant.findMany({
+      where: { id: { in: [oldest.id, middle.id, newest.id] } },
+      select: { id: true },
+    });
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.id).toBe(oldest.id);
   });
 
   it("validation flags null participantId rows", async () => {

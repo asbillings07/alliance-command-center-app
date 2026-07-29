@@ -16,7 +16,7 @@
  *
  * RECOVERY if execution was wrong or needs undo:
  *   - The dry-run manifest (written by default) is the reviewed record of every
- *     email group, assignment count, merge, and ambiguous flag the operator approved.
+ *     email group, assignment, merge, and ambiguous flag the operator approved.
  *   - There is no automatic undo: participant merges/deletes are destructive.
  *   - Preferred recovery: Neon point-in-time recovery (PITR) — see
  *     docs/operations/backups.md. Restore to a branch/snapshot from immediately
@@ -28,19 +28,25 @@
  *   npm run beta:backfill-participants
  *     # exhaustive dry-run; writes ./beta-backfill-manifest.json
  *   npm run beta:backfill-participants -- --execute \
+ *     --manifest ./beta-backfill-manifest.json \
  *     --yes-i-am-sure-this-is-<db-identity> \
  *     [--confirm-production]
  */
 
 import "dotenv/config";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { prisma } from "../app/src/lib/prisma";
 import { productionIdentities } from "../app/src/lib/productionDb";
 import {
+  backfillManifestChecksumPayload,
   buildBackfillManifest,
   countNullParticipantInvitations,
+  resolveBackfillManifestPayload,
   resolveBackfillTargetIdentity,
   runBetaParticipantBackfill,
+  validateBackfillManifestShape,
+  verifyBackfillManifest,
+  verifyBackfillManifestIntegrity,
 } from "../app/src/lib/operations/betaParticipantBackfillDb";
 
 const DEFAULT_MANIFEST_PATH = "./beta-backfill-manifest.json";
@@ -54,17 +60,24 @@ export type BackfillCliArgs = {
 
 export function parseBackfillArgs(argv: string[]): BackfillCliArgs {
   let confirmIdentity: string | null = null;
-  for (const arg of argv) {
-    const match = arg.match(/^--yes-i-am-sure-this-is-(.+)$/);
-    if (match) {
-      confirmIdentity = match[1]!;
+  let manifestPath = DEFAULT_MANIFEST_PATH;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    const identityMatch = arg.match(/^--yes-i-am-sure-this-is-(.+)$/);
+    if (identityMatch) {
+      confirmIdentity = identityMatch[1]!;
+      continue;
+    }
+    if (arg === "--manifest") {
+      manifestPath = argv[i + 1] ?? DEFAULT_MANIFEST_PATH;
+      i += 1;
     }
   }
   return {
     execute: argv.includes("--execute"),
     confirmProduction: argv.includes("--confirm-production"),
     confirmIdentity,
-    manifestPath: DEFAULT_MANIFEST_PATH,
+    manifestPath,
   };
 }
 
@@ -99,6 +112,25 @@ export function assertBackfillExecuteAllowed(
   }
 }
 
+export async function loadAndVerifyApprovedManifest(
+  manifestPath: string,
+  dbIdentity: string,
+) {
+  const manifest = validateBackfillManifestShape(
+    JSON.parse(readFileSync(manifestPath, "utf8")),
+  );
+  const integrity = verifyBackfillManifestIntegrity(manifest);
+  if (!integrity.ok) {
+    throw new Error(`Refusing to execute: ${integrity.reason}`);
+  }
+  if (manifest.dbIdentity !== dbIdentity) {
+    throw new Error(
+      `Refusing to execute: manifest was generated for database "${manifest.dbIdentity}" but the current target is "${dbIdentity}".`,
+    );
+  }
+  return manifest;
+}
+
 async function main(): Promise<void> {
   const args = parseBackfillArgs(process.argv.slice(2));
   const dryRun = !args.execute;
@@ -119,40 +151,82 @@ async function main(): Promise<void> {
     return;
   }
 
-  const summary = await runBetaParticipantBackfill(prisma, { dryRun });
-  console.log("\nBackfill summary (exhaustive over all affected email groups):");
-  console.log(`  dryRun: ${summary.dryRun}`);
-  console.log(`  emailGroupsPlanned: ${summary.emailPlans.length}`);
-  console.log(`  emailsProcessed: ${summary.emailsProcessed}`);
-  console.log(`  emailsSkipped: ${summary.emailsSkipped}`);
-  console.log(`  invitationsAssigned: ${summary.invitationsAssigned}`);
-  console.log(`  participantsCreated: ${summary.participantsCreated}`);
-  console.log(`  mergesPerformed: ${summary.mergesPerformed}`);
-  console.log(`  ambiguousFlagsSet: ${summary.ambiguousFlagsSet}`);
-
   if (dryRun) {
+    const summary = await runBetaParticipantBackfill(prisma, { dryRun: true });
+    console.log("\nBackfill summary (exhaustive over all affected email groups):");
+    console.log(`  dryRun: ${summary.dryRun}`);
+    console.log(`  emailGroupsPlanned: ${summary.emailPlans.length}`);
+    console.log(`  emailsProcessed: ${summary.emailsProcessed}`);
+    console.log(`  emailsSkipped: ${summary.emailsSkipped}`);
+    console.log(`  invitationsAssigned: ${summary.invitationsAssigned}`);
+    console.log(`  participantsCreated: ${summary.participantsCreated}`);
+    console.log(`  mergesPerformed: ${summary.mergesPerformed}`);
+    console.log(`  ambiguousFlagsSet: ${summary.ambiguousFlagsSet}`);
+
     const manifest = buildBackfillManifest({
       dbIdentity: target.identity,
       pendingNullInvitationCount: pending,
-      summary,
+      emailPlans: summary.planRecords,
+      totals: {
+        emailsProcessed: summary.emailsProcessed,
+        emailsSkipped: summary.emailsSkipped,
+        invitationsAssigned: summary.invitationsAssigned,
+        participantsCreated: summary.participantsCreated,
+        mergesPerformed: summary.mergesPerformed,
+        ambiguousFlagsSet: summary.ambiguousFlagsSet,
+      },
     });
     writeFileSync(args.manifestPath, JSON.stringify(manifest, null, 2));
     console.log(
       `\nWrote reviewed dry-run manifest to ${args.manifestPath} (checksum ${manifest.checksum.slice(0, 12)}...).`,
     );
     console.log(
-      `Re-run with --execute --yes-i-am-sure-this-is-${target.identity}${target.isProduction ? " --confirm-production" : ""} after review.`,
+      `Re-run with --execute --manifest ${args.manifestPath} --yes-i-am-sure-this-is-${target.identity}${target.isProduction ? " --confirm-production" : ""} after review.`,
     );
     console.log(
       "Recovery: see script header — manifest + Neon PITR (docs/operations/backups.md).",
     );
-  } else {
-    const remaining = await countNullParticipantInvitations(prisma);
-    console.log(`\nRemaining NULL participantId rows: ${remaining}`);
-    console.log(
-      "Next step: npm run beta:validate-participants (must exit 0 before PR 1c contract deploy).",
-    );
+    return;
   }
+
+  const manifest = await loadAndVerifyApprovedManifest(
+    args.manifestPath,
+    target.identity,
+  );
+  console.log(
+    `\nLoaded reviewed manifest: ${args.manifestPath} (generated ${manifest.generatedAt})`,
+  );
+
+  const fresh = await resolveBackfillManifestPayload(prisma);
+  const verdict = verifyBackfillManifest(manifest, {
+    dbIdentity: target.identity,
+    payload: backfillManifestChecksumPayload({
+      dbIdentity: target.identity,
+      pendingNullInvitationCount: fresh.pendingNullInvitationCount,
+      emailPlans: fresh.emailPlans,
+      totals: fresh.totals,
+    }),
+  });
+  if (!verdict.ok) {
+    throw new Error(`Refusing to execute: ${verdict.reason}`);
+  }
+
+  const summary = await runBetaParticipantBackfill(prisma, {
+    dryRun: false,
+    approvedManifest: manifest,
+  });
+  console.log("\nBackfill execute summary:");
+  console.log(`  emailGroupsApplied: ${summary.emailPlans.length}`);
+  console.log(`  invitationsAssigned: ${summary.invitationsAssigned}`);
+  console.log(`  participantsCreated: ${summary.participantsCreated}`);
+  console.log(`  mergesPerformed: ${summary.mergesPerformed}`);
+  console.log(`  ambiguousFlagsSet: ${summary.ambiguousFlagsSet}`);
+
+  const remaining = await countNullParticipantInvitations(prisma);
+  console.log(`\nRemaining NULL participantId rows: ${remaining}`);
+  console.log(
+    `Next step: npm run beta:validate-participants -- --yes-i-am-sure-this-is-${target.identity} (must exit 0 before PR 1c contract deploy).`,
+  );
 }
 
 main()
