@@ -4,6 +4,7 @@ import type * as BetaInvitationModule from "./betaInvitation";
 import {
   clearBetaInvitationTestHooks,
   setBetaInvitationAfterParticipantLockHook,
+  setBetaInvitationBeforeParticipantLockHook,
 } from "./betaInvitationTestHooks";
 
 const runDb = process.env.INTEGRATION_DB === "true";
@@ -357,15 +358,17 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
 
     const claimLocked = createDeferred<void>();
     const releaseClaim = createDeferred<void>();
-    let reissueReachedLock = false;
+    const reissueAttemptingLock = createDeferred<void>();
 
     setBetaInvitationAfterParticipantLockHook(async (ctx) => {
       if (ctx.operation === "claim") {
         claimLocked.resolve(undefined);
         await releaseClaim.promise;
       }
+    });
+    setBetaInvitationBeforeParticipantLockHook(async (ctx) => {
       if (ctx.operation === "reissue") {
-        reissueReachedLock = true;
+        reissueAttemptingLock.resolve(undefined);
       }
     });
 
@@ -376,8 +379,7 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
       invitation.participantId,
       operator.id,
     );
-    await Promise.resolve();
-    expect(reissueReachedLock).toBe(false);
+    await reissueAttemptingLock.promise;
 
     releaseClaim.resolve(undefined);
     const claim = await claimPromise;
@@ -411,15 +413,17 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
 
     const revokeLocked = createDeferred<void>();
     const releaseRevoke = createDeferred<void>();
-    let reissueReachedLock = false;
+    const reissueAttemptingLock = createDeferred<void>();
 
     setBetaInvitationAfterParticipantLockHook(async (ctx) => {
       if (ctx.operation === "revoke") {
         revokeLocked.resolve(undefined);
         await releaseRevoke.promise;
       }
+    });
+    setBetaInvitationBeforeParticipantLockHook(async (ctx) => {
       if (ctx.operation === "reissue") {
-        reissueReachedLock = true;
+        reissueAttemptingLock.resolve(undefined);
       }
     });
 
@@ -434,8 +438,7 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
         createdInvitationIds.push(result.invitation.id);
         return result;
       });
-    await Promise.resolve();
-    expect(reissueReachedLock).toBe(false);
+    await reissueAttemptingLock.promise;
 
     releaseRevoke.resolve(undefined);
     await revokePromise;
@@ -522,6 +525,172 @@ describeIntegration("betaInvitation atomic actions [integration]", () => {
     createdInvitationIds.push(reissued.invitation.id);
 
     expect(reissued.invitation.reissuedFromInvitationId).toBe(invitation.id);
+    const latest = await findLatestInvitation(prisma, invitation.participantId);
+    expect(latest?.id).toBe(reissued.invitation.id);
+    expect(latest?.resendClaimId).toBeNull();
+  });
+
+  it("revoke wins participant lock before concurrent resend claim on a pending attempt", async () => {
+    enableBarrierHooks();
+    const operator = await makeOperator();
+    const invitation = await issueTracked();
+    const originalSnapshot = await prisma.betaInvitation.findUnique({
+      where: { id: invitation.id },
+    });
+
+    const revokeLocked = createDeferred<void>();
+    const releaseRevoke = createDeferred<void>();
+    const claimAttemptingLock = createDeferred<void>();
+
+    setBetaInvitationAfterParticipantLockHook(async (ctx) => {
+      if (ctx.operation === "revoke") {
+        revokeLocked.resolve(undefined);
+        await releaseRevoke.promise;
+      }
+    });
+    setBetaInvitationBeforeParticipantLockHook(async (ctx) => {
+      if (ctx.operation === "claim") {
+        claimAttemptingLock.resolve(undefined);
+      }
+    });
+
+    const revokePromise = revokeBetaInvitation(invitation.id, operator.id);
+    await revokeLocked.promise;
+
+    const claimPromise = claimBetaInvitationResend(invitation.id);
+    await claimAttemptingLock.promise;
+
+    releaseRevoke.resolve(undefined);
+    await revokePromise;
+
+    await expect(claimPromise).rejects.toThrow(
+      "Only pending invitations can be resent",
+    );
+
+    const row = await prisma.betaInvitation.findUnique({
+      where: { id: invitation.id },
+    });
+    expect(row?.revokedAt).not.toBeNull();
+    expect(row?.revokedByUserId).toBe(operator.id);
+    expect(row?.resendClaimId).toBeNull();
+    expect(row?.resendClaimedAt).toBeNull();
+    expect(row?.notes).toBe(originalSnapshot?.notes);
+    expect(row?.campaign).toBe(originalSnapshot?.campaign);
+
+    const latest = await findLatestInvitation(prisma, invitation.participantId);
+    expect(latest?.id).toBe(invitation.id);
+  });
+
+  it("resend claim wins participant lock before concurrent revoke on a pending attempt", async () => {
+    enableBarrierHooks();
+    const operator = await makeOperator();
+    const invitation = await issueTracked();
+    const originalSnapshot = await prisma.betaInvitation.findUnique({
+      where: { id: invitation.id },
+    });
+
+    const claimLocked = createDeferred<void>();
+    const releaseClaim = createDeferred<void>();
+    const revokeAttemptingLock = createDeferred<void>();
+
+    setBetaInvitationAfterParticipantLockHook(async (ctx) => {
+      if (ctx.operation === "claim") {
+        claimLocked.resolve(undefined);
+        await releaseClaim.promise;
+      }
+    });
+    setBetaInvitationBeforeParticipantLockHook(async (ctx) => {
+      if (ctx.operation === "revoke") {
+        revokeAttemptingLock.resolve(undefined);
+      }
+    });
+
+    const claimPromise = claimBetaInvitationResend(invitation.id);
+    await claimLocked.promise;
+
+    const revokePromise = revokeBetaInvitation(invitation.id, operator.id);
+    await revokeAttemptingLock.promise;
+
+    releaseClaim.resolve(undefined);
+    const claim = await claimPromise;
+
+    await expect(revokePromise).rejects.toThrow(
+      "A delivery attempt is in progress",
+    );
+
+    const row = await prisma.betaInvitation.findUnique({
+      where: { id: invitation.id },
+    });
+    expect(row?.revokedAt).toBeNull();
+    expect(row?.revokedByUserId).toBeNull();
+    expect(row?.resendClaimId).toBe(claim.claimId);
+    expect(row?.resendClaimedAt).not.toBeNull();
+    expect(row?.notes).toBe(originalSnapshot?.notes);
+    expect(row?.campaign).toBe(originalSnapshot?.campaign);
+
+    const latest = await findLatestInvitation(prisma, invitation.participantId);
+    expect(latest?.id).toBe(invitation.id);
+
+    await releaseBetaInvitationResend(claim.invitationId, claim.claimId);
+  });
+
+  it("reissue replacement wins before a late resend claim on a superseded attempt", async () => {
+    enableBarrierHooks();
+    const operator = await makeOperator();
+    const invitation = await issueTracked();
+    const originalSnapshot = await prisma.betaInvitation.findUnique({
+      where: { id: invitation.id },
+    });
+
+    await prisma.betaInvitation.update({
+      where: { id: invitation.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    const reissueLocked = createDeferred<void>();
+    const releaseReissue = createDeferred<void>();
+    const claimAttemptingLock = createDeferred<void>();
+
+    setBetaInvitationAfterParticipantLockHook(async (ctx) => {
+      if (ctx.operation === "reissue") {
+        reissueLocked.resolve(undefined);
+        await releaseReissue.promise;
+      }
+    });
+    setBetaInvitationBeforeParticipantLockHook(async (ctx) => {
+      if (ctx.operation === "claim") {
+        claimAttemptingLock.resolve(undefined);
+      }
+    });
+
+    const reissuePromise = reissueBetaInvitation(
+      invitation.participantId,
+      operator.id,
+    ).then((result) => {
+      createdInvitationIds.push(result.invitation.id);
+      return result;
+    });
+    await reissueLocked.promise;
+
+    const claimPromise = claimBetaInvitationResend(invitation.id);
+    await claimAttemptingLock.promise;
+
+    releaseReissue.resolve(undefined);
+    const reissued = await reissuePromise;
+
+    await expect(claimPromise).rejects.toThrow("latest invitation attempt");
+
+    expect(reissued.invitation.reissuedFromInvitationId).toBe(invitation.id);
+
+    const original = await prisma.betaInvitation.findUnique({
+      where: { id: invitation.id },
+    });
+    expect(original?.resendClaimId).toBeNull();
+    expect(original?.resendClaimedAt).toBeNull();
+    expect(original?.notes).toBe(originalSnapshot?.notes);
+    expect(original?.campaign).toBe(originalSnapshot?.campaign);
+    expect(original?.revokedAt).toBeNull();
+
     const latest = await findLatestInvitation(prisma, invitation.participantId);
     expect(latest?.id).toBe(reissued.invitation.id);
     expect(latest?.resendClaimId).toBeNull();

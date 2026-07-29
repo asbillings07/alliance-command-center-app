@@ -5,7 +5,11 @@ import type { BetaInvitation } from "@/app/generated/prisma/client";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { normalizeEmail } from "./email/normalize";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/client";
-import { runBetaInvitationAfterParticipantLockHook } from "./betaInvitationTestHooks";
+import {
+  runBetaInvitationAfterParticipantLockHook,
+  runBetaInvitationBeforeParticipantLockHook,
+  type BetaInvitationLockOperation,
+} from "./betaInvitationTestHooks";
 import type { EmailResult, EmailStatus } from "./email/types";
 
 function generateBetaCode(): string {
@@ -87,13 +91,22 @@ async function findLatestInvitationForParticipant(
 /**
  * Participant-scoped serialization for claim, revoke, and reissue (#174).
  */
-async function lockBetaParticipantRow(
+async function acquireBetaParticipantMutationLock(
   tx: Prisma.TransactionClient,
   participantId: string,
+  operation: BetaInvitationLockOperation,
 ): Promise<void> {
+  await runBetaInvitationBeforeParticipantLockHook({
+    participantId,
+    operation,
+  });
   await tx.$executeRaw`
     SELECT id FROM "BetaParticipant" WHERE id = ${participantId} FOR UPDATE
   `;
+  await runBetaInvitationAfterParticipantLockHook({
+    participantId,
+    operation,
+  });
 }
 
 /**
@@ -557,11 +570,11 @@ export async function revokeBetaInvitation(
   }
 
   await prisma.$transaction(async (tx) => {
-    await lockBetaParticipantRow(tx, invitation.participantId);
-    await runBetaInvitationAfterParticipantLockHook({
-      participantId: invitation.participantId,
-      operation: "revoke",
-    });
+    await acquireBetaParticipantMutationLock(
+      tx,
+      invitation.participantId,
+      "revoke",
+    );
 
     const txNow = new Date();
     const result = await atomicRevokeIfLatestAttempt(
@@ -605,11 +618,7 @@ export async function reissueBetaInvitation(
   const reissueAttempt = () =>
     prisma.$transaction(
       async (tx) => {
-        await lockBetaParticipantRow(tx, participantId);
-        await runBetaInvitationAfterParticipantLockHook({
-          participantId,
-          operation: "reissue",
-        });
+        await acquireBetaParticipantMutationLock(tx, participantId, "reissue");
 
         const txNow = new Date();
 
@@ -758,11 +767,11 @@ export async function claimBetaInvitationResend(
   }
 
   return prisma.$transaction(async (tx) => {
-    await lockBetaParticipantRow(tx, invitation.participantId);
-    await runBetaInvitationAfterParticipantLockHook({
-      participantId: invitation.participantId,
-      operation: "claim",
-    });
+    await acquireBetaParticipantMutationLock(
+      tx,
+      invitation.participantId,
+      "claim",
+    );
 
     const txNow = new Date();
     const latest = await findLatestInvitationForParticipant(
