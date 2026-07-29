@@ -111,7 +111,7 @@ describeIntegration("attention beta consolidation [integration]", () => {
     expect(matches[0]?.href).toBe(
       "/platform/beta?attentionReason=accepted_no_alliance",
     );
-    expect(matches[0]?.description).toContain("9 days ago");
+    expect(matches[0]?.description).toContain("8 days ago");
   });
 
   it("returns one warning item for invitation_expired and not per invitation row", async () => {

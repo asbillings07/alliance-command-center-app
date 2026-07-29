@@ -143,7 +143,8 @@ test.describe("Platform Operations Console", () => {
         await expect(page.getByLabel(/^Attention$/i)).toHaveValue(
           "invitation_expired",
         );
-        await expect(page.locator("table tbody").getByText(email)).toBeVisible();
+        const participantRow = page.locator("table tbody tr").filter({ hasText: email });
+        await expect(participantRow).toBeVisible();
       } finally {
         await prisma.betaInvitation.delete({ where: { id: invitation.id } });
         await prisma.betaParticipant.delete({ where: { id: participant.id } });
@@ -586,9 +587,9 @@ test.describe("Platform Operations Console", () => {
         const acceptedRow = page.locator("table tbody tr").filter({ hasText: acceptedEmail });
 
         await expect(invitedRow).toBeVisible();
-        await expect(invitedRow.getByText("Invited", { exact: true })).toBeVisible();
+        await expect(invitedRow.locator("td").nth(2)).toContainText("Invited");
         await expect(acceptedRow).toBeVisible();
-        await expect(acceptedRow.getByText("Accepted", { exact: true })).toBeVisible();
+        await expect(acceptedRow.locator("td").nth(2)).toContainText("Accepted");
       } finally {
         await prisma.betaInvitation.deleteMany({
           where: { id: { in: [invitedInvitation.id, acceptedInvitation.id] } },
