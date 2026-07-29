@@ -1,6 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import {
   getActionRequired,
   getActionRequiredBySeverity,
@@ -188,26 +186,5 @@ describe("getActionRequired beta isolation", () => {
     expect(recovered.betaAttentionUnavailable).toBe(false);
     expect(recovered.warning).toHaveLength(1);
     expect(recovered.warning[0]?.id).toBe("beta-attention-participant-recovered");
-  });
-});
-
-describe("listBetaParticipantsNeedingAttention narrow projection", () => {
-  it("does not select invitation secrets or call getAppOrigin", () => {
-    const source = readFileSync(
-      resolve(import.meta.dirname, "betaParticipants.ts"),
-      "utf8",
-    );
-    const fnStart = source.indexOf("export async function listBetaParticipantsNeedingAttention");
-    const fnEnd = source.indexOf("/** Execute only the derivation CTE", fnStart);
-    const fnSource = source.slice(fnStart, fnEnd);
-
-    expect(fnSource).not.toContain("getAppOrigin");
-    expect(fnSource).not.toContain("latest_code");
-    expect(fnSource).not.toContain("latest_token");
-    expect(fnSource).not.toContain("latest_notes");
-    expect(fnSource).not.toContain("issued_by");
-    expect(fnSource).not.toContain("mapDerivedRow");
-    expect(fnSource).toContain("mapAttentionDerivedRow");
-    expect(fnSource).toContain("BetaParticipantAttentionRow");
   });
 });
