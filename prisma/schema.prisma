@@ -333,8 +333,8 @@ model BetaInvitation {
   issuedAt  DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
-  participantId String?
-  participant   BetaParticipant? @relation(fields: [participantId], references: [id])
+  participantId String
+  participant   BetaParticipant @relation(fields: [participantId], references: [id])
 
   issuedByUserId String?
   issuedBy       User?   @relation("BetaInvitationsIssued", fields: [issuedByUserId], references: [id], onDelete: SetNull)

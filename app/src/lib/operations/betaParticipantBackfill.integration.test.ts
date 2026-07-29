@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
 import {
+  runAllBetaParticipantValidationChecks,
   runBetaParticipantValidationCheck,
 } from "./betaParticipantValidation";
 import {
@@ -15,17 +16,30 @@ import {
  */
 const runDb = process.env.INTEGRATION_DB === "true";
 
+async function isParticipantIdNullable(prisma: PrismaClient): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ is_nullable: string }>>`
+    SELECT is_nullable
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'BetaInvitation'
+      AND column_name = 'participantId'
+  `;
+  return rows[0]?.is_nullable === "YES";
+}
+
 describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
   const createdUserIds: string[] = [];
   const createdParticipantIds: string[] = [];
   const createdInvitationIds: string[] = [];
 
   let prisma: PrismaClient;
+  let preContractDb = false;
 
   beforeAll(async () => {
     ({ prisma } = (await import("../prisma")) as unknown as {
       prisma: PrismaClient;
     });
+    preContractDb = await isParticipantIdNullable(prisma);
   });
 
   afterEach(async () => {
@@ -136,7 +150,11 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     expect(collisions).toHaveLength(0);
   }
 
-  it("backfills legacy NULL participantId rows and passes validation", async () => {
+  it("backfills legacy NULL participantId rows and passes validation", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `backfill-clean-${suffix}@example.test`;
     const user = await makeUser("backfill-clean");
@@ -161,7 +179,11 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     await trackParticipantsForEmail(email);
   });
 
-  it("splits two accepted users and marks ambiguous remainder", async () => {
+  it("splits two accepted users and marks ambiguous remainder", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `backfill-split-${suffix}@example.test`;
     const userA = await makeUser("split-a");
@@ -198,7 +220,11 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     await trackParticipantsForEmail(email);
   });
 
-  it("is idempotent when run twice", async () => {
+  it("is idempotent when run twice", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `backfill-idempotent-${suffix}@example.test`;
     await makeLegacyInvitation(email);
@@ -222,7 +248,11 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     await trackParticipantsForEmail(email);
   });
 
-  it("does not split identity when issuance interleaves during backfill snapshot read", async () => {
+  it("does not split identity when issuance interleaves during backfill snapshot read", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const { issueBetaInvitation } = await import("../betaInvitation");
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `race-${suffix}@example.test`;
@@ -267,7 +297,11 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     await trackParticipantsForEmail(email);
   });
 
-  it("merges three existing participants onto the oldest survivor", async () => {
+  it("merges three existing participants onto the oldest survivor", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `merge-three-${suffix}@example.test`;
     const now = new Date();
@@ -322,7 +356,11 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     expect(remaining[0]?.id).toBe(oldest.id);
   });
 
-  it("validation flags null participantId rows", async () => {
+  it("validation flags null participantId rows", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     await makeLegacyInvitation(`validate-null-${Date.now()}@example.test`);
     const result = await runBetaParticipantValidationCheck(
       prisma,
@@ -367,7 +405,11 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     );
   });
 
-  it("validation flags colliding userId claims", async () => {
+  it("validation flags colliding userId claims", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const user = await makeUser("collision");
     const participantAId = `collision-a-${suffix}`;
@@ -401,7 +443,11 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     expect(result.rows.some((row) => row.participantId === orphanId)).toBe(true);
   });
 
-  it("validation passes cleanly after backfill on prepared legacy data", async () => {
+  it("validation passes cleanly after backfill on prepared legacy data", async (ctx) => {
+    if (!preContractDb) {
+      ctx.skip();
+      return;
+    }
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const email = `validate-clean-${suffix}@example.test`;
     await makeLegacyInvitation(email);
@@ -410,5 +456,10 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
     await assertEmailGroupPassesValidation(email);
 
     await trackParticipantsForEmail(email);
+  });
+
+  it("validation passes on post-contract CI database", async () => {
+    const results = await runAllBetaParticipantValidationChecks(prisma);
+    expect(results.every((result) => result.rows.length === 0)).toBe(true);
   });
 });
