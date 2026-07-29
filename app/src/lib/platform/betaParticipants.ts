@@ -10,6 +10,8 @@ export const BETA_PARTICIPANTS_PAGE_SIZE_MAX = 50;
 export const BETA_PARTICIPANTS_MAX_OFFSET = 10_000;
 export const BETA_PARTICIPANTS_INPUT_MAX_LENGTH = 200;
 export const BETA_PARTICIPANTS_ATTENTION_STALE_DAYS = 7;
+/** Max participants returned for platform Action Required beta items. */
+export const BETA_PARTICIPANTS_ATTENTION_LIST_LIMIT = 50;
 
 export type BetaJourneyStage =
   | "invited"
@@ -1084,6 +1086,76 @@ export async function listBetaParticipantPriorAttempts(
     page: clampedPage,
     pageSize: clampedPageSize,
   };
+}
+
+/**
+ * Participants with a non-null attention reason from the shared derivation CTE.
+ * Used by the platform Action Required feed — one row per participant.
+ */
+export async function listBetaParticipantsNeedingAttention(
+  options: { limit?: number; now?: Date } = {},
+): Promise<BetaParticipantListItem[]> {
+  const now = options.now ?? new Date();
+  const limit = Math.min(
+    options.limit ?? BETA_PARTICIPANTS_ATTENTION_LIST_LIMIT,
+    BETA_PARTICIPANTS_ATTENTION_LIST_LIMIT,
+  );
+  const cte = betaParticipantsDerivationCte(now);
+  const origin = getAppOrigin();
+
+  const rows = await prisma.$queryRaw<DerivedRow[]>`
+    WITH ${cte}
+    SELECT
+      d.participant_id,
+      d.identity_ambiguous,
+      d.display_name,
+      d.current_email,
+      d.latest_attempt_id,
+      d.latest_email,
+      d.latest_code,
+      d.latest_token,
+      d.latest_campaign,
+      d.latest_notes,
+      d.latest_issued_at,
+      d.latest_created_at,
+      d.latest_expires_at,
+      d.latest_accepted_at,
+      d.latest_revoked_at,
+      d.latest_issued_by_user_id,
+      d.latest_issued_by_display_name,
+      d.latest_issued_by_email,
+      d.latest_revoked_by_user_id,
+      d.latest_revoked_by_display_name,
+      d.latest_revoked_by_email,
+      d.latest_accepted_by_user_id,
+      d.latest_accepted_by_display_name,
+      d.latest_accepted_by_email,
+      d.prior_attempt_count,
+      d.alliance_id,
+      d.alliance_ambiguous,
+      d.alliance_name,
+      d.journey_stage,
+      d.attention_reason,
+      d.attention_since,
+      d.latest_status
+    FROM derived d
+    WHERE d.attention_reason IS NOT NULL
+    ORDER BY
+      CASE d.attention_reason
+        WHEN 'accepted_no_alliance' THEN 1
+        WHEN 'setup_stalled' THEN 2
+        WHEN 'invitation_expired' THEN 3
+        WHEN 'invitation_pending_stale' THEN 4
+        ELSE 5
+      END ASC,
+      d.attention_since ASC NULLS LAST,
+      d.latest_issued_at DESC,
+      d.latest_created_at DESC,
+      d.latest_attempt_id DESC
+    LIMIT ${limit}
+  `;
+
+  return rows.map((row) => mapDerivedRow(row, origin));
 }
 
 /** Execute only the derivation CTE for parity testing against TS helpers. */

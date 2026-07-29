@@ -1,4 +1,9 @@
 import { prisma } from "../prisma";
+import {
+  listBetaParticipantsNeedingAttention,
+  type BetaAttentionReason,
+  type BetaParticipantListItem,
+} from "./betaParticipants";
 
 /**
  * Attention Domain Service
@@ -27,125 +32,113 @@ export type GroupedActionRequired = {
   totalCount: number;
 };
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function participantIdentity(participant: BetaParticipantListItem): string {
+  return (
+    participant.displayName ??
+    participant.currentEmail ??
+    participant.latestAttempt.email
+  );
+}
+
+function daysSinceAttention(now: Date, since: Date | null): number {
+  if (!since) {
+    return 0;
+  }
+  return Math.floor((now.getTime() - since.getTime()) / MS_PER_DAY);
+}
+
+function betaAttentionHref(participant: BetaParticipantListItem): string {
+  const reason = participant.attentionReason!;
+  if (
+    reason === "setup_stalled" &&
+    participant.allianceId &&
+    !participant.allianceAmbiguous
+  ) {
+    return `/platform/support/alliance/${participant.allianceId}`;
+  }
+  return `/platform/beta?attentionReason=${reason}`;
+}
+
+/** Maps one authoritative beta participant projection row to an Action Required item. */
+export function mapBetaParticipantToActionRequired(
+  participant: BetaParticipantListItem,
+  now: Date,
+): ActionRequiredItem {
+  const identity = participantIdentity(participant);
+  const days = daysSinceAttention(now, participant.attentionSince);
+  const dayLabel = days === 1 ? "day" : "days";
+  const reason = participant.attentionReason as BetaAttentionReason;
+  const metadata = {
+    participantId: participant.participantId,
+    attentionReason: reason,
+    attentionSince: participant.attentionSince?.toISOString() ?? null,
+    allianceId: participant.allianceId,
+  };
+
+  switch (reason) {
+    case "accepted_no_alliance":
+      return {
+        id: `beta-attention-${participant.participantId}`,
+        severity: "critical",
+        title: "Accepted beta, no alliance",
+        description: `${identity} accepted ${days} ${dayLabel} ago`,
+        href: betaAttentionHref(participant),
+        metadata,
+      };
+    case "invitation_expired":
+      return {
+        id: `beta-attention-${participant.participantId}`,
+        severity: "warning",
+        title: "Expired beta invitation",
+        description: `${identity} expired ${days}d ago`,
+        href: betaAttentionHref(participant),
+        metadata,
+      };
+    case "invitation_pending_stale":
+      return {
+        id: `beta-attention-${participant.participantId}`,
+        severity: "warning",
+        title: "Pending beta invitation",
+        description: `${identity} pending ${days}d`,
+        href: betaAttentionHref(participant),
+        metadata,
+      };
+    case "setup_stalled":
+      return {
+        id: `beta-attention-${participant.participantId}`,
+        severity: "warning",
+        title: participant.allianceName
+          ? `${participant.allianceName} setup stalled`
+          : "Beta setup stalled",
+        description: `${days}d since last setup activity`,
+        href: betaAttentionHref(participant),
+        allianceId: participant.allianceId ?? undefined,
+        allianceName: participant.allianceName ?? undefined,
+        metadata,
+      };
+  }
+}
+
+async function getBetaActionRequiredItems(now: Date): Promise<ActionRequiredItem[]> {
+  const participants = await listBetaParticipantsNeedingAttention({ now });
+  return participants.map((participant) =>
+    mapBetaParticipantToActionRequired(participant, now),
+  );
+}
+
 /**
  * Get all items requiring action, with severity.
  */
-export async function getActionRequired(): Promise<ActionRequiredItem[]> {
+export async function getActionRequired(
+  now: Date = new Date(),
+): Promise<ActionRequiredItem[]> {
   const items: ActionRequiredItem[] = [];
-  const now = new Date();
   const weekAgo = new Date(now);
   weekAgo.setDate(weekAgo.getDate() - 7);
 
-  // CRITICAL: Accepted beta invitation but never created alliance
-  const acceptedBetaInvites = await prisma.betaInvitation.findMany({
-    where: { acceptedAt: { not: null } },
-    select: { id: true, email: true, acceptedAt: true },
-  });
-
-  const usersWithAlliances = await prisma.user.findMany({
-    where: {
-      email: { in: acceptedBetaInvites.map((i) => i.email) },
-      memberships: { some: { role: "OWNER" } },
-    },
-    select: { email: true },
-  });
-
-  const usersWithAlliancesSet = new Set(usersWithAlliances.map((u) => u.email));
-  const stuckBetaUsers = acceptedBetaInvites.filter(
-    (i) => !usersWithAlliancesSet.has(i.email)
-  );
-
-  for (const user of stuckBetaUsers) {
-    const daysSinceAccepted = user.acceptedAt
-      ? Math.floor(
-          (now.getTime() - user.acceptedAt.getTime()) / (1000 * 60 * 60 * 24)
-        )
-      : 0;
-
-    items.push({
-      id: `beta-no-alliance-${user.id}`,
-      severity: "critical",
-      title: "Accepted beta but no alliance",
-      description: `${user.email} accepted ${daysSinceAccepted} day${daysSinceAccepted === 1 ? "" : "s"} ago`,
-      href: `/platform/beta`,
-      metadata: { email: user.email, daysSinceAccepted },
-    });
-  }
-
-  // WARNING: Alliances stalled during setup (7+ days, incomplete)
-  const stalledAlliances = await prisma.alliance.findMany({
-    where: {
-      createdAt: { lt: weekAgo },
-      OR: [
-        { metrics: { none: {} } },
-        { metricPeriods: { none: {} } },
-        { allianceMembers: { none: { archivedAt: null } } },
-        {
-          allianceMembers: {
-            none: { metricEntries: { some: {} } },
-          },
-        },
-      ],
-    },
-    select: {
-      id: true,
-      name: true,
-      createdAt: true,
-      _count: {
-        select: { metrics: true, metricPeriods: true, allianceMembers: true },
-      },
-    },
-    take: 10,
-    orderBy: { createdAt: "asc" },
-  });
-
-  for (const alliance of stalledAlliances) {
-    const daysSinceCreated = Math.floor(
-      (now.getTime() - alliance.createdAt.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    const missing: string[] = [];
-    if (alliance._count.metrics === 0) missing.push("metrics");
-    if (alliance._count.metricPeriods === 0) missing.push("periods");
-    if (alliance._count.allianceMembers === 0) missing.push("members");
-
-    items.push({
-      id: `stalled-${alliance.id}`,
-      severity: "warning",
-      title: `${alliance.name} setup stalled`,
-      description: `${daysSinceCreated}d old, missing: ${missing.join(", ") || "data"}`,
-      href: `/platform/support/alliance/${alliance.id}`,
-      allianceId: alliance.id,
-      allianceName: alliance.name,
-      metadata: { daysSinceCreated, missing },
-    });
-  }
-
-  // WARNING: Expired beta invitations
-  const expiredBetaInvites = await prisma.betaInvitation.findMany({
-    where: {
-      acceptedAt: null,
-      expiresAt: { lt: now },
-    },
-    select: { id: true, email: true, expiresAt: true },
-    take: 10,
-    orderBy: { expiresAt: "desc" },
-  });
-
-  for (const invite of expiredBetaInvites) {
-    const daysSinceExpired = Math.floor(
-      (now.getTime() - invite.expiresAt.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    items.push({
-      id: `expired-beta-${invite.id}`,
-      severity: "warning",
-      title: "Expired beta invitation",
-      description: `${invite.email} expired ${daysSinceExpired}d ago`,
-      href: `/platform/beta`,
-      metadata: { email: invite.email, daysSinceExpired },
-    });
-  }
+  items.push(...(await getBetaActionRequiredItems(now)));
 
   // WARNING: Pending collaborator invitations older than 7 days
   const oldCollabInvites = await prisma.invitation.findMany({
@@ -163,7 +156,7 @@ export async function getActionRequired(): Promise<ActionRequiredItem[]> {
 
   for (const invite of oldCollabInvites) {
     const daysPending = Math.floor(
-      (now.getTime() - invite.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+      (now.getTime() - invite.createdAt.getTime()) / MS_PER_DAY,
     );
 
     items.push({
@@ -175,34 +168,6 @@ export async function getActionRequired(): Promise<ActionRequiredItem[]> {
       allianceId: invite.alliance.id,
       allianceName: invite.alliance.name,
       metadata: { email: invite.email, daysPending },
-    });
-  }
-
-  // INFO: Invitations expiring soon (within 3 days)
-  const threeDaysFromNow = new Date(now);
-  threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
-
-  const expiringBetaInvites = await prisma.betaInvitation.findMany({
-    where: {
-      acceptedAt: null,
-      expiresAt: { gte: now, lte: threeDaysFromNow },
-    },
-    select: { id: true, email: true, expiresAt: true },
-    take: 5,
-  });
-
-  for (const invite of expiringBetaInvites) {
-    const daysUntilExpiry = Math.ceil(
-      (invite.expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    items.push({
-      id: `expiring-beta-${invite.id}`,
-      severity: "info",
-      title: "Beta invitation expiring soon",
-      description: `${invite.email} expires in ${daysUntilExpiry}d`,
-      href: `/platform/beta`,
-      metadata: { email: invite.email, daysUntilExpiry },
     });
   }
 
@@ -235,8 +200,10 @@ export async function getActionRequired(): Promise<ActionRequiredItem[]> {
 /**
  * Get action required items grouped by severity.
  */
-export async function getActionRequiredBySeverity(): Promise<GroupedActionRequired> {
-  const items = await getActionRequired();
+export async function getActionRequiredBySeverity(
+  now: Date = new Date(),
+): Promise<GroupedActionRequired> {
+  const items = await getActionRequired(now);
 
   return {
     critical: items.filter((i) => i.severity === "critical"),
@@ -249,13 +216,15 @@ export async function getActionRequiredBySeverity(): Promise<GroupedActionRequir
 /**
  * Get count of items by severity.
  */
-export async function getActionRequiredCounts(): Promise<{
+export async function getActionRequiredCounts(
+  now: Date = new Date(),
+): Promise<{
   critical: number;
   warning: number;
   info: number;
   total: number;
 }> {
-  const grouped = await getActionRequiredBySeverity();
+  const grouped = await getActionRequiredBySeverity(now);
   return {
     critical: grouped.critical.length,
     warning: grouped.warning.length,
