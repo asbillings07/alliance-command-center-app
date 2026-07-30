@@ -119,6 +119,7 @@ export async function createInvitationAction(
       result.invitation,
       result.inviteUrl,
       (input) => emailService.sendBetaInvitation(input),
+      session.id,
     );
 
     return {
@@ -163,6 +164,8 @@ export async function reissueInvitationAction(
         result.invitation,
         result.inviteUrl,
         (input) => emailService.sendBetaInvitation(input),
+        session.id,
+        "reissue",
       );
     } catch {
       // Persisted reissue stands; only notification/claim failed (#174).
@@ -193,7 +196,7 @@ export async function reissueInvitationAction(
 export async function resendInvitationEmailAction(
   invitationId: string,
 ): Promise<ResendInvitationEmailResult> {
-  await requirePlatformAdmin();
+  const session = await requirePlatformAdmin();
 
   try {
     const invitation = await prisma.betaInvitation.findUnique({
@@ -215,6 +218,8 @@ export async function resendInvitationEmailAction(
       invitation,
       getRedeemUrl(invitation.token),
       (input) => emailService.sendBetaInvitation(input),
+      session.id,
+      "resend",
     );
 
     return { success: true, emailStatus };

@@ -38,13 +38,14 @@ export const emailService: EmailService = {
     to,
     invitation,
     signal,
+    requestId,
   }: BetaInvitationEmailInput): Promise<EmailResult> {
     return deliverEmail({
       to,
       subject: BETA_INVITATION_SUBJECT,
       content: renderBetaInvitationEmail(invitation),
       replyTo: DEFAULT_REPLY_TO,
-      metadata: { invitationId: invitation.id },
+      metadata: { invitationId: invitation.id, requestId },
       signal,
     });
   },

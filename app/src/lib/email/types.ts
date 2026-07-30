@@ -28,6 +28,12 @@ export type EmailMetadata = {
   userId?: string;
   accessRequestId?: string;
   feedbackId?: string;
+  /**
+   * Correlates this delivery's transport-level logs to the persisted
+   * BetaInvitationDeliveryAttempt row (#175). Not a dedup key — see
+   * betaInvitationDelivery.ts.
+   */
+  requestId?: string;
 };
 
 /** Rendered email body (HTML + plain text fallback). */
@@ -121,6 +127,8 @@ export type BetaInvitationEmailInput = {
   invitation: BetaInvitationView;
   /** Aborts in-flight provider delivery when timed out or cancelled (#174). */
   signal?: AbortSignal;
+  /** Correlates transport logs to the persisted delivery attempt (#175). */
+  requestId?: string;
 };
 
 /** View model for the access-request confirmation email. */

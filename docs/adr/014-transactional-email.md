@@ -95,6 +95,14 @@ Action -> Outbox Table -> Background Worker -> Email
 
 This would add durability and retries without changing callers (they still call `emailService`). We intentionally do **not** build this before beta.
 
+### Delivery history (#175)
+
+Beta invitation delivery attempts are persisted (`BetaInvitationDeliveryAttempt`) at the same boundary described above — inside `deliverBetaInvitationEmail`/`deliverBetaInvitationEmailWithClaim` (`app/src/lib/betaInvitation.ts`), immediately after the real `EmailResult` is observed. The transport-outcome resolution and the audit-write are two independent `try/catch` blocks: a database failure while persisting a successful send must never be reported to the caller as a failed delivery, and a genuine transport failure must never be silently swallowed by an audit-write problem.
+
+This means a database outage landing in the narrow window between a successful transport call returning and the audit insert completing can produce an **unrecorded** (not mis-recorded) delivery attempt — the same class of gap the outbox design above would close, just for the audit record rather than the send itself. This is an accepted limitation without an outbox; it does not affect the underlying invitation (still the source of truth) or cause any delivery to be duplicated or lost.
+
+**Rollback strategy.** The `BetaInvitationDeliveryAttempt` migration is purely additive — a new table and two new enums, with no `ALTER`/`DROP` of any pre-existing column or table. Per `docs/operations/rollback.md`'s "Option 1: Compensation Migration," rolling it back in production is just a forward-only migration that drops what it added (`DROP TABLE "BetaInvitationDeliveryAttempt"`, then the two enums). Because the audit-write is already isolated behind its own `try/catch` (above), that compensation migration is safe to apply even while application code is still deployed: `recordBetaInvitationDeliveryAttempt` degrades to "unrecorded" rather than breaking invitation delivery. This is validated end-to-end (compensation migration applied, then the forward migration re-applied with every constraint intact) against a disposable isolated database in `betaInvitationDeliveryMigration.integration.test.ts`.
+
 ### Password reset notifications (follow-on)
 
 Password reset (the request + set-new-password flow) is implemented on top of

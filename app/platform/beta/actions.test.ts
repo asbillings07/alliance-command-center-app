@@ -88,6 +88,12 @@ describe("platform beta actions", () => {
       issuedByUserId: "operator-1",
     });
     expect(mockDeliverBetaInvitationEmail).toHaveBeenCalled();
+    expect(mockDeliverBetaInvitationEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "inv-1" }),
+      "https://example.com/redeem/tok",
+      expect.any(Function),
+      "operator-1",
+    );
   });
 
   it("returns reissue credentials when email delivery fails", async () => {
@@ -111,7 +117,13 @@ describe("platform beta actions", () => {
       email: "test@example.com",
       emailStatus: "failed",
     });
-    expect(mockDeliverBetaInvitationEmailWithClaim).toHaveBeenCalled();
+    expect(mockDeliverBetaInvitationEmailWithClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "inv-reissue" }),
+      "https://example.com/redeem/new",
+      expect.any(Function),
+      "operator-1",
+      "reissue",
+    );
   });
 
   it("returns reissue credentials when delivery claim contention throws", async () => {
@@ -155,6 +167,12 @@ describe("platform beta actions", () => {
     const result = await resendInvitationEmailAction("inv-1");
 
     expect(result).toEqual({ success: true, emailStatus: "sent" });
-    expect(mockDeliverBetaInvitationEmailWithClaim).toHaveBeenCalled();
+    expect(mockDeliverBetaInvitationEmailWithClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "inv-1" }),
+      expect.any(String),
+      expect.any(Function),
+      "operator-1",
+      "resend",
+    );
   });
 });

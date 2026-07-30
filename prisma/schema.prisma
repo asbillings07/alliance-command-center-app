@@ -138,6 +138,7 @@ model User {
   betaInvitationsIssued   BetaInvitation[] @relation("BetaInvitationsIssued")
   betaInvitationsRevoked  BetaInvitation[] @relation("BetaInvitationsRevoked")
   betaParticipant         BetaParticipant?
+  betaInvitationDeliveryAttempts BetaInvitationDeliveryAttempt[]
   feedback Feedback[]
   feedbackTriageEvents FeedbackTriageEvent[]
   emailChangeRequests EmailChangeRequest[]
@@ -361,8 +362,67 @@ model BetaInvitation {
   allianceId String?
   alliance   Alliance? @relation(fields: [allianceId], references: [id])
 
+  deliveryAttempts BetaInvitationDeliveryAttempt[]
+
   @@index([email])
   @@index([participantId])
+}
+
+// Immutable, append-only record of every real invocation of the beta
+// invitation email transport (#175). Never fabricated: a row exists only
+// when `send()` was actually called and its `EmailResult` observed at the
+// service boundary in betaInvitation.ts. `onDelete: Restrict` on the
+// invitation FK is deliberate — this is durable audit history and must
+// never be silently cascaded away. Safe as-is: betaCleanup.ts/betaCleanupDb.ts
+// never hard-delete a BetaInvitation row (only nullify/revoke it), so this
+// constraint cannot break that tool; only test fixtures that directly
+// `betaInvitation.delete(...)` need to clear their own attempts first.
+model BetaInvitationDeliveryAttempt {
+  id           String         @id @default(cuid())
+  invitationId String
+  invitation   BetaInvitation @relation(fields: [invitationId], references: [id], onDelete: Restrict)
+
+  trigger BetaInvitationDeliveryTrigger
+  status  BetaInvitationDeliveryStatus
+
+  // Only ever set when status = SENT; discarded otherwise (see
+  // deliverBetaInvitationEmail's canonicalization mapping).
+  providerMessageId String?
+  // Sanitized, bounded, and only ever set when status = FAILED. Falls back to
+  // a generic reason when the transport didn't provide one, so a bare
+  // `{ status: "failed" }` result still records (see canonicalization mapping).
+  failureReason String?
+
+  // Nullable + SetNull so history survives operator deletion; email/display
+  // name are snapshotted from the database at write time (never trusted from
+  // the action layer) so attribution survives even after that.
+  attemptedByUserId      String?
+  attemptedBy            User?   @relation(fields: [attemptedByUserId], references: [id], onDelete: SetNull)
+  attemptedByEmail       String
+  attemptedByDisplayName String?
+
+  // Fresh UUID per helper invocation. Not a dedup key — the resend/reissue
+  // claim already prevents duplicate transport calls. Purely evidentiary,
+  // threaded into EmailMetadata so transport console logs correlate to this
+  // row when reasoning about retries.
+  requestId String
+
+  createdAt DateTime @default(now())
+
+  @@index([invitationId, createdAt, id])
+  @@index([attemptedByUserId])
+}
+
+enum BetaInvitationDeliveryTrigger {
+  ISSUE
+  RESEND
+  REISSUE
+}
+
+enum BetaInvitationDeliveryStatus {
+  SENT
+  FAILED
+  SKIPPED
 }
 
 // A prospective user expressing interest in the beta. Intentionally separate
