@@ -12,7 +12,9 @@ import {
 } from "@/app/src/lib/betaInvitation";
 import {
   listBetaParticipantPriorAttempts,
+  listBetaInvitationDeliveryHistory,
   type BetaParticipantPriorAttempt,
+  type BetaInvitationDeliverySummary,
 } from "@/app/src/lib/platform/betaParticipants";
 import { prisma } from "@/app/src/lib/prisma";
 import { getRedeemUrl } from "@/app/src/lib/appUrl";
@@ -83,6 +85,16 @@ export type PriorAttemptsResult =
   | {
       success: true;
       items: BetaParticipantPriorAttempt[];
+      total: number;
+      page: number;
+      pageSize: number;
+    }
+  | { success: false; error: string };
+
+export type DeliveryHistoryResult =
+  | {
+      success: true;
+      items: BetaInvitationDeliverySummary[];
       total: number;
       page: number;
       pageSize: number;
@@ -299,6 +311,56 @@ export async function fetchPriorAttemptsAction(
         error instanceof Error
           ? error.message
           : "Failed to load prior attempts",
+    };
+  }
+}
+
+/**
+ * Load paginated email delivery-attempt history for one invitation (#175,
+ * on-demand expand). Gated by requirePlatformAdmin — provider message IDs
+ * and sanitized failure reasons are platform-operator-only.
+ */
+export async function fetchDeliveryHistoryAction(
+  invitationId: string,
+  page = 1,
+  pageSize = 10,
+): Promise<DeliveryHistoryResult> {
+  await requirePlatformAdmin();
+
+  if (!invitationId) {
+    return { success: false, error: "Invitation not found" };
+  }
+
+  try {
+    const invitation = await prisma.betaInvitation.findUnique({
+      where: { id: invitationId },
+      select: { id: true },
+    });
+
+    if (!invitation) {
+      return { success: false, error: "Invitation not found" };
+    }
+
+    const result = await listBetaInvitationDeliveryHistory(
+      invitationId,
+      page,
+      pageSize,
+    );
+
+    return {
+      success: true,
+      items: result.items,
+      total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to load delivery history",
     };
   }
 }
