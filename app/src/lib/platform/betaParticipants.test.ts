@@ -12,6 +12,7 @@ import {
   deriveParticipantAttention,
   escapeIlikePattern,
   daysSince,
+  mapDeliverySummary,
 } from "./betaParticipants";
 
 describe("clampBetaParticipantsPagination", () => {
@@ -340,5 +341,82 @@ describe("deriveParticipantAttention", () => {
     expect(daysSince(now, daysAgo(BETA_PARTICIPANTS_ATTENTION_STALE_DAYS - 0.5))).toBeLessThan(
       BETA_PARTICIPANTS_ATTENTION_STALE_DAYS,
     );
+  });
+});
+
+describe("mapDeliverySummary (#175)", () => {
+  const createdAt = new Date("2026-07-30T12:00:00Z");
+
+  it("returns null when no delivery attempt row exists (renders as 'Not recorded')", () => {
+    expect(
+      mapDeliverySummary({
+        delivery_id: null,
+        delivery_trigger: null,
+        delivery_status: null,
+        delivery_created_at: null,
+        delivery_failure_reason: null,
+        delivery_provider_message_id: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("maps a SENT row, translating DB enums to lowercase read-model values", () => {
+    expect(
+      mapDeliverySummary({
+        delivery_id: "att-1",
+        delivery_trigger: "ISSUE",
+        delivery_status: "SENT",
+        delivery_created_at: createdAt,
+        delivery_failure_reason: null,
+        delivery_provider_message_id: "msg-1",
+      }),
+    ).toEqual({
+      id: "att-1",
+      trigger: "issue",
+      status: "sent",
+      createdAt,
+      failureReason: null,
+      providerMessageId: "msg-1",
+    });
+  });
+
+  it("maps a FAILED resend row with its failure reason", () => {
+    expect(
+      mapDeliverySummary({
+        delivery_id: "att-2",
+        delivery_trigger: "RESEND",
+        delivery_status: "FAILED",
+        delivery_created_at: createdAt,
+        delivery_failure_reason: "Provider rejected the request",
+        delivery_provider_message_id: null,
+      }),
+    ).toEqual({
+      id: "att-2",
+      trigger: "resend",
+      status: "failed",
+      createdAt,
+      failureReason: "Provider rejected the request",
+      providerMessageId: null,
+    });
+  });
+
+  it("maps a SKIPPED reissue row", () => {
+    expect(
+      mapDeliverySummary({
+        delivery_id: "att-3",
+        delivery_trigger: "REISSUE",
+        delivery_status: "SKIPPED",
+        delivery_created_at: createdAt,
+        delivery_failure_reason: null,
+        delivery_provider_message_id: null,
+      }),
+    ).toEqual({
+      id: "att-3",
+      trigger: "reissue",
+      status: "skipped",
+      createdAt,
+      failureReason: null,
+      providerMessageId: null,
+    });
   });
 });

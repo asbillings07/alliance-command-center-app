@@ -1,4 +1,8 @@
-import { Prisma } from "@/app/generated/prisma/client";
+import {
+  Prisma,
+  type BetaInvitationDeliveryTrigger as PrismaDeliveryTrigger,
+  type BetaInvitationDeliveryStatus as PrismaDeliveryStatus,
+} from "@/app/generated/prisma/client";
 import { prisma } from "../prisma";
 import { getAppOrigin } from "../appUrl";
 
@@ -40,6 +44,26 @@ export type BetaAttemptOperator = {
   email: string | null;
 };
 
+/** Invitation lifecycle trigger that provoked an email delivery attempt (#175). */
+export type BetaInvitationDeliveryTrigger = "issue" | "resend" | "reissue";
+
+/** Real, observed transport outcome for one delivery attempt (#175). */
+export type BetaInvitationDeliveryOutcome = "sent" | "failed" | "skipped";
+
+/**
+ * Read-model projection of the most recent BetaInvitationDeliveryAttempt row
+ * for one invitation (#175). `null` on the owning record means no attempt
+ * rows exist at all — rendered as "Not recorded", never fabricated.
+ */
+export type BetaInvitationDeliverySummary = {
+  id: string;
+  trigger: BetaInvitationDeliveryTrigger;
+  status: BetaInvitationDeliveryOutcome;
+  createdAt: Date;
+  failureReason: string | null;
+  providerMessageId: string | null;
+};
+
 export type BetaInvitationAttemptRecord = {
   id: string;
   email: string;
@@ -55,6 +79,8 @@ export type BetaInvitationAttemptRecord = {
   issuedBy: BetaAttemptOperator | null;
   revokedBy: BetaAttemptOperator | null;
   acceptedBy: BetaAttemptOperator | null;
+  /** Most recent delivery attempt for this invitation, or null ("Not recorded", #175). */
+  latestDeliveryAttempt: BetaInvitationDeliverySummary | null;
 };
 
 export type BetaParticipantFilters = {
@@ -623,6 +649,12 @@ type HydratedDerivedRow = DerivedRow & {
   latest_accepted_by_user_id: string | null;
   latest_accepted_by_display_name: string | null;
   latest_accepted_by_email: string | null;
+  delivery_id: string | null;
+  delivery_trigger: PrismaDeliveryTrigger | null;
+  delivery_status: PrismaDeliveryStatus | null;
+  delivery_created_at: Date | null;
+  delivery_failure_reason: string | null;
+  delivery_provider_message_id: string | null;
 };
 
 function mapAttemptOperator(
@@ -640,6 +672,82 @@ function mapAttemptOperator(
     email: email ?? null,
   };
 }
+
+function mapDeliveryTrigger(
+  trigger: PrismaDeliveryTrigger,
+): BetaInvitationDeliveryTrigger {
+  switch (trigger) {
+    case "ISSUE":
+      return "issue";
+    case "RESEND":
+      return "resend";
+    case "REISSUE":
+      return "reissue";
+  }
+}
+
+function mapDeliveryOutcome(
+  status: PrismaDeliveryStatus,
+): BetaInvitationDeliveryOutcome {
+  switch (status) {
+    case "SENT":
+      return "sent";
+    case "FAILED":
+      return "failed";
+    case "SKIPPED":
+      return "skipped";
+  }
+}
+
+/**
+ * Maps one correlated-subquery delivery row to the read-model summary.
+ * Returns null when no delivery attempt exists ("Not recorded", #175) —
+ * callers pass all-null columns from a LEFT JOIN LATERAL / LEFT JOIN, never
+ * a fabricated row.
+ */
+export function mapDeliverySummary(row: {
+  delivery_id: string | null;
+  delivery_trigger: PrismaDeliveryTrigger | null;
+  delivery_status: PrismaDeliveryStatus | null;
+  delivery_created_at: Date | null;
+  delivery_failure_reason: string | null;
+  delivery_provider_message_id: string | null;
+}): BetaInvitationDeliverySummary | null {
+  if (
+    !row.delivery_id ||
+    !row.delivery_trigger ||
+    !row.delivery_status ||
+    !row.delivery_created_at
+  ) {
+    return null;
+  }
+
+  return {
+    id: row.delivery_id,
+    trigger: mapDeliveryTrigger(row.delivery_trigger),
+    status: mapDeliveryOutcome(row.delivery_status),
+    createdAt: row.delivery_created_at,
+    failureReason: row.delivery_failure_reason,
+    providerMessageId: row.delivery_provider_message_id,
+  };
+}
+
+/** Reusable LATERAL join fragment: the latest delivery attempt for `bi.id`. */
+const LATEST_DELIVERY_ATTEMPT_LATERAL_JOIN = Prisma.sql`
+  LEFT JOIN LATERAL (
+    SELECT
+      bda.id,
+      bda.trigger,
+      bda.status,
+      bda."createdAt",
+      bda."failureReason",
+      bda."providerMessageId"
+    FROM "BetaInvitationDeliveryAttempt" bda
+    WHERE bda."invitationId" = bi.id
+    ORDER BY bda."createdAt" DESC, bda.id DESC
+    LIMIT 1
+  ) delivery ON TRUE
+`;
 
 function mapDerivedRow(
   row: HydratedDerivedRow,
@@ -687,6 +795,7 @@ function mapDerivedRow(
         row.latest_accepted_by_display_name,
         row.latest_accepted_by_email,
       ),
+      latestDeliveryAttempt: mapDeliverySummary(row),
     },
   };
 }
@@ -806,6 +915,12 @@ export async function listBetaParticipants(
         bi."acceptedByUserId" AS latest_accepted_by_user_id,
         accepted_by."displayName" AS latest_accepted_by_display_name,
         accepted_by.email AS latest_accepted_by_email,
+        delivery.id AS delivery_id,
+        delivery.trigger AS delivery_trigger,
+        delivery.status AS delivery_status,
+        delivery."createdAt" AS delivery_created_at,
+        delivery."failureReason" AS delivery_failure_reason,
+        delivery."providerMessageId" AS delivery_provider_message_id,
         f.prior_attempt_count,
         f.alliance_id,
         f.alliance_ambiguous,
@@ -819,6 +934,7 @@ export async function listBetaParticipants(
       LEFT JOIN "User" issued_by ON issued_by.id = bi."issuedByUserId"
       LEFT JOIN "User" revoked_by ON revoked_by.id = bi."revokedByUserId"
       LEFT JOIN "User" accepted_by ON accepted_by.id = bi."acceptedByUserId"
+      ${LATEST_DELIVERY_ATTEMPT_LATERAL_JOIN}
       ORDER BY
         f.latest_issued_at DESC,
         f.latest_created_at DESC,
@@ -853,6 +969,12 @@ export async function listBetaParticipants(
         p.latest_accepted_by_user_id,
         p.latest_accepted_by_display_name,
         p.latest_accepted_by_email,
+        p.delivery_id,
+        p.delivery_trigger,
+        p.delivery_status,
+        p.delivery_created_at,
+        p.delivery_failure_reason,
+        p.delivery_provider_message_id,
         p.prior_attempt_count,
         p.alliance_id,
         p.alliance_ambiguous,
@@ -897,6 +1019,12 @@ export async function listBetaParticipants(
         NULL AS latest_accepted_by_user_id,
         NULL AS latest_accepted_by_display_name,
         NULL AS latest_accepted_by_email,
+        NULL AS delivery_id,
+        NULL AS delivery_trigger,
+        NULL AS delivery_status,
+        NULL AS delivery_created_at,
+        NULL AS delivery_failure_reason,
+        NULL AS delivery_provider_message_id,
         NULL AS prior_attempt_count,
         NULL AS alliance_id,
         NULL AS alliance_ambiguous,
@@ -940,6 +1068,12 @@ export async function listBetaParticipants(
       c.latest_accepted_by_user_id,
       c.latest_accepted_by_display_name,
       c.latest_accepted_by_email,
+      c.delivery_id,
+      c.delivery_trigger,
+      c.delivery_status,
+      c.delivery_created_at,
+      c.delivery_failure_reason,
+      c.delivery_provider_message_id,
       c.prior_attempt_count,
       c.alliance_id,
       c.alliance_ambiguous,
@@ -1014,6 +1148,12 @@ type PriorAttemptRow = {
   accepted_by_user_id: string | null;
   accepted_by_display_name: string | null;
   accepted_by_email: string | null;
+  delivery_id: string | null;
+  delivery_trigger: PrismaDeliveryTrigger | null;
+  delivery_status: PrismaDeliveryStatus | null;
+  delivery_created_at: Date | null;
+  delivery_failure_reason: string | null;
+  delivery_provider_message_id: string | null;
 };
 
 function mapPriorAttemptRow(row: PriorAttemptRow): BetaParticipantPriorAttempt {
@@ -1039,6 +1179,7 @@ function mapPriorAttemptRow(row: PriorAttemptRow): BetaParticipantPriorAttempt {
       row.revoked_by_display_name,
       row.revoked_by_email,
     ),
+    latestDeliveryAttempt: mapDeliverySummary(row),
     acceptedBy: mapAttemptOperator(
       row.accepted_by_user_id,
       row.accepted_by_display_name,
@@ -1092,6 +1233,12 @@ export async function listBetaParticipantPriorAttempts(
         bi."acceptedByUserId" AS accepted_by_user_id,
         accepted_by."displayName" AS accepted_by_display_name,
         accepted_by.email AS accepted_by_email,
+        delivery.id AS delivery_id,
+        delivery.trigger AS delivery_trigger,
+        delivery.status AS delivery_status,
+        delivery."createdAt" AS delivery_created_at,
+        delivery."failureReason" AS delivery_failure_reason,
+        delivery."providerMessageId" AS delivery_provider_message_id,
         CASE
           WHEN bi."acceptedAt" IS NOT NULL THEN 'accepted'
           WHEN bi."revokedAt" IS NOT NULL THEN 'revoked'
@@ -1102,6 +1249,7 @@ export async function listBetaParticipantPriorAttempts(
       LEFT JOIN "User" issued_by ON issued_by.id = bi."issuedByUserId"
       LEFT JOIN "User" revoked_by ON revoked_by.id = bi."revokedByUserId"
       LEFT JOIN "User" accepted_by ON accepted_by.id = bi."acceptedByUserId"
+      ${LATEST_DELIVERY_ATTEMPT_LATERAL_JOIN}
       WHERE bi."participantId" = ${participantId}
         AND bi.id NOT IN (SELECT id FROM latest)
       ORDER BY
@@ -1132,6 +1280,80 @@ export async function listBetaParticipantPriorAttempts(
 
   return {
     items: rows.map(mapPriorAttemptRow),
+    total: Number(countRows[0]?.total ?? BigInt(0)),
+    page: clampedPage,
+    pageSize: clampedPageSize,
+  };
+}
+
+export type BetaInvitationDeliveryHistoryResult = {
+  items: BetaInvitationDeliverySummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+type DeliveryHistoryRow = {
+  id: string;
+  trigger: PrismaDeliveryTrigger;
+  status: PrismaDeliveryStatus;
+  created_at: Date;
+  failure_reason: string | null;
+  provider_message_id: string | null;
+};
+
+function mapDeliveryHistoryRow(
+  row: DeliveryHistoryRow,
+): BetaInvitationDeliverySummary {
+  return {
+    id: row.id,
+    trigger: mapDeliveryTrigger(row.trigger),
+    status: mapDeliveryOutcome(row.status),
+    createdAt: row.created_at,
+    failureReason: row.failure_reason,
+    providerMessageId: row.provider_message_id,
+  };
+}
+
+/**
+ * Paginated delivery-attempt history for one invitation (#175), newest
+ * first. Indexed by (invitationId, createdAt, id) — the same index the
+ * migration in PR 1 added. Returns an empty page (not an error) for an
+ * invitation with zero attempt rows; callers/UI render that as "Not
+ * recorded", matching latestDeliveryAttempt's null convention above.
+ */
+export async function listBetaInvitationDeliveryHistory(
+  invitationId: string,
+  page: number,
+  pageSize: number,
+): Promise<BetaInvitationDeliveryHistoryResult> {
+  const { page: clampedPage, pageSize: clampedPageSize, offset } =
+    clampBetaParticipantsPagination(page, pageSize);
+
+  const [rows, countRows] = await Promise.all([
+    prisma.$queryRaw<DeliveryHistoryRow[]>`
+      SELECT
+        bda.id,
+        bda.trigger,
+        bda.status,
+        bda."createdAt" AS created_at,
+        bda."failureReason" AS failure_reason,
+        bda."providerMessageId" AS provider_message_id
+      FROM "BetaInvitationDeliveryAttempt" bda
+      WHERE bda."invitationId" = ${invitationId}
+      ORDER BY bda."createdAt" DESC, bda.id DESC
+      LIMIT ${clampedPageSize}
+      OFFSET ${offset}
+    `,
+    prisma.$queryRaw<Array<{ total: bigint }>>`
+      SELECT COUNT(*)::bigint AS total
+      FROM "BetaInvitationDeliveryAttempt" bda
+      WHERE bda."invitationId" = ${invitationId}
+    `,
+  ]);
+
+  return {
+    items: rows.map(mapDeliveryHistoryRow),
     total: Number(countRows[0]?.total ?? BigInt(0)),
     page: clampedPage,
     pageSize: clampedPageSize,
