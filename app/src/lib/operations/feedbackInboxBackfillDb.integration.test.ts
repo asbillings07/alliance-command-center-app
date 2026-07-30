@@ -5,9 +5,11 @@ import {
   listFeedbackInboxBackfillRows,
   planFeedbackInboxBackfill,
   resolveBackfillTargetIdentity,
+  resolveFeedbackInboxBackfillDryRun,
   runFeedbackInboxBackfill,
   validateFeedbackInboxBackfillCompletion,
 } from "./feedbackInboxBackfillDb";
+import { resolveFeedbackSubmitterIdentity } from "../feedback";
 
 const runDb = process.env.INTEGRATION_DB === "true";
 const describeIntegration = runDb ? describe.sequential : describe.skip;
@@ -94,6 +96,40 @@ describeIntegration("feedbackInboxBackfillDb [integration]", () => {
     });
   }
 
+  async function rowsForFeedbackIds(ids: string[]) {
+    const rows = await listFeedbackInboxBackfillRows(prisma);
+    return rows.filter((row) => ids.includes(row.id));
+  }
+
+  async function seedOverlapWindowFeedback() {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const user = await prisma.user.create({
+      data: {
+        email: `overlap-${suffix}@example.test`,
+        displayName: "Overlap Window User",
+        passwordHash: "placeholder-hash-not-a-real-password",
+        sessionVersion: 0,
+      },
+    });
+    createdUserIds.push(user.id);
+
+    const feedbackId = `overlap-fb-${suffix}`;
+    await prisma.$executeRaw`
+      INSERT INTO "Feedback" (
+        "id", "userId", "category", "message", "url", "createdAt"
+      ) VALUES (
+        ${feedbackId},
+        ${user.id},
+        'BUG'::"FeedbackCategory",
+        'submitted during deploy overlap',
+        '/platform/overview',
+        NOW()
+      )
+    `;
+    createdFeedbackIds.push(feedbackId);
+    return { feedbackId, user };
+  }
+
   it("dry-run does not mutate and execute is idempotent", async () => {
     await seedLegacyFeedback({
       url: "/alliances/alliance-a/members",
@@ -143,14 +179,7 @@ describeIntegration("feedbackInboxBackfillDb [integration]", () => {
     const manifest = buildFeedbackInboxBackfillManifest({
       dbIdentity,
       totalFeedbackRows: 1,
-      plan: planFeedbackInboxBackfill([
-        {
-          id: feedback.id,
-          url: feedback.url,
-          allianceId: null,
-          hasTriage: false,
-        },
-      ]),
+      plan: planFeedbackInboxBackfill(await rowsForFeedbackIds([feedback.id])),
     });
 
     await prisma.feedback.update({
@@ -174,14 +203,7 @@ describeIntegration("feedbackInboxBackfillDb [integration]", () => {
     const manifest = buildFeedbackInboxBackfillManifest({
       dbIdentity,
       totalFeedbackRows: 1,
-      plan: planFeedbackInboxBackfill([
-        {
-          id: feedback.id,
-          url: feedback.url,
-          allianceId: null,
-          hasTriage: false,
-        },
-      ]),
+      plan: planFeedbackInboxBackfill(await rowsForFeedbackIds([feedback.id])),
     });
 
     await prisma.feedback.update({
@@ -236,18 +258,100 @@ describeIntegration("feedbackInboxBackfillDb [integration]", () => {
     const manifest = buildFeedbackInboxBackfillManifest({
       dbIdentity,
       totalFeedbackRows: 1,
-      plan: planFeedbackInboxBackfill([
-        {
-          id: feedback.id,
-          url: feedback.url,
-          allianceId: null,
-          hasTriage: false,
-        },
-      ]),
+      plan: planFeedbackInboxBackfill(await rowsForFeedbackIds([feedback.id])),
     });
 
     const validation = await validateFeedbackInboxBackfillCompletion(prisma, manifest);
     expect(validation.ok).toBe(false);
     expect(validation.violations.some((v) => v.includes("allianceId"))).toBe(true);
+  });
+
+  it("dry-run uses a single feedback findMany read", async () => {
+    let findManyCalls = 0;
+    const trackingDb = {
+      feedback: {
+        findMany: async (...args: unknown[]) => {
+          findManyCalls += 1;
+          return prisma.feedback.findMany(...(args as Parameters<typeof prisma.feedback.findMany>));
+        },
+      },
+    };
+
+    const dryRun = await resolveFeedbackInboxBackfillDryRun(trackingDb);
+    expect(findManyCalls).toBe(1);
+    expect(dryRun.summary.dryRun).toBe(true);
+    expect(dryRun.summary.totalFeedbackRows).toBe(dryRun.rows.length);
+    expect(dryRun.summary.allianceIdUpdates).toBe(dryRun.plan.summary.allianceIdUpdates);
+  });
+
+  it("backfill preserves submitter snapshot for overlap-window row before user deletion", async () => {
+    const { feedbackId, user } = await seedOverlapWindowFeedback();
+
+    const beforeBackfill = await prisma.feedback.findUniqueOrThrow({
+      where: { id: feedbackId },
+    });
+    expect(beforeBackfill.submitterEmail).toBeNull();
+    expect(beforeBackfill.submitterDisplayName).toBeNull();
+
+    const manifest = await manifestForCurrentRows();
+    expect(manifest.plan.submitterSnapshotUpdates).toEqual(
+      expect.arrayContaining([
+        {
+          id: feedbackId,
+          submitterEmail: user.email,
+          submitterDisplayName: user.displayName,
+        },
+      ]),
+    );
+
+    const executed = await runFeedbackInboxBackfill(prisma, {
+      dryRun: false,
+      approvedManifest: manifest,
+    });
+    expect(executed.submitterSnapshotApplied).toBeGreaterThanOrEqual(1);
+    expect(executed.validation.ok).toBe(true);
+
+    const afterBackfill = await prisma.feedback.findUniqueOrThrow({
+      where: { id: feedbackId },
+    });
+    expect(afterBackfill.submitterEmail).toBe(user.email);
+    expect(afterBackfill.submitterDisplayName).toBe(user.displayName);
+
+    await prisma.user.delete({ where: { id: user.id } });
+    createdUserIds.splice(createdUserIds.indexOf(user.id), 1);
+
+    const afterUserDeletion = await prisma.feedback.findUniqueOrThrow({
+      where: { id: feedbackId },
+    });
+    expect(afterUserDeletion.userId).toBeNull();
+    expect(afterUserDeletion.submitterEmail).toBe(user.email);
+    expect(afterUserDeletion.submitterDisplayName).toBe(user.displayName);
+    expect(
+      resolveFeedbackSubmitterIdentity({
+        submitterEmail: afterUserDeletion.submitterEmail,
+        submitterDisplayName: afterUserDeletion.submitterDisplayName,
+        user: null,
+      }),
+    ).toEqual({
+      email: user.email,
+      displayName: user.displayName,
+    });
+  });
+
+  it("post-run validation reports backfillable null submitter snapshots", async () => {
+    const { feedbackId } = await seedOverlapWindowFeedback();
+    const manifest = buildFeedbackInboxBackfillManifest({
+      dbIdentity,
+      totalFeedbackRows: 0,
+      plan: planFeedbackInboxBackfill([]),
+    });
+
+    const validation = await validateFeedbackInboxBackfillCompletion(prisma, manifest);
+    expect(validation.ok).toBe(false);
+    expect(
+      validation.violations.some(
+        (v) => v.includes("null submitterEmail with a non-null userId") && v.includes(feedbackId),
+      ),
+    ).toBe(true);
   });
 });

@@ -7,6 +7,11 @@ export type FeedbackInboxBackfillRow = {
   url: string;
   allianceId: string | null;
   hasTriage: boolean;
+  userId: string | null;
+  submitterEmail: string | null;
+  submitterDisplayName: string | null;
+  userEmail: string | null;
+  userDisplayName: string | null;
 };
 
 export type FeedbackInboxBackfillSummary = {
@@ -15,12 +20,20 @@ export type FeedbackInboxBackfillSummary = {
   allianceIdUpdates: number;
   allianceIdSkippedAlreadySet: number;
   allianceIdSkippedNoSegment: number;
+  submitterSnapshotUpdates: number;
+  submitterSnapshotSkippedAlreadySet: number;
+  submitterSnapshotSkippedNoUser: number;
   triageProjectionsCreated: number;
   triageProjectionsSkippedExisting: number;
 };
 
 export type FeedbackInboxBackfillPlanRecord = {
   allianceUpdates: Array<{ id: string; allianceId: string }>;
+  submitterSnapshotUpdates: Array<{
+    id: string;
+    submitterEmail: string;
+    submitterDisplayName: string | null;
+  }>;
   triageCreates: string[];
   summary: Omit<FeedbackInboxBackfillSummary, "dryRun" | "totalFeedbackRows">;
 };
@@ -56,14 +69,17 @@ export type FeedbackInboxBackfillOptions = {
   /** Test seam: invoked after each row write during execute. */
   hooks?: {
     afterRowWrite?: (context: {
-      kind: "allianceId" | "triageProjection";
+      kind: "allianceId" | "submitterSnapshot" | "triageProjection";
       feedbackId: string;
     }) => Promise<void> | void;
   };
+  /** Test seam / CLI: skip the initial findMany when rows are already loaded. */
+  rows?: FeedbackInboxBackfillRow[];
 };
 
 export type FeedbackInboxBackfillExecuteResult = FeedbackInboxBackfillSummary & {
   allianceIdApplied: number;
+  submitterSnapshotApplied: number;
   triageProjectionsApplied: number;
   validation: FeedbackInboxBackfillValidationResult;
 };
@@ -87,6 +103,10 @@ export async function listFeedbackInboxBackfillRows(
       id: true,
       url: true,
       allianceId: true,
+      userId: true,
+      submitterEmail: true,
+      submitterDisplayName: true,
+      user: { select: { email: true, displayName: true } },
       triage: { select: { feedbackId: true } },
     },
     orderBy: { id: "asc" },
@@ -95,12 +115,21 @@ export async function listFeedbackInboxBackfillRows(
     id: string;
     url: string;
     allianceId: string | null;
+    userId: string | null;
+    submitterEmail: string | null;
+    submitterDisplayName: string | null;
+    user: { email: string; displayName: string | null } | null;
     triage: { feedbackId: string } | null;
   }) => ({
     id: row.id,
     url: row.url,
     allianceId: row.allianceId,
     hasTriage: row.triage !== null,
+    userId: row.userId,
+    submitterEmail: row.submitterEmail,
+    submitterDisplayName: row.submitterDisplayName,
+    userEmail: row.user?.email ?? null,
+    userDisplayName: row.user?.displayName ?? null,
   }));
 }
 
@@ -108,9 +137,16 @@ export function planFeedbackInboxBackfill(
   rows: FeedbackInboxBackfillRow[],
 ): FeedbackInboxBackfillPlanRecord {
   const allianceUpdates: Array<{ id: string; allianceId: string }> = [];
+  const submitterSnapshotUpdates: Array<{
+    id: string;
+    submitterEmail: string;
+    submitterDisplayName: string | null;
+  }> = [];
   const triageCreates: string[] = [];
   let allianceIdSkippedAlreadySet = 0;
   let allianceIdSkippedNoSegment = 0;
+  let submitterSnapshotSkippedAlreadySet = 0;
+  let submitterSnapshotSkippedNoUser = 0;
   let triageProjectionsSkippedExisting = 0;
 
   for (const row of rows) {
@@ -125,6 +161,20 @@ export function planFeedbackInboxBackfill(
       allianceIdSkippedAlreadySet += 1;
     }
 
+    if (row.submitterEmail === null) {
+      if (row.userId !== null && row.userEmail !== null) {
+        submitterSnapshotUpdates.push({
+          id: row.id,
+          submitterEmail: row.userEmail,
+          submitterDisplayName: row.userDisplayName,
+        });
+      } else {
+        submitterSnapshotSkippedNoUser += 1;
+      }
+    } else {
+      submitterSnapshotSkippedAlreadySet += 1;
+    }
+
     if (row.hasTriage) {
       triageProjectionsSkippedExisting += 1;
     } else {
@@ -134,14 +184,46 @@ export function planFeedbackInboxBackfill(
 
   return {
     allianceUpdates,
+    submitterSnapshotUpdates,
     triageCreates,
     summary: {
       allianceIdUpdates: allianceUpdates.length,
       allianceIdSkippedAlreadySet,
       allianceIdSkippedNoSegment,
+      submitterSnapshotUpdates: submitterSnapshotUpdates.length,
+      submitterSnapshotSkippedAlreadySet,
+      submitterSnapshotSkippedNoUser,
       triageProjectionsCreated: triageCreates.length,
       triageProjectionsSkippedExisting,
     },
+  };
+}
+
+export function summarizeFeedbackInboxBackfillPlan(
+  rows: FeedbackInboxBackfillRow[],
+  plan: FeedbackInboxBackfillPlanRecord,
+  dryRun: boolean,
+): FeedbackInboxBackfillSummary {
+  return {
+    dryRun,
+    totalFeedbackRows: rows.length,
+    ...plan.summary,
+  };
+}
+
+export async function resolveFeedbackInboxBackfillDryRun(
+  db: BackfillDb,
+): Promise<{
+  rows: FeedbackInboxBackfillRow[];
+  plan: FeedbackInboxBackfillPlanRecord;
+  summary: FeedbackInboxBackfillSummary;
+}> {
+  const rows = await listFeedbackInboxBackfillRows(db);
+  const plan = planFeedbackInboxBackfill(rows);
+  return {
+    rows,
+    plan,
+    summary: summarizeFeedbackInboxBackfillPlan(rows, plan, true),
   };
 }
 
@@ -319,6 +401,33 @@ export function verifyFeedbackInboxBackfillManifestForExecute(
     }
   }
 
+  for (const update of manifest.plan.submitterSnapshotUpdates ?? []) {
+    const row = rowById.get(update.id);
+    if (!row) {
+      return { ok: false, reason: `Feedback ${update.id} is missing` };
+    }
+    if (row.submitterEmail !== null && row.submitterEmail !== update.submitterEmail) {
+      return {
+        ok: false,
+        reason: `Feedback ${update.id} submitterEmail drifted since the dry run`,
+      };
+    }
+    if (row.submitterEmail === null) {
+      if (row.userId === null || row.userEmail === null) {
+        return {
+          ok: false,
+          reason: `Feedback ${update.id} submitter snapshot source user drifted since the dry run`,
+        };
+      }
+      if (row.userEmail !== update.submitterEmail) {
+        return {
+          ok: false,
+          reason: `Feedback ${update.id} submitter snapshot source user drifted since the dry run`,
+        };
+      }
+    }
+  }
+
   const freshPlan = planFeedbackInboxBackfill(rows);
   for (const freshUpdate of freshPlan.allianceUpdates) {
     const approved = manifest.plan.allianceUpdates.find((update) => update.id === freshUpdate.id);
@@ -332,6 +441,22 @@ export function verifyFeedbackInboxBackfillManifestForExecute(
   }
   for (const freshId of freshPlan.triageCreates) {
     if (!manifest.plan.triageCreates.includes(freshId)) {
+      return {
+        ok: false,
+        reason:
+          "the database changed since the dry run (re-resolved plan checksum does not match the manifest); regenerate and re-review the manifest",
+      };
+    }
+  }
+  for (const freshUpdate of freshPlan.submitterSnapshotUpdates) {
+    const approved = (manifest.plan.submitterSnapshotUpdates ?? []).find(
+      (update) => update.id === freshUpdate.id,
+    );
+    if (
+      !approved ||
+      approved.submitterEmail !== freshUpdate.submitterEmail ||
+      approved.submitterDisplayName !== freshUpdate.submitterDisplayName
+    ) {
       return {
         ok: false,
         reason:
@@ -398,6 +523,72 @@ export async function validateFeedbackInboxBackfillCompletion(
     }
   }
 
+  const submitterSnapshotUpdates = manifest.plan.submitterSnapshotUpdates ?? [];
+  if (submitterSnapshotUpdates.length > 0) {
+    const ids = submitterSnapshotUpdates.map((update) => update.id);
+    const rows = await db.feedback.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        submitterEmail: true,
+        submitterDisplayName: true,
+      },
+    });
+    const rowById = new Map<
+      string,
+      {
+        id: string;
+        submitterEmail: string | null;
+        submitterDisplayName: string | null;
+      }
+    >(
+      rows.map((row: {
+        id: string;
+        submitterEmail: string | null;
+        submitterDisplayName: string | null;
+      }) => [row.id, row]),
+    );
+    for (const planned of submitterSnapshotUpdates) {
+      const row = rowById.get(planned.id);
+      if (!row) {
+        violations.push(`Feedback ${planned.id} is missing`);
+        continue;
+      }
+      if (row.submitterEmail !== planned.submitterEmail) {
+        violations.push(
+          `Feedback ${planned.id} submitterEmail is ${JSON.stringify(row.submitterEmail)}; expected ${JSON.stringify(planned.submitterEmail)}`,
+        );
+      }
+      if (row.submitterDisplayName !== planned.submitterDisplayName) {
+        violations.push(
+          `Feedback ${planned.id} submitterDisplayName is ${JSON.stringify(row.submitterDisplayName)}; expected ${JSON.stringify(planned.submitterDisplayName)}`,
+        );
+      }
+    }
+  }
+
+  // Interim safety net for decision 5b / rollout overlap: submitterEmail stays
+  // nullable at the DB layer so pre-cutover app instances can keep inserting
+  // Feedback without snapshot columns. A hard NOT NULL constraint waits for a
+  // later contract step once every instance is cut over; until then, this
+  // validation fails closed on any row that still had a live user to backfill from.
+  const backfillableNullSnapshots = await db.feedback.findMany({
+    where: {
+      submitterEmail: null,
+      userId: { not: null },
+    },
+    select: { id: true },
+    orderBy: { id: "asc" },
+  });
+  if (backfillableNullSnapshots.length > 0) {
+    const ids = backfillableNullSnapshots
+      .map((row: { id: string }) => row.id)
+      .join(", ");
+    violations.push(
+      `${backfillableNullSnapshots.length} Feedback row(s) still have null submitterEmail with a non-null userId (backfillable but not captured): ${ids}`,
+    );
+  }
+
   return { ok: violations.length === 0, violations };
 }
 
@@ -405,8 +596,13 @@ async function applyFeedbackInboxBackfillPlan(
   db: BackfillDb,
   plan: FeedbackInboxBackfillPlanRecord,
   hooks?: FeedbackInboxBackfillOptions["hooks"],
-): Promise<{ allianceIdApplied: number; triageProjectionsApplied: number }> {
+): Promise<{
+  allianceIdApplied: number;
+  submitterSnapshotApplied: number;
+  triageProjectionsApplied: number;
+}> {
   let allianceIdApplied = 0;
+  let submitterSnapshotApplied = 0;
   let triageProjectionsApplied = 0;
 
   for (const update of plan.allianceUpdates) {
@@ -417,6 +613,23 @@ async function applyFeedbackInboxBackfillPlan(
     allianceIdApplied += count;
     if (count > 0 && hooks?.afterRowWrite) {
       await hooks.afterRowWrite({ kind: "allianceId", feedbackId: update.id });
+    }
+  }
+
+  for (const update of plan.submitterSnapshotUpdates) {
+    const { count } = await db.feedback.updateMany({
+      where: { id: update.id, submitterEmail: null },
+      data: {
+        submitterEmail: update.submitterEmail,
+        submitterDisplayName: update.submitterDisplayName,
+      },
+    });
+    submitterSnapshotApplied += count;
+    if (count > 0 && hooks?.afterRowWrite) {
+      await hooks.afterRowWrite({
+        kind: "submitterSnapshot",
+        feedbackId: update.id,
+      });
     }
   }
 
@@ -438,26 +651,23 @@ async function applyFeedbackInboxBackfillPlan(
     }
   }
 
-  return { allianceIdApplied, triageProjectionsApplied };
+  return { allianceIdApplied, submitterSnapshotApplied, triageProjectionsApplied };
 }
 
 export async function runFeedbackInboxBackfill(
   db: BackfillDb,
   options: FeedbackInboxBackfillOptions,
 ): Promise<FeedbackInboxBackfillExecuteResult> {
-  const rows = await listFeedbackInboxBackfillRows(db);
+  const rows = options.rows ?? (await listFeedbackInboxBackfillRows(db));
   const plan = planFeedbackInboxBackfill(rows);
 
-  const summary: FeedbackInboxBackfillSummary = {
-    dryRun: options.dryRun,
-    totalFeedbackRows: rows.length,
-    ...plan.summary,
-  };
+  const summary = summarizeFeedbackInboxBackfillPlan(rows, plan, options.dryRun);
 
   if (options.dryRun) {
     return {
       ...summary,
       allianceIdApplied: 0,
+      submitterSnapshotApplied: 0,
       triageProjectionsApplied: 0,
       validation: { ok: true, violations: [] },
     };
@@ -491,6 +701,7 @@ export async function runFeedbackInboxBackfill(
   return {
     ...summary,
     allianceIdApplied: applied.allianceIdApplied,
+    submitterSnapshotApplied: applied.submitterSnapshotApplied,
     triageProjectionsApplied: applied.triageProjectionsApplied,
     validation,
   };
