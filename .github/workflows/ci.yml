@@ -208,6 +208,7 @@ jobs:
         run: npm run test:e2e
         env:
           CI: true
+          FEEDBACK_INBOX_TEST_HOOKS: "true"
       
       - name: Upload Playwright Report
         uses: actions/upload-artifact@v7

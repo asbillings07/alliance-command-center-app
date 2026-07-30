@@ -7,7 +7,7 @@ import {
 } from "@/app/src/lib/feedbackInboxTestHooks";
 
 function hooksEnabled(): boolean {
-  return process.env.FEEDBACK_INBOX_TEST_HOOKS === "true";
+  return process.env["FEEDBACK_INBOX_TEST_HOOKS"] === "true";
 }
 
 async function requirePlatformAdminApi() {

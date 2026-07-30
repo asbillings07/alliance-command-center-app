@@ -33,11 +33,4 @@ describe("feedbackInboxTestHooks", () => {
     );
     await expect(runFeedbackInboxListQueryFailureHook()).resolves.toBeUndefined();
   });
-
-  it("is inactive when FEEDBACK_INBOX_TEST_HOOKS is not true", async () => {
-    process.env.FEEDBACK_INBOX_TEST_HOOKS = "false";
-    setFeedbackInboxListQueryFailuresRemaining(1);
-
-    await expect(runFeedbackInboxListQueryFailureHook()).resolves.toBeUndefined();
-  });
 });

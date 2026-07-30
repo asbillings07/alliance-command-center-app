@@ -13,9 +13,6 @@ export function clearFeedbackInboxTestHooks(): void {
 }
 
 export async function runFeedbackInboxListQueryFailureHook(): Promise<void> {
-  if (process.env.FEEDBACK_INBOX_TEST_HOOKS !== "true") {
-    return;
-  }
   if (listQueryFailuresRemaining > 0) {
     listQueryFailuresRemaining -= 1;
     throw new Error("FEEDBACK_INBOX_TEST_HOOK: simulated inbox query failure");
