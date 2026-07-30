@@ -79,7 +79,7 @@ async function armFeedbackInboxListFailures(
     "/api/platform/test/feedback-inbox-hooks",
     { data: { listFailuresRemaining: count } },
   );
-  expect(response.ok()).toBeTruthy();
+  expect(response.ok(), await response.text()).toBeTruthy();
 }
 
 async function clearFeedbackInboxTestHooksViaApi(

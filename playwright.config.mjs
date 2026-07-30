@@ -11,6 +11,10 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env.test") });
 const isProdSmoke = process.env.PROD_SMOKE === "1";
 const prodSmokeBaseUrl = process.env.PROD_SMOKE_BASE_URL;
 
+const webServerEnv = {
+  FEEDBACK_INBOX_TEST_HOOKS: process.env.FEEDBACK_INBOX_TEST_HOOKS ?? "true",
+};
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false, // Run tests sequentially for user journey flows
@@ -66,6 +70,7 @@ export default defineConfig({
           url: "http://localhost:3000",
           reuseExistingServer: false,
           timeout: 120000,
+          env: webServerEnv,
         }
       : {
           // In development, use dev server
@@ -73,5 +78,6 @@ export default defineConfig({
           url: "http://localhost:3000",
           reuseExistingServer: true,
           timeout: 120000,
+          env: webServerEnv,
         },
 });
