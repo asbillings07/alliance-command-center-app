@@ -12,7 +12,7 @@ import {
 } from "./betaParticipants";
 
 /** Version marker for the embedded SQL CTE — bump when derivation logic changes. */
-export const FEEDBACK_INBOX_CTE_VERSION = 1;
+export const FEEDBACK_INBOX_CTE_VERSION = 2;
 
 export const FEEDBACK_INBOX_FILTER_OPTIONS_LIMIT = 100;
 
@@ -128,7 +128,7 @@ export function feedbackInboxDerivationCte(): Prisma.Sql {
       COALESCE(ft.status, 'NEW'::"FeedbackTriageStatus") AS status,
       COALESCE(ft."needsResponse", TRUE) AS needs_response,
       COALESCE(ft."stateRevision", 0) AS state_revision,
-      ft."lastEventAt" AS last_event_at,
+      COALESCE(ft."lastEventAt", f."createdAt") AS last_event_at,
       ft."lastStateChangeAt" AS last_state_change_at,
       ft."lastStateChangeActorEmail" AS last_state_change_actor_email,
       ft."lastStateChangeActorDisplayName" AS last_state_change_actor_display_name,

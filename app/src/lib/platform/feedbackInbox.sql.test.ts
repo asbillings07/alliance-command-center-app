@@ -96,6 +96,13 @@ describe("feedbackInbox SQL shape", () => {
     expect(sql).not.toMatch(/ILIKE/);
   });
 
+  it("derivation CTE coalesces lastEventAt to feedback createdAt when projection is missing", () => {
+    const sql = stringifyPrismaSql(feedbackInboxDerivationCte());
+    expect(sql).toMatch(
+      /COALESCE\(ft\."lastEventAt", f\."createdAt"\) AS last_event_at/,
+    );
+  });
+
   it("buildFeedbackInboxFilterSqlForTest excludes status when requested", () => {
     const full = buildFeedbackInboxFilterSqlForTest(
       { status: "NEW", category: "BUG" },

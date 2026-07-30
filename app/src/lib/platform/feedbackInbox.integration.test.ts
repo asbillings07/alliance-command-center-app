@@ -204,7 +204,7 @@ describeIntegration("feedbackInbox [integration]", () => {
       status: "NEW",
       needsResponse: true,
       stateRevision: 0,
-      lastEventAt: null,
+      lastEventAt: feedback.createdAt,
       hasBeenTriaged: false,
     });
   });
