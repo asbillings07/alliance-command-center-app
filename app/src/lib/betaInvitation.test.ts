@@ -1184,6 +1184,47 @@ describe("delivery-attempt persistence (#175)", () => {
       expect(status).toBe("sent");
       consoleError.mockRestore();
     });
+
+    it("a synchronous throw from send() (not a rejected promise) is treated as a failed delivery, not an escaped exception", async () => {
+      const invitation = makeInvitation();
+      // Deliberately a plain throwing function, not vi.fn().mockRejectedValue(...) —
+      // that only ever produces an asynchronous rejection and would not
+      // exercise this regression.
+      const send = vi.fn((): never => {
+        throw new Error("synchronous boom");
+      });
+
+      const status = await deliverBetaInvitationEmail(
+        invitation,
+        "https://example.com/redeem/tok",
+        send,
+        "admin-1",
+      );
+
+      expect(status).toBe("failed");
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ status: "FAILED" }),
+      });
+    });
+
+    it("fails closed before attempting delivery when the acting user no longer exists", async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+      const invitation = makeInvitation();
+      const send = vi.fn();
+
+      await expect(
+        deliverBetaInvitationEmail(
+          invitation,
+          "https://example.com/redeem/tok",
+          send,
+          "gone-1",
+        ),
+      ).rejects.toThrow("the acting user no longer exists");
+
+      expect(send).not.toHaveBeenCalled();
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).not.toHaveBeenCalled();
+    });
   });
 
   describe("deliverBetaInvitationEmailWithClaim (resend/reissue)", () => {
@@ -1284,6 +1325,83 @@ describe("delivery-attempt persistence (#175)", () => {
 
       expect(send).not.toHaveBeenCalled();
       expect(mockPrisma.betaInvitationDeliveryAttempt.create).not.toHaveBeenCalled();
+    });
+
+    it("a synchronous throw from send() still releases the claim and persists exactly one FAILED attempt", async () => {
+      const invitation = makeInvitation();
+      const send = vi.fn((): never => {
+        throw new Error("synchronous boom");
+      });
+      let released = false;
+      mockPrisma.betaInvitation.updateMany.mockImplementation(async () => {
+        released = true;
+        return { count: 1 };
+      });
+
+      const status = await deliverBetaInvitationEmailWithClaim(
+        invitation,
+        "https://example.com/redeem/tok",
+        send,
+        "admin-1",
+        "resend",
+      );
+
+      expect(status).toBe("failed");
+      expect(released).toBe(true);
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ status: "FAILED" }),
+      });
+    });
+
+    it("fails closed before claiming or attempting delivery when the acting user no longer exists", async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+      const invitation = makeInvitation();
+      const send = vi.fn();
+
+      await expect(
+        deliverBetaInvitationEmailWithClaim(
+          invitation,
+          "https://example.com/redeem/tok",
+          send,
+          "gone-1",
+          "resend",
+        ),
+      ).rejects.toThrow("the acting user no longer exists");
+
+      expect(send).not.toHaveBeenCalled();
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).not.toHaveBeenCalled();
+    });
+
+    it("captures occurredAt before releasing the claim, so a delayed release/insert can't invert delivery-history order", async () => {
+      vi.useFakeTimers();
+      try {
+        const sendResolvedAt = new Date("2026-01-01T00:00:00.000Z");
+        vi.setSystemTime(sendResolvedAt);
+
+        const invitation = makeInvitation();
+        const send = vi.fn().mockResolvedValue({ status: "sent", messageId: "msg-1" });
+        mockPrisma.betaInvitation.updateMany.mockImplementation(async () => {
+          // Simulate the claim release (and any subsequent delay before the
+          // audit insert actually runs) happening later in wall-clock time.
+          vi.setSystemTime(new Date(sendResolvedAt.getTime() + 5000));
+          return { count: 1 };
+        });
+
+        await deliverBetaInvitationEmailWithClaim(
+          invitation,
+          "https://example.com/redeem/tok",
+          send,
+          "admin-1",
+          "resend",
+        );
+
+        const call = mockPrisma.betaInvitationDeliveryAttempt.create.mock.calls[0][0];
+        expect(call.data.createdAt).toEqual(sendResolvedAt);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

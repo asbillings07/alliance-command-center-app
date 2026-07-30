@@ -3,6 +3,7 @@ import {
   sanitizeDeliveryFailureReason,
   boundProviderMessageId,
   recordBetaInvitationDeliveryAttempt,
+  resolveDeliveryActorSnapshot,
   GENERIC_DELIVERY_FAILURE_REASON,
 } from "./betaInvitationDelivery";
 import type { EmailResult } from "./email/types";
@@ -25,7 +26,9 @@ const mockPrisma = prisma as unknown as {
   betaInvitationDeliveryAttempt: { create: ReturnType<typeof vi.fn> };
 };
 
-beforeEach(() => {
+const OCCURRED_AT = new Date("2026-07-30T12:00:00.000Z");
+
+beforeEach(async () => {
   vi.clearAllMocks();
   mockPrisma.user.findUnique.mockResolvedValue({
     email: "admin@example.com",
@@ -84,14 +87,56 @@ describe("boundProviderMessageId", () => {
   });
 });
 
+describe("resolveDeliveryActorSnapshot", () => {
+  it("returns the actor's email/displayName when the user exists", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({
+      email: "operator@example.com",
+      displayName: "Operator",
+    });
+
+    const snapshot = await resolveDeliveryActorSnapshot("admin-1");
+
+    expect(snapshot).toEqual({
+      email: "operator@example.com",
+      displayName: "Operator",
+    });
+    expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
+      where: { id: "admin-1" },
+      select: { email: true, displayName: true },
+    });
+  });
+
+  it("normalizes a null displayName", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({
+      email: "operator@example.com",
+      displayName: null,
+    });
+
+    const snapshot = await resolveDeliveryActorSnapshot("admin-1");
+
+    expect(snapshot.displayName).toBeNull();
+  });
+
+  it("throws (fails closed) when the acting user no longer exists", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+
+    await expect(resolveDeliveryActorSnapshot("gone-1")).rejects.toThrow(
+      "the acting user no longer exists",
+    );
+  });
+});
+
 describe("recordBetaInvitationDeliveryAttempt", () => {
   const baseParams = {
     invitationId: "inv-1",
     attemptedByUserId: "admin-1",
+    attemptedByEmail: "admin@example.com",
+    attemptedByDisplayName: "Admin User",
     requestId: "req-1",
+    occurredAt: OCCURRED_AT,
   };
 
-  it("persists a SENT result with its provider message id and no failure reason", async () => {
+  it("persists a SENT result with its provider message id, no failure reason, and the given occurredAt as createdAt", async () => {
     const result: EmailResult = { status: "sent", messageId: "msg-abc" };
 
     await recordBetaInvitationDeliveryAttempt({
@@ -111,6 +156,7 @@ describe("recordBetaInvitationDeliveryAttempt", () => {
         attemptedByEmail: "admin@example.com",
         attemptedByDisplayName: "Admin User",
         requestId: "req-1",
+        createdAt: OCCURRED_AT,
       }),
     });
   });
@@ -209,23 +255,6 @@ describe("recordBetaInvitationDeliveryAttempt", () => {
     });
   });
 
-  it("falls back to a placeholder actor identity when the user can't be resolved", async () => {
-    mockPrisma.user.findUnique.mockResolvedValue(null);
-
-    await recordBetaInvitationDeliveryAttempt({
-      ...baseParams,
-      trigger: "issue",
-      result: { status: "skipped" },
-    });
-
-    expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        attemptedByEmail: "Unknown (deleted)",
-        attemptedByDisplayName: null,
-      }),
-    });
-  });
-
   it("logs and swallows an audit-insert failure instead of throwing", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     mockPrisma.betaInvitationDeliveryAttempt.create.mockRejectedValue(
@@ -244,20 +273,79 @@ describe("recordBetaInvitationDeliveryAttempt", () => {
     consoleError.mockRestore();
   });
 
-  it("logs and swallows an actor-lookup failure instead of throwing", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    mockPrisma.user.findUnique.mockRejectedValue(new Error("db unavailable"));
+  describe("the narrow post-snapshot actor-deletion race", () => {
+    async function makeForeignKeyViolation() {
+      const { PrismaClientKnownRequestError } = await import(
+        "@prisma/client/runtime/client"
+      );
+      return new PrismaClientKnownRequestError(
+        "Foreign key constraint failed on the field: `attemptedByUserId`",
+        {
+          code: "P2003",
+          clientVersion: "test",
+          meta: { field_name: "BetaInvitationDeliveryAttempt_attemptedByUserId_fkey" },
+        },
+      );
+    }
 
-    await expect(
-      recordBetaInvitationDeliveryAttempt({
+    it("retries with attemptedByUserId: null, preserving the original email/displayName snapshot", async () => {
+      const fkError = await makeForeignKeyViolation();
+      mockPrisma.betaInvitationDeliveryAttempt.create
+        .mockRejectedValueOnce(fkError)
+        .mockResolvedValueOnce({});
+
+      await recordBetaInvitationDeliveryAttempt({
         ...baseParams,
         trigger: "issue",
         result: { status: "sent", messageId: "msg-1" },
-      }),
-    ).resolves.toBeUndefined();
+      });
 
-    expect(consoleError).toHaveBeenCalled();
-    expect(mockPrisma.betaInvitationDeliveryAttempt.create).not.toHaveBeenCalled();
-    consoleError.mockRestore();
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledTimes(2);
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenNthCalledWith(1, {
+        data: expect.objectContaining({ attemptedByUserId: "admin-1" }),
+      });
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenNthCalledWith(2, {
+        data: expect.objectContaining({
+          attemptedByUserId: null,
+          attemptedByEmail: "admin@example.com",
+          attemptedByDisplayName: "Admin User",
+        }),
+      });
+    });
+
+    it("logs and swallows if the retry itself also fails", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const fkError = await makeForeignKeyViolation();
+      mockPrisma.betaInvitationDeliveryAttempt.create
+        .mockRejectedValueOnce(fkError)
+        .mockRejectedValueOnce(new Error("db unavailable"));
+
+      await expect(
+        recordBetaInvitationDeliveryAttempt({
+          ...baseParams,
+          trigger: "issue",
+          result: { status: "sent", messageId: "msg-1" },
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(consoleError).toHaveBeenCalled();
+      consoleError.mockRestore();
+    });
+
+    it("does not retry for a non-foreign-key error", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockPrisma.betaInvitationDeliveryAttempt.create.mockRejectedValue(
+        new Error("some other db error"),
+      );
+
+      await recordBetaInvitationDeliveryAttempt({
+        ...baseParams,
+        trigger: "issue",
+        result: { status: "sent", messageId: "msg-1" },
+      });
+
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledTimes(1);
+      consoleError.mockRestore();
+    });
   });
 });

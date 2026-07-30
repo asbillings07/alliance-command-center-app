@@ -13,6 +13,7 @@ import {
 import type { EmailResult, EmailStatus } from "./email/types";
 import {
   recordBetaInvitationDeliveryAttempt,
+  resolveDeliveryActorSnapshot,
   type BetaInvitationDeliveryTriggerInput,
 } from "./betaInvitationDelivery";
 
@@ -874,26 +875,42 @@ export async function deliverBetaInvitationEmailWithClaim(
   trigger: Extract<BetaInvitationDeliveryTriggerInput, "resend" | "reissue">,
   timeoutMs: number = BETA_EMAIL_PROVIDER_TIMEOUT_MS,
 ): Promise<EmailStatus> {
+  // Resolved before any claim/send is attempted: failing closed here is
+  // safer than sending on behalf of an actor whose account no longer exists
+  // (#175 review finding).
+  const actor = await resolveDeliveryActorSnapshot(attemptedByUserId);
+
   const claim = await claimBetaInvitationResend(invitation.id);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   const requestId = randomUUID();
-  const deliveryPromise = send({
-    to: invitation.email,
-    invitation: {
-      id: invitation.id,
-      email: invitation.email,
-      inviteUrl,
-      inviteCode: invitation.code,
-      expiresAt: invitation.expiresAt,
-    },
-    signal: controller.signal,
-    requestId,
-  });
+  // Invoked inside the guarded flow via Promise.resolve().then(...): an
+  // injected sender that throws synchronously (rather than rejecting) would
+  // otherwise escape this function entirely, skip claim release, and record
+  // nothing (#175 review finding).
+  const deliveryPromise = Promise.resolve().then(() =>
+    send({
+      to: invitation.email,
+      invitation: {
+        id: invitation.id,
+        email: invitation.email,
+        inviteUrl,
+        inviteCode: invitation.code,
+        expiresAt: invitation.expiresAt,
+      },
+      signal: controller.signal,
+      requestId,
+    }),
+  );
 
   let result: EmailResult;
+  let occurredAt: Date;
   try {
     result = await resolveEmailDeliveryResult(deliveryPromise);
+    // Captured while still holding the claim, so a later resend's audit
+    // insert can never race ahead of this one and invert delivery-history
+    // order (#175 review finding).
+    occurredAt = new Date();
   } finally {
     clearTimeout(timeoutId);
     await deliveryPromise.catch(() => undefined);
@@ -905,7 +922,10 @@ export async function deliverBetaInvitationEmailWithClaim(
     trigger,
     result,
     attemptedByUserId,
+    attemptedByEmail: actor.email,
+    attemptedByDisplayName: actor.displayName,
     requestId,
+    occurredAt,
   });
 
   return result.status;
@@ -924,28 +944,41 @@ export async function deliverBetaInvitationEmail(
   send: BetaInvitationEmailSender,
   attemptedByUserId: string,
 ): Promise<EmailStatus> {
+  // Resolved before send is attempted: failing closed here is safer than
+  // sending on behalf of an actor whose account no longer exists (#175
+  // review finding).
+  const actor = await resolveDeliveryActorSnapshot(attemptedByUserId);
+
   const controller = new AbortController();
   const timeoutId = setTimeout(
     () => controller.abort(),
     BETA_EMAIL_PROVIDER_TIMEOUT_MS,
   );
   const requestId = randomUUID();
-  const deliveryPromise = send({
-    to: invitation.email,
-    invitation: {
-      id: invitation.id,
-      email: invitation.email,
-      inviteUrl,
-      inviteCode: invitation.code,
-      expiresAt: invitation.expiresAt,
-    },
-    signal: controller.signal,
-    requestId,
-  });
+  // Invoked inside the guarded flow via Promise.resolve().then(...): an
+  // injected sender that throws synchronously (rather than rejecting) would
+  // otherwise escape this function entirely and record nothing (#175 review
+  // finding).
+  const deliveryPromise = Promise.resolve().then(() =>
+    send({
+      to: invitation.email,
+      invitation: {
+        id: invitation.id,
+        email: invitation.email,
+        inviteUrl,
+        inviteCode: invitation.code,
+        expiresAt: invitation.expiresAt,
+      },
+      signal: controller.signal,
+      requestId,
+    }),
+  );
 
   let result: EmailResult;
+  let occurredAt: Date;
   try {
     result = await resolveEmailDeliveryResult(deliveryPromise);
+    occurredAt = new Date();
   } finally {
     clearTimeout(timeoutId);
     await deliveryPromise.catch(() => undefined);
@@ -956,7 +989,10 @@ export async function deliverBetaInvitationEmail(
     trigger: "issue",
     result,
     attemptedByUserId,
+    attemptedByEmail: actor.email,
+    attemptedByDisplayName: actor.displayName,
     requestId,
+    occurredAt,
   });
 
   return result.status;
