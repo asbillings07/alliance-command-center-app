@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   planFeedbackInboxBackfill,
+  verifyFeedbackInboxBackfillManifestForExecute,
+  buildFeedbackInboxBackfillManifest,
+  feedbackInboxBackfillManifestChecksumPayload,
   type FeedbackInboxBackfillRow,
 } from "./feedbackInboxBackfillDb";
 
@@ -58,5 +61,44 @@ describe("feedbackInboxBackfillDb", () => {
     expect(plan.allianceUpdates).toEqual([]);
     expect(plan.triageCreates).toEqual([]);
     expect(plan.summary.allianceIdSkippedNoSegment).toBe(1);
+  });
+
+  it("verifyFeedbackInboxBackfillManifestForExecute allows idempotent re-run after plan is satisfied", () => {
+    const rows: FeedbackInboxBackfillRow[] = [
+      {
+        id: "fb1",
+        url: "/alliances/a1/members",
+        allianceId: "a1",
+        hasTriage: true,
+      },
+    ];
+    const originalPlan = planFeedbackInboxBackfill([
+      {
+        id: "fb1",
+        url: "/alliances/a1/members",
+        allianceId: null,
+        hasTriage: false,
+      },
+    ]);
+    const manifest = buildFeedbackInboxBackfillManifest({
+      dbIdentity: "ep-preview-999999",
+      totalFeedbackRows: 1,
+      plan: originalPlan,
+    });
+    const freshPlan = planFeedbackInboxBackfill(rows);
+    expect(
+      verifyFeedbackInboxBackfillManifestForExecute(
+        manifest,
+        {
+          dbIdentity: "ep-preview-999999",
+          payload: feedbackInboxBackfillManifestChecksumPayload({
+            dbIdentity: "ep-preview-999999",
+            totalFeedbackRows: 1,
+            plan: freshPlan,
+          }),
+        },
+        rows,
+      ).ok,
+    ).toBe(true);
   });
 });

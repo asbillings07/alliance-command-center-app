@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
-import { runFeedbackInboxBackfill } from "./feedbackInboxBackfillDb";
+import {
+  buildFeedbackInboxBackfillManifest,
+  listFeedbackInboxBackfillRows,
+  planFeedbackInboxBackfill,
+  resolveBackfillTargetIdentity,
+  runFeedbackInboxBackfill,
+  validateFeedbackInboxBackfillCompletion,
+} from "./feedbackInboxBackfillDb";
 
 const runDb = process.env.INTEGRATION_DB === "true";
 const describeIntegration = runDb ? describe.sequential : describe.skip;
@@ -10,11 +17,13 @@ describeIntegration("feedbackInboxBackfillDb [integration]", () => {
   const createdUserIds: string[] = [];
 
   let prisma: PrismaClient;
+  let dbIdentity: string;
 
   beforeAll(async () => {
     ({ prisma } = (await import("../prisma")) as unknown as {
       prisma: PrismaClient;
     });
+    ({ identity: dbIdentity } = resolveBackfillTargetIdentity());
   });
 
   afterEach(async () => {
@@ -75,6 +84,16 @@ describeIntegration("feedbackInboxBackfillDb [integration]", () => {
     return feedback;
   }
 
+  async function manifestForCurrentRows() {
+    const rows = await listFeedbackInboxBackfillRows(prisma);
+    const plan = planFeedbackInboxBackfill(rows);
+    return buildFeedbackInboxBackfillManifest({
+      dbIdentity,
+      totalFeedbackRows: rows.length,
+      plan,
+    });
+  }
+
   it("dry-run does not mutate and execute is idempotent", async () => {
     await seedLegacyFeedback({
       url: "/alliances/alliance-a/members",
@@ -96,13 +115,139 @@ describeIntegration("feedbackInboxBackfillDb [integration]", () => {
     expect(rowBeforeExecute?.allianceId).toBeNull();
     expect(rowBeforeExecute?.triage).toBeNull();
 
-    const firstExecute = await runFeedbackInboxBackfill(prisma, { dryRun: false });
-    expect(firstExecute.allianceIdUpdates).toBe(1);
-    expect(firstExecute.triageProjectionsCreated).toBe(1);
+    const manifest = await manifestForCurrentRows();
 
-    const secondExecute = await runFeedbackInboxBackfill(prisma, { dryRun: false });
-    expect(secondExecute.allianceIdUpdates).toBe(0);
-    expect(secondExecute.triageProjectionsCreated).toBe(0);
+    const firstExecute = await runFeedbackInboxBackfill(prisma, {
+      dryRun: false,
+      approvedManifest: manifest,
+    });
+    expect(firstExecute.allianceIdApplied).toBe(1);
+    expect(firstExecute.triageProjectionsApplied).toBe(1);
+    expect(firstExecute.validation.ok).toBe(true);
+
+    const secondExecute = await runFeedbackInboxBackfill(prisma, {
+      dryRun: false,
+      approvedManifest: manifest,
+    });
+    expect(secondExecute.allianceIdApplied).toBe(0);
+    expect(secondExecute.triageProjectionsApplied).toBe(0);
+    expect(secondExecute.validation.ok).toBe(true);
     expect(secondExecute.allianceIdSkippedNoSegment).toBeGreaterThanOrEqual(1);
+  });
+
+  it("refuses execute when live plan drifted from approved manifest", async () => {
+    const feedback = await seedLegacyFeedback({
+      url: "/alliances/alliance-a/members",
+      withTriage: false,
+    });
+    const manifest = buildFeedbackInboxBackfillManifest({
+      dbIdentity,
+      totalFeedbackRows: 1,
+      plan: planFeedbackInboxBackfill([
+        {
+          id: feedback.id,
+          url: feedback.url,
+          allianceId: null,
+          hasTriage: false,
+        },
+      ]),
+    });
+
+    await prisma.feedback.update({
+      where: { id: feedback.id },
+      data: { url: "/alliances/alliance-b/members" },
+    });
+
+    await expect(
+      runFeedbackInboxBackfill(prisma, {
+        dryRun: false,
+        approvedManifest: manifest,
+      }),
+    ).rejects.toThrow(/checksum does not match/);
+  });
+
+  it("converges when a concurrent app write sets allianceId before backfill runs", async () => {
+    const feedback = await seedLegacyFeedback({
+      url: "/alliances/alliance-a/members",
+      withTriage: false,
+    });
+    const manifest = buildFeedbackInboxBackfillManifest({
+      dbIdentity,
+      totalFeedbackRows: 1,
+      plan: planFeedbackInboxBackfill([
+        {
+          id: feedback.id,
+          url: feedback.url,
+          allianceId: null,
+          hasTriage: false,
+        },
+      ]),
+    });
+
+    await prisma.feedback.update({
+      where: { id: feedback.id },
+      data: { allianceId: "alliance-a" },
+    });
+
+    const result = await runFeedbackInboxBackfill(prisma, {
+      dryRun: false,
+      approvedManifest: manifest,
+    });
+    expect(result.allianceIdApplied).toBe(0);
+    expect(result.triageProjectionsApplied).toBe(1);
+    expect(result.validation.ok).toBe(true);
+  });
+
+  it("resumes cleanly after an interrupted execute", async () => {
+    await seedLegacyFeedback({
+      url: "/alliances/alliance-a/members",
+      withTriage: false,
+    });
+    const manifest = await manifestForCurrentRows();
+
+    let writes = 0;
+    await expect(
+      runFeedbackInboxBackfill(prisma, {
+        dryRun: false,
+        approvedManifest: manifest,
+        hooks: {
+          afterRowWrite: async () => {
+            writes += 1;
+            if (writes === 1) {
+              throw new Error("simulated interruption");
+            }
+          },
+        },
+      }),
+    ).rejects.toThrow("simulated interruption");
+
+    const resumed = await runFeedbackInboxBackfill(prisma, {
+      dryRun: false,
+      approvedManifest: manifest,
+    });
+    expect(resumed.validation.ok).toBe(true);
+  });
+
+  it("post-run validation catches a manufactured violation", async () => {
+    const feedback = await seedLegacyFeedback({
+      url: "/alliances/alliance-a/members",
+      withTriage: false,
+    });
+    const manifest = buildFeedbackInboxBackfillManifest({
+      dbIdentity,
+      totalFeedbackRows: 1,
+      plan: planFeedbackInboxBackfill([
+        {
+          id: feedback.id,
+          url: feedback.url,
+          allianceId: null,
+          hasTriage: false,
+        },
+      ]),
+    });
+
+    const validation = await validateFeedbackInboxBackfillCompletion(prisma, manifest);
+    expect(validation.ok).toBe(false);
+    expect(validation.violations.some((v) => v.includes("allianceId"))).toBe(true);
   });
 });
