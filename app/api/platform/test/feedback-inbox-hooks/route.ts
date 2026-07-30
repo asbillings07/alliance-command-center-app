@@ -7,6 +7,22 @@ import {
 } from "@/app/src/lib/feedbackInboxTestHooks";
 
 function hooksEnabled(): boolean {
+  // Hard-gate on VERCEL_ENV in addition to the feature flag: a misconfigured
+  // FEEDBACK_INBOX_TEST_HOOKS value must never make this route live on the
+  // real production deployment. VERCEL_ENV="production" is set by Vercel
+  // itself only for the production deployment and is not something a stray
+  // project env var can override, so this check holds even if the flag is
+  // accidentally left set there.
+  //
+  // Deliberately NOT gated on NODE_ENV: CI's E2E suite runs the app via
+  // `next start` (a genuine production build, NODE_ENV="production") so the
+  // Playwright tests that arm these hooks can exercise the real production
+  // code path — but that CI run is not a Vercel deployment at all, so
+  // VERCEL_ENV is unset there, and this check correctly leaves hooks
+  // reachable for it while still closing off the real production surface.
+  if (process.env["VERCEL_ENV"] === "production") {
+    return false;
+  }
   return process.env["FEEDBACK_INBOX_TEST_HOOKS"] === "true";
 }
 
