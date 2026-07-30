@@ -489,6 +489,16 @@ export async function executeOp(tx: Db, op: CleanupOp, now: Date): Promise<numbe
 export interface ExecuteOptions {
   /** Optional callback invoked inside the transaction right after each op executes. Useful for testing rollback seams. */
   onOpExecuted?: (op: CleanupOp, affected: number, tx: Db) => Promise<void> | void;
+  /**
+   * Optional callback invoked inside the transaction after the live plan is
+   * resolved and verified, but before any mutations run. Useful for race tests.
+   */
+  onPlanResolved?: (fresh: BuiltPlan, tx: Db) => Promise<void> | void;
+}
+
+export interface ExecuteResult {
+  deleteCounts: Record<string, number>;
+  feedbackTriageCascade: BuiltPlan["feedbackTriageCascade"];
 }
 
 export async function execute(
@@ -496,7 +506,7 @@ export async function execute(
   manifest: CleanupManifest,
   identity: string,
   opts?: ExecuteOptions
-): Promise<Record<string, number>> {
+): Promise<ExecuteResult> {
   return prisma.$transaction(
     async (tx: Db) => {
       // Serializes concurrent cleanup runs specifically (a lock only blocks
@@ -531,6 +541,10 @@ export async function execute(
       const expectedCounts = summarizeOpCounts(fresh.plan);
       const deleteCounts: Record<string, number> = {};
 
+      if (opts?.onPlanResolved) {
+        await opts.onPlanResolved(fresh, tx);
+      }
+
       for (const op of fresh.plan) {
         const affected = await executeOp(tx, op, now);
         const expected = expectedCounts[planOpKey(op)];
@@ -547,7 +561,10 @@ export async function execute(
         }
       }
 
-      return deleteCounts;
+      return {
+        deleteCounts,
+        feedbackTriageCascade: fresh.feedbackTriageCascade,
+      };
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 60_000 }
   );

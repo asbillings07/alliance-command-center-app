@@ -181,12 +181,8 @@ async function main(): Promise<void> {
     }
 
     console.log(`\nExecuting reviewed manifest: ${args.manifestPath} (generated ${manifest.generatedAt})`);
-    const preExecute = await buildPlan(prisma, args, {
-      now: new Date(),
-      frozenCutoff: manifest.cutoff,
-    });
-    printFeedbackTriageCascade(preExecute.feedbackTriageCascade);
-    const deleteCounts = await execute(args, manifest, identity);
+    const { deleteCounts, feedbackTriageCascade } = await execute(args, manifest, identity);
+    printFeedbackTriageCascade(feedbackTriageCascade);
     console.log("\nExecution complete (transaction committed). Deleted rows by model:", JSON.stringify(deleteCounts));
     console.log(`Run with --verify --manifest ${args.manifestPath} to independently confirm every operation applied.`);
 
