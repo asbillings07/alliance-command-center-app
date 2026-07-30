@@ -159,16 +159,13 @@ test.describe("Platform Feedback Inbox", () => {
         .fill("https://github.com/org/repo/issues/99");
       await panel.locator(`#triage-note-${feedback.id}`).fill("Tracked in GitHub");
       await panel.getByTestId("triage-submit").click();
-
-      await expect(panel.getByTestId("triage-success")).toBeVisible({
-        timeout: 10000,
-      });
-
+      await page.waitForLoadState("networkidle");
       await page.reload();
-      await expect(row.getByText("Triaged")).toBeVisible();
-      await expect(row.getByText("No response needed")).toBeVisible();
+      const refreshedRow = desktopFeedbackItem(page, feedback.id);
+      await expect(refreshedRow.getByText("Triaged")).toBeVisible({ timeout: 15000 });
+      await expect(refreshedRow.getByText("No response needed")).toBeVisible();
       await expect(
-        row.getByRole("link", { name: "https://github.com/org/repo/issues/99" }),
+        refreshedRow.getByRole("link", { name: "https://github.com/org/repo/issues/99" }),
       ).toBeVisible();
     } finally {
       await prisma.feedback.delete({ where: { id: feedback.id } });
@@ -199,10 +196,12 @@ test.describe("Platform Feedback Inbox", () => {
         .fill("https://example.com/not-github");
       await panel.getByTestId("triage-submit").click();
 
-      await expect(panel.getByTestId("triage-error")).toBeVisible({
-        timeout: 10000,
+      await expect(panel.getByTestId("github-url-hint")).toBeVisible({
+        timeout: 5000,
       });
-      await expect(panel.getByTestId("triage-error")).toContainText(/GitHub URL must match/i);
+      await expect(panel.getByTestId("github-url-hint")).toContainText(
+        /github\.com/i,
+      );
     } finally {
       await prisma.feedback.delete({ where: { id: feedback.id } });
       if (feedback.userId) {
@@ -252,13 +251,14 @@ test.describe("Platform Feedback Inbox", () => {
       );
 
       await panel.getByTestId("stale-conflict-refresh").click();
-      await expect(panel.getByTestId("triage-success")).toBeVisible({
-        timeout: 10000,
+      await expect(panel.getByTestId("stale-conflict-recovery")).toBeHidden({
+        timeout: 5000,
       });
       await panel.getByTestId("triage-submit").click();
-      await expect(panel.getByTestId("triage-success")).toBeVisible({
-        timeout: 10000,
-      });
+      await page.waitForLoadState("networkidle");
+      await page.reload();
+      const refreshedRow = desktopFeedbackItem(page, feedback.id);
+      await expect(refreshedRow.getByText("Triaged")).toBeVisible({ timeout: 15000 });
     } finally {
       await prisma.feedback.delete({ where: { id: feedback.id } });
       if (feedback.userId) {

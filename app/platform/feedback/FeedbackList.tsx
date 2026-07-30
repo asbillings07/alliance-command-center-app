@@ -132,7 +132,7 @@ function FeedbackRowBody({ item }: { item: FeedbackInboxListItem }) {
       {triageOpen && (
         <>
           <FeedbackTriagePanel
-            key={`${item.feedbackId}-${item.stateRevision}`}
+            key={item.feedbackId}
             feedbackId={item.feedbackId}
             initialStatus={item.status}
             initialNeedsResponse={item.needsResponse}
