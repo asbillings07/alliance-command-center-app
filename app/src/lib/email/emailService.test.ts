@@ -39,6 +39,26 @@ describe("emailService", () => {
     );
   });
 
+  it("sendBetaInvitation threads requestId into metadata for delivery-attempt log correlation (#175)", async () => {
+    await emailService.sendBetaInvitation({
+      to: "invitee@example.com",
+      invitation: {
+        id: "inv_1",
+        email: "invitee@example.com",
+        inviteUrl: "https://alliancehqapp.com/redeem/token123",
+        inviteCode: "ABC-123",
+        expiresAt: new Date("2026-12-31"),
+      },
+      requestId: "req_abc",
+    });
+
+    expect(deliverEmailMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: { invitationId: "inv_1", requestId: "req_abc" },
+      })
+    );
+  });
+
   it("sendAccessRequestConfirmation includes default replyTo header", async () => {
     const result = await emailService.sendAccessRequestConfirmation({
       to: "applicant@example.com",

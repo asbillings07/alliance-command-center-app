@@ -12,6 +12,7 @@ import {
   claimBetaInvitationResend,
   releaseBetaInvitationResend,
   deliverBetaInvitationEmailWithClaim,
+  deliverBetaInvitationEmail,
   getPendingAllianceCreation,
   BETA_EMAIL_PROVIDER_TIMEOUT_MS,
   BETA_RESEND_CLAIM_LEASE_MS,
@@ -40,6 +41,9 @@ vi.mock("./prisma", () => ({
     allianceMembership: {
       findFirst: vi.fn(),
     },
+    betaInvitationDeliveryAttempt: {
+      create: vi.fn(),
+    },
     $transaction: vi.fn(),
     $executeRaw: vi.fn(),
   },
@@ -67,6 +71,9 @@ const mockPrisma = prisma as unknown as {
   };
   allianceMembership: {
     findFirst: ReturnType<typeof vi.fn>;
+  };
+  betaInvitationDeliveryAttempt: {
+    create: ReturnType<typeof vi.fn>;
   };
   $transaction: ReturnType<typeof vi.fn>;
   $executeRaw: ReturnType<typeof vi.fn>;
@@ -859,6 +866,11 @@ describe("resend claim helpers", () => {
       identityAmbiguous: false,
     });
     mockPrisma.$executeRaw.mockResolvedValue(1);
+    mockPrisma.user.findUnique.mockResolvedValue({
+      email: "admin@example.com",
+      displayName: "Admin",
+    });
+    mockPrisma.betaInvitationDeliveryAttempt.create.mockResolvedValue({});
 
     let abortObserved = false;
     let releaseCalled = false;
@@ -885,6 +897,8 @@ describe("resend claim helpers", () => {
       pending,
       "https://example.com/redeem/tok",
       send,
+      "admin-1",
+      "resend",
     );
 
     await vi.advanceTimersByTimeAsync(BETA_EMAIL_PROVIDER_TIMEOUT_MS);
@@ -1079,5 +1093,197 @@ describe("acceptBetaInvitation - userId unique violation recovery", () => {
 
     expect(result.acceptedByUserId).toBe("user-1");
     expect(transactionCalls).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("delivery-attempt persistence (#175)", () => {
+  beforeEach(() => {
+    mockPrisma.user.findUnique.mockResolvedValue({
+      email: "admin@example.com",
+      displayName: "Admin",
+    });
+    mockPrisma.betaInvitationDeliveryAttempt.create.mockResolvedValue({});
+  });
+
+  describe("deliverBetaInvitationEmail (issue, no claim)", () => {
+    it("persists a SENT attempt tagged 'issue' and returns 'sent'", async () => {
+      const invitation = makeInvitation();
+      const send = vi.fn().mockResolvedValue({ status: "sent", messageId: "msg-1" });
+
+      const status = await deliverBetaInvitationEmail(
+        invitation,
+        "https://example.com/redeem/tok",
+        send,
+        "admin-1",
+      );
+
+      expect(status).toBe("sent");
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          invitationId: invitation.id,
+          trigger: "ISSUE",
+          status: "SENT",
+          providerMessageId: "msg-1",
+          attemptedByUserId: "admin-1",
+        }),
+      });
+    });
+
+    it("threads a requestId to both the send call and the persisted attempt", async () => {
+      const invitation = makeInvitation();
+      const send = vi.fn().mockResolvedValue({ status: "skipped" });
+
+      await deliverBetaInvitationEmail(
+        invitation,
+        "https://example.com/redeem/tok",
+        send,
+        "admin-1",
+      );
+
+      const sentRequestId = send.mock.calls[0][0].requestId;
+      expect(typeof sentRequestId).toBe("string");
+      expect(sentRequestId.length).toBeGreaterThan(0);
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ requestId: sentRequestId }),
+      });
+    });
+
+    it("an unexpected transport throw persists exactly one FAILED attempt and returns 'failed'", async () => {
+      const invitation = makeInvitation();
+      const send = vi.fn().mockRejectedValue(new Error("transport exploded"));
+
+      const status = await deliverBetaInvitationEmail(
+        invitation,
+        "https://example.com/redeem/tok",
+        send,
+        "admin-1",
+      );
+
+      expect(status).toBe("failed");
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ status: "FAILED" }),
+      });
+    });
+
+    it("an audit-insert failure after a successful send still returns 'sent', not a fabricated failure", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const invitation = makeInvitation();
+      const send = vi.fn().mockResolvedValue({ status: "sent", messageId: "msg-1" });
+      mockPrisma.betaInvitationDeliveryAttempt.create.mockRejectedValue(
+        new Error("db unavailable"),
+      );
+
+      const status = await deliverBetaInvitationEmail(
+        invitation,
+        "https://example.com/redeem/tok",
+        send,
+        "admin-1",
+      );
+
+      expect(status).toBe("sent");
+      consoleError.mockRestore();
+    });
+  });
+
+  describe("deliverBetaInvitationEmailWithClaim (resend/reissue)", () => {
+    beforeEach(() => {
+      const pending = makeInvitation();
+      mockPrisma.betaInvitation.findUnique.mockResolvedValue(pending);
+      mockPrisma.betaInvitation.findFirst.mockResolvedValue(pending);
+      mockPrisma.betaParticipant.findUnique.mockResolvedValue({
+        identityAmbiguous: false,
+      });
+      mockPrisma.$executeRaw.mockResolvedValue(1);
+      mockPrisma.betaInvitation.updateMany.mockResolvedValue({ count: 1 });
+    });
+
+    it("persists a FAILED attempt tagged 'resend' with the sanitized reason", async () => {
+      const invitation = makeInvitation();
+      const send = vi
+        .fn()
+        .mockResolvedValue({ status: "failed", error: "Provider down" });
+
+      const status = await deliverBetaInvitationEmailWithClaim(
+        invitation,
+        "https://example.com/redeem/tok",
+        send,
+        "admin-1",
+        "resend",
+      );
+
+      expect(status).toBe("failed");
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          trigger: "RESEND",
+          status: "FAILED",
+          failureReason: "Provider down",
+        }),
+      });
+    });
+
+    it("persists an attempt tagged 'reissue', distinct from 'resend'", async () => {
+      const invitation = makeInvitation();
+      const send = vi.fn().mockResolvedValue({ status: "skipped" });
+
+      await deliverBetaInvitationEmailWithClaim(
+        invitation,
+        "https://example.com/redeem/tok",
+        send,
+        "admin-1",
+        "reissue",
+      );
+
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ trigger: "REISSUE" }),
+      });
+    });
+
+    it("records the attempt only after the claim has been released", async () => {
+      const invitation = makeInvitation();
+      const send = vi.fn().mockResolvedValue({ status: "sent", messageId: "msg-1" });
+      const callOrder: string[] = [];
+      mockPrisma.betaInvitation.updateMany.mockImplementation(async () => {
+        callOrder.push("release");
+        return { count: 1 };
+      });
+      mockPrisma.betaInvitationDeliveryAttempt.create.mockImplementation(
+        async () => {
+          callOrder.push("record");
+          return {};
+        },
+      );
+
+      await deliverBetaInvitationEmailWithClaim(
+        invitation,
+        "https://example.com/redeem/tok",
+        send,
+        "admin-1",
+        "resend",
+      );
+
+      expect(callOrder).toEqual(["release", "record"]);
+    });
+
+    it("a losing claim contender throws before any send() or delivery-attempt write", async () => {
+      mockPrisma.betaInvitation.findFirst.mockResolvedValue(
+        makeInvitation({ id: "some-other-latest-invitation" }),
+      );
+      const invitation = makeInvitation();
+      const send = vi.fn();
+
+      await expect(
+        deliverBetaInvitationEmailWithClaim(
+          invitation,
+          "https://example.com/redeem/tok",
+          send,
+          "admin-1",
+          "resend",
+        ),
+      ).rejects.toThrow("latest invitation attempt");
+
+      expect(send).not.toHaveBeenCalled();
+      expect(mockPrisma.betaInvitationDeliveryAttempt.create).not.toHaveBeenCalled();
+    });
   });
 });
