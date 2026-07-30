@@ -710,6 +710,129 @@ test.describe("Platform Operations Console", () => {
         await prisma.user.delete({ where: { id: acceptedUser.id } });
       }
     });
+
+    test.describe("delivery history (#175)", () => {
+      test("creating an invitation records a delivery attempt, deterministically Skipped in this environment", async ({
+        page,
+      }) => {
+        // .env.test leaves RESEND_API_KEY/EMAIL_FROM unset so the app uses
+        // the logging transport — every send in E2E is a real, observed
+        // "skipped" EmailResult, not a live provider call.
+        await page.goto("/platform/beta");
+
+        const uniqueEmail = `test-delivery-${Date.now()}@example.com`;
+        await page.getByLabel(/email/i).fill(uniqueEmail);
+        await page.getByRole("button", { name: /Create Invitation/i }).click();
+        await expect(
+          page.getByRole("heading", { name: /Invitation Created/i }),
+        ).toBeVisible({ timeout: 10000 });
+
+        await page.getByRole("button", { name: /Invite Another/i }).click();
+        await page.setViewportSize({ width: 1280, height: 800 });
+
+        const row = page.locator("table tbody tr").filter({ hasText: uniqueEmail });
+        await expect(row).toBeVisible();
+        await expect(row.getByText("Skipped", { exact: true })).toBeVisible({
+          timeout: 10000,
+        });
+        await expect(row.getByText("Initial send", { exact: true })).toBeVisible();
+
+        // A single recorded attempt still exposes an expandable history —
+        // it loads that one real row, never a fabricated "Not recorded".
+        await row.getByRole("button", { name: /Show email delivery history/i }).click();
+        await expect(
+          row.getByRole("button", { name: /Hide email delivery history/i }),
+        ).toBeVisible({ timeout: 10000 });
+        await expect(row.getByText("Not recorded")).not.toBeVisible();
+      });
+
+      test("resending grows delivery history by one row, newest first", async ({
+        page,
+      }) => {
+        await page.goto("/platform/beta");
+
+        // Deliberately avoids substrings like "resend"/"send" — getByText
+        // below does case-insensitive substring matching, and the email
+        // itself is rendered in the row.
+        const uniqueEmail = `test-delivery-followup-${Date.now()}@example.com`;
+        await page.getByLabel(/email/i).fill(uniqueEmail);
+        await page.getByRole("button", { name: /Create Invitation/i }).click();
+        await expect(
+          page.getByRole("heading", { name: /Invitation Created/i }),
+        ).toBeVisible({ timeout: 10000 });
+
+        await page.getByRole("button", { name: /Invite Another/i }).click();
+        await page.setViewportSize({ width: 1280, height: 800 });
+
+        const row = page.locator("table tbody tr").filter({ hasText: uniqueEmail });
+        await expect(row).toBeVisible();
+
+        await row.getByTestId("resend-email-button").click();
+        // resendInvitationEmailAction doesn't revalidatePath (only mutates a
+        // side-channel audit row, not the invitation itself) — reload to see
+        // the freshly persisted attempt reflected in server-rendered props.
+        await expect(row.getByTestId("resend-email-button")).toHaveText(
+          /Logged|Sent!/,
+          { timeout: 10000 },
+        );
+        await page.reload();
+
+        const reloadedRow = page
+          .locator("table tbody tr")
+          .filter({ hasText: uniqueEmail });
+        await expect(reloadedRow).toBeVisible();
+        // The row's own latest-delivery summary now reflects the resend, not
+        // the original issue.
+        await expect(reloadedRow.getByText("Resend", { exact: true })).toBeVisible();
+
+        await reloadedRow
+          .getByRole("button", { name: /Show email delivery history/i })
+          .click();
+        await expect(
+          reloadedRow.getByRole("button", { name: /Hide email delivery history/i }),
+        ).toBeVisible({ timeout: 10000 });
+        // The original issue attempt is now visible in the expanded history
+        // alongside the resend — confirms the history grew by one row rather
+        // than the resend overwriting/replacing the original record.
+        await expect(
+          reloadedRow.getByText("Initial send", { exact: true }),
+        ).toBeVisible();
+      });
+    });
+
+    test("an invitation created before #175 shows 'Not recorded' rather than fabricated history", async ({
+      page,
+    }) => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const email = `test-pre-175-${suffix}@example.com`;
+      const participant = await prisma.betaParticipant.create({ data: {} });
+      const invitation = await prisma.betaInvitation.create({
+        data: {
+          participantId: participant.id,
+          email,
+          code: `PRE-${suffix.slice(0, 6).toUpperCase()}`,
+          token: crypto.randomUUID(),
+          issuedAt: new Date(),
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      try {
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.goto(`/platform/beta?search=${suffix}`);
+
+        const row = page.locator("table tbody tr").filter({ hasText: email });
+        await expect(row).toBeVisible();
+        await expect(row.getByText("Not recorded")).toBeVisible();
+        // No fabricated history to expand when nothing was ever recorded.
+        await expect(
+          row.getByRole("button", { name: /Show email delivery history/i }),
+        ).not.toBeVisible();
+      } finally {
+        await prisma.betaInvitation.delete({ where: { id: invitation.id } });
+        await prisma.betaParticipant.delete({ where: { id: participant.id } });
+      }
+    });
   });
 
   test.describe("Search Functionality", () => {
