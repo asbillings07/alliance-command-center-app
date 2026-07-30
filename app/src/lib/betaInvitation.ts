@@ -11,6 +11,10 @@ import {
   type BetaInvitationLockOperation,
 } from "./betaInvitationTestHooks";
 import type { EmailResult, EmailStatus } from "./email/types";
+import {
+  recordBetaInvitationDeliveryAttempt,
+  type BetaInvitationDeliveryTriggerInput,
+} from "./betaInvitationDelivery";
 
 function generateBetaCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -831,11 +835,34 @@ export type BetaInvitationEmailSender = (input: {
     expiresAt: Date;
   };
   signal: AbortSignal;
+  /** Correlates transport logs to the persisted delivery attempt (#175). */
+  requestId: string;
 }) => Promise<EmailResult>;
 
 /**
+ * Resolve the real EmailResult for a delivery invocation. Never throws: an
+ * unexpected transport-contract violation (send() itself throwing, which it
+ * never should per the EmailTransport contract) is mapped onto a generic
+ * failed result here — this is the *only* place a FAILED outcome is invented,
+ * and it is kept independent of persisting that outcome (#175 finding: a
+ * database failure while recording a successful send must never be
+ * mis-reported as a failed delivery).
+ */
+async function resolveEmailDeliveryResult(
+  deliveryPromise: Promise<EmailResult>,
+): Promise<EmailResult> {
+  try {
+    return await deliveryPromise;
+  } catch {
+    return { status: "failed", error: "Unexpected delivery error" };
+  }
+}
+
+/**
  * Claim, deliver with an abortable provider deadline, then release the owned
- * claim only after the underlying send promise settles (#174).
+ * claim only after the underlying send promise settles (#174). Persists an
+ * immutable delivery-attempt record for the real outcome (#175) after the
+ * claim is released, so the claim is never held open by a slow audit write.
  */
 export async function deliverBetaInvitationEmailWithClaim(
   invitation: Pick<BetaInvitation, "id" | "email" | "code" | "expiresAt"> & {
@@ -843,11 +870,14 @@ export async function deliverBetaInvitationEmailWithClaim(
   },
   inviteUrl: string,
   send: BetaInvitationEmailSender,
+  attemptedByUserId: string,
+  trigger: Extract<BetaInvitationDeliveryTriggerInput, "resend" | "reissue">,
   timeoutMs: number = BETA_EMAIL_PROVIDER_TIMEOUT_MS,
 ): Promise<EmailStatus> {
   const claim = await claimBetaInvitationResend(invitation.id);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const requestId = randomUUID();
   const deliveryPromise = send({
     to: invitation.email,
     invitation: {
@@ -858,23 +888,33 @@ export async function deliverBetaInvitationEmailWithClaim(
       expiresAt: invitation.expiresAt,
     },
     signal: controller.signal,
+    requestId,
   });
 
+  let result: EmailResult;
   try {
-    const result = await deliveryPromise;
-    return result.status;
-  } catch {
-    return "failed";
+    result = await resolveEmailDeliveryResult(deliveryPromise);
   } finally {
     clearTimeout(timeoutId);
     await deliveryPromise.catch(() => undefined);
     await releaseBetaInvitationResend(claim.invitationId, claim.claimId);
   }
+
+  await recordBetaInvitationDeliveryAttempt({
+    invitationId: invitation.id,
+    trigger,
+    result,
+    attemptedByUserId,
+    requestId,
+  });
+
+  return result.status;
 }
 
 /**
  * Deliver beta invitation email with an abortable provider deadline (#174).
  * Used when no resend claim is required (e.g. first invite on create).
+ * Persists an immutable delivery-attempt record for the real outcome (#175).
  */
 export async function deliverBetaInvitationEmail(
   invitation: Pick<BetaInvitation, "id" | "email" | "code" | "expiresAt"> & {
@@ -882,12 +922,14 @@ export async function deliverBetaInvitationEmail(
   },
   inviteUrl: string,
   send: BetaInvitationEmailSender,
+  attemptedByUserId: string,
 ): Promise<EmailStatus> {
   const controller = new AbortController();
   const timeoutId = setTimeout(
     () => controller.abort(),
     BETA_EMAIL_PROVIDER_TIMEOUT_MS,
   );
+  const requestId = randomUUID();
   const deliveryPromise = send({
     to: invitation.email,
     invitation: {
@@ -898,17 +940,26 @@ export async function deliverBetaInvitationEmail(
       expiresAt: invitation.expiresAt,
     },
     signal: controller.signal,
+    requestId,
   });
 
+  let result: EmailResult;
   try {
-    const result = await deliveryPromise;
-    return result.status;
-  } catch {
-    return "failed";
+    result = await resolveEmailDeliveryResult(deliveryPromise);
   } finally {
     clearTimeout(timeoutId);
     await deliveryPromise.catch(() => undefined);
   }
+
+  await recordBetaInvitationDeliveryAttempt({
+    invitationId: invitation.id,
+    trigger: "issue",
+    result,
+    attemptedByUserId,
+    requestId,
+  });
+
+  return result.status;
 }
 
 export type BetaValidationResult =
