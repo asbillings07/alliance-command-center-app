@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createFeedback } from "./feedback";
+import { createFeedback, resolveFeedbackSubmitterIdentity } from "./feedback";
 
 const mockTransaction = vi.fn();
 
@@ -139,5 +139,46 @@ describe("createFeedback", () => {
         }),
       }),
     );
+  });
+});
+
+describe("resolveFeedbackSubmitterIdentity", () => {
+  it("prefers submitter snapshot when present", () => {
+    expect(
+      resolveFeedbackSubmitterIdentity({
+        submitterEmail: "snap@example.test",
+        submitterDisplayName: "Snapshot Name",
+        user: { email: "live@example.test", displayName: "Live Name" },
+      }),
+    ).toEqual({
+      email: "snap@example.test",
+      displayName: "Snapshot Name",
+    });
+  });
+
+  it("falls back to live User when snapshot email is null", () => {
+    expect(
+      resolveFeedbackSubmitterIdentity({
+        submitterEmail: null,
+        submitterDisplayName: null,
+        user: { email: "live@example.test", displayName: "Live Name" },
+      }),
+    ).toEqual({
+      email: "live@example.test",
+      displayName: "Live Name",
+    });
+  });
+
+  it("returns Unknown submitter when neither snapshot nor user is available", () => {
+    expect(
+      resolveFeedbackSubmitterIdentity({
+        submitterEmail: null,
+        submitterDisplayName: null,
+        user: null,
+      }),
+    ).toEqual({
+      email: "Unknown submitter",
+      displayName: null,
+    });
   });
 });

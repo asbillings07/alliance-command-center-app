@@ -398,7 +398,7 @@ model Feedback {
   id                   String           @id @default(cuid())
   userId               String?
   user                 User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
-  submitterEmail       String
+  submitterEmail       String?
   submitterDisplayName String?
   category             FeedbackCategory
   message              String

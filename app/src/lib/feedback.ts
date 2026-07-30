@@ -26,10 +26,15 @@ export type CreateFeedbackInput = {
   appVersion?: string | null;
 };
 
+export type FeedbackSubmitterIdentity = {
+  email: string;
+  displayName: string | null;
+};
+
 export type FeedbackRecord = {
   id: string;
   userId: string | null;
-  submitterEmail: string;
+  submitterEmail: string | null;
   submitterDisplayName: string | null;
   category: FeedbackCategory;
   message: string;
@@ -40,6 +45,36 @@ export type FeedbackRecord = {
   allianceId: string | null;
   createdAt: Date;
 };
+
+const UNKNOWN_SUBMITTER_LABEL = "Unknown submitter";
+
+/**
+ * Resolve submitter identity for display/notification. Prefers immutable
+ * snapshot fields; falls back to a live User join when snapshots are absent
+ * (deploy-overlap rows from old app instances); otherwise "Unknown submitter".
+ */
+export function resolveFeedbackSubmitterIdentity(feedback: {
+  submitterEmail: string | null;
+  submitterDisplayName: string | null;
+  user?: { email: string; displayName: string | null } | null;
+}): FeedbackSubmitterIdentity {
+  if (feedback.submitterEmail) {
+    return {
+      email: feedback.submitterEmail,
+      displayName: feedback.submitterDisplayName,
+    };
+  }
+  if (feedback.user?.email) {
+    return {
+      email: feedback.user.email,
+      displayName: feedback.user.displayName,
+    };
+  }
+  return {
+    email: UNKNOWN_SUBMITTER_LABEL,
+    displayName: null,
+  };
+}
 
 /** Normalize an optional free-text field: trim, and treat empty as absent. */
 function optionalText(value: string | null | undefined): string | null {

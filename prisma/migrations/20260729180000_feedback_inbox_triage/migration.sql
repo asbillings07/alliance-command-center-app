@@ -13,8 +13,10 @@ SET
 FROM "User" u
 WHERE u."id" = f."userId";
 
--- 3. Enforce submitterEmail NOT NULL.
-ALTER TABLE "Feedback" ALTER COLUMN "submitterEmail" SET NOT NULL;
+-- 3. submitterEmail/submitterDisplayName stay nullable at the DB layer so
+--    pre-cutover app instances (old INSERT shape omitting these columns)
+--    keep working during rolling deploy. New code always populates them;
+--    the read path coalesces snapshot → live User → "Unknown submitter".
 
 -- 4. Relax userId FK: drop RESTRICT, make nullable, re-add with SetNull.
 ALTER TABLE "Feedback" DROP CONSTRAINT "Feedback_userId_fkey";

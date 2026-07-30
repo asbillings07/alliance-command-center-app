@@ -74,4 +74,37 @@ describeIntegration("FeedbackTriageEvent CHECK constraints [integration]", () =>
       `,
     ).rejects.toThrow();
   });
+
+  it("allows pre-cutover Feedback INSERT shape that omits submitter snapshot columns", async () => {
+    const legacyUser = await prisma.user.create({
+      data: {
+        email: `legacy-insert-${Date.now()}@example.test`,
+        displayName: "Legacy Insert User",
+        passwordHash: "placeholder-hash-not-a-real-password",
+        sessionVersion: 0,
+      },
+    });
+
+    const legacyFeedbackId = `legacy-fb-${Date.now()}`;
+    await prisma.$executeRaw`
+      INSERT INTO "Feedback" (
+        "id", "userId", "category", "message", "url", "createdAt"
+      ) VALUES (
+        ${legacyFeedbackId},
+        ${legacyUser.id},
+        'BUG'::"FeedbackCategory",
+        'submitted during deploy overlap',
+        '/platform/overview',
+        NOW()
+      )
+    `;
+
+    const row = await prisma.feedback.findUniqueOrThrow({
+      where: { id: legacyFeedbackId },
+      include: { user: { select: { email: true, displayName: true } } },
+    });
+    expect(row.submitterEmail).toBeNull();
+    expect(row.submitterDisplayName).toBeNull();
+    expect(row.user?.email).toBe(legacyUser.email);
+  });
 });
