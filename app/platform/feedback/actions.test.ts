@@ -37,14 +37,25 @@ describe("platform feedback actions", () => {
   it("maps a successful triage event to success and revalidates", async () => {
     mockRecordFeedbackTriageEvent.mockResolvedValue({
       ok: true,
-      projection: { stateRevision: 2 },
+      projection: {
+        stateRevision: 2,
+        status: "TRIAGED",
+        needsResponse: true,
+        githubIssueUrl: null,
+      },
     });
 
     const result = await recordFeedbackTriageEventAction("fb-1", 1, {
       status: "TRIAGED",
     });
 
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({
+      success: true,
+      stateRevision: 2,
+      status: "TRIAGED",
+      needsResponse: true,
+      githubIssueUrl: null,
+    });
     expect(mockRecordFeedbackTriageEvent).toHaveBeenCalledWith(
       "fb-1",
       "operator-1",

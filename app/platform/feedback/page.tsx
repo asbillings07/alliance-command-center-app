@@ -33,8 +33,10 @@ export default async function PlatformFeedbackPage({ searchParams }: PageProps) 
   const urlState = feedbackFiltersToUrlState(filters, page, pageSize);
 
   let listResult;
+  let filterOptions = { alliances: [] as Awaited<ReturnType<typeof listFeedbackFilterOptions>>["alliances"], waves: [] as Awaited<ReturnType<typeof listFeedbackFilterOptions>>["waves"] };
   try {
     listResult = await listFeedbackForTriage(filters, page, pageSize);
+    filterOptions = await listFeedbackFilterOptions();
   } catch {
     return (
       <div className="space-y-8 max-w-6xl" data-testid="platform-feedback-page">
@@ -47,8 +49,6 @@ export default async function PlatformFeedbackPage({ searchParams }: PageProps) 
       </div>
     );
   }
-
-  const filterOptions = await listFeedbackFilterOptions();
 
   return (
     <div className="space-y-8 max-w-6xl" data-testid="platform-feedback-page">
@@ -64,6 +64,7 @@ export default async function PlatformFeedbackPage({ searchParams }: PageProps) 
 
         <Suspense fallback={<p className="text-sm text-text-muted">Loading filters…</p>}>
           <FeedbackFilters
+            key={JSON.stringify(urlState)}
             filters={filters}
             allianceOptions={filterOptions.alliances}
             waveOptions={filterOptions.waves}

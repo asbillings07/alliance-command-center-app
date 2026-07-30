@@ -29,6 +29,11 @@ vi.mock("./FeedbackSummaryCards", () => ({
     React.createElement("div", null, "Summary cards"),
 }));
 
+vi.mock("./FeedbackRetryButton", () => ({
+  FeedbackInboxRetryButton: () =>
+    React.createElement("button", { "data-testid": "feedback-inbox-retry" }, "Retry"),
+}));
+
 vi.mock("./FeedbackList", () => ({
   FeedbackCard: ({ item }: { item: { feedbackId: string } }) =>
     React.createElement("div", null, `Card ${item.feedbackId}`),
@@ -79,6 +84,10 @@ const sampleItem = {
 describe("PlatformFeedback page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(listFeedbackFilterOptions).mockResolvedValue({
+      alliances: [],
+      waves: [],
+    });
   });
 
   it("renders summary cards and feedback list", async () => {
@@ -151,8 +160,39 @@ describe("PlatformFeedback page", () => {
 
     expect(html).toContain('data-testid="feedback-inbox-unavailable"');
     expect(html).toContain("Feedback inbox unavailable");
-    expect(html).toContain("Retry");
+    expect(html).toContain('data-testid="feedback-inbox-retry"');
     expect(listFeedbackFilterOptions).not.toHaveBeenCalled();
+  });
+
+  it("renders scoped unavailable state when filter options query throws", async () => {
+    vi.mocked(listFeedbackForTriage).mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 25,
+      summary: {
+        statusCounts: {
+          NEW: 0,
+          TRIAGED: 0,
+          PLANNED: 0,
+          RESOLVED: 0,
+          DISMISSED: 0,
+        },
+        needsResponseCount: 0,
+        totalMatchingOtherFacets: 0,
+      },
+    });
+    vi.mocked(listFeedbackFilterOptions).mockRejectedValue(
+      new Error("filter options unavailable"),
+    );
+
+    const page = await PlatformFeedbackPage({
+      searchParams: Promise.resolve({}),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain('data-testid="feedback-inbox-unavailable"');
+    expect(listFeedbackFilterOptions).toHaveBeenCalled();
   });
 
   it("shows Unreviewed semantics via list item shape in mocked render path", async () => {

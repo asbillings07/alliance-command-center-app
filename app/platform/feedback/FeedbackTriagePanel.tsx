@@ -124,6 +124,16 @@ export function FeedbackTriagePanel({
         );
 
       if (result.success) {
+        const nextBaseline: TriageBaseline = {
+          status: result.status,
+          needsResponse: result.needsResponse,
+          githubIssueUrl: result.githubIssueUrl,
+          stateRevision: result.stateRevision,
+        };
+        setBaseline(nextBaseline);
+        setStatus(result.status);
+        setNeedsResponse(result.needsResponse);
+        setGithubIssueUrl(result.githubIssueUrl ?? "");
         setSuccess("Triage update saved.");
         setNote("");
         return;

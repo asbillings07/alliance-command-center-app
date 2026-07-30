@@ -267,6 +267,62 @@ test.describe("Platform Feedback Inbox", () => {
     }
   });
 
+  test("opens triage panel on mobile and saves a note", async ({ page }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const feedback = await seedFeedbackItem({
+      suffix,
+      message: `E2E mobile triage ${suffix}`,
+    });
+
+    try {
+      await page.setViewportSize({ width: 375, height: 667 });
+      await page.goto(`/platform/feedback?search=${encodeURIComponent(suffix)}`);
+      const card = mobileFeedbackItem(page, feedback.id);
+      await expect(card).toBeVisible({ timeout: 15000 });
+      await card.getByRole("button", { name: /^Triage$/ }).click();
+      const panel = card.locator('[data-testid="feedback-triage-panel"]');
+      await expect(panel).toBeVisible();
+      await panel.locator(`#triage-note-${feedback.id}`).fill("Mobile note");
+      await panel.getByTestId("triage-submit").click();
+      await expect(panel.getByTestId("triage-success")).toBeVisible({
+        timeout: 10000,
+      });
+    } finally {
+      await prisma.feedback.delete({ where: { id: feedback.id } });
+      if (feedback.userId) {
+        await prisma.user.delete({ where: { id: feedback.userId } }).catch(() => {});
+      }
+    }
+  });
+
+  test("activates triage controls via keyboard on desktop", async ({ page }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const feedback = await seedFeedbackItem({
+      suffix,
+      message: `E2E keyboard triage ${suffix}`,
+    });
+
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(`/platform/feedback?search=${encodeURIComponent(suffix)}`);
+      const row = desktopFeedbackItem(page, feedback.id);
+      await expect(row).toBeVisible({ timeout: 15000 });
+      await row.getByRole("button", { name: /^Triage$/ }).focus();
+      await page.keyboard.press("Enter");
+      const panel = row.locator('[data-testid="feedback-triage-panel"]');
+      await expect(panel).toBeVisible();
+      await panel.locator(`#triage-status-${feedback.id}`).focus();
+      await page.keyboard.press("ArrowDown");
+      await panel.getByTestId("triage-submit").focus();
+      await expect(panel.getByTestId("triage-submit")).toBeFocused();
+    } finally {
+      await prisma.feedback.delete({ where: { id: feedback.id } });
+      if (feedback.userId) {
+        await prisma.user.delete({ where: { id: feedback.userId } }).catch(() => {});
+      }
+    }
+  });
+
   test("renders at narrow mobile viewport", async ({ page }, testInfo) => {
     const suffix = `${Date.now()}-${testInfo.retry}`;
     const feedback = await seedFeedbackItem({
@@ -301,13 +357,31 @@ test.describe("Platform Feedback Inbox", () => {
 
   test("@a11y platform feedback inbox meets accessibility standards", async ({
     page,
-  }) => {
-    await page.goto("/platform/feedback");
-    await page.waitForLoadState("networkidle");
-
-    await checkA11yWithOptions(page, {
-      runOnly: ["wcag2a", "wcag2aa"],
-      include: ['[data-testid="platform-feedback-page"]'],
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const feedback = await seedFeedbackItem({
+      suffix,
+      message: `E2E a11y triage ${suffix}`,
     });
+
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(`/platform/feedback?search=${encodeURIComponent(suffix)}`);
+      const row = desktopFeedbackItem(page, feedback.id);
+      await expect(row).toBeVisible({ timeout: 15000 });
+      await row.getByRole("button", { name: /^Triage$/ }).click();
+      await expect(row.locator('[data-testid="feedback-triage-panel"]')).toBeVisible();
+      await page.waitForLoadState("networkidle");
+
+      await checkA11yWithOptions(page, {
+        runOnly: ["wcag2a", "wcag2aa"],
+        include: ['[data-testid="platform-feedback-page"]'],
+      });
+    } finally {
+      await prisma.feedback.delete({ where: { id: feedback.id } });
+      if (feedback.userId) {
+        await prisma.user.delete({ where: { id: feedback.userId } }).catch(() => {});
+      }
+    }
   });
 });

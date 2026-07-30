@@ -11,6 +11,23 @@ vi.mock("next/link", () => ({
     React.createElement("a", { href, ...props }, children),
 }));
 
+vi.mock("@/app/src/components/client", () => ({
+  Button: ({
+    children,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement>) =>
+    React.createElement("button", props, children),
+  Input: (props: React.InputHTMLAttributes<HTMLInputElement>) =>
+    React.createElement("input", props),
+  Label: ({
+    children,
+    ...props
+  }: React.LabelHTMLAttributes<HTMLLabelElement>) =>
+    React.createElement("label", props, children),
+  Textarea: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) =>
+    React.createElement("textarea", props),
+}));
+
 vi.mock("./FeedbackTriagePanel", () => ({
   FeedbackTriagePanel: () =>
     React.createElement("div", { "data-testid": "feedback-triage-panel" }),

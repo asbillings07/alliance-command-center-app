@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { FeedbackInboxRetryButton } from "./FeedbackRetryButton";
 
 export function FeedbackInboxUnavailable() {
   return (
@@ -14,12 +14,7 @@ export function FeedbackInboxUnavailable() {
         We couldn&apos;t load feedback items right now. The rest of the Platform
         Console is still available.
       </p>
-      <Link
-        href="/platform/feedback"
-        className="inline-flex text-sm text-primary hover:text-primary-hover"
-      >
-        Retry
-      </Link>
+      <FeedbackInboxRetryButton />
     </div>
   );
 }

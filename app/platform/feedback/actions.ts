@@ -21,7 +21,13 @@ export type RecordFeedbackTriageEventInput = {
 };
 
 export type RecordFeedbackTriageEventResult =
-  | { success: true }
+  | {
+      success: true;
+      stateRevision: number;
+      status: FeedbackTriageStatus;
+      needsResponse: boolean;
+      githubIssueUrl: string | null;
+    }
   | { success: false; error: string; conflict?: StaleConflictPayload };
 
 export type FeedbackTriageHistoryResult =
@@ -57,7 +63,13 @@ export async function recordFeedbackTriageEventAction(
 
   if (result.ok) {
     revalidatePath("/platform/feedback");
-    return { success: true };
+    return {
+      success: true,
+      stateRevision: result.projection.stateRevision,
+      status: result.projection.status,
+      needsResponse: result.projection.needsResponse,
+      githubIssueUrl: result.projection.githubIssueUrl,
+    };
   }
 
   if (result.code === "STALE_CONFLICT") {
