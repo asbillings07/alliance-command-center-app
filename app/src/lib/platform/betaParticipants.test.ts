@@ -12,6 +12,7 @@ import {
   deriveParticipantAttention,
   escapeIlikePattern,
   daysSince,
+  mapDeliverySummary,
 } from "./betaParticipants";
 
 describe("clampBetaParticipantsPagination", () => {
@@ -340,5 +341,145 @@ describe("deriveParticipantAttention", () => {
     expect(daysSince(now, daysAgo(BETA_PARTICIPANTS_ATTENTION_STALE_DAYS - 0.5))).toBeLessThan(
       BETA_PARTICIPANTS_ATTENTION_STALE_DAYS,
     );
+  });
+});
+
+describe("mapDeliverySummary (#175)", () => {
+  const createdAt = new Date("2026-07-30T12:00:00Z");
+
+  it("returns null when no delivery attempt row exists (renders as 'Not recorded')", () => {
+    expect(
+      mapDeliverySummary({
+        delivery_id: null,
+        delivery_trigger: null,
+        delivery_status: null,
+        delivery_created_at: null,
+        delivery_failure_reason: null,
+        delivery_provider_message_id: null,
+        delivery_attempted_by_user_id: null,
+        delivery_attempted_by_email: null,
+        delivery_attempted_by_display_name: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("maps a SENT row, translating DB enums to lowercase read-model values, including the attempted-by actor", () => {
+    expect(
+      mapDeliverySummary({
+        delivery_id: "att-1",
+        delivery_trigger: "ISSUE",
+        delivery_status: "SENT",
+        delivery_created_at: createdAt,
+        delivery_failure_reason: null,
+        delivery_provider_message_id: "msg-1",
+        delivery_attempted_by_user_id: "op-1",
+        delivery_attempted_by_email: "operator@example.test",
+        delivery_attempted_by_display_name: "Operator One",
+      }),
+    ).toEqual({
+      id: "att-1",
+      trigger: "issue",
+      status: "sent",
+      createdAt,
+      failureReason: null,
+      providerMessageId: "msg-1",
+      attemptedBy: {
+        userId: "op-1",
+        displayName: "Operator One",
+        email: "operator@example.test",
+      },
+    });
+  });
+
+  it("retains the snapshotted email/displayName as attemptedBy even when attemptedByUserId is null (actor deleted after the fact)", () => {
+    const result = mapDeliverySummary({
+      delivery_id: "att-1b",
+      delivery_trigger: "ISSUE",
+      delivery_status: "SENT",
+      delivery_created_at: createdAt,
+      delivery_failure_reason: null,
+      delivery_provider_message_id: "msg-1b",
+      delivery_attempted_by_user_id: null,
+      delivery_attempted_by_email: "deleted-operator@example.test",
+      delivery_attempted_by_display_name: "Deleted Operator",
+    });
+
+    expect(result?.attemptedBy).toEqual({
+      userId: null,
+      displayName: "Deleted Operator",
+      email: "deleted-operator@example.test",
+    });
+  });
+
+  it("falls back to a null attemptedBy only in the defensive case where all three fields are missing (not a real #175 state — attemptedByEmail is required on every row)", () => {
+    const result = mapDeliverySummary({
+      delivery_id: "att-1c",
+      delivery_trigger: "ISSUE",
+      delivery_status: "SENT",
+      delivery_created_at: createdAt,
+      delivery_failure_reason: null,
+      delivery_provider_message_id: "msg-1c",
+      delivery_attempted_by_user_id: null,
+      delivery_attempted_by_email: null,
+      delivery_attempted_by_display_name: null,
+    });
+
+    expect(result?.attemptedBy).toBeNull();
+  });
+
+  it("maps a FAILED resend row with its failure reason", () => {
+    expect(
+      mapDeliverySummary({
+        delivery_id: "att-2",
+        delivery_trigger: "RESEND",
+        delivery_status: "FAILED",
+        delivery_created_at: createdAt,
+        delivery_failure_reason: "Provider rejected the request",
+        delivery_provider_message_id: null,
+        delivery_attempted_by_user_id: "op-2",
+        delivery_attempted_by_email: "operator2@example.test",
+        delivery_attempted_by_display_name: null,
+      }),
+    ).toEqual({
+      id: "att-2",
+      trigger: "resend",
+      status: "failed",
+      createdAt,
+      failureReason: "Provider rejected the request",
+      providerMessageId: null,
+      attemptedBy: {
+        userId: "op-2",
+        displayName: null,
+        email: "operator2@example.test",
+      },
+    });
+  });
+
+  it("maps a SKIPPED reissue row", () => {
+    expect(
+      mapDeliverySummary({
+        delivery_id: "att-3",
+        delivery_trigger: "REISSUE",
+        delivery_status: "SKIPPED",
+        delivery_created_at: createdAt,
+        delivery_failure_reason: null,
+        delivery_provider_message_id: null,
+        delivery_attempted_by_user_id: "op-3",
+        delivery_attempted_by_email: "operator3@example.test",
+        delivery_attempted_by_display_name: "Operator Three",
+      }),
+    ).toEqual({
+      id: "att-3",
+      trigger: "reissue",
+      status: "skipped",
+      createdAt,
+      failureReason: null,
+      providerMessageId: null,
+      attemptedBy: {
+        userId: "op-3",
+        displayName: "Operator Three",
+        email: "operator3@example.test",
+      },
+    });
   });
 });

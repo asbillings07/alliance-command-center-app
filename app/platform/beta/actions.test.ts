@@ -51,10 +51,19 @@ vi.mock("@/app/src/lib/appUrl", () => ({
   getRedeemUrl: (token: string) => `https://example.com/redeem/${token}`,
 }));
 
+const mockListBetaInvitationDeliveryHistory = vi.fn();
+
+vi.mock("@/app/src/lib/platform/betaParticipants", () => ({
+  listBetaParticipantPriorAttempts: vi.fn(),
+  listBetaInvitationDeliveryHistory: (...args: unknown[]) =>
+    mockListBetaInvitationDeliveryHistory(...args),
+}));
+
 import {
   createInvitationAction,
   reissueInvitationAction,
   resendInvitationEmailAction,
+  fetchDeliveryHistoryAction,
 } from "./actions";
 import { prisma } from "@/app/src/lib/prisma";
 
@@ -174,5 +183,84 @@ describe("platform beta actions", () => {
       "operator-1",
       "resend",
     );
+  });
+
+  describe("fetchDeliveryHistoryAction (#175)", () => {
+    it("requires platform admin authorization before doing anything else", async () => {
+      mockRequirePlatformAdmin.mockRejectedValue(new Error("NEXT_REDIRECT"));
+
+      await expect(fetchDeliveryHistoryAction("inv-1")).rejects.toThrow(
+        "NEXT_REDIRECT",
+      );
+
+      expect(mockFindUnique).not.toHaveBeenCalled();
+      expect(mockListBetaInvitationDeliveryHistory).not.toHaveBeenCalled();
+    });
+
+    it("returns paginated delivery history for an authorized admin", async () => {
+      mockFindUnique.mockResolvedValue({ id: "inv-1" });
+      const createdAt = new Date("2026-07-30T12:00:00Z");
+      mockListBetaInvitationDeliveryHistory.mockResolvedValue({
+        items: [
+          {
+            id: "att-1",
+            trigger: "issue",
+            status: "sent",
+            createdAt,
+            failureReason: null,
+            providerMessageId: "msg-1",
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+      });
+
+      const result = await fetchDeliveryHistoryAction("inv-1", 1, 10);
+
+      expect(result).toEqual({
+        success: true,
+        items: [
+          {
+            id: "att-1",
+            trigger: "issue",
+            status: "sent",
+            createdAt,
+            failureReason: null,
+            providerMessageId: "msg-1",
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+      });
+      expect(mockListBetaInvitationDeliveryHistory).toHaveBeenCalledWith(
+        "inv-1",
+        1,
+        10,
+      );
+    });
+
+    it("returns an error without querying history when the invitation does not exist", async () => {
+      mockFindUnique.mockResolvedValue(null);
+
+      const result = await fetchDeliveryHistoryAction("missing-inv");
+
+      expect(result).toEqual({
+        success: false,
+        error: "Invitation not found",
+      });
+      expect(mockListBetaInvitationDeliveryHistory).not.toHaveBeenCalled();
+    });
+
+    it("returns an error for an empty invitationId without querying the database", async () => {
+      const result = await fetchDeliveryHistoryAction("");
+
+      expect(result).toEqual({
+        success: false,
+        error: "Invitation not found",
+      });
+      expect(mockFindUnique).not.toHaveBeenCalled();
+    });
   });
 });

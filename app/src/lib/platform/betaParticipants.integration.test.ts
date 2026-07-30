@@ -3,6 +3,7 @@ import type { PrismaClient } from "@/app/generated/prisma/client";
 import {
   listBetaParticipants,
   listBetaParticipantPriorAttempts,
+  listBetaInvitationDeliveryHistory,
   buildIlikeContainsPattern,
 } from "./betaParticipants";
 
@@ -31,6 +32,11 @@ describeIntegration("betaParticipants unified query [integration]", () => {
 
   afterEach(async () => {
     if (createdInvitationIds.length > 0) {
+      // BetaInvitationDeliveryAttempt.invitationId is onDelete: Restrict
+      // (#175) — attempts must be removed before their invitation.
+      await prisma.betaInvitationDeliveryAttempt.deleteMany({
+        where: { invitationId: { in: createdInvitationIds } },
+      });
       await prisma.betaInvitation.deleteMany({
         where: { id: { in: createdInvitationIds } },
       });
@@ -81,6 +87,57 @@ describeIntegration("betaParticipants unified query [integration]", () => {
     const result = await reissueBetaInvitation(participantId, operatorId);
     createdInvitationIds.push(result.invitation.id);
     return result.invitation;
+  }
+
+  /**
+   * Writes a delivery-attempt row directly (bypassing the transport/claim
+   * flow, which is #175 PR 1's concern) — this file only exercises the read
+   * model's projection of already-persisted attempts.
+   */
+  async function attachDeliveryAttempt(
+    invitationId: string,
+    overrides: {
+      trigger?: "ISSUE" | "RESEND" | "REISSUE";
+      status?: "SENT" | "FAILED" | "SKIPPED";
+      createdAt?: Date;
+      failureReason?: string | null;
+      providerMessageId?: string | null;
+      // Allows a test to own actor lifecycle (e.g. to delete the actor
+      // afterward and assert the snapshot survives, #175 PR 2).
+      actor?: { id: string; email: string; displayName: string | null };
+    } = {},
+  ) {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let actor = overrides.actor;
+    if (!actor) {
+      const created = await prisma.user.create({
+        data: {
+          email: `delivery-actor-${suffix}@example.test`,
+          displayName: "Delivery Actor",
+          passwordHash: "hash",
+        },
+      });
+      createdUserIds.push(created.id);
+      actor = created;
+    }
+
+    return prisma.betaInvitationDeliveryAttempt.create({
+      data: {
+        invitationId,
+        trigger: overrides.trigger ?? "ISSUE",
+        status: overrides.status ?? "SENT",
+        createdAt: overrides.createdAt ?? new Date(),
+        failureReason: overrides.failureReason ?? null,
+        providerMessageId:
+          (overrides.status ?? "SENT") === "SENT"
+            ? (overrides.providerMessageId ?? "provider-msg")
+            : null,
+        attemptedByUserId: actor.id,
+        attemptedByEmail: actor.email,
+        attemptedByDisplayName: actor.displayName,
+        requestId: `req-${suffix}`,
+      },
+    });
   }
 
   it("returns empty results when no participants exist for a unique search", async () => {
@@ -420,5 +477,258 @@ describeIntegration("betaParticipants unified query [integration]", () => {
 
     const result = await listBetaParticipants({ search: suffix }, 1, 50);
     expect(result.summary.distinctAlliancesCreated).toBe(1);
+  });
+
+  describe("latestDeliveryAttempt projection (#175)", () => {
+    it("renders 'Not recorded' (null) when the invitation has zero delivery attempts", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      await trackInvitation(`beta-no-delivery-${suffix}@example.test`);
+
+      const result = await listBetaParticipants({ search: suffix }, 1, 50);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]?.latestAttempt.latestDeliveryAttempt).toBeNull();
+    });
+
+    it("projects the single most recent delivery attempt onto the latest invitation attempt", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const invitation = await trackInvitation(
+        `beta-with-delivery-${suffix}@example.test`,
+      );
+
+      await attachDeliveryAttempt(invitation.id, {
+        status: "FAILED",
+        failureReason: "Older failed attempt",
+        createdAt: new Date("2026-07-01T00:00:00Z"),
+      });
+      const newest = await attachDeliveryAttempt(invitation.id, {
+        trigger: "RESEND",
+        status: "SENT",
+        providerMessageId: "newest-msg",
+        createdAt: new Date("2026-07-02T00:00:00Z"),
+      });
+
+      const result = await listBetaParticipants({ search: suffix }, 1, 50);
+      const projected = result.items[0]?.latestAttempt.latestDeliveryAttempt;
+      expect(projected).toMatchObject({
+        id: newest.id,
+        trigger: "resend",
+        status: "sent",
+        providerMessageId: "newest-msg",
+        failureReason: null,
+      });
+    });
+
+    it("projects each prior attempt's own latest delivery attempt, not the invitation's", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const first = await trackInvitation(
+        `beta-prior-delivery-${suffix}@example.test`,
+      );
+      await attachDeliveryAttempt(first.id, {
+        status: "FAILED",
+        failureReason: "First invitation's own attempt",
+      });
+
+      await prisma.betaInvitation.update({
+        where: { id: first.id },
+        data: { revokedAt: new Date() },
+      });
+      const second = await trackReissue(first.participantId);
+      await attachDeliveryAttempt(second.id, { status: "SKIPPED" });
+
+      const history = await listBetaParticipantPriorAttempts(
+        first.participantId,
+        1,
+        10,
+      );
+      expect(history.items).toHaveLength(1);
+      expect(history.items[0]?.id).toBe(first.id);
+      expect(history.items[0]?.latestDeliveryAttempt).toMatchObject({
+        status: "failed",
+        failureReason: "First invitation's own attempt",
+      });
+    });
+
+    it("projects the attempted-by actor from the snapshot columns, not a live User join", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const invitation = await trackInvitation(
+        `beta-attributed-delivery-${suffix}@example.test`,
+      );
+      const actor = await prisma.user.create({
+        data: {
+          email: `attributed-actor-${suffix}@example.test`,
+          displayName: "Attributed Actor",
+          passwordHash: "hash",
+        },
+      });
+      createdUserIds.push(actor.id);
+
+      await attachDeliveryAttempt(invitation.id, { actor });
+
+      const result = await listBetaParticipants({ search: suffix }, 1, 50);
+      expect(
+        result.items[0]?.latestAttempt.latestDeliveryAttempt?.attemptedBy,
+      ).toEqual({
+        userId: actor.id,
+        displayName: "Attributed Actor",
+        email: actor.email,
+      });
+    });
+
+    it("retains the attempted-by email/displayName snapshot after the operator's User row is deleted (#175)", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const invitation = await trackInvitation(
+        `beta-deleted-actor-delivery-${suffix}@example.test`,
+      );
+      const actor = await prisma.user.create({
+        data: {
+          email: `deleted-actor-${suffix}@example.test`,
+          displayName: "Soon Deleted",
+          passwordHash: "hash",
+        },
+      });
+      // Not pushed to createdUserIds — this test owns and deletes it below.
+
+      await attachDeliveryAttempt(invitation.id, { actor });
+      await prisma.user.delete({ where: { id: actor.id } });
+
+      const result = await listBetaParticipants({ search: suffix }, 1, 50);
+      // attemptedByUserId is onDelete: SetNull; the snapshot columns are
+      // plain strings and are untouched by the User row disappearing.
+      expect(
+        result.items[0]?.latestAttempt.latestDeliveryAttempt?.attemptedBy,
+      ).toEqual({
+        userId: null,
+        displayName: "Soon Deleted",
+        email: actor.email,
+      });
+    });
+  });
+
+  describe("listBetaInvitationDeliveryHistory (#175)", () => {
+    it("returns an empty page (not an error) for an invitation with zero attempts", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const invitation = await trackInvitation(
+        `beta-history-empty-${suffix}@example.test`,
+      );
+
+      const history = await listBetaInvitationDeliveryHistory(
+        invitation.id,
+        1,
+        10,
+      );
+      expect(history).toEqual({ items: [], total: 0, page: 1, pageSize: 10 });
+    });
+
+    it("returns attempts newest-first and paginates correctly", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const invitation = await trackInvitation(
+        `beta-history-page-${suffix}@example.test`,
+      );
+
+      const oldest = await attachDeliveryAttempt(invitation.id, {
+        status: "FAILED",
+        failureReason: "attempt 1",
+        createdAt: new Date("2026-07-01T00:00:00Z"),
+      });
+      const middle = await attachDeliveryAttempt(invitation.id, {
+        trigger: "RESEND",
+        status: "SKIPPED",
+        createdAt: new Date("2026-07-02T00:00:00Z"),
+      });
+      const newest = await attachDeliveryAttempt(invitation.id, {
+        trigger: "RESEND",
+        status: "SENT",
+        providerMessageId: "newest-msg",
+        createdAt: new Date("2026-07-03T00:00:00Z"),
+      });
+
+      const firstPage = await listBetaInvitationDeliveryHistory(
+        invitation.id,
+        1,
+        2,
+      );
+      expect(firstPage.total).toBe(3);
+      expect(firstPage.items.map((i) => i.id)).toEqual([newest.id, middle.id]);
+
+      const secondPage = await listBetaInvitationDeliveryHistory(
+        invitation.id,
+        2,
+        2,
+      );
+      expect(secondPage.items.map((i) => i.id)).toEqual([oldest.id]);
+    });
+
+    it("scopes strictly to the requested invitation, never leaking another invitation's attempts", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const invitationA = await trackInvitation(`beta-hist-a-${suffix}@example.test`);
+      const invitationB = await trackInvitation(`beta-hist-b-${suffix}@example.test`);
+      await attachDeliveryAttempt(invitationA.id);
+      await attachDeliveryAttempt(invitationB.id);
+      await attachDeliveryAttempt(invitationB.id);
+
+      const historyA = await listBetaInvitationDeliveryHistory(
+        invitationA.id,
+        1,
+        10,
+      );
+      expect(historyA.total).toBe(1);
+
+      const historyB = await listBetaInvitationDeliveryHistory(
+        invitationB.id,
+        1,
+        10,
+      );
+      expect(historyB.total).toBe(2);
+    });
+
+    it("projects the attempted-by actor snapshot for each history row, surviving operator deletion", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const invitation = await trackInvitation(
+        `beta-history-attribution-${suffix}@example.test`,
+      );
+      const liveActor = await prisma.user.create({
+        data: {
+          email: `history-live-actor-${suffix}@example.test`,
+          displayName: "Live Actor",
+          passwordHash: "hash",
+        },
+      });
+      createdUserIds.push(liveActor.id);
+      const deletedActor = await prisma.user.create({
+        data: {
+          email: `history-deleted-actor-${suffix}@example.test`,
+          displayName: "Deleted Actor",
+          passwordHash: "hash",
+        },
+      });
+
+      await attachDeliveryAttempt(invitation.id, {
+        actor: deletedActor,
+        createdAt: new Date("2026-07-01T00:00:00Z"),
+      });
+      await attachDeliveryAttempt(invitation.id, {
+        actor: liveActor,
+        trigger: "RESEND",
+        createdAt: new Date("2026-07-02T00:00:00Z"),
+      });
+      await prisma.user.delete({ where: { id: deletedActor.id } });
+
+      const history = await listBetaInvitationDeliveryHistory(
+        invitation.id,
+        1,
+        10,
+      );
+      expect(history.items).toHaveLength(2);
+      expect(history.items[0]?.attemptedBy).toEqual({
+        userId: liveActor.id,
+        displayName: "Live Actor",
+        email: liveActor.email,
+      });
+      expect(history.items[1]?.attemptedBy).toEqual({
+        userId: null,
+        displayName: "Deleted Actor",
+        email: deletedActor.email,
+      });
+    });
   });
 });
