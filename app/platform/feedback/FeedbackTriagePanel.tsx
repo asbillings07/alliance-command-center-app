@@ -3,8 +3,7 @@
 import { useState, useTransition } from "react";
 import type { FeedbackTriageStatus } from "@/app/generated/prisma/enums";
 import { Button, Input, Label, Textarea } from "@/app/src/components/client";
-import type { StaleConflictPayload } from "@/app/src/lib/feedbackTriage";
-import { GITHUB_ISSUE_URL_PATTERN } from "@/app/src/lib/feedbackTriage";
+import { GITHUB_ISSUE_URL_PATTERN } from "@/app/src/lib/githubIssueUrl";
 import {
   recordFeedbackTriageEventAction,
   type RecordFeedbackTriageEventResult,
@@ -16,6 +15,7 @@ import {
 } from "./labels";
 import {
   applyConflictBaseline,
+  type StaleConflictPayload,
   type TriageBaseline,
 } from "./staleConflict";
 

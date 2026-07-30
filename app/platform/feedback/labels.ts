@@ -1,10 +1,16 @@
 import type { FeedbackTriageStatus } from "@/app/generated/prisma/enums";
 import { FEEDBACK_CATEGORY_LABELS } from "@/app/src/lib/feedbackCategory";
-import type { FeedbackTriageHistoryItem } from "@/app/src/lib/platform/feedbackInbox";
-import { ALL_TRIAGE_STATUSES } from "@/app/src/lib/platform/feedbackInbox";
 import type { BadgeVariant } from "@/app/src/components";
 
-export { FEEDBACK_CATEGORY_LABELS, ALL_TRIAGE_STATUSES };
+export { FEEDBACK_CATEGORY_LABELS };
+
+export const ALL_TRIAGE_STATUSES: FeedbackTriageStatus[] = [
+  "NEW",
+  "TRIAGED",
+  "PLANNED",
+  "RESOLVED",
+  "DISMISSED",
+];
 
 export const TRIAGE_STATUS_LABELS: Record<FeedbackTriageStatus, string> = {
   NEW: "New",
@@ -55,7 +61,18 @@ export const RESPONSE_INDICATOR_VARIANTS: Record<
   no_response_needed: "success",
 };
 
-export function formatHistoryEventChanges(event: FeedbackTriageHistoryItem): string[] {
+/** Minimal history-event shape for display formatting (client-safe). */
+export type FeedbackHistoryEventDisplay = {
+  statusChangedTo: FeedbackTriageStatus | null;
+  noteText: string | null;
+  needsResponseChangedTo: boolean | null;
+  githubIssueUrlChanged: boolean;
+  githubIssueUrlChangedTo: string | null;
+};
+
+export function formatHistoryEventChanges(
+  event: FeedbackHistoryEventDisplay,
+): string[] {
   const changes: string[] = [];
 
   if (event.statusChangedTo) {
