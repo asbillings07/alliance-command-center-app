@@ -136,13 +136,23 @@ function DeliveryStatusSummary({
           </Badge>
           <span>{deliveryTriggerLabels[delivery.trigger]}</span>
           <span>{formatDateTime(delivery.createdAt)}</span>
-          <span>{formatDeliveryActorLabel(delivery.attemptedBy)}</span>
+          {/* min-w-0 break-all: the snapshotted email fallback can be an
+              arbitrarily long unbroken string, which would otherwise force
+              this flex item to its min-content width and overflow the card
+              on narrow viewports. */}
+          <span className="min-w-0 break-all">
+            {formatDeliveryActorLabel(delivery.attemptedBy)}
+          </span>
           {/* Provider message IDs are only ever queried/rendered from this
               already-platform-admin-gated surface, and only ever set on
               SENT rows (see canonicalization mapping in
-              recordBetaInvitationDeliveryAttempt). */}
+              recordBetaInvitationDeliveryAttempt). They're an opaque
+              provider-assigned string up to 200 chars with no natural break
+              points, so this is a full-width, breakable row rather than an
+              inline flex item — otherwise it would force horizontal
+              overflow on narrow viewports. */}
           {delivery.status === "sent" && delivery.providerMessageId && (
-            <span className="text-text-disabled">
+            <span className="basis-full min-w-0 break-all text-text-disabled">
               Provider ID: {delivery.providerMessageId}
             </span>
           )}
@@ -541,7 +551,10 @@ function ParticipantIdentity({ item }: { item: BetaParticipantListItem }) {
 
 export function ParticipantCard({ item }: { item: BetaParticipantListItem }) {
   return (
-    <div className="bg-surface-secondary rounded-lg border border-border p-4">
+    <div
+      data-testid="participant-card"
+      className="bg-surface-secondary rounded-lg border border-border p-4"
+    >
       <ParticipantIdentity item={item} />
       <div className="mt-2 flex flex-wrap gap-2">
         <Badge variant="info" size="sm">

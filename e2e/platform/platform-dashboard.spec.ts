@@ -798,6 +798,87 @@ test.describe("Platform Operations Console", () => {
           reloadedRow.getByText("Initial send", { exact: true }),
         ).toBeVisible();
       });
+
+      test("a max-length provider ID and long attempted-by email do not cause horizontal overflow on a narrow viewport", async ({
+        page,
+      }) => {
+        // Seeds the delivery attempt directly (bypassing the transport,
+        // which is deterministically Skipped in this environment) so this
+        // test can exercise the SENT-only provider-ID branch with a
+        // worst-case, unbroken 200-char string plus a long snapshotted
+        // actor email — both real opaque-string risks a reviewer flagged
+        // for card overflow.
+        const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const email = `test-overflow-${suffix}@example.com`;
+        const participant = await prisma.betaParticipant.create({ data: {} });
+        const invitation = await prisma.betaInvitation.create({
+          data: {
+            participantId: participant.id,
+            email,
+            code: `OVF-${suffix.slice(0, 6).toUpperCase()}`,
+            token: crypto.randomUUID(),
+            issuedAt: new Date(),
+            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          },
+        });
+        const actor = await prisma.user.create({
+          data: {
+            email: `a-very-long-snapshotted-operator-email-address-${suffix}@example-corp-subsidiary.test`,
+            displayName: "Overflow Test Operator",
+            passwordHash: "hash",
+          },
+        });
+        const maxLengthProviderId = `provider-msg-${"x".repeat(200)}`.slice(
+          0,
+          200,
+        );
+        const attempt = await prisma.betaInvitationDeliveryAttempt.create({
+          data: {
+            invitationId: invitation.id,
+            trigger: "ISSUE",
+            status: "SENT",
+            providerMessageId: maxLengthProviderId,
+            attemptedByUserId: actor.id,
+            attemptedByEmail: actor.email,
+            // Nulled deliberately so the rendered label falls back to the
+            // long snapshotted email (the second overflow risk the review
+            // flagged), not the short display name.
+            attemptedByDisplayName: null,
+            requestId: `req-${suffix}`,
+          },
+        });
+
+        try {
+          await page.setViewportSize({ width: 375, height: 667 });
+          await page.goto(`/platform/beta?search=${suffix}`);
+
+          // Below md, ParticipantList renders cards, not the table — this
+          // is exactly the "invitation card" surface the review flagged.
+          const card = page
+            .getByTestId("participant-card")
+            .filter({ hasText: email });
+          await expect(card).toBeVisible();
+          await expect(card.getByText(maxLengthProviderId)).toBeVisible();
+
+          const cardBox = await card.boundingBox();
+          expect(cardBox).not.toBeNull();
+          expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(375);
+
+          const hasHorizontalOverflow = await page.evaluate(
+            () =>
+              document.documentElement.scrollWidth >
+              document.documentElement.clientWidth,
+          );
+          expect(hasHorizontalOverflow).toBe(false);
+        } finally {
+          await prisma.betaInvitationDeliveryAttempt.delete({
+            where: { id: attempt.id },
+          });
+          await prisma.betaInvitation.delete({ where: { id: invitation.id } });
+          await prisma.betaParticipant.delete({ where: { id: participant.id } });
+          await prisma.user.delete({ where: { id: actor.id } });
+        }
+      });
     });
 
     test("an invitation created before #175 shows 'Not recorded' rather than fabricated history", async ({
