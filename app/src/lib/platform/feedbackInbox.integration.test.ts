@@ -600,6 +600,54 @@ describeIntegration("feedbackInbox [integration]", () => {
     }
   });
 
+  it("wave filter matches exact campaign value without prefix collision", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const userOne = await createUser(
+      `wave1-${suffix}@example.test`,
+      "Wave One User",
+    );
+    const userTen = await createUser(
+      `wave10-${suffix}@example.test`,
+      "Wave Ten User",
+    );
+
+    await trackBetaParticipant(
+      `beta-wave1-${suffix}@example.test`,
+      "Wave-1",
+      userOne.id,
+    );
+    await trackBetaParticipant(
+      `beta-wave10-${suffix}@example.test`,
+      "Wave-10",
+      userTen.id,
+    );
+
+    const waveOne = await seedFeedback({
+      suffix: `wave1-${suffix}`,
+      message: `wave one feedback ${suffix}`,
+      userId: userOne.id,
+    });
+    const waveTen = await seedFeedback({
+      suffix: `wave10-${suffix}`,
+      message: `wave ten feedback ${suffix}`,
+      userId: userTen.id,
+    });
+
+    const result = await listFeedbackForTriage(
+      { wave: "Wave-1", search: suffix },
+      1,
+      50,
+    );
+
+    expect(result.total).toBe(1);
+    expect(result.items.map((i) => i.feedbackId)).toEqual([waveOne.feedback.id]);
+    expect(result.summary.totalMatchingOtherFacets).toBe(1);
+    expect(result.summary.statusCounts.NEW).toBe(1);
+    expect(
+      result.items.some((i) => i.feedbackId === waveTen.feedback.id),
+    ).toBe(false);
+  });
+
   it("covers every triage status in summary counts", async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     for (const status of ALL_TRIAGE_STATUSES) {

@@ -86,6 +86,16 @@ describe("feedbackInbox SQL shape", () => {
     expect(sql).toMatch(/row_kind/);
   });
 
+  it("wave filter uses exact equality not ILIKE contains", () => {
+    const sql = buildFeedbackInboxFilterSqlForTest(
+      { wave: "Wave-1" },
+      "",
+      "Wave-1",
+    );
+    expect(sql).toMatch(/d\.wave = Wave-1/);
+    expect(sql).not.toMatch(/ILIKE/);
+  });
+
   it("buildFeedbackInboxFilterSqlForTest excludes status when requested", () => {
     const full = buildFeedbackInboxFilterSqlForTest(
       { status: "NEW", category: "BUG" },

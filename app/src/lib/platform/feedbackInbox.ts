@@ -177,7 +177,7 @@ type DerivedRow = {
 function buildFilterSql(
   filters: FeedbackInboxFilters,
   searchPattern: string,
-  wavePattern: string,
+  waveValue: string,
   options: { excludeStatus?: boolean; excludeNeedsResponse?: boolean } = {},
 ): Prisma.Sql {
   const conditions: Prisma.Sql[] = [];
@@ -198,8 +198,8 @@ function buildFilterSql(
     )`);
   }
 
-  if (wavePattern) {
-    conditions.push(Prisma.sql`d.wave ILIKE ${wavePattern} ESCAPE '\\'`);
+  if (waveValue) {
+    conditions.push(Prisma.sql`d.wave = ${waveValue}`);
   }
 
   if (filters.category) {
@@ -320,29 +320,29 @@ export async function listFeedbackForTriage(
   };
 
   const searchPattern = buildIlikeContainsPattern(boundedFilters.search ?? "");
-  const wavePattern = buildIlikeContainsPattern(boundedFilters.wave ?? "");
+  const waveValue = boundedFilters.wave ?? "";
 
   const fullFilterSql = buildFilterSql(
     boundedFilters,
     searchPattern,
-    wavePattern,
+    waveValue,
   );
   const exceptStatusFilterSql = buildFilterSql(
     boundedFilters,
     searchPattern,
-    wavePattern,
+    waveValue,
     { excludeStatus: true },
   );
   const exceptNeedsResponseFilterSql = buildFilterSql(
     boundedFilters,
     searchPattern,
-    wavePattern,
+    waveValue,
     { excludeNeedsResponse: true },
   );
   const exceptStatusAndNeedsResponseFilterSql = buildFilterSql(
     boundedFilters,
     searchPattern,
-    wavePattern,
+    waveValue,
     { excludeStatus: true, excludeNeedsResponse: true },
   );
 
@@ -656,10 +656,10 @@ export async function listFeedbackTriageHistory(
 export function buildFeedbackInboxFilterSqlForTest(
   filters: FeedbackInboxFilters,
   searchPattern: string,
-  wavePattern: string,
+  waveValue: string,
   options: { excludeStatus?: boolean; excludeNeedsResponse?: boolean } = {},
 ): string {
-  const sql = buildFilterSql(filters, searchPattern, wavePattern, options);
+  const sql = buildFilterSql(filters, searchPattern, waveValue, options);
   if (!sql || typeof sql !== "object" || !("strings" in sql)) {
     return String(sql);
   }
