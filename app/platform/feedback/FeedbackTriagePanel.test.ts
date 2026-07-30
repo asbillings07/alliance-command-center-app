@@ -91,10 +91,6 @@ describe("feedback summary card URLs", () => {
 describe("feedback history formatting", () => {
   it("renders legible diff fields for an event", () => {
     const changes = formatHistoryEventChanges({
-      id: "evt-1",
-      actorEmail: "op@example.test",
-      actorDisplayName: "Operator",
-      createdAt: new Date("2026-07-29T12:00:00Z"),
       statusChangedTo: "TRIAGED",
       noteText: "Investigating",
       needsResponseChangedTo: true,

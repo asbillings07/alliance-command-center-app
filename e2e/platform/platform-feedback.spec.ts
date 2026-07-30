@@ -59,6 +59,14 @@ async function seedFeedbackItem(args: {
   return feedback;
 }
 
+function desktopFeedbackItem(page: import("@playwright/test").Page, feedbackId: string) {
+  return page.getByTestId(`feedback-row-${feedbackId}`);
+}
+
+function mobileFeedbackItem(page: import("@playwright/test").Page, feedbackId: string) {
+  return page.getByTestId(`feedback-card-${feedbackId}`);
+}
+
 test.describe("Platform Feedback Inbox", () => {
   test.beforeEach(async ({ page }) => {
     test.skip(
@@ -102,14 +110,16 @@ test.describe("Platform Feedback Inbox", () => {
     });
 
     try {
+      await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto(`/platform/feedback?search=${suffix}`);
 
-      await expect(page.getByText(`E2E filter round-trip ${suffix}`)).toBeVisible();
+      const row = desktopFeedbackItem(page, feedback.id);
+      await expect(row).toContainText(`E2E filter round-trip ${suffix}`);
       expect(page.url()).toContain(`search=${suffix}`);
 
       await page.getByRole("link", { name: /^New$/ }).click();
       await page.waitForURL(/status=NEW/);
-      await expect(page.getByText(`E2E filter round-trip ${suffix}`)).toBeVisible();
+      await expect(row).toContainText(`E2E filter round-trip ${suffix}`);
 
       await page.getByRole("link", { name: /^Total$/ }).click();
       await page.waitForURL(/\/platform\/feedback\?search=/);
@@ -132,8 +142,9 @@ test.describe("Platform Feedback Inbox", () => {
     });
 
     try {
+      await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto(`/platform/feedback?search=${suffix}`);
-      const row = page.locator(`[data-testid="feedback-row-${feedback.id}"], [data-testid="feedback-card-${feedback.id}"]`).first();
+      const row = desktopFeedbackItem(page, feedback.id);
       await expect(row).toBeVisible();
 
       await row.getByRole("button", { name: /^Triage$/ }).click();
@@ -153,10 +164,10 @@ test.describe("Platform Feedback Inbox", () => {
       });
 
       await page.reload();
-      await expect(page.getByText("Triaged")).toBeVisible();
-      await expect(page.getByText("No response needed")).toBeVisible();
+      await expect(row.getByText("Triaged")).toBeVisible();
+      await expect(row.getByText("No response needed")).toBeVisible();
       await expect(
-        page.getByRole("link", { name: "https://github.com/org/repo/issues/99" }),
+        row.getByRole("link", { name: "https://github.com/org/repo/issues/99" }),
       ).toBeVisible();
     } finally {
       await prisma.feedback.delete({ where: { id: feedback.id } });
@@ -176,8 +187,9 @@ test.describe("Platform Feedback Inbox", () => {
     });
 
     try {
+      await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto(`/platform/feedback?search=${suffix}`);
-      const row = page.locator(`[data-testid="feedback-row-${feedback.id}"], [data-testid="feedback-card-${feedback.id}"]`).first();
+      const row = desktopFeedbackItem(page, feedback.id);
       await row.getByRole("button", { name: /^Triage$/ }).click();
       const panel = row.locator('[data-testid="feedback-triage-panel"]');
       await panel
@@ -214,8 +226,9 @@ test.describe("Platform Feedback Inbox", () => {
     test.skip(!operator, "Platform admin user not found in database");
 
     try {
+      await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto(`/platform/feedback?search=${suffix}`);
-      const row = page.locator(`[data-testid="feedback-row-${feedback.id}"], [data-testid="feedback-card-${feedback.id}"]`).first();
+      const row = desktopFeedbackItem(page, feedback.id);
       await row.getByRole("button", { name: /^Triage$/ }).click();
       const panel = row.locator('[data-testid="feedback-triage-panel"]');
       await panel.locator(`#triage-status-${feedback.id}`).selectOption("TRIAGED");
@@ -251,12 +264,26 @@ test.describe("Platform Feedback Inbox", () => {
     }
   });
 
-  test("renders at narrow mobile viewport", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto("/platform/feedback");
+  test("renders at narrow mobile viewport", async ({ page }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const feedback = await seedFeedbackItem({
+      suffix,
+      message: `E2E mobile feedback ${suffix}`,
+    });
 
-    await expect(page.getByText(/Feedback Inbox/i).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Apply filters/i })).toBeVisible();
+    try {
+      await page.setViewportSize({ width: 375, height: 667 });
+      await page.goto(`/platform/feedback?search=${suffix}`);
+
+      await expect(page.getByText(/Feedback Inbox/i).first()).toBeVisible();
+      await expect(page.getByRole("button", { name: /Apply filters/i })).toBeVisible();
+      await expect(mobileFeedbackItem(page, feedback.id)).toBeVisible();
+    } finally {
+      await prisma.feedback.delete({ where: { id: feedback.id } });
+      if (feedback.userId) {
+        await prisma.user.delete({ where: { id: feedback.userId } }).catch(() => {});
+      }
+    }
   });
 
   test("activates Feedback nav link via keyboard", async ({ page }) => {
