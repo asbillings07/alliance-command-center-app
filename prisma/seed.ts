@@ -457,6 +457,9 @@ PLATFORM_ADMIN_EMAILS_E2E=${TEST_USERS.platformAdmin}
 # inherited by the dev/start server and take precedence over .env.
 RESEND_API_KEY=
 EMAIL_FROM=
+
+# Simulated inbox query failures for feedback inbox retry E2E (#176)
+FEEDBACK_INBOX_TEST_HOOKS=true
 `;
 
   if (WRITE_ENV_FILE) {

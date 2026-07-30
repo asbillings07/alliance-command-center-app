@@ -7,9 +7,7 @@ import {
   type FeedbackTriageLockOperation,
 } from "./feedbackTriageTestHooks";
 
-/** Canonical GitHub issue URL: https://github.com/{owner}/{repo}/issues/{number} */
-export const GITHUB_ISSUE_URL_PATTERN =
-  /^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+$/;
+import { GITHUB_ISSUE_URL_PATTERN } from "@/app/src/lib/githubIssueUrl";
 
 export type FeedbackTriageChanges = {
   status?: FeedbackTriageStatus;
@@ -98,6 +96,8 @@ function stalePayload(row: LockedTriageRow): StaleConflictPayload {
 export function validateGithubIssueUrl(url: string): boolean {
   return GITHUB_ISSUE_URL_PATTERN.test(url);
 }
+
+export { GITHUB_ISSUE_URL_PATTERN };
 
 function resolveDiff(
   current: LockedTriageRow,
