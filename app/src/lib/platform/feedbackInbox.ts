@@ -4,6 +4,7 @@ import type {
   FeedbackTriageStatus,
 } from "@/app/generated/prisma/enums";
 import { resolveFeedbackSubmitterIdentity } from "../feedback";
+import { runFeedbackInboxListQueryFailureHook } from "../feedbackInboxTestHooks";
 import { prisma } from "../prisma";
 import {
   boundBetaParticipantsInput,
@@ -310,6 +311,8 @@ export async function listFeedbackForTriage(
   page: number,
   pageSize: number,
 ): Promise<FeedbackInboxListResult> {
+  await runFeedbackInboxListQueryFailureHook();
+
   const { page: clampedPage, pageSize: clampedPageSize, offset } =
     clampBetaParticipantsPagination(page, pageSize);
 
@@ -541,6 +544,8 @@ export async function listFeedbackForTriage(
  * Bounded dropdown option lists for alliance and wave filters (#176 decision 12).
  */
 export async function listFeedbackFilterOptions(): Promise<FeedbackInboxFilterOptionsResult> {
+  await runFeedbackInboxListQueryFailureHook();
+
   const limit = FEEDBACK_INBOX_FILTER_OPTIONS_LIMIT;
 
   const [alliances, waves] = await Promise.all([

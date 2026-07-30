@@ -67,6 +67,30 @@ function mobileFeedbackItem(page: import("@playwright/test").Page, feedbackId: s
   return page.getByTestId(`feedback-card-${feedbackId}`);
 }
 
+async function armFeedbackInboxListFailures(
+  page: import("@playwright/test").Page,
+  count: number,
+) {
+  test.skip(
+    process.env.FEEDBACK_INBOX_TEST_HOOKS !== "true",
+    "FEEDBACK_INBOX_TEST_HOOKS required for simulated inbox query failures",
+  );
+  const response = await page.request.post(
+    "/api/platform/test/feedback-inbox-hooks",
+    { data: { listFailuresRemaining: count } },
+  );
+  expect(response.ok()).toBeTruthy();
+}
+
+async function clearFeedbackInboxTestHooksViaApi(
+  page: import("@playwright/test").Page,
+) {
+  if (process.env.FEEDBACK_INBOX_TEST_HOOKS !== "true") {
+    return;
+  }
+  await page.request.delete("/api/platform/test/feedback-inbox-hooks");
+}
+
 test.describe("Platform Feedback Inbox", () => {
   test.beforeEach(async ({ page }) => {
     test.skip(
@@ -96,6 +120,141 @@ test.describe("Platform Feedback Inbox", () => {
     await expect(page.getByRole("link", { name: "Feedback", exact: true })).toBeVisible();
     await expect(page.getByText(/^Total$/).first()).toBeVisible();
     await expect(page.getByText(/^Needs response$/).first()).toBeVisible();
+  });
+
+  test("retry recovers the inbox after a transient query failure", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const feedback = await seedFeedbackItem({
+      suffix,
+      message: `E2E retry recovery ${suffix}`,
+      status: "NEW",
+    });
+
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await armFeedbackInboxListFailures(page, 1);
+      await page.goto(`/platform/feedback?search=${encodeURIComponent(suffix)}`);
+
+      await expect(page.getByTestId("feedback-inbox-unavailable")).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(page.getByTestId("feedback-inbox-retry")).toBeVisible();
+
+      await page.getByTestId("feedback-inbox-retry").click();
+
+      const row = desktopFeedbackItem(page, feedback.id);
+      await expect(row).toBeVisible({ timeout: 15000 });
+      await expect(row).toContainText(`E2E retry recovery ${suffix}`);
+      await expect(page.getByTestId("feedback-inbox-unavailable")).toBeHidden();
+      await expect(page.getByText(/^Total$/).first()).toBeVisible();
+    } finally {
+      await clearFeedbackInboxTestHooksViaApi(page);
+      await prisma.feedback.delete({ where: { id: feedback.id } });
+      if (feedback.userId) {
+        await prisma.user.delete({ where: { id: feedback.userId } }).catch(() => {});
+      }
+    }
+  });
+
+  test("applying filters after a summary-card click preserves the card-driven filter", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const newItem = await seedFeedbackItem({
+      suffix: `${suffix}-new`,
+      message: `E2E card filter new ${suffix}`,
+      status: "NEW",
+      needsResponse: true,
+    });
+    const triagedItem = await seedFeedbackItem({
+      suffix: `${suffix}-triaged`,
+      message: `E2E card filter triaged ${suffix}`,
+      status: "TRIAGED",
+      needsResponse: false,
+    });
+
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(`/platform/feedback?search=${encodeURIComponent(suffix)}`);
+
+      await expect(desktopFeedbackItem(page, newItem.id)).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(desktopFeedbackItem(page, triagedItem.id)).toBeVisible();
+
+      await page.getByRole("link", { name: "New", exact: true }).click();
+      await page.waitForURL(/status=NEW/);
+      const urlAfterCard = page.url();
+      expect(urlAfterCard).toContain("status=NEW");
+
+      await expect(desktopFeedbackItem(page, newItem.id)).toBeVisible();
+      await expect(desktopFeedbackItem(page, triagedItem.id)).toBeHidden();
+
+      await page.getByRole("button", { name: /Apply filters/i }).click();
+      await page.waitForLoadState("networkidle");
+
+      expect(page.url()).toBe(urlAfterCard);
+      await expect(desktopFeedbackItem(page, newItem.id)).toBeVisible();
+      await expect(desktopFeedbackItem(page, triagedItem.id)).toBeHidden();
+    } finally {
+      await prisma.feedback.delete({ where: { id: newItem.id } });
+      await prisma.feedback.delete({ where: { id: triagedItem.id } });
+      if (newItem.userId) {
+        await prisma.user.delete({ where: { id: newItem.userId } }).catch(() => {});
+      }
+      if (triagedItem.userId) {
+        await prisma.user
+          .delete({ where: { id: triagedItem.userId } })
+          .catch(() => {});
+      }
+    }
+  });
+
+  test("two consecutive state changes in one open panel both succeed without a false stale conflict", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const feedback = await seedFeedbackItem({
+      suffix,
+      message: `E2E consecutive triage ${suffix}`,
+      status: "NEW",
+      needsResponse: true,
+    });
+
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(`/platform/feedback?search=${encodeURIComponent(suffix)}`);
+      const row = desktopFeedbackItem(page, feedback.id);
+      await expect(row).toBeVisible({ timeout: 15000 });
+
+      await row.getByRole("button", { name: /^Triage$/ }).click();
+      const panel = row.locator('[data-testid="feedback-triage-panel"]');
+      await expect(panel).toBeVisible();
+
+      await panel.locator(`#triage-status-${feedback.id}`).selectOption("TRIAGED");
+      await panel.getByTestId("triage-submit").click();
+      await expect(panel.getByTestId("triage-success")).toBeVisible({
+        timeout: 10000,
+      });
+      await expect(panel.getByTestId("stale-conflict-recovery")).toBeHidden();
+
+      await panel.locator(`#triage-status-${feedback.id}`).selectOption("PLANNED");
+      await panel.getByTestId("triage-submit").click();
+      await expect(panel.getByTestId("triage-success")).toBeVisible({
+        timeout: 10000,
+      });
+      await expect(panel.getByTestId("stale-conflict-recovery")).toBeHidden();
+      await expect(panel.locator(`#triage-status-${feedback.id}`)).toHaveValue(
+        "PLANNED",
+      );
+    } finally {
+      await prisma.feedback.delete({ where: { id: feedback.id } });
+      if (feedback.userId) {
+        await prisma.user.delete({ where: { id: feedback.userId } }).catch(() => {});
+      }
+    }
   });
 
   test("filter and summary-card round-trip via URL params", async ({
