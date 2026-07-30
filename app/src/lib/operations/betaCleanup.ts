@@ -100,6 +100,10 @@ export interface UserResolved {
   passwordResetTokenIds: string[];
   emailChangeRequestIds: string[];
   feedbackIds: string[];
+  /** FeedbackTriage rows cascade-deleted with feedbackIds. */
+  feedbackTriageProjectionCount: number;
+  /** FeedbackTriageEvent rows cascade-deleted with feedbackIds. */
+  feedbackTriageEventCount: number;
   /** Notes authored by this user. */
   leadershipNoteIds: string[];
   /** Invitations SENT by this user (invitedById). */
@@ -226,6 +230,19 @@ export function mergePlans(plans: CleanupOp[][]): CleanupOp[] {
 
 function uniqueSorted(ids: string[]): string[] {
   return Array.from(new Set(ids)).sort();
+}
+
+/** Human-readable cascade summary once DB counts are resolved. */
+export function formatFeedbackTriageCascadeSummary(counts: {
+  feedbackIds: string[];
+  triageProjections: number;
+  triageEvents: number;
+}): string {
+  return (
+    `Feedback triage cascade (with ${counts.feedbackIds.length} Feedback row(s)): ` +
+    `${counts.triageProjections} FeedbackTriage projection(s), ` +
+    `${counts.triageEvents} FeedbackTriageEvent row(s)`
+  );
 }
 
 /** Per-model counts a plan will delete (nullify/revoke are not deletions). */

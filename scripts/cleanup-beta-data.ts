@@ -83,6 +83,7 @@ import {
   validateManifestShape,
   verifyManifestIntegrity,
   validateSelectionOverlaps,
+  formatFeedbackTriageCascadeSummary,
   summarizePlan,
   summarizeDeletes,
   EXECUTION_CONFIRMATION_PHRASE,
@@ -120,6 +121,17 @@ function printPlan(plan: CleanupOp[]): void {
     console.log(`  ${verb.padEnd(22)} ${String(step.count).padStart(5)}  ${step.model}  — ${step.reason}`);
   }
   console.log("\nRows to delete by model:", JSON.stringify(summarizeDeletes(plan)));
+}
+
+function printFeedbackTriageCascade(
+  cascade: {
+    feedbackIds: string[];
+    triageProjections: number;
+    triageEvents: number;
+  } | null,
+): void {
+  if (!cascade) return;
+  console.log(`\n${formatFeedbackTriageCascadeSummary(cascade)}`);
 }
 
 async function main(): Promise<void> {
@@ -169,6 +181,11 @@ async function main(): Promise<void> {
     }
 
     console.log(`\nExecuting reviewed manifest: ${args.manifestPath} (generated ${manifest.generatedAt})`);
+    const preExecute = await buildPlan(prisma, args, {
+      now: new Date(),
+      frozenCutoff: manifest.cutoff,
+    });
+    printFeedbackTriageCascade(preExecute.feedbackTriageCascade);
     const deleteCounts = await execute(args, manifest, identity);
     console.log("\nExecution complete (transaction committed). Deleted rows by model:", JSON.stringify(deleteCounts));
     console.log(`Run with --verify --manifest ${args.manifestPath} to independently confirm every operation applied.`);
@@ -193,6 +210,7 @@ async function main(): Promise<void> {
   assertSafeSelection(args, fresh);
 
   printPlan(fresh.plan);
+  printFeedbackTriageCascade(fresh.feedbackTriageCascade);
 
   const manifest = buildManifest({
     cutoff: fresh.cutoff,

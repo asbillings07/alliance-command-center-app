@@ -197,16 +197,35 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
       },
     });
 
-    await prisma.feedback.create({
+    const feedback = await prisma.feedback.create({
       data: {
         userId: user.id,
+        submitterEmail: user.email,
+        submitterDisplayName: user.displayName,
         category: "BUG",
         message: "Integration test feedback",
         url: "https://example.test",
+        triage: {
+          create: {
+            status: "NEW",
+            needsResponse: true,
+            stateRevision: 0,
+          },
+        },
       },
     });
 
-    return { user, alliance, member, metric, period };
+    await prisma.feedbackTriageEvent.create({
+      data: {
+        feedbackId: feedback.id,
+        actorUserId: user.id,
+        actorEmail: user.email,
+        actorDisplayName: user.displayName,
+        noteText: "cleanup integration note",
+      },
+    });
+
+    return { user, alliance, member, metric, period, feedback };
   }
 
   async function manifestForAccessRequests(ids: string[]) {
@@ -409,6 +428,18 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
     const result = await runVerify(manifestPath);
     expect(result.ok).toBe(false);
     expect(result.lines.some((l) => l.includes("MISSING (unexpectedly deleted)"))).toBe(true);
+  });
+
+  it("integration: buildPlan reports FeedbackTriage cascade counts for user feedback", async () => {
+    const { user, feedback } = await makeFullTenantAndUser();
+    const args = parseArgs(["--user-email", user.email]);
+    const fresh = await buildPlan(prisma, args, { now: new Date(), frozenCutoff: null });
+
+    expect(fresh.feedbackTriageCascade).toEqual({
+      feedbackIds: [feedback.id],
+      triageProjections: 1,
+      triageEvents: 1,
+    });
   });
 
   it("integration: execute() cleans up a representative tenant and user across all dependent models in PostgreSQL", async () => {

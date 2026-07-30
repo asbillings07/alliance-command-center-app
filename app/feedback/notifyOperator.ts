@@ -2,7 +2,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import { emailService, type FeedbackNotificationView } from "@/app/src/lib/email";
 import { FEEDBACK_CATEGORY_LABELS } from "@/app/src/lib/feedbackCategory";
 import type { FeedbackRecord } from "@/app/src/lib/feedback";
-import { extractFeedbackContext } from "./extractFeedbackContext";
+import { extractFeedbackContext } from "@/app/src/lib/extractFeedbackContext";
 
 /**
  * Notify the operator about a new feedback submission.
