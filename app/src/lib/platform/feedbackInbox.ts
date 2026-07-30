@@ -317,6 +317,12 @@ export async function listFeedbackForTriage(
     ...filters,
     search: boundBetaParticipantsInput(filters.search),
     wave: boundBetaParticipantsInput(filters.wave),
+    allianceId: filters.allianceId
+      ? boundBetaParticipantsInput(filters.allianceId)
+      : undefined,
+    participantId: filters.participantId
+      ? boundBetaParticipantsInput(filters.participantId)
+      : undefined,
   };
 
   const searchPattern = buildIlikeContainsPattern(boundedFilters.search ?? "");

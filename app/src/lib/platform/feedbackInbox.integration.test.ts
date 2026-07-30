@@ -8,6 +8,7 @@ import {
   ALL_TRIAGE_STATUSES,
 } from "./feedbackInbox";
 import { recordFeedbackTriageEvent } from "../feedbackTriage";
+import { BETA_PARTICIPANTS_INPUT_MAX_LENGTH } from "./betaParticipants";
 
 const runDb = process.env.INTEGRATION_DB === "true";
 const describeIntegration = runDb ? describe.sequential : describe.skip;
@@ -646,6 +647,51 @@ describeIntegration("feedbackInbox [integration]", () => {
     expect(
       result.items.some((i) => i.feedbackId === waveTen.feedback.id),
     ).toBe(false);
+  });
+
+  it("bounds oversized allianceId and participantId filters safely", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const alliance = await prisma.alliance.create({
+      data: { name: `Bound Alliance ${suffix}`, server: `S-${suffix}` },
+    });
+    createdAllianceIds.push(alliance.id);
+    const user = await createUser(
+      `bound-${suffix}@example.test`,
+      "Bound User",
+    );
+    const invitation = await trackBetaParticipant(
+      `beta-bound-${suffix}@example.test`,
+      `BoundWave-${suffix}`,
+      user.id,
+    );
+
+    await seedFeedback({
+      suffix,
+      message: `bound filter ${suffix}`,
+      allianceId: alliance.id,
+      userId: user.id,
+    });
+
+    const oversizedPrefix = "x".repeat(BETA_PARTICIPANTS_INPUT_MAX_LENGTH + 500);
+
+    const oversizedAlliance = await listFeedbackForTriage(
+      { allianceId: `${oversizedPrefix}${alliance.id}`, search: suffix },
+      1,
+      50,
+    );
+    expect(oversizedAlliance.total).toBe(0);
+    expect(oversizedAlliance.items).toEqual([]);
+
+    const oversizedParticipant = await listFeedbackForTriage(
+      {
+        participantId: `${oversizedPrefix}${invitation.participantId}`,
+        search: suffix,
+      },
+      1,
+      50,
+    );
+    expect(oversizedParticipant.total).toBe(0);
+    expect(oversizedParticipant.items).toEqual([]);
   });
 
   it("covers every triage status in summary counts", async () => {
