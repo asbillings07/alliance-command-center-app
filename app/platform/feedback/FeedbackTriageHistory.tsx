@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { Button } from "@/app/src/components/client";
-import type { FeedbackTriageHistoryItem } from "@/app/src/lib/platform/feedbackInbox";
 import { fetchFeedbackTriageHistoryAction } from "./actions";
 import {
   formatActorLabel,
@@ -61,15 +60,16 @@ export function FeedbackTriageHistory({ feedbackId }: { feedbackId: string }) {
 
   return (
     <div className="mt-3" data-testid="feedback-triage-history">
-      <button
+      <Button
         type="button"
+        variant="link"
+        size="sm"
         onClick={handleToggle}
-        className="text-sm text-primary hover:text-primary-hover"
         aria-expanded={open}
       >
         {open ? "Hide triage history" : "Show triage history"}
         {loaded ? ` (${total})` : ""}
-      </button>
+      </Button>
 
       {open && (
         <div className="mt-2 space-y-3">

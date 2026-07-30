@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Badge } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 import type { FeedbackInboxListItem } from "@/app/src/lib/platform/feedbackInbox";
 import { FeedbackTriageHistory } from "./FeedbackTriageHistory";
 import { FeedbackTriagePanel } from "./FeedbackTriagePanel";
@@ -38,13 +39,14 @@ function FeedbackMessage({ message }: { message: string }) {
         {displayText}
       </p>
       {needsTruncation && (
-        <button
+        <Button
           type="button"
+          variant="link"
+          size="sm"
           onClick={() => setExpanded((prev) => !prev)}
-          className="text-xs text-primary hover:text-primary-hover"
         >
           {expanded ? "Show less" : "Show more"}
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -119,15 +121,16 @@ function FeedbackRowBody({ item }: { item: FeedbackInboxListItem }) {
         </div>
       )}
 
-      <button
+      <Button
         type="button"
+        variant="link"
+        size="sm"
         onClick={() => setTriageOpen((prev) => !prev)}
-        className="text-sm text-primary hover:text-primary-hover"
         aria-expanded={triageOpen}
         data-testid={`triage-toggle-${item.feedbackId}`}
       >
         {triageOpen ? "Hide triage" : "Triage"}
-      </button>
+      </Button>
 
       {triageOpen && (
         <>
