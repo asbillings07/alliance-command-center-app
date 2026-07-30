@@ -10,9 +10,12 @@ import {
 import type { BetaParticipantListItem } from "@/app/src/lib/platform/betaParticipants";
 
 const mockFetchPriorAttempts = vi.fn();
+const mockFetchDeliveryHistory = vi.fn();
 
 vi.mock("./actions", () => ({
   fetchPriorAttemptsAction: (...args: unknown[]) => mockFetchPriorAttempts(...args),
+  fetchDeliveryHistoryAction: (...args: unknown[]) =>
+    mockFetchDeliveryHistory(...args),
 }));
 
 vi.mock("./InvitationActions", () => ({
@@ -54,6 +57,7 @@ function buildAttempt(
     },
     revokedBy: null,
     acceptedBy: null,
+    latestDeliveryAttempt: null,
     ...overrides,
   };
 }
@@ -84,6 +88,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   mockFetchPriorAttempts.mockReset();
+  mockFetchDeliveryHistory.mockReset();
 });
 
 afterEach(() => {
@@ -229,5 +234,245 @@ describe("ParticipantCard prior attempts pagination", () => {
     });
 
     expect(container.querySelector('[data-testid="reissue-actions"]')).toBeNull();
+  });
+});
+
+describe("email delivery status (#175)", () => {
+  it("renders 'Not recorded' when no delivery attempt exists, distinct from invitation lifecycle status", async () => {
+    await act(async () => {
+      root.render(
+        createElement(AttemptAuditDetails, {
+          attempt: buildAttempt({ latestDeliveryAttempt: null }),
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("Email:");
+    expect(container.textContent).toContain("Not recorded");
+    // No delivery history toggle when nothing has ever been recorded.
+    const toggle = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("delivery history"),
+    );
+    expect(toggle).toBeUndefined();
+  });
+
+  it("renders a Sent badge with trigger and timestamp for a successful delivery", async () => {
+    await act(async () => {
+      root.render(
+        createElement(AttemptAuditDetails, {
+          attempt: buildAttempt({
+            latestDeliveryAttempt: {
+              id: "att-1",
+              trigger: "issue",
+              status: "sent",
+              createdAt: new Date("2026-07-30T12:00:00Z"),
+              failureReason: null,
+              providerMessageId: "msg-1",
+            },
+          }),
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("Sent");
+    expect(container.textContent).toContain("Initial send");
+  });
+
+  it("renders a Failed badge with the sanitized failure reason surfaced", async () => {
+    await act(async () => {
+      root.render(
+        createElement(AttemptAuditDetails, {
+          attempt: buildAttempt({
+            latestDeliveryAttempt: {
+              id: "att-2",
+              trigger: "resend",
+              status: "failed",
+              createdAt: new Date("2026-07-30T12:00:00Z"),
+              failureReason: "Provider rejected the request",
+              providerMessageId: null,
+            },
+          }),
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("Failed");
+    expect(container.textContent).toContain("Resend");
+    expect(container.textContent).toContain("Provider rejected the request");
+  });
+
+  it("renders a Skipped badge without a failure reason", async () => {
+    await act(async () => {
+      root.render(
+        createElement(AttemptAuditDetails, {
+          attempt: buildAttempt({
+            latestDeliveryAttempt: {
+              id: "att-3",
+              trigger: "reissue",
+              status: "skipped",
+              createdAt: new Date("2026-07-30T12:00:00Z"),
+              failureReason: null,
+              providerMessageId: null,
+            },
+          }),
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("Skipped");
+    expect(container.textContent).toContain("Reissue");
+  });
+});
+
+describe("DeliveryHistoryDisclosure (#175)", () => {
+  function buildLatestAttemptWithDelivery() {
+    return buildAttempt({
+      id: "inv-latest",
+      latestDeliveryAttempt: {
+        id: "att-latest",
+        trigger: "issue",
+        status: "sent",
+        createdAt: new Date("2026-07-30T12:00:00Z"),
+        failureReason: null,
+        providerMessageId: "msg-latest",
+      },
+    });
+  }
+
+  it("lazy-loads and paginates delivery history only after the toggle is clicked", async () => {
+    const items = [
+      {
+        id: "att-2",
+        trigger: "resend" as const,
+        status: "sent" as const,
+        createdAt: new Date("2026-07-15T12:00:00Z"),
+        failureReason: null,
+        providerMessageId: "msg-2",
+      },
+      {
+        id: "att-1",
+        trigger: "issue" as const,
+        status: "failed" as const,
+        createdAt: new Date("2026-07-01T12:00:00Z"),
+        failureReason: "Older failure",
+        providerMessageId: null,
+      },
+    ];
+
+    mockFetchDeliveryHistory.mockImplementation(
+      async (_invitationId: string, page: number, pageSize: number) => ({
+        success: true,
+        items: items.slice((page - 1) * pageSize, page * pageSize),
+        total: items.length,
+        page,
+        pageSize,
+      }),
+    );
+
+    await act(async () => {
+      root.render(
+        createElement(ParticipantCard, {
+          item: buildParticipant({
+            latestAttempt: buildLatestAttemptWithDelivery(),
+          }),
+        }),
+      );
+    });
+
+    expect(mockFetchDeliveryHistory).not.toHaveBeenCalled();
+
+    const toggle = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Show email delivery history",
+    );
+    expect(toggle).toBeTruthy();
+
+    await act(async () => {
+      toggle?.click();
+      await Promise.resolve();
+    });
+
+    expect(mockFetchDeliveryHistory).toHaveBeenCalledWith("inv-latest", 1, 10);
+    expect(container.textContent).toContain("Older failure");
+
+    const hideToggle = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Hide email delivery history",
+    );
+    expect(hideToggle).toBeTruthy();
+  });
+
+  it("shows the 'Not recorded' fallback for an empty history page rather than nothing", async () => {
+    mockFetchDeliveryHistory.mockResolvedValue({
+      success: true,
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 10,
+    });
+
+    await act(async () => {
+      root.render(
+        createElement(ParticipantCard, {
+          item: buildParticipant({
+            latestAttempt: buildLatestAttemptWithDelivery(),
+          }),
+        }),
+      );
+    });
+
+    const toggle = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Show email delivery history",
+    );
+
+    await act(async () => {
+      toggle?.click();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Not recorded");
+  });
+
+  it("surfaces a load error without crashing", async () => {
+    mockFetchDeliveryHistory.mockResolvedValue({
+      success: false,
+      error: "Failed to load delivery history",
+    });
+
+    await act(async () => {
+      root.render(
+        createElement(ParticipantCard, {
+          item: buildParticipant({
+            latestAttempt: buildLatestAttemptWithDelivery(),
+          }),
+        }),
+      );
+    });
+
+    const toggle = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Show email delivery history",
+    );
+
+    await act(async () => {
+      toggle?.click();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Failed to load delivery history");
+  });
+
+  it("does not render a history toggle at all when nothing has ever been recorded", async () => {
+    await act(async () => {
+      root.render(
+        createElement(ParticipantCard, {
+          item: buildParticipant({
+            latestAttempt: buildAttempt({ latestDeliveryAttempt: null }),
+          }),
+        }),
+      );
+    });
+
+    const toggle = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("delivery history"),
+    );
+    expect(toggle).toBeUndefined();
   });
 });

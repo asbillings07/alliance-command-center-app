@@ -1,16 +1,21 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Badge } from "@/app/src/components";
+import { Badge, type BadgeVariant } from "@/app/src/components";
 import {
   fetchPriorAttemptsAction,
+  fetchDeliveryHistoryAction,
   type PriorAttemptsResult,
+  type DeliveryHistoryResult,
 } from "./actions";
 import type {
   BetaAttentionReason,
   BetaAttemptOperator,
   BetaInvitationAttemptRecord,
   BetaInvitationAttemptStatus,
+  BetaInvitationDeliveryOutcome,
+  BetaInvitationDeliveryTrigger,
+  BetaInvitationDeliverySummary,
   BetaJourneyStage,
   BetaParticipantListItem,
 } from "@/app/src/lib/platform/betaParticipants";
@@ -40,7 +45,24 @@ const statusConfig = {
   revoked: { variant: "warning" as const, label: "Revoked" },
 };
 
+/** Distinct from statusConfig above (#175): invitation lifecycle vs. email delivery are different questions. */
+const deliveryStatusConfig: Record<
+  BetaInvitationDeliveryOutcome,
+  { variant: BadgeVariant; label: string }
+> = {
+  sent: { variant: "success", label: "Sent" },
+  failed: { variant: "danger", label: "Failed" },
+  skipped: { variant: "neutral", label: "Skipped" },
+};
+
+const deliveryTriggerLabels: Record<BetaInvitationDeliveryTrigger, string> = {
+  issue: "Initial send",
+  resend: "Resend",
+  reissue: "Reissue",
+};
+
 const PRIOR_ATTEMPTS_PAGE_SIZE = 10;
+const DELIVERY_HISTORY_PAGE_SIZE = 10;
 
 function formatDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
@@ -71,6 +93,140 @@ function formatOperatorLabel(
 
   const name = operator.displayName ?? operator.email ?? operator.userId;
   return `${action}: ${name}`;
+}
+
+/**
+ * Latest email delivery outcome for one invitation attempt (#175).
+ * Deliberately separate from `statusConfig` above — invitation lifecycle
+ * (pending/accepted/expired/revoked) and email-delivery outcome
+ * (sent/failed/skipped/not recorded) are different questions.
+ */
+function DeliveryStatusSummary({
+  delivery,
+}: {
+  delivery: BetaInvitationDeliverySummary | null;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+      <span>Email:</span>
+      {delivery ? (
+        <>
+          <Badge variant={deliveryStatusConfig[delivery.status].variant} size="sm">
+            {deliveryStatusConfig[delivery.status].label}
+          </Badge>
+          <span>{deliveryTriggerLabels[delivery.trigger]}</span>
+          <span>{formatDateTime(delivery.createdAt)}</span>
+          {delivery.status === "failed" && delivery.failureReason && (
+            <span className="text-danger basis-full">
+              {delivery.failureReason}
+            </span>
+          )}
+        </>
+      ) : (
+        <Badge variant="neutral" size="sm">
+          Not recorded
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+function DeliveryHistoryDisclosure({ invitationId }: { invitationId: string }) {
+  const [open, setOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const [result, setResult] = useState<DeliveryHistoryResult | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadPage = (page: number) => {
+    startTransition(async () => {
+      const response = await fetchDeliveryHistoryAction(
+        invitationId,
+        page,
+        DELIVERY_HISTORY_PAGE_SIZE,
+      );
+      if (response.success) {
+        setResult(response);
+        setCurrentPage(response.page);
+        setError(null);
+      } else {
+        setError(response.error);
+      }
+    });
+  };
+
+  const handleToggle = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+
+    setOpen(true);
+    if (result?.success) {
+      return;
+    }
+
+    loadPage(1);
+  };
+
+  const totalPages =
+    result?.success && result.pageSize > 0
+      ? Math.max(1, Math.ceil(result.total / result.pageSize))
+      : 1;
+
+  const canGoPrevious = currentPage > 1;
+  const canGoNext = currentPage < totalPages;
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={handleToggle}
+        className="text-xs text-primary hover:text-primary-hover"
+        aria-expanded={open}
+      >
+        {open ? "Hide" : "Show"} email delivery history
+      </button>
+      {open && (
+        <div className="mt-2 pl-3 border-l-2 border-border space-y-2">
+          {isPending && !result && (
+            <p className="text-xs text-text-muted">Loading delivery history…</p>
+          )}
+          {error && <p className="text-xs text-danger">{error}</p>}
+          {result?.success && result.items.length === 0 && (
+            <p className="text-xs text-text-disabled">Not recorded</p>
+          )}
+          {result?.success &&
+            result.items.map((delivery) => (
+              <DeliveryStatusSummary key={delivery.id} delivery={delivery} />
+            ))}
+          {result?.success && totalPages > 1 && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => loadPage(currentPage - 1)}
+                disabled={!canGoPrevious || isPending}
+                className="text-xs text-primary hover:text-primary-hover disabled:text-text-disabled disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="text-xs text-text-muted">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => loadPage(currentPage + 1)}
+                disabled={!canGoNext || isPending}
+                className="text-xs text-primary hover:text-primary-hover disabled:text-text-disabled disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function AttemptAuditDetails({
@@ -112,6 +268,10 @@ function AttemptAuditDetails({
         <p className="italic">{attempt.notes}</p>
       ) : (
         <p className="text-text-disabled">Notes: —</p>
+      )}
+      <DeliveryStatusSummary delivery={attempt.latestDeliveryAttempt} />
+      {attempt.latestDeliveryAttempt && (
+        <DeliveryHistoryDisclosure invitationId={attempt.id} />
       )}
     </div>
   );
@@ -309,8 +469,14 @@ function LatestAttemptBlock({
       ) : (
         <p className="text-xs text-text-disabled mt-1">Notes: —</p>
       )}
+      <div className="mt-1">
+        <DeliveryStatusSummary delivery={attempt.latestDeliveryAttempt} />
+      </div>
       {pendingActions}
       {reissueActions}
+      {attempt.latestDeliveryAttempt && (
+        <DeliveryHistoryDisclosure invitationId={attempt.id} />
+      )}
       <PriorAttemptsDisclosure
         participantId={item.participantId}
         priorAttemptCount={item.priorAttemptCount}

@@ -83,6 +83,7 @@ describe("PlatformBeta page", () => {
             },
             revokedBy: null,
             acceptedBy: null,
+            latestDeliveryAttempt: null,
           },
         },
       ],
