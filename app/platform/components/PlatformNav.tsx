@@ -38,6 +38,11 @@ const NAV_ITEMS: NavItem[] = [
     href: "/platform/beta",
     description: "Invitation management",
   },
+  {
+    label: "Feedback",
+    href: "/platform/feedback",
+    description: "Triage tester feedback",
+  },
 ];
 
 function WorkspaceNavLink({

@@ -61,6 +61,7 @@ test.describe("Platform Operations Console", () => {
       await expect(page.getByRole("link", { name: "Support", exact: true })).toBeVisible();
       await expect(page.getByRole("link", { name: "Activity", exact: true })).toBeVisible();
       await expect(page.getByRole("link", { name: "Beta", exact: true })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Feedback", exact: true })).toBeVisible();
     });
 
     test("displays platform footer", async ({ page }) => {
@@ -94,6 +95,13 @@ test.describe("Platform Operations Console", () => {
       await page.waitForURL("/platform/beta");
       await expect(
         page.getByRole("heading", { name: /Beta Participants/i })
+      ).toBeVisible();
+
+      // Navigate to Feedback
+      await page.getByRole("link", { name: "Feedback", exact: true }).click();
+      await page.waitForURL("/platform/feedback");
+      await expect(
+        page.getByRole("heading", { name: /Feedback Inbox/i })
       ).toBeVisible();
     });
   });
@@ -712,6 +720,7 @@ test.describe("Platform Operations Console", () => {
         "/platform/support",
         "/platform/activity",
         "/platform/beta",
+        "/platform/feedback",
       ];
 
       for (const pagePath of pages) {
