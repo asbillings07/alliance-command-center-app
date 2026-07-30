@@ -1,5 +1,6 @@
 /**
- * Backfill Feedback.allianceId and missing FeedbackTriage projections (#176 PR 1).
+ * Backfill Feedback.allianceId, missing submitter snapshots, and missing
+ * FeedbackTriage projections (#176 PR 1).
  *
  * Idempotent and safe to run multiple times. Supports --dry-run (default).
  *
@@ -22,6 +23,7 @@ import {
   planFeedbackInboxBackfill,
   listFeedbackInboxBackfillRows,
   resolveBackfillTargetIdentity,
+  resolveFeedbackInboxBackfillDryRun,
   runFeedbackInboxBackfill,
   validateFeedbackInboxBackfillManifestShape,
   verifyFeedbackInboxBackfillManifestForExecute,
@@ -119,10 +121,18 @@ function printSummary(
   console.log(`  allianceIdUpdates: ${summary.allianceIdUpdates}`);
   console.log(`  allianceIdSkippedAlreadySet: ${summary.allianceIdSkippedAlreadySet}`);
   console.log(`  allianceIdSkippedNoSegment: ${summary.allianceIdSkippedNoSegment}`);
+  console.log(`  submitterSnapshotUpdates: ${summary.submitterSnapshotUpdates}`);
+  console.log(
+    `  submitterSnapshotSkippedAlreadySet: ${summary.submitterSnapshotSkippedAlreadySet}`,
+  );
+  console.log(
+    `  submitterSnapshotSkippedNoUser: ${summary.submitterSnapshotSkippedNoUser}`,
+  );
   console.log(`  triageProjectionsCreated: ${summary.triageProjectionsCreated}`);
   console.log(`  triageProjectionsSkippedExisting: ${summary.triageProjectionsSkippedExisting}`);
   if (!summary.dryRun) {
     console.log(`  allianceIdApplied: ${summary.allianceIdApplied}`);
+    console.log(`  submitterSnapshotApplied: ${summary.submitterSnapshotApplied}`);
     console.log(`  triageProjectionsApplied: ${summary.triageProjectionsApplied}`);
     console.log(`  validationOk: ${summary.validation.ok}`);
     if (summary.validation.violations.length > 0) {
@@ -145,10 +155,14 @@ async function main(): Promise<void> {
   );
 
   if (dryRun) {
-    const rows = await listFeedbackInboxBackfillRows(prisma);
-    const plan = planFeedbackInboxBackfill(rows);
-    const summary = await runFeedbackInboxBackfill(prisma, { dryRun: true });
-    printSummary(summary);
+    const { rows, plan, summary } = await resolveFeedbackInboxBackfillDryRun(prisma);
+    printSummary({
+      ...summary,
+      allianceIdApplied: 0,
+      submitterSnapshotApplied: 0,
+      triageProjectionsApplied: 0,
+      validation: { ok: true, violations: [] },
+    });
 
     const manifest = buildFeedbackInboxBackfillManifest({
       dbIdentity: target.identity,
@@ -194,6 +208,7 @@ async function main(): Promise<void> {
   const summary = await runFeedbackInboxBackfill(prisma, {
     dryRun: false,
     approvedManifest: manifest,
+    rows,
   });
   printSummary(summary);
 

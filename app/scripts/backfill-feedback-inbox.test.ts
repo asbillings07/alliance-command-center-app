@@ -8,6 +8,8 @@ import {
   buildFeedbackInboxBackfillManifest,
   feedbackInboxBackfillManifestChecksumPayload,
   planFeedbackInboxBackfill,
+  resolveFeedbackInboxBackfillDryRun,
+  summarizeFeedbackInboxBackfillPlan,
   verifyFeedbackInboxBackfillManifest,
 } from "../src/lib/operations/feedbackInboxBackfillDb";
 import { writeFileSync, unlinkSync } from "node:fs";
@@ -125,6 +127,11 @@ describe("loadAndVerifyApprovedInboxManifest", () => {
         url: "/alliances/a1/members",
         allianceId: null,
         hasTriage: false,
+        userId: "user1",
+        submitterEmail: "user@example.test",
+        submitterDisplayName: null,
+        userEmail: "user@example.test",
+        userDisplayName: null,
       },
     ]);
     const manifest = buildFeedbackInboxBackfillManifest({
@@ -141,6 +148,11 @@ describe("loadAndVerifyApprovedInboxManifest", () => {
           url: "/alliances/a2/members",
           allianceId: null,
           hasTriage: false,
+          userId: "user2",
+          submitterEmail: "user2@example.test",
+          submitterDisplayName: null,
+          userEmail: "user2@example.test",
+          userDisplayName: null,
         },
       ]),
     });
@@ -150,5 +162,54 @@ describe("loadAndVerifyApprovedInboxManifest", () => {
         payload: staleFresh,
       }).ok,
     ).toBe(false);
+  });
+});
+
+describe("resolveFeedbackInboxBackfillDryRun", () => {
+  it("derives the printed summary from the same in-memory plan snapshot", async () => {
+    const rows = [
+      {
+        id: "fb1",
+        url: "/alliances/a1/members",
+        allianceId: null,
+        hasTriage: false,
+        userId: "user1",
+        submitterEmail: null,
+        submitterDisplayName: null,
+        userEmail: "overlap@example.test",
+        userDisplayName: "Overlap User",
+      },
+    ];
+    let findManyCalls = 0;
+    const db = {
+      feedback: {
+        findMany: async () => {
+          findManyCalls += 1;
+          return [
+            {
+              id: rows[0]!.id,
+              url: rows[0]!.url,
+              allianceId: rows[0]!.allianceId,
+              userId: rows[0]!.userId,
+              submitterEmail: rows[0]!.submitterEmail,
+              submitterDisplayName: rows[0]!.submitterDisplayName,
+              user: {
+                email: rows[0]!.userEmail,
+                displayName: rows[0]!.userDisplayName,
+              },
+              triage: null,
+            },
+          ];
+        },
+      },
+    };
+
+    const dryRun = await resolveFeedbackInboxBackfillDryRun(db);
+    expect(findManyCalls).toBe(1);
+    expect(dryRun.summary).toEqual(
+      summarizeFeedbackInboxBackfillPlan(dryRun.rows, dryRun.plan, true),
+    );
+    expect(dryRun.summary.submitterSnapshotUpdates).toBe(1);
+    expect(dryRun.summary.allianceIdUpdates).toBe(1);
   });
 });
