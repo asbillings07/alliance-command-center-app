@@ -7,6 +7,7 @@ import {
   formatActorLabel,
   formatHistoryEventChanges,
 } from "./labels";
+import type { FeedbackTriageHistoryItem } from "@/app/src/lib/platform/feedbackInbox";
 
 const HISTORY_PAGE_SIZE = 10;
 
