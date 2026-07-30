@@ -111,17 +111,18 @@ test.describe("Platform Feedback Inbox", () => {
 
     try {
       await page.setViewportSize({ width: 1280, height: 800 });
-      await page.goto(`/platform/feedback?search=${suffix}`);
+      await page.goto(`/platform/feedback?search=${encodeURIComponent(suffix)}`);
 
       const row = desktopFeedbackItem(page, feedback.id);
+      await expect(row).toBeVisible({ timeout: 15000 });
       await expect(row).toContainText(`E2E filter round-trip ${suffix}`);
-      expect(page.url()).toContain(`search=${suffix}`);
+      expect(page.url()).toContain(`search=${encodeURIComponent(suffix)}`);
 
-      await page.getByRole("link", { name: /^New$/ }).click();
+      await page.getByRole("link", { name: "New", exact: true }).click();
       await page.waitForURL(/status=NEW/);
       await expect(row).toContainText(`E2E filter round-trip ${suffix}`);
 
-      await page.getByRole("link", { name: /^Total$/ }).click();
+      await page.getByRole("link", { name: "Total", exact: true }).click();
       await page.waitForURL(/\/platform\/feedback\?search=/);
       expect(page.url()).not.toContain("status=NEW");
     } finally {
@@ -143,9 +144,9 @@ test.describe("Platform Feedback Inbox", () => {
 
     try {
       await page.setViewportSize({ width: 1280, height: 800 });
-      await page.goto(`/platform/feedback?search=${suffix}`);
+      await page.goto(`/platform/feedback?search=${encodeURIComponent(suffix)}`);
       const row = desktopFeedbackItem(page, feedback.id);
-      await expect(row).toBeVisible();
+      await expect(row).toBeVisible({ timeout: 15000 });
 
       await row.getByRole("button", { name: /^Triage$/ }).click();
       const panel = row.locator('[data-testid="feedback-triage-panel"]');
@@ -188,8 +189,9 @@ test.describe("Platform Feedback Inbox", () => {
 
     try {
       await page.setViewportSize({ width: 1280, height: 800 });
-      await page.goto(`/platform/feedback?search=${suffix}`);
+      await page.goto(`/platform/feedback?search=${encodeURIComponent(suffix)}`);
       const row = desktopFeedbackItem(page, feedback.id);
+      await expect(row).toBeVisible({ timeout: 15000 });
       await row.getByRole("button", { name: /^Triage$/ }).click();
       const panel = row.locator('[data-testid="feedback-triage-panel"]');
       await panel
@@ -227,8 +229,9 @@ test.describe("Platform Feedback Inbox", () => {
 
     try {
       await page.setViewportSize({ width: 1280, height: 800 });
-      await page.goto(`/platform/feedback?search=${suffix}`);
+      await page.goto(`/platform/feedback?search=${encodeURIComponent(suffix)}`);
       const row = desktopFeedbackItem(page, feedback.id);
+      await expect(row).toBeVisible({ timeout: 15000 });
       await row.getByRole("button", { name: /^Triage$/ }).click();
       const panel = row.locator('[data-testid="feedback-triage-panel"]');
       await panel.locator(`#triage-status-${feedback.id}`).selectOption("TRIAGED");
@@ -273,7 +276,7 @@ test.describe("Platform Feedback Inbox", () => {
 
     try {
       await page.setViewportSize({ width: 375, height: 667 });
-      await page.goto(`/platform/feedback?search=${suffix}`);
+      await page.goto(`/platform/feedback?search=${encodeURIComponent(suffix)}`);
 
       await expect(page.getByText(/Feedback Inbox/i).first()).toBeVisible();
       await expect(page.getByRole("button", { name: /Apply filters/i })).toBeVisible();

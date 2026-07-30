@@ -41,6 +41,7 @@ function SummaryCardLink({
   return (
     <Link
       href={href}
+      aria-label={label}
       aria-current={active ? "true" : undefined}
       className={`block rounded-lg border p-4 transition-colors hover:border-border-hover ${toneClasses[tone]} ${
         active ? "ring-2 ring-primary/40" : ""
