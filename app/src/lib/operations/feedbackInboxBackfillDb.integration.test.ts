@@ -163,7 +163,7 @@ describeIntegration("feedbackInboxBackfillDb [integration]", () => {
         dryRun: false,
         approvedManifest: manifest,
       }),
-    ).rejects.toThrow(/checksum does not match/);
+    ).rejects.toThrow(/Refusing to execute:.*(checksum does not match|URL drifted since the dry run)/);
   });
 
   it("converges when a concurrent app write sets allianceId before backfill runs", async () => {

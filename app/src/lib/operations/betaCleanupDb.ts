@@ -545,6 +545,20 @@ export async function execute(
         await opts.onPlanResolved(fresh, tx);
       }
 
+      const feedbackDeleteIds = fresh.plan
+        .filter((op) => op.kind === "delete" && op.model === "Feedback")
+        .flatMap((op) => op.ids);
+      const uniqueFeedbackDeleteIds = Array.from(new Set(feedbackDeleteIds)).sort();
+      const cascadeCounts = await countFeedbackTriageCascade(tx, uniqueFeedbackDeleteIds);
+      const feedbackTriageCascade =
+        uniqueFeedbackDeleteIds.length > 0
+          ? {
+              feedbackIds: uniqueFeedbackDeleteIds,
+              triageProjections: cascadeCounts.triageProjections,
+              triageEvents: cascadeCounts.triageEvents,
+            }
+          : null;
+
       for (const op of fresh.plan) {
         const affected = await executeOp(tx, op, now);
         const expected = expectedCounts[planOpKey(op)];
@@ -563,7 +577,7 @@ export async function execute(
 
       return {
         deleteCounts,
-        feedbackTriageCascade: fresh.feedbackTriageCascade,
+        feedbackTriageCascade,
       };
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 60_000 }
