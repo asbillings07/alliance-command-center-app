@@ -3,7 +3,9 @@ import {
   planFeedbackInboxBackfill,
   verifyFeedbackInboxBackfillManifestForExecute,
   buildFeedbackInboxBackfillManifest,
+  buildFeedbackInboxBackfillManifestChecksum,
   feedbackInboxBackfillManifestChecksumPayload,
+  validateFeedbackInboxBackfillManifestShape,
   type FeedbackInboxBackfillRow,
 } from "./feedbackInboxBackfillDb";
 
@@ -144,5 +146,35 @@ describe("feedbackInboxBackfillDb", () => {
         rows,
       ).ok,
     ).toBe(true);
+  });
+
+  it("rejects a prior-head v1 manifest missing submitterSnapshotUpdates before execute", () => {
+    const legacyPlan = {
+      allianceUpdates: [{ id: "fb1", allianceId: "a1" }],
+      triageCreates: ["fb1"],
+      summary: {
+        allianceIdUpdates: 1,
+        allianceIdSkippedAlreadySet: 0,
+        allianceIdSkippedNoSegment: 0,
+        triageProjectionsCreated: 1,
+        triageProjectionsSkippedExisting: 0,
+      },
+    };
+    const legacyPayload = {
+      version: 1,
+      dbIdentity: "ep-preview-999999",
+      totalFeedbackRows: 1,
+      plan: legacyPlan,
+    };
+    const legacyManifest = {
+      ...legacyPayload,
+      generatedAt: new Date().toISOString(),
+      dryRun: true as const,
+      checksum: buildFeedbackInboxBackfillManifestChecksum(legacyPayload),
+    };
+
+    expect(() => validateFeedbackInboxBackfillManifestShape(legacyManifest)).toThrow(
+      /manifest version 1 is unsupported|plan\.submitterSnapshotUpdates is missing/,
+    );
   });
 });

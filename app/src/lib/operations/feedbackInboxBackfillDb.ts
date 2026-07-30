@@ -38,7 +38,7 @@ export type FeedbackInboxBackfillPlanRecord = {
   summary: Omit<FeedbackInboxBackfillSummary, "dryRun" | "totalFeedbackRows">;
 };
 
-export const FEEDBACK_INBOX_BACKFILL_MANIFEST_VERSION = 1 as const;
+export const FEEDBACK_INBOX_BACKFILL_MANIFEST_VERSION = 2 as const;
 
 export type FeedbackInboxBackfillManifest = {
   version: typeof FEEDBACK_INBOX_BACKFILL_MANIFEST_VERSION;
@@ -289,6 +289,19 @@ function manifestShapeProblem(value: unknown): string | null {
   if (!m.plan || typeof m.plan !== "object") {
     return "plan is missing";
   }
+  const plan = m.plan as Record<string, unknown>;
+  if (!Array.isArray(plan.allianceUpdates)) {
+    return "plan.allianceUpdates is missing or is not an array";
+  }
+  if (!Array.isArray(plan.submitterSnapshotUpdates)) {
+    return "plan.submitterSnapshotUpdates is missing or is not an array";
+  }
+  if (!Array.isArray(plan.triageCreates)) {
+    return "plan.triageCreates is missing or is not an array";
+  }
+  if (!plan.summary || typeof plan.summary !== "object") {
+    return "plan.summary is missing";
+  }
   return null;
 }
 
@@ -401,7 +414,7 @@ export function verifyFeedbackInboxBackfillManifestForExecute(
     }
   }
 
-  for (const update of manifest.plan.submitterSnapshotUpdates ?? []) {
+  for (const update of manifest.plan.submitterSnapshotUpdates) {
     const row = rowById.get(update.id);
     if (!row) {
       return { ok: false, reason: `Feedback ${update.id} is missing` };
@@ -449,7 +462,7 @@ export function verifyFeedbackInboxBackfillManifestForExecute(
     }
   }
   for (const freshUpdate of freshPlan.submitterSnapshotUpdates) {
-    const approved = (manifest.plan.submitterSnapshotUpdates ?? []).find(
+    const approved = manifest.plan.submitterSnapshotUpdates.find(
       (update) => update.id === freshUpdate.id,
     );
     if (
@@ -523,7 +536,7 @@ export async function validateFeedbackInboxBackfillCompletion(
     }
   }
 
-  const submitterSnapshotUpdates = manifest.plan.submitterSnapshotUpdates ?? [];
+  const submitterSnapshotUpdates = manifest.plan.submitterSnapshotUpdates;
   if (submitterSnapshotUpdates.length > 0) {
     const ids = submitterSnapshotUpdates.map((update) => update.id);
     const rows = await db.feedback.findMany({
