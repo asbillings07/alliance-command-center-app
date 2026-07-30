@@ -101,25 +101,44 @@ describeIntegration("feedbackInbox [integration]", () => {
     userId?: string | null;
     createdAt?: Date;
   }) {
-    const user =
-      args.userId === undefined
-        ? await createUser(
-            `fb-${args.suffix}@example.test`,
-            `Submitter ${args.suffix}`,
-          )
-        : null;
+    let resolvedUserId = args.userId;
+    let resolvedSubmitterEmail = args.submitterEmail;
+    let resolvedSubmitterDisplayName = args.submitterDisplayName;
+
+    if (resolvedUserId === undefined) {
+      const user = await createUser(
+        `fb-${args.suffix}@example.test`,
+        `Submitter ${args.suffix}`,
+      );
+      resolvedUserId = user.id;
+      if (resolvedSubmitterEmail === undefined) {
+        resolvedSubmitterEmail = user.email;
+      }
+      if (resolvedSubmitterDisplayName === undefined) {
+        resolvedSubmitterDisplayName = user.displayName;
+      }
+    } else if (
+      resolvedUserId !== null &&
+      (resolvedSubmitterEmail === undefined ||
+        resolvedSubmitterDisplayName === undefined)
+    ) {
+      const user = await prisma.user.findUnique({
+        where: { id: resolvedUserId },
+        select: { email: true, displayName: true },
+      });
+      if (resolvedSubmitterEmail === undefined) {
+        resolvedSubmitterEmail = user?.email ?? null;
+      }
+      if (resolvedSubmitterDisplayName === undefined) {
+        resolvedSubmitterDisplayName = user?.displayName ?? null;
+      }
+    }
 
     const feedback = await prisma.feedback.create({
       data: {
-        userId: args.userId !== undefined ? args.userId : user!.id,
-        submitterEmail:
-          args.submitterEmail !== undefined
-            ? args.submitterEmail
-            : user!.email,
-        submitterDisplayName:
-          args.submitterDisplayName !== undefined
-            ? args.submitterDisplayName
-            : user!.displayName,
+        userId: resolvedUserId ?? null,
+        submitterEmail: resolvedSubmitterEmail ?? null,
+        submitterDisplayName: resolvedSubmitterDisplayName ?? null,
         category: args.category ?? "BUG",
         message: args.message,
         url: `/platform/overview?marker=${args.suffix}`,
@@ -139,7 +158,7 @@ describeIntegration("feedbackInbox [integration]", () => {
       },
     });
     createdFeedbackIds.push(feedback.id);
-    return { feedback, user };
+    return { feedback, userId: resolvedUserId };
   }
 
   async function trackBetaParticipant(
@@ -242,9 +261,6 @@ describeIntegration("feedbackInbox [integration]", () => {
     const nonBeta = await seedFeedback({
       suffix: `nonbeta-${suffix}`,
       message: `non beta ${suffix}`,
-    });
-    await prisma.betaParticipant.deleteMany({
-      where: { userId: nonBeta.user!.id },
     });
 
     const result = await listFeedbackForTriage({ search: suffix }, 1, 50);
