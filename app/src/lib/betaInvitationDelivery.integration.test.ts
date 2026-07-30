@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
 import type * as BetaInvitationModule from "./betaInvitation";
 import type { EmailResult } from "./email/types";
+import { recordBetaInvitationDeliveryAttempt } from "./betaInvitationDelivery";
 
 const runDb = process.env.INTEGRATION_DB === "true";
 const describeIntegration = runDb ? describe.sequential : describe.skip;
@@ -176,6 +177,47 @@ describeIntegration("betaInvitation delivery attempts [integration]", () => {
     expect(attempts[0].attemptedByUserId).toBeNull();
     expect(attempts[0].attemptedByEmail).toBe(operator.email);
     expect(attempts[0].attemptedByDisplayName).toBe(operator.displayName);
+  });
+
+  it("the post-snapshot actor-deletion race is handled by a genuine Postgres FK violation, not a mock: attemptedByUserId is nulled, the snapshot survives", async () => {
+    const operator = await makeOperator();
+    const invitation = await issueTracked();
+
+    // Snapshot the actor's identity exactly as resolveDeliveryActorSnapshot
+    // would have, before send() was ever attempted.
+    const attemptedByEmail = operator.email;
+    const attemptedByDisplayName = operator.displayName;
+
+    // Simulate the exact post-snapshot race window (#175 review finding):
+    // the user is gone from the database before the insert below runs, so
+    // Postgres itself — not a mock — rejects the first insert attempt with
+    // a real foreign key violation (P2003) on attemptedByUserId.
+    await prisma.user.delete({ where: { id: operator.id } });
+    createdUserIds.length = 0; // already deleted; don't let afterEach try again
+
+    await recordBetaInvitationDeliveryAttempt({
+      invitationId: invitation.id,
+      trigger: "issue",
+      result: { status: "sent", messageId: "post-deletion-race-msg" },
+      attemptedByUserId: operator.id,
+      attemptedByEmail,
+      attemptedByDisplayName,
+      requestId: "req-actor-deletion-race",
+      occurredAt: new Date(),
+    });
+
+    // Exactly one row survives — the retry succeeded, not a swallowed
+    // unrecorded attempt — with the real snapshot preserved and the FK
+    // nulled rather than pointing at a now-nonexistent user.
+    const attempts = await attemptsFor(invitation.id);
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({
+      status: "SENT",
+      providerMessageId: "post-deletion-race-msg",
+      attemptedByUserId: null,
+      attemptedByEmail,
+      attemptedByDisplayName,
+    });
   });
 
   describe("retry/idempotency: the claim is the enforcement boundary", () => {
