@@ -143,6 +143,22 @@ export async function inventory(db: Db): Promise<Record<string, number>> {
  * issuing concurrent queries against it is unreliable across drivers. Dry
  * runs pay a small latency cost for the same, single code path.
  */
+export async function countFeedbackTriageCascade(
+  db: Db,
+  feedbackIds: string[],
+): Promise<{ triageProjections: number; triageEvents: number }> {
+  if (feedbackIds.length === 0) {
+    return { triageProjections: 0, triageEvents: 0 };
+  }
+  const triageProjections = await db.feedbackTriage.count({
+    where: { feedbackId: { in: feedbackIds } },
+  });
+  const triageEvents = await db.feedbackTriageEvent.count({
+    where: { feedbackId: { in: feedbackIds } },
+  });
+  return { triageProjections, triageEvents };
+}
+
 export async function resolveTenant(db: Db, allianceId: string): Promise<TenantResolved> {
   const members = await db.allianceMember.findMany({ where: { allianceId }, select: { id: true } });
   const entries = await db.memberMetricEntry.findMany({
@@ -180,6 +196,8 @@ export async function resolveUser(db: Db, userId: string): Promise<UserResolved>
   const resetTokens = await db.passwordResetToken.findMany({ where: { userId }, select: { id: true } });
   const emailChanges = await db.emailChangeRequest.findMany({ where: { userId }, select: { id: true } });
   const feedback = await db.feedback.findMany({ where: { userId }, select: { id: true } });
+  const feedbackIds = ids(feedback);
+  const triageCascade = await countFeedbackTriageCascade(db, feedbackIds);
   const notes = await db.leadershipNote.findMany({ where: { authorId: userId }, select: { id: true } });
   const sent = await db.invitation.findMany({ where: { invitedById: userId }, select: { id: true } });
   const accepted = await db.invitation.findMany({ where: { acceptedByUserId: userId }, select: { id: true } });
@@ -193,7 +211,9 @@ export async function resolveUser(db: Db, userId: string): Promise<UserResolved>
     userId,
     passwordResetTokenIds: ids(resetTokens),
     emailChangeRequestIds: ids(emailChanges),
-    feedbackIds: ids(feedback),
+    feedbackIds,
+    feedbackTriageProjectionCount: triageCascade.triageProjections,
+    feedbackTriageEventCount: triageCascade.triageEvents,
     leadershipNoteIds: ids(notes),
     invitationSentIds: ids(sent),
     invitationAcceptedIds: ids(accepted),
@@ -312,6 +332,11 @@ export interface BuiltPlan {
   /** Explicitly-targeted ids with no matching row. Must fail closed. */
   unknownAccessRequestIds: string[];
   unknownFeedbackIds: string[];
+  feedbackTriageCascade: {
+    feedbackIds: string[];
+    triageProjections: number;
+    triageEvents: number;
+  } | null;
 }
 
 async function idsToExistingSet(db: Db, model: "alliance" | "user", targetIds: string[]): Promise<Set<string>> {
@@ -364,6 +389,20 @@ export async function buildPlan(
   const unknownKeepAllianceIds = args.keepAllianceIds.filter((id) => !existingKeepAllianceIds.has(id));
 
   const plan = mergePlans([...tenantPlans, ...userPlans, stale.ops]);
+  const feedbackDeleteIds = plan
+    .filter((op) => op.kind === "delete" && op.model === "Feedback")
+    .flatMap((op) => op.ids);
+  const uniqueFeedbackDeleteIds = Array.from(new Set(feedbackDeleteIds)).sort();
+  const cascadeCounts = await countFeedbackTriageCascade(db, uniqueFeedbackDeleteIds);
+  const feedbackTriageCascade =
+    uniqueFeedbackDeleteIds.length > 0
+      ? {
+          feedbackIds: uniqueFeedbackDeleteIds,
+          triageProjections: cascadeCounts.triageProjections,
+          triageEvents: cascadeCounts.triageEvents,
+        }
+      : null;
+
   return {
     plan,
     cutoff: stale.cutoff,
@@ -374,6 +413,7 @@ export async function buildPlan(
     unknownKeepAllianceIds,
     unknownAccessRequestIds: stale.unknownAccessRequestIds,
     unknownFeedbackIds: stale.unknownFeedbackIds,
+    feedbackTriageCascade,
   };
 }
 
@@ -449,6 +489,16 @@ export async function executeOp(tx: Db, op: CleanupOp, now: Date): Promise<numbe
 export interface ExecuteOptions {
   /** Optional callback invoked inside the transaction right after each op executes. Useful for testing rollback seams. */
   onOpExecuted?: (op: CleanupOp, affected: number, tx: Db) => Promise<void> | void;
+  /**
+   * Optional callback invoked inside the transaction after the live plan is
+   * resolved and verified, but before any mutations run. Useful for race tests.
+   */
+  onPlanResolved?: (fresh: BuiltPlan, tx: Db) => Promise<void> | void;
+}
+
+export interface ExecuteResult {
+  deleteCounts: Record<string, number>;
+  feedbackTriageCascade: BuiltPlan["feedbackTriageCascade"];
 }
 
 export async function execute(
@@ -456,7 +506,7 @@ export async function execute(
   manifest: CleanupManifest,
   identity: string,
   opts?: ExecuteOptions
-): Promise<Record<string, number>> {
+): Promise<ExecuteResult> {
   return prisma.$transaction(
     async (tx: Db) => {
       // Serializes concurrent cleanup runs specifically (a lock only blocks
@@ -491,6 +541,24 @@ export async function execute(
       const expectedCounts = summarizeOpCounts(fresh.plan);
       const deleteCounts: Record<string, number> = {};
 
+      if (opts?.onPlanResolved) {
+        await opts.onPlanResolved(fresh, tx);
+      }
+
+      const feedbackDeleteIds = fresh.plan
+        .filter((op) => op.kind === "delete" && op.model === "Feedback")
+        .flatMap((op) => op.ids);
+      const uniqueFeedbackDeleteIds = Array.from(new Set(feedbackDeleteIds)).sort();
+      const cascadeCounts = await countFeedbackTriageCascade(tx, uniqueFeedbackDeleteIds);
+      const feedbackTriageCascade =
+        uniqueFeedbackDeleteIds.length > 0
+          ? {
+              feedbackIds: uniqueFeedbackDeleteIds,
+              triageProjections: cascadeCounts.triageProjections,
+              triageEvents: cascadeCounts.triageEvents,
+            }
+          : null;
+
       for (const op of fresh.plan) {
         const affected = await executeOp(tx, op, now);
         const expected = expectedCounts[planOpKey(op)];
@@ -507,7 +575,10 @@ export async function execute(
         }
       }
 
-      return deleteCounts;
+      return {
+        deleteCounts,
+        feedbackTriageCascade,
+      };
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 60_000 }
   );

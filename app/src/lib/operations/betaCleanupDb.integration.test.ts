@@ -197,16 +197,35 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
       },
     });
 
-    await prisma.feedback.create({
+    const feedback = await prisma.feedback.create({
       data: {
         userId: user.id,
+        submitterEmail: user.email,
+        submitterDisplayName: user.displayName,
         category: "BUG",
         message: "Integration test feedback",
         url: "https://example.test",
+        triage: {
+          create: {
+            status: "NEW",
+            needsResponse: true,
+            stateRevision: 0,
+          },
+        },
       },
     });
 
-    return { user, alliance, member, metric, period };
+    await prisma.feedbackTriageEvent.create({
+      data: {
+        feedbackId: feedback.id,
+        actorUserId: user.id,
+        actorEmail: user.email,
+        actorDisplayName: user.displayName,
+        noteText: "cleanup integration note",
+      },
+    });
+
+    return { user, alliance, member, metric, period, feedback };
   }
 
   async function manifestForAccessRequests(ids: string[]) {
@@ -283,7 +302,7 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
     const b = await makeAccessRequest();
     const { args, manifest } = await manifestForAccessRequests([a.id, b.id]);
 
-    const deleteCounts = await execute(args, manifest, identity);
+    const { deleteCounts } = await execute(args, manifest, identity);
     expect(deleteCounts.AccessRequest).toBe(2);
 
     const remaining = await prisma.accessRequest.count({ where: { id: { in: [a.id, b.id] } } });
@@ -352,7 +371,7 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
     const rejected = results.filter((r) => r.status === "rejected");
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
-    expect((fulfilled[0] as PromiseFulfilledResult<Record<string, number>>).value.AccessRequest).toBe(2);
+    expect((fulfilled[0] as PromiseFulfilledResult<Awaited<ReturnType<typeof execute>>>).value.deleteCounts.AccessRequest).toBe(2);
 
     const remaining = await prisma.accessRequest.count({ where: { id: { in: [a.id, b.id] } } });
     expect(remaining).toBe(0);
@@ -411,6 +430,59 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
     expect(result.lines.some((l) => l.includes("MISSING (unexpectedly deleted)"))).toBe(true);
   });
 
+  it("integration: buildPlan reports FeedbackTriage cascade counts for user feedback", async () => {
+    const { user, feedback } = await makeFullTenantAndUser();
+    const args = parseArgs(["--user-email", user.email]);
+    const fresh = await buildPlan(prisma, args, { now: new Date(), frozenCutoff: null });
+
+    expect(fresh.feedbackTriageCascade).toEqual({
+      feedbackIds: [feedback.id],
+      triageProjections: 1,
+      triageEvents: 1,
+    });
+  });
+
+  it("integration: execute() reports in-transaction FeedbackTriage cascade counts when rows change after dry-run estimate", async () => {
+    const { user, feedback } = await makeFullTenantAndUser();
+    const args = parseArgs(["--user-email", user.email]);
+    const dryRunPlan = await buildPlan(prisma, args, { now: new Date(), frozenCutoff: null });
+    expect(dryRunPlan.feedbackTriageCascade).toEqual({
+      feedbackIds: [feedback.id],
+      triageProjections: 1,
+      triageEvents: 1,
+    });
+
+    const manifest = buildManifest({
+      cutoff: dryRunPlan.cutoff,
+      dbIdentity: identity,
+      keep: { userEmails: [], allianceIds: [] },
+      plan: dryRunPlan.plan,
+    });
+
+    const { feedbackTriageCascade } = await execute(args, manifest, identity, {
+      onPlanResolved: async (_fresh, tx) => {
+        await tx.feedbackTriageEvent.create({
+          data: {
+            feedbackId: feedback.id,
+            actorUserId: user.id,
+            actorEmail: user.email,
+            actorDisplayName: user.displayName,
+            noteText: "concurrent triage event appended before delete",
+          },
+        });
+      },
+    });
+
+    expect(feedbackTriageCascade).toEqual({
+      feedbackIds: [feedback.id],
+      triageProjections: 1,
+      triageEvents: 2,
+    });
+    expect(feedbackTriageCascade!.triageEvents).toBeGreaterThan(
+      dryRunPlan.feedbackTriageCascade!.triageEvents,
+    );
+  });
+
   it("integration: execute() cleans up a representative tenant and user across all dependent models in PostgreSQL", async () => {
     const { user, alliance } = await makeFullTenantAndUser();
     const args = parseArgs(["--alliance-id", alliance.id, "--user-email", user.email]);
@@ -422,7 +494,7 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
       plan: fresh.plan,
     });
 
-    const deleteCounts = await execute(args, manifest, identity);
+    const { deleteCounts } = await execute(args, manifest, identity);
 
     expect(deleteCounts.Alliance).toBe(1);
     expect(deleteCounts.User).toBe(1);

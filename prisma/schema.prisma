@@ -139,6 +139,7 @@ model User {
   betaInvitationsRevoked  BetaInvitation[] @relation("BetaInvitationsRevoked")
   betaParticipant         BetaParticipant?
   feedback Feedback[]
+  feedbackTriageEvents FeedbackTriageEvent[]
   emailChangeRequests EmailChangeRequest[]
   passwordResetTokens PasswordResetToken[]
 
@@ -381,22 +382,71 @@ model AccessRequest {
   @@index([createdAt])
 }
 
+enum FeedbackTriageStatus {
+  NEW
+  TRIAGED
+  PLANNED
+  RESOLVED
+  DISMISSED
+}
+
 // In-app feedback captured from an authenticated user while friction is fresh.
-// The row stores facts (message + client/context metadata); alliance/period
-// context is derived from the URL only when building the operator notification
-// (ADR-014 keeps notification concerns out of persistence). Deliberately
-// minimal for beta: no status/triage workflow, no attachments.
+// The row stores facts (message + client/context metadata) plus immutable
+// submitter identity snapshots (#176). Operator triage state lives on
+// FeedbackTriage / FeedbackTriageEvent — never on this row.
 model Feedback {
-  id         String           @id @default(cuid())
-  userId     String
-  user       User             @relation(fields: [userId], references: [id])
-  category   FeedbackCategory
-  message    String
-  url        String
-  userAgent  String?
-  viewport   String?
-  appVersion String?
-  createdAt  DateTime         @default(now())
+  id                   String           @id @default(cuid())
+  userId               String?
+  user                 User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  submitterEmail       String?
+  submitterDisplayName String?
+  category             FeedbackCategory
+  message              String
+  url                  String
+  userAgent            String?
+  viewport             String?
+  appVersion           String?
+  allianceId           String?
+  createdAt            DateTime         @default(now())
+
+  triage FeedbackTriage?
+  events FeedbackTriageEvent[]
 
   @@index([createdAt])
+  @@index([allianceId])
+}
+
+model FeedbackTriage {
+  feedbackId                      String               @id
+  feedback                        Feedback             @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  status                          FeedbackTriageStatus @default(NEW)
+  needsResponse                   Boolean              @default(true)
+  githubIssueUrl                  String?
+  stateRevision                   Int                  @default(0)
+  lastEventAt                     DateTime?
+  lastStateChangeAt               DateTime?
+  lastStateChangeActorEmail       String?
+  lastStateChangeActorDisplayName String?
+
+  @@index([status])
+  @@index([needsResponse])
+}
+
+model FeedbackTriageEvent {
+  id                      String                @id @default(cuid())
+  feedbackId              String
+  feedback                Feedback              @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  actorUserId             String?
+  actor                   User?                 @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmail              String
+  actorDisplayName        String?
+  createdAt               DateTime              @default(now())
+  statusChangedTo         FeedbackTriageStatus?
+  noteText                String?
+  needsResponseChangedTo  Boolean?
+  githubIssueUrlChanged   Boolean               @default(false)
+  githubIssueUrlChangedTo String?
+
+  @@index([feedbackId, createdAt, id])
+  @@index([actorUserId])
 }

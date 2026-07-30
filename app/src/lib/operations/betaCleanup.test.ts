@@ -43,6 +43,8 @@ const user: UserResolved = {
   passwordResetTokenIds: ["prt1"],
   emailChangeRequestIds: [],
   feedbackIds: ["fb1"],
+  feedbackTriageProjectionCount: 1,
+  feedbackTriageEventCount: 2,
   leadershipNoteIds: ["ln9"],
   invitationSentIds: ["invSent1"],
   invitationAcceptedIds: ["invAcc1"],
