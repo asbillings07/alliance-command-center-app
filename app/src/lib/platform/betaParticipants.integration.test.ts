@@ -102,17 +102,24 @@ describeIntegration("betaParticipants unified query [integration]", () => {
       createdAt?: Date;
       failureReason?: string | null;
       providerMessageId?: string | null;
+      // Allows a test to own actor lifecycle (e.g. to delete the actor
+      // afterward and assert the snapshot survives, #175 PR 2).
+      actor?: { id: string; email: string; displayName: string | null };
     } = {},
   ) {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const actor = await prisma.user.create({
-      data: {
-        email: `delivery-actor-${suffix}@example.test`,
-        displayName: "Delivery Actor",
-        passwordHash: "hash",
-      },
-    });
-    createdUserIds.push(actor.id);
+    let actor = overrides.actor;
+    if (!actor) {
+      const created = await prisma.user.create({
+        data: {
+          email: `delivery-actor-${suffix}@example.test`,
+          displayName: "Delivery Actor",
+          passwordHash: "hash",
+        },
+      });
+      createdUserIds.push(created.id);
+      actor = created;
+    }
 
     return prisma.betaInvitationDeliveryAttempt.create({
       data: {
@@ -540,6 +547,61 @@ describeIntegration("betaParticipants unified query [integration]", () => {
         failureReason: "First invitation's own attempt",
       });
     });
+
+    it("projects the attempted-by actor from the snapshot columns, not a live User join", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const invitation = await trackInvitation(
+        `beta-attributed-delivery-${suffix}@example.test`,
+      );
+      const actor = await prisma.user.create({
+        data: {
+          email: `attributed-actor-${suffix}@example.test`,
+          displayName: "Attributed Actor",
+          passwordHash: "hash",
+        },
+      });
+      createdUserIds.push(actor.id);
+
+      await attachDeliveryAttempt(invitation.id, { actor });
+
+      const result = await listBetaParticipants({ search: suffix }, 1, 50);
+      expect(
+        result.items[0]?.latestAttempt.latestDeliveryAttempt?.attemptedBy,
+      ).toEqual({
+        userId: actor.id,
+        displayName: "Attributed Actor",
+        email: actor.email,
+      });
+    });
+
+    it("retains the attempted-by email/displayName snapshot after the operator's User row is deleted (#175)", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const invitation = await trackInvitation(
+        `beta-deleted-actor-delivery-${suffix}@example.test`,
+      );
+      const actor = await prisma.user.create({
+        data: {
+          email: `deleted-actor-${suffix}@example.test`,
+          displayName: "Soon Deleted",
+          passwordHash: "hash",
+        },
+      });
+      // Not pushed to createdUserIds — this test owns and deletes it below.
+
+      await attachDeliveryAttempt(invitation.id, { actor });
+      await prisma.user.delete({ where: { id: actor.id } });
+
+      const result = await listBetaParticipants({ search: suffix }, 1, 50);
+      // attemptedByUserId is onDelete: SetNull; the snapshot columns are
+      // plain strings and are untouched by the User row disappearing.
+      expect(
+        result.items[0]?.latestAttempt.latestDeliveryAttempt?.attemptedBy,
+      ).toEqual({
+        userId: null,
+        displayName: "Soon Deleted",
+        email: actor.email,
+      });
+    });
   });
 
   describe("listBetaInvitationDeliveryHistory (#175)", () => {
@@ -617,6 +679,56 @@ describeIntegration("betaParticipants unified query [integration]", () => {
         10,
       );
       expect(historyB.total).toBe(2);
+    });
+
+    it("projects the attempted-by actor snapshot for each history row, surviving operator deletion", async () => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const invitation = await trackInvitation(
+        `beta-history-attribution-${suffix}@example.test`,
+      );
+      const liveActor = await prisma.user.create({
+        data: {
+          email: `history-live-actor-${suffix}@example.test`,
+          displayName: "Live Actor",
+          passwordHash: "hash",
+        },
+      });
+      createdUserIds.push(liveActor.id);
+      const deletedActor = await prisma.user.create({
+        data: {
+          email: `history-deleted-actor-${suffix}@example.test`,
+          displayName: "Deleted Actor",
+          passwordHash: "hash",
+        },
+      });
+
+      await attachDeliveryAttempt(invitation.id, {
+        actor: deletedActor,
+        createdAt: new Date("2026-07-01T00:00:00Z"),
+      });
+      await attachDeliveryAttempt(invitation.id, {
+        actor: liveActor,
+        trigger: "RESEND",
+        createdAt: new Date("2026-07-02T00:00:00Z"),
+      });
+      await prisma.user.delete({ where: { id: deletedActor.id } });
+
+      const history = await listBetaInvitationDeliveryHistory(
+        invitation.id,
+        1,
+        10,
+      );
+      expect(history.items).toHaveLength(2);
+      expect(history.items[0]?.attemptedBy).toEqual({
+        userId: liveActor.id,
+        displayName: "Live Actor",
+        email: liveActor.email,
+      });
+      expect(history.items[1]?.attemptedBy).toEqual({
+        userId: null,
+        displayName: "Deleted Actor",
+        email: deletedActor.email,
+      });
     });
   });
 });

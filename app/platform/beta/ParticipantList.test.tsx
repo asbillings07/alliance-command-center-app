@@ -256,7 +256,7 @@ describe("email delivery status (#175)", () => {
     expect(toggle).toBeUndefined();
   });
 
-  it("renders a Sent badge with trigger and timestamp for a successful delivery", async () => {
+  it("renders a Sent badge with trigger, timestamp, attempted-by actor, and provider message ID", async () => {
     await act(async () => {
       root.render(
         createElement(AttemptAuditDetails, {
@@ -268,6 +268,11 @@ describe("email delivery status (#175)", () => {
               createdAt: new Date("2026-07-30T12:00:00Z"),
               failureReason: null,
               providerMessageId: "msg-1",
+              attemptedBy: {
+                userId: "op-1",
+                displayName: "Operator One",
+                email: "operator@example.test",
+              },
             },
           }),
         }),
@@ -276,9 +281,13 @@ describe("email delivery status (#175)", () => {
 
     expect(container.textContent).toContain("Sent");
     expect(container.textContent).toContain("Initial send");
+    expect(container.textContent).toContain("By: Operator One");
+    // [P1 review]: provider IDs are platform-operator-only and SENT-only —
+    // this is the focused positive assertion for that surface.
+    expect(container.textContent).toContain("msg-1");
   });
 
-  it("renders a Failed badge with the sanitized failure reason surfaced", async () => {
+  it("does not render a provider message ID for a non-SENT delivery, even if one were present", async () => {
     await act(async () => {
       root.render(
         createElement(AttemptAuditDetails, {
@@ -289,7 +298,16 @@ describe("email delivery status (#175)", () => {
               status: "failed",
               createdAt: new Date("2026-07-30T12:00:00Z"),
               failureReason: "Provider rejected the request",
-              providerMessageId: null,
+              // A FAILED row should never actually carry a providerMessageId
+              // (canonicalization mapping in betaInvitationDelivery.ts), but
+              // the UI must not render one even if the read model somehow
+              // returned it — this is the negative/absence assertion.
+              providerMessageId: "should-not-render",
+              attemptedBy: {
+                userId: "op-2",
+                displayName: "Operator Two",
+                email: "operator2@example.test",
+              },
             },
           }),
         }),
@@ -299,6 +317,8 @@ describe("email delivery status (#175)", () => {
     expect(container.textContent).toContain("Failed");
     expect(container.textContent).toContain("Resend");
     expect(container.textContent).toContain("Provider rejected the request");
+    expect(container.textContent).toContain("By: Operator Two");
+    expect(container.textContent).not.toContain("should-not-render");
   });
 
   it("renders a Skipped badge without a failure reason", async () => {
@@ -313,6 +333,11 @@ describe("email delivery status (#175)", () => {
               createdAt: new Date("2026-07-30T12:00:00Z"),
               failureReason: null,
               providerMessageId: null,
+              attemptedBy: {
+                userId: "op-3",
+                displayName: "Operator Three",
+                email: "operator3@example.test",
+              },
             },
           }),
         }),
@@ -321,6 +346,55 @@ describe("email delivery status (#175)", () => {
 
     expect(container.textContent).toContain("Skipped");
     expect(container.textContent).toContain("Reissue");
+  });
+
+  it("retains the snapshotted email as the attempted-by actor after the operator account is deleted", async () => {
+    await act(async () => {
+      root.render(
+        createElement(AttemptAuditDetails, {
+          attempt: buildAttempt({
+            latestDeliveryAttempt: {
+              id: "att-4",
+              trigger: "issue",
+              status: "sent",
+              createdAt: new Date("2026-07-30T12:00:00Z"),
+              failureReason: null,
+              providerMessageId: "msg-4",
+              // userId nulled (onDelete: SetNull) but the snapshot survives.
+              attemptedBy: {
+                userId: null,
+                displayName: "Deleted Operator",
+                email: "deleted-operator@example.test",
+              },
+            },
+          }),
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("By: Deleted Operator");
+  });
+
+  it("falls back to 'Unknown (legacy)' only in the defensive case of a fully-missing attempted-by actor", async () => {
+    await act(async () => {
+      root.render(
+        createElement(AttemptAuditDetails, {
+          attempt: buildAttempt({
+            latestDeliveryAttempt: {
+              id: "att-5",
+              trigger: "issue",
+              status: "sent",
+              createdAt: new Date("2026-07-30T12:00:00Z"),
+              failureReason: null,
+              providerMessageId: "msg-5",
+              attemptedBy: null,
+            },
+          }),
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("By: Unknown (legacy)");
   });
 });
 
@@ -335,6 +409,11 @@ describe("DeliveryHistoryDisclosure (#175)", () => {
         createdAt: new Date("2026-07-30T12:00:00Z"),
         failureReason: null,
         providerMessageId: "msg-latest",
+        attemptedBy: {
+          userId: "op-1",
+          displayName: "Operator One",
+          email: "operator@example.test",
+        },
       },
     });
   }
@@ -348,6 +427,11 @@ describe("DeliveryHistoryDisclosure (#175)", () => {
         createdAt: new Date("2026-07-15T12:00:00Z"),
         failureReason: null,
         providerMessageId: "msg-2",
+        attemptedBy: {
+          userId: "op-2",
+          displayName: "Operator Two",
+          email: "operator2@example.test",
+        },
       },
       {
         id: "att-1",
@@ -356,6 +440,7 @@ describe("DeliveryHistoryDisclosure (#175)", () => {
         createdAt: new Date("2026-07-01T12:00:00Z"),
         failureReason: "Older failure",
         providerMessageId: null,
+        attemptedBy: null,
       },
     ];
 

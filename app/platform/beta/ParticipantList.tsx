@@ -96,6 +96,26 @@ function formatOperatorLabel(
 }
 
 /**
+ * Formats the attempted-by actor for one delivery attempt (#175).
+ * Deliberately distinct from `formatOperatorLabel` above: that helper
+ * gates on `userId` being present, which is correct for invitation
+ * lifecycle operators (a null userId there really can mean a genuine,
+ * pre-attribution legacy gap). Delivery attempts are different —
+ * attemptedByEmail is snapshotted and required on every row, and
+ * onDelete: SetNull only clears attemptedByUserId, so a deleted
+ * operator's email/displayName survive and must still be shown. A
+ * fully-missing actor here is a defensive/never-in-practice case, not a
+ * real legacy gap (this table postdates #175).
+ */
+function formatDeliveryActorLabel(actor: BetaAttemptOperator | null): string {
+  if (!actor?.displayName && !actor?.email) {
+    return "By: Unknown (legacy)";
+  }
+
+  return `By: ${actor.displayName ?? actor.email}`;
+}
+
+/**
  * Latest email delivery outcome for one invitation attempt (#175).
  * Deliberately separate from `statusConfig` above — invitation lifecycle
  * (pending/accepted/expired/revoked) and email-delivery outcome
@@ -116,6 +136,16 @@ function DeliveryStatusSummary({
           </Badge>
           <span>{deliveryTriggerLabels[delivery.trigger]}</span>
           <span>{formatDateTime(delivery.createdAt)}</span>
+          <span>{formatDeliveryActorLabel(delivery.attemptedBy)}</span>
+          {/* Provider message IDs are only ever queried/rendered from this
+              already-platform-admin-gated surface, and only ever set on
+              SENT rows (see canonicalization mapping in
+              recordBetaInvitationDeliveryAttempt). */}
+          {delivery.status === "sent" && delivery.providerMessageId && (
+            <span className="text-text-disabled">
+              Provider ID: {delivery.providerMessageId}
+            </span>
+          )}
           {delivery.status === "failed" && delivery.failureReason && (
             <span className="text-danger basis-full">
               {delivery.failureReason}

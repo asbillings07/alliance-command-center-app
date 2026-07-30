@@ -62,6 +62,14 @@ export type BetaInvitationDeliverySummary = {
   createdAt: Date;
   failureReason: string | null;
   providerMessageId: string | null;
+  /**
+   * Who initiated this attempt, snapshotted at write time (#175 PR 1) so
+   * attribution survives operator deletion. `userId` goes null via
+   * onDelete: SetNull, but attemptedByEmail is required on every row, so a
+   * fully-null operator here would indicate a genuine data bug, not a
+   * legacy/pre-#175 gap — this table didn't exist before #175.
+   */
+  attemptedBy: BetaAttemptOperator | null;
 };
 
 export type BetaInvitationAttemptRecord = {
@@ -655,6 +663,9 @@ type HydratedDerivedRow = DerivedRow & {
   delivery_created_at: Date | null;
   delivery_failure_reason: string | null;
   delivery_provider_message_id: string | null;
+  delivery_attempted_by_user_id: string | null;
+  delivery_attempted_by_email: string | null;
+  delivery_attempted_by_display_name: string | null;
 };
 
 function mapAttemptOperator(
@@ -712,6 +723,9 @@ export function mapDeliverySummary(row: {
   delivery_created_at: Date | null;
   delivery_failure_reason: string | null;
   delivery_provider_message_id: string | null;
+  delivery_attempted_by_user_id: string | null;
+  delivery_attempted_by_email: string | null;
+  delivery_attempted_by_display_name: string | null;
 }): BetaInvitationDeliverySummary | null {
   if (
     !row.delivery_id ||
@@ -729,6 +743,11 @@ export function mapDeliverySummary(row: {
     createdAt: row.delivery_created_at,
     failureReason: row.delivery_failure_reason,
     providerMessageId: row.delivery_provider_message_id,
+    attemptedBy: mapAttemptOperator(
+      row.delivery_attempted_by_user_id,
+      row.delivery_attempted_by_display_name,
+      row.delivery_attempted_by_email,
+    ),
   };
 }
 
@@ -737,6 +756,9 @@ const LATEST_DELIVERY_ATTEMPT_LATERAL_JOIN = Prisma.sql`
   LEFT JOIN LATERAL (
     SELECT
       bda.id,
+      bda."attemptedByUserId",
+      bda."attemptedByEmail",
+      bda."attemptedByDisplayName",
       bda.trigger,
       bda.status,
       bda."createdAt",
@@ -921,6 +943,9 @@ export async function listBetaParticipants(
         delivery."createdAt" AS delivery_created_at,
         delivery."failureReason" AS delivery_failure_reason,
         delivery."providerMessageId" AS delivery_provider_message_id,
+        delivery."attemptedByUserId" AS delivery_attempted_by_user_id,
+        delivery."attemptedByEmail" AS delivery_attempted_by_email,
+        delivery."attemptedByDisplayName" AS delivery_attempted_by_display_name,
         f.prior_attempt_count,
         f.alliance_id,
         f.alliance_ambiguous,
@@ -975,6 +1000,9 @@ export async function listBetaParticipants(
         p.delivery_created_at,
         p.delivery_failure_reason,
         p.delivery_provider_message_id,
+        p.delivery_attempted_by_user_id,
+        p.delivery_attempted_by_email,
+        p.delivery_attempted_by_display_name,
         p.prior_attempt_count,
         p.alliance_id,
         p.alliance_ambiguous,
@@ -1025,6 +1053,9 @@ export async function listBetaParticipants(
         NULL AS delivery_created_at,
         NULL AS delivery_failure_reason,
         NULL AS delivery_provider_message_id,
+        NULL AS delivery_attempted_by_user_id,
+        NULL AS delivery_attempted_by_email,
+        NULL AS delivery_attempted_by_display_name,
         NULL AS prior_attempt_count,
         NULL AS alliance_id,
         NULL AS alliance_ambiguous,
@@ -1074,6 +1105,9 @@ export async function listBetaParticipants(
       c.delivery_created_at,
       c.delivery_failure_reason,
       c.delivery_provider_message_id,
+      c.delivery_attempted_by_user_id,
+      c.delivery_attempted_by_email,
+      c.delivery_attempted_by_display_name,
       c.prior_attempt_count,
       c.alliance_id,
       c.alliance_ambiguous,
@@ -1154,6 +1188,9 @@ type PriorAttemptRow = {
   delivery_created_at: Date | null;
   delivery_failure_reason: string | null;
   delivery_provider_message_id: string | null;
+  delivery_attempted_by_user_id: string | null;
+  delivery_attempted_by_email: string | null;
+  delivery_attempted_by_display_name: string | null;
 };
 
 function mapPriorAttemptRow(row: PriorAttemptRow): BetaParticipantPriorAttempt {
@@ -1239,6 +1276,9 @@ export async function listBetaParticipantPriorAttempts(
         delivery."createdAt" AS delivery_created_at,
         delivery."failureReason" AS delivery_failure_reason,
         delivery."providerMessageId" AS delivery_provider_message_id,
+        delivery."attemptedByUserId" AS delivery_attempted_by_user_id,
+        delivery."attemptedByEmail" AS delivery_attempted_by_email,
+        delivery."attemptedByDisplayName" AS delivery_attempted_by_display_name,
         CASE
           WHEN bi."acceptedAt" IS NOT NULL THEN 'accepted'
           WHEN bi."revokedAt" IS NOT NULL THEN 'revoked'
@@ -1300,6 +1340,9 @@ type DeliveryHistoryRow = {
   created_at: Date;
   failure_reason: string | null;
   provider_message_id: string | null;
+  attempted_by_user_id: string | null;
+  attempted_by_email: string | null;
+  attempted_by_display_name: string | null;
 };
 
 function mapDeliveryHistoryRow(
@@ -1312,6 +1355,11 @@ function mapDeliveryHistoryRow(
     createdAt: row.created_at,
     failureReason: row.failure_reason,
     providerMessageId: row.provider_message_id,
+    attemptedBy: mapAttemptOperator(
+      row.attempted_by_user_id,
+      row.attempted_by_display_name,
+      row.attempted_by_email,
+    ),
   };
 }
 
@@ -1338,7 +1386,10 @@ export async function listBetaInvitationDeliveryHistory(
         bda.status,
         bda."createdAt" AS created_at,
         bda."failureReason" AS failure_reason,
-        bda."providerMessageId" AS provider_message_id
+        bda."providerMessageId" AS provider_message_id,
+        bda."attemptedByUserId" AS attempted_by_user_id,
+        bda."attemptedByEmail" AS attempted_by_email,
+        bda."attemptedByDisplayName" AS attempted_by_display_name
       FROM "BetaInvitationDeliveryAttempt" bda
       WHERE bda."invitationId" = ${invitationId}
       ORDER BY bda."createdAt" DESC, bda.id DESC
