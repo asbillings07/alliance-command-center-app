@@ -6,6 +6,7 @@ import type {
 } from "@/app/generated/prisma/enums";
 import { prisma } from "../prisma";
 import { resolveInvitationConflict, type InvitationConflictResolution } from "../invitationConflict";
+import { WAVE_MIN, WAVE_MAX } from "../accessRequestTriage";
 import {
   boundBetaParticipantsInput,
   buildIlikeContainsPattern,
@@ -359,13 +360,24 @@ export type BetaWaveOption = { id: string; name: string };
  * design decision 3). Lives here rather than betaParticipants.ts because
  * it's needed specifically for the access-request conversion UI — keeps
  * this PR a vertical slice rather than a shared-utility grab bag.
+ *
+ * `campaign` has no DB-level length constraint and predates #177's stricter
+ * validation (issueBetaInvitation only ever did a bare `.trim() || null`),
+ * so legacy or directly-seeded rows can carry blank, >WAVE_MAX-character, or
+ * control-character-containing values. Offering one of those as a combobox
+ * choice would let an operator pick a wave that convertAccessRequestToInvitation
+ * then rejects (#177 review) — trimmed via the same WAVE_MIN/WAVE_MAX bound
+ * conversion enforces, and outright excluded (not sanitized) if it contains
+ * control characters, since there is no safe display rendering for those.
  */
 export async function listBetaWaveOptions(): Promise<BetaWaveOption[]> {
   const rows = await prisma.$queryRaw<BetaWaveOption[]>`
-    SELECT DISTINCT campaign AS id, campaign AS name
+    SELECT DISTINCT btrim(campaign) AS id, btrim(campaign) AS name
     FROM "BetaInvitation"
     WHERE campaign IS NOT NULL
-    ORDER BY campaign ASC
+      AND campaign !~ '[[:cntrl:]]'
+      AND length(btrim(campaign)) BETWEEN ${WAVE_MIN} AND ${WAVE_MAX}
+    ORDER BY btrim(campaign) ASC
     LIMIT ${ACCESS_REQUEST_INBOX_WAVE_OPTIONS_LIMIT}
   `;
   return rows;

@@ -25,10 +25,11 @@ import {
   type BetaWaveOption,
 } from "@/app/src/lib/platform/accessRequestInbox";
 import type { InvitationConflictResolution } from "@/app/src/lib/invitationConflict";
+import type { InvitationConflictType } from "@/app/generated/prisma/enums";
 import { emailService } from "@/app/src/lib/email";
 import type { EmailStatus } from "@/app/src/lib/email";
 
-const ACCESS_REQUESTS_PATH = "/platform/beta/requests";
+const ACCESS_REQUESTS_PATH = "/platform/beta/access-requests";
 
 const STALE_CONFLICT_MESSAGE =
   "Someone else updated this request while you were working on it. Review the current state below, then try again if you still want to make this change.";
@@ -43,9 +44,24 @@ const STALE_CONFLICT_MESSAGE =
  * (app/platform/feedback/actions.ts).
  */
 
+/**
+ * `code` is a discriminated, machine-readable outcome — not just the human
+ * `error` string — so PR 3's UI can choose the right response (refresh and
+ * show the current state for a stale edit vs. render the "reopen denied,
+ * still has access" banner) without parsing English or re-deriving what
+ * the server already knows (#177 review).
+ */
 export type AccessRequestActionResult =
   | { success: true; projection: AccessRequestTriageProjection }
-  | { success: false; error: string; conflict?: AccessRequestTriageProjection };
+  | { success: false; code: "NOT_FOUND"; error: string }
+  | { success: false; code: "VALIDATION"; error: string }
+  | { success: false; code: "STALE_CONFLICT"; error: string; conflict: AccessRequestTriageProjection }
+  | {
+      success: false;
+      code: "REOPEN_DENIED_ACCESS_STILL_EXISTS";
+      error: string;
+      conflict: AccessRequestTriageProjection;
+    };
 
 function mapActionResult(result: AccessRequestTriageActionResult): AccessRequestActionResult {
   if (result.ok) {
@@ -53,13 +69,23 @@ function mapActionResult(result: AccessRequestTriageActionResult): AccessRequest
   }
   switch (result.code) {
     case "NOT_FOUND":
-      return { success: false, error: "Access request not found" };
+      return { success: false, code: "NOT_FOUND", error: "Access request not found" };
     case "VALIDATION":
-      return { success: false, error: result.message };
+      return { success: false, code: "VALIDATION", error: result.message };
     case "STALE_CONFLICT":
-      return { success: false, error: STALE_CONFLICT_MESSAGE, conflict: result.conflict };
+      return {
+        success: false,
+        code: "STALE_CONFLICT",
+        error: STALE_CONFLICT_MESSAGE,
+        conflict: result.conflict,
+      };
     case "REOPEN_DENIED_ACCESS_STILL_EXISTS":
-      return { success: false, error: result.message, conflict: result.projection };
+      return {
+        success: false,
+        code: "REOPEN_DENIED_ACCESS_STILL_EXISTS",
+        error: result.message,
+        conflict: result.projection,
+      };
   }
 }
 
@@ -249,7 +275,12 @@ export async function reopenAccessRequestAction(
 ): Promise<AccessRequestActionResult> {
   const session = await requirePlatformAdmin();
   const result = await reopenAccessRequest(accessRequestId, session.id, reason, lastSeenStateRevision);
-  if (result.ok) {
+  // REOPEN_DENIED_ACCESS_STILL_EXISTS is ok: false, but the domain service
+  // still commits an attributable note, refreshes the conflict evidence
+  // snapshot, and bumps stateRevision (#177 review) — the queue/history
+  // caches must not be left behind that write just because the reopen
+  // itself was denied.
+  if (result.ok || result.code === "REOPEN_DENIED_ACCESS_STILL_EXISTS") {
     revalidatePath(ACCESS_REQUESTS_PATH);
   }
   return mapActionResult(result);
@@ -277,7 +308,17 @@ export type ConvertAccessRequestActionResult =
       disposition: DeliveryDisposition;
       projection: AccessRequestTriageProjection;
     }
-  | { success: false; error: string; conflict?: AccessRequestTriageProjection };
+  | { success: false; code: "NOT_FOUND"; error: string }
+  | { success: false; code: "VALIDATION"; error: string }
+  | { success: false; code: "STALE_CONFLICT"; error: string; conflict: AccessRequestTriageProjection }
+  | {
+      success: false;
+      code: "CONVERSION_BLOCKED";
+      error: string;
+      conflict: AccessRequestTriageProjection;
+      /** The authoritative, commit-time conflict — may differ from any UI pre-check (#177 review). */
+      conflictType: InvitationConflictType;
+    };
 
 /**
  * Approve a pending access request and convert it into a BetaInvitation.
@@ -305,13 +346,29 @@ export async function convertAccessRequestAction(
   if (!result.ok) {
     switch (result.code) {
       case "NOT_FOUND":
-        return { success: false, error: "Access request not found" };
+        return { success: false, code: "NOT_FOUND", error: "Access request not found" };
       case "VALIDATION":
-        return { success: false, error: result.message };
+        return { success: false, code: "VALIDATION", error: result.message };
       case "STALE_CONFLICT":
-        return { success: false, error: STALE_CONFLICT_MESSAGE, conflict: result.conflict };
+        return {
+          success: false,
+          code: "STALE_CONFLICT",
+          error: STALE_CONFLICT_MESSAGE,
+          conflict: result.conflict,
+        };
       case "CONVERSION_BLOCKED":
-        return { success: false, error: result.message, conflict: result.projection };
+        // CONVERSION_BLOCKED is ok: false, but the domain service still
+        // commits a CONVERSION_BLOCKED event, a refreshed conflict evidence
+        // snapshot, and advanced lastEvent* (#177 review) — the queue must
+        // reflect that even though no invitation was created.
+        revalidatePath(ACCESS_REQUESTS_PATH);
+        return {
+          success: false,
+          code: "CONVERSION_BLOCKED",
+          error: result.message,
+          conflict: result.projection,
+          conflictType: result.conflictType,
+        };
     }
   }
 

@@ -42,8 +42,12 @@ const REASON_MIN = 1;
 const REASON_MAX = 500;
 const NOTE_MIN = 1;
 const NOTE_MAX = 2000;
-const WAVE_MIN = 1;
-const WAVE_MAX = 80;
+// Exported so the wave-options combobox source (accessRequestInbox.ts) can
+// filter out any legacy/directly-seeded BetaInvitation.campaign value this
+// same bound would reject at conversion time (#177 review) — campaign has
+// no DB-level length constraint of its own.
+export const WAVE_MIN = 1;
+export const WAVE_MAX = 80;
 const PROJECTION_REASON_MAX = 500;
 
 const CONVERT_MAX_RETRIES = 3;

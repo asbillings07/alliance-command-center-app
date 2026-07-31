@@ -236,7 +236,7 @@ describe("platform beta access-request actions (#177)", () => {
 
       expect(result).toEqual({ success: true, projection });
       expect(mockAddAccessRequestNote).toHaveBeenCalledWith("req-1", "operator-1", "a note");
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/platform/beta/requests");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/platform/beta/access-requests");
     });
 
     it("maps VALIDATION without revalidating", async () => {
@@ -248,7 +248,7 @@ describe("platform beta access-request actions (#177)", () => {
 
       const result = await addAccessRequestNoteAction("req-1", "");
 
-      expect(result).toEqual({ success: false, error: "Note must not be blank" });
+      expect(result).toEqual({ success: false, code: "VALIDATION", error: "Note must not be blank" });
       expect(mockRevalidatePath).not.toHaveBeenCalled();
     });
 
@@ -257,7 +257,7 @@ describe("platform beta access-request actions (#177)", () => {
 
       const result = await addAccessRequestNoteAction("missing", "note");
 
-      expect(result).toEqual({ success: false, error: "Access request not found" });
+      expect(result).toEqual({ success: false, code: "NOT_FOUND", error: "Access request not found" });
     });
   });
 
@@ -270,7 +270,7 @@ describe("platform beta access-request actions (#177)", () => {
 
       expect(result).toEqual({ success: true, projection });
       expect(mockDeclineAccessRequest).toHaveBeenCalledWith("req-1", "operator-1", "Not a fit", 3);
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/platform/beta/requests");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/platform/beta/access-requests");
     });
 
     it("maps STALE_CONFLICT with the current projection attached", async () => {
@@ -281,6 +281,7 @@ describe("platform beta access-request actions (#177)", () => {
 
       expect(result).toEqual({
         success: false,
+        code: "STALE_CONFLICT",
         error: expect.stringContaining("Someone else updated this request"),
         conflict,
       });
@@ -313,10 +314,10 @@ describe("platform beta access-request actions (#177)", () => {
       const result = await reopenAccessRequestAction("req-1", "corrected identity", 2);
 
       expect(result).toEqual({ success: true, projection });
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/platform/beta/requests");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/platform/beta/access-requests");
     });
 
-    it("maps REOPEN_DENIED_ACCESS_STILL_EXISTS using the domain message and refreshed projection", async () => {
+    it("maps REOPEN_DENIED_ACCESS_STILL_EXISTS using the domain message and refreshed projection, and still revalidates since a note/snapshot/revision were committed", async () => {
       const projection = makeProjection({ status: "RESOLVED_EXISTING_ACCESS" });
       mockReopenAccessRequest.mockResolvedValue({
         ok: false,
@@ -329,10 +330,11 @@ describe("platform beta access-request actions (#177)", () => {
 
       expect(result).toEqual({
         success: false,
+        code: "REOPEN_DENIED_ACCESS_STILL_EXISTS",
         error: "Reopen denied: this identity still shows existing alliance access (Some Alliance).",
         conflict: projection,
       });
-      expect(mockRevalidatePath).not.toHaveBeenCalled();
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/platform/beta/access-requests");
     });
   });
 
@@ -393,7 +395,7 @@ describe("platform beta access-request actions (#177)", () => {
         expect.any(Function),
         "operator-1",
       );
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/platform/beta/requests");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/platform/beta/access-requests");
       expect(mockRevalidatePath).toHaveBeenCalledWith("/platform/beta");
     });
 
@@ -468,6 +470,7 @@ describe("platform beta access-request actions (#177)", () => {
 
       expect(result).toEqual({
         success: false,
+        code: "STALE_CONFLICT",
         error: expect.stringContaining("Someone else updated this request"),
         conflict,
       });
@@ -475,7 +478,7 @@ describe("platform beta access-request actions (#177)", () => {
       expect(mockRevalidatePath).not.toHaveBeenCalled();
     });
 
-    it("maps CONVERSION_BLOCKED with the blocked projection and message, without attempting delivery", async () => {
+    it("maps CONVERSION_BLOCKED with the blocked projection, conflictType, and message, still revalidates since a blocked event was committed, and never attempts delivery", async () => {
       const projection = makeProjection({ status: "PENDING" });
       mockConvertAccessRequestToInvitation.mockResolvedValue({
         ok: false,
@@ -489,10 +492,14 @@ describe("platform beta access-request actions (#177)", () => {
 
       expect(result).toEqual({
         success: false,
+        code: "CONVERSION_BLOCKED",
         error: "This identity already has alliance access.",
         conflict: projection,
+        conflictType: "EXISTING_ALLIANCE_ACCESS",
       });
       expect(mockDeliverBetaInvitationEmail).not.toHaveBeenCalled();
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/platform/beta/access-requests");
+      expect(mockRevalidatePath).not.toHaveBeenCalledWith("/platform/beta");
     });
 
     it("maps VALIDATION for an invalid beta wave without attempting delivery", async () => {
@@ -504,7 +511,7 @@ describe("platform beta access-request actions (#177)", () => {
 
       const result = await convertAccessRequestAction("req-1", "", 0);
 
-      expect(result).toEqual({ success: false, error: "Beta wave must not be blank" });
+      expect(result).toEqual({ success: false, code: "VALIDATION", error: "Beta wave must not be blank" });
       expect(mockDeliverBetaInvitationEmail).not.toHaveBeenCalled();
     });
 
@@ -513,7 +520,7 @@ describe("platform beta access-request actions (#177)", () => {
 
       const result = await convertAccessRequestAction("missing", "Wave 1", 0);
 
-      expect(result).toEqual({ success: false, error: "Access request not found" });
+      expect(result).toEqual({ success: false, code: "NOT_FOUND", error: "Access request not found" });
     });
   });
 });

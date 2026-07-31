@@ -348,6 +348,70 @@ describeIntegration("accessRequestInbox [integration]", () => {
       const options = await listBetaWaveOptions();
       expect(options.some((o) => o.id === null)).toBe(false);
     });
+
+    it("excludes legacy campaign values that violate convertAccessRequestToInvitation's own beta-wave bound (#177 review)", async () => {
+      const s = suffix();
+
+      // issueBetaInvitation (pre-#177) only ever does `.trim() || null` on
+      // campaign — no length bound, no control-character check — so these
+      // rows are directly seeded here to simulate what that looser path can
+      // still produce today.
+      const blank = await prisma.betaParticipant.create({ data: {} });
+      const oversized = await prisma.betaParticipant.create({ data: {} });
+      const withControlChar = await prisma.betaParticipant.create({ data: {} });
+      const untrimmed = await prisma.betaParticipant.create({ data: {} });
+      createdParticipantIds.push(blank.id, oversized.id, withControlChar.id, untrimmed.id);
+
+      const blankInv = await prisma.betaInvitation.create({
+        data: {
+          email: `blank-wave-${s}@example.test`,
+          token: `token-blank-${s}`,
+          code: `CBL${s.slice(0, 5).toUpperCase()}`,
+          expiresAt: new Date(Date.now() + 3600_000),
+          participantId: blank.id,
+          campaign: "   ",
+        },
+      });
+      const oversizedInv = await prisma.betaInvitation.create({
+        data: {
+          email: `oversized-wave-${s}@example.test`,
+          token: `token-oversized-${s}`,
+          code: `COV${s.slice(0, 5).toUpperCase()}`,
+          expiresAt: new Date(Date.now() + 3600_000),
+          participantId: oversized.id,
+          campaign: `Oversized-${s}-${"x".repeat(90)}`,
+        },
+      });
+      const controlCharInv = await prisma.betaInvitation.create({
+        data: {
+          email: `control-wave-${s}@example.test`,
+          token: `token-control-${s}`,
+          code: `CCT${s.slice(0, 5).toUpperCase()}`,
+          expiresAt: new Date(Date.now() + 3600_000),
+          participantId: withControlChar.id,
+          campaign: `Bad-${s}\nInjected`,
+        },
+      });
+      const untrimmedInv = await prisma.betaInvitation.create({
+        data: {
+          email: `untrimmed-wave-${s}@example.test`,
+          token: `token-untrimmed-${s}`,
+          code: `CUT${s.slice(0, 5).toUpperCase()}`,
+          expiresAt: new Date(Date.now() + 3600_000),
+          participantId: untrimmed.id,
+          campaign: `  Untrimmed-${s}  `,
+        },
+      });
+      createdInvitationIds.push(blankInv.id, oversizedInv.id, controlCharInv.id, untrimmedInv.id);
+
+      const options = await listBetaWaveOptions();
+      const relevant = options.filter((o) => o.name.includes(s));
+
+      expect(relevant.map((o) => o.name)).toEqual([`Untrimmed-${s}`]);
+      expect(options.some((o) => o.name.startsWith("Oversized-"))).toBe(false);
+      expect(options.some((o) => o.name.includes("Injected"))).toBe(false);
+      expect(options.some((o) => o.name === "")).toBe(false);
+    });
   });
 
   describe("checkAccessRequestConflict", () => {
