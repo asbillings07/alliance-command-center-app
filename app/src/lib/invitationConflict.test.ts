@@ -119,7 +119,14 @@ describe("classifyInvitationConflict", () => {
   });
 
   describe("precedence", () => {
-    it("prefers ACTIVE_PENDING_INVITATION over every other conflict", () => {
+    // Approved order (highest first): EXISTING_ALLIANCE_ACCESS ->
+    // IDENTITY_AMBIGUOUS -> ACTIVE_PENDING_INVITATION -> ALREADY_ACCEPTED ->
+    // EXISTING_PARTICIPANT_REISSUE. `all` is returned sorted in this same
+    // order, so `primary === all[0]` always holds — verified below rather
+    // than only documented, so a future reordering bug fails a test instead
+    // of only a code review.
+
+    it("prefers EXISTING_ALLIANCE_ACCESS over every other conflict, and returns `all` sorted so primary === all[0]", () => {
       const result = classifyInvitationConflict(
         baseFacts({
           pendingInvitation: { id: "inv-pending" },
@@ -132,8 +139,43 @@ describe("classifyInvitationConflict", () => {
           },
         }),
       );
-      expect(result.primary.type).toBe("ACTIVE_PENDING_INVITATION");
+      expect(result.primary.type).toBe("EXISTING_ALLIANCE_ACCESS");
       expect(result.all).toHaveLength(3);
+      expect(result.all[0]).toBe(result.primary);
+      expect(result.all.map((d) => d.type)).toEqual([
+        "EXISTING_ALLIANCE_ACCESS",
+        "IDENTITY_AMBIGUOUS",
+        "ACTIVE_PENDING_INVITATION",
+      ]);
+    });
+
+    it("prefers EXISTING_ALLIANCE_ACCESS over a stale ACTIVE_PENDING_INVITATION alone — no invitation/email is needed once access already exists, so telling the operator to resend would be wrong guidance", () => {
+      const result = classifyInvitationConflict(
+        baseFacts({
+          pendingInvitation: { id: "inv-pending" },
+          existingUser: { id: "user-1", email: "a@example.com", displayName: "Alice" },
+          memberships: [{ allianceId: "alliance-1", allianceName: "Alliance" }],
+        }),
+      );
+      expect(result.primary.type).toBe("EXISTING_ALLIANCE_ACCESS");
+      expect(result.all[0]).toBe(result.primary);
+      expect(result.all.map((d) => d.type)).toEqual(["EXISTING_ALLIANCE_ACCESS", "ACTIVE_PENDING_INVITATION"]);
+    });
+
+    it("prefers IDENTITY_AMBIGUOUS over a stale ACTIVE_PENDING_INVITATION alone — resend would claim through a participant the accept path itself rejects as ambiguous", () => {
+      const result = classifyInvitationConflict(
+        baseFacts({
+          pendingInvitation: { id: "inv-pending" },
+          resolvedParticipantIdentityAmbiguous: true,
+          participantCandidates: {
+            fromEmailHistory: { id: "p-a", identityAmbiguous: false },
+            fromUser: { id: "p-b", identityAmbiguous: false },
+          },
+        }),
+      );
+      expect(result.primary.type).toBe("IDENTITY_AMBIGUOUS");
+      expect(result.all[0]).toBe(result.primary);
+      expect(result.all.map((d) => d.type)).toEqual(["IDENTITY_AMBIGUOUS", "ACTIVE_PENDING_INVITATION"]);
     });
 
     it("prefers EXISTING_ALLIANCE_ACCESS over identity ambiguity and participant history", () => {

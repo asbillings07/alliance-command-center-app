@@ -155,8 +155,10 @@ describeIntegration("accessRequestTriage [integration]", () => {
     });
     expect(events).toHaveLength(1);
     expect(events[0]!.eventType).toBe("NOTE_ADDED");
-    expect(events[0]!.previousStatus).toBe("PENDING");
-    expect(events[0]!.nextStatus).toBe("PENDING");
+    // Non-transition event: previousStatus/nextStatus are NULL, not a
+    // same-value pair (#177 review).
+    expect(events[0]!.previousStatus).toBeNull();
+    expect(events[0]!.nextStatus).toBeNull();
   });
 
   it("declines a pending request and rejects a stale second decline", async () => {
@@ -254,8 +256,9 @@ describeIntegration("accessRequestTriage [integration]", () => {
     });
     expect(events).toHaveLength(2);
     expect(events[1]!.eventType).toBe("NOTE_ADDED");
-    expect(events[1]!.previousStatus).toBe("RESOLVED_EXISTING_ACCESS");
-    expect(events[1]!.nextStatus).toBe("RESOLVED_EXISTING_ACCESS");
+    // Non-transition event (#177 review).
+    expect(events[1]!.previousStatus).toBeNull();
+    expect(events[1]!.nextStatus).toBeNull();
   });
 
   it("allows reopening a resolved request once access is genuinely gone", async () => {
@@ -288,7 +291,7 @@ describeIntegration("accessRequestTriage [integration]", () => {
     const email = `convertme-${suffix()}@example.test`;
     const request = await makeAccessRequest(email);
 
-    const first = await convertAccessRequestToInvitation(request.id, operator.id, "Wave 1");
+    const first = await convertAccessRequestToInvitation(request.id, operator.id, "Wave 1", 0);
     expect(first.ok).toBe(true);
     if (!first.ok) return;
     createdInvitationIds.push(first.invitation.id);
@@ -299,7 +302,10 @@ describeIntegration("accessRequestTriage [integration]", () => {
     expect(first.projection.linkedInvitationId).toBe(first.invitation.id);
     expect(first.invitation.campaign).toBe("Wave 1");
 
-    const second = await convertAccessRequestToInvitation(request.id, operator.id, "Wave 1");
+    // A retry (e.g. a network double-send) replays the SAME stale revision
+    // it originally saw — the idempotent already-INVITED return must still
+    // succeed regardless, since it never reaches the revision check.
+    const second = await convertAccessRequestToInvitation(request.id, operator.id, "Wave 1", 0);
     expect(second.ok).toBe(true);
     if (!second.ok) return;
     expect(second.createdNow).toBe(false);
@@ -316,13 +322,58 @@ describeIntegration("accessRequestTriage [integration]", () => {
     expect(events[0]!.eventType).toBe("INVITED");
   });
 
+  it("rejects a stale conversion when the request was declined and reopened after the operator loaded it", async () => {
+    const opA = await makeOperator("op-a");
+    const opB = await makeOperator("op-b");
+    const request = await makeAccessRequest();
+
+    // Operator A loads the request while it's PENDING at revision 0 and
+    // starts reviewing it (e.g. leaves the tab open).
+    const staleRevisionSeenByA = 0;
+
+    // Meanwhile operator B declines it, then reopens it — status returns to
+    // PENDING, but the revision has moved past what A is still holding.
+    // Status alone can't catch this: A's Approve would otherwise see
+    // "PENDING" and proceed as if nothing happened.
+    const declined = await declineAccessRequest(request.id, opB.id, "Not now", 0);
+    expect(declined.ok).toBe(true);
+    if (!declined.ok) return;
+    const reopened = await reopenAccessRequest(
+      request.id,
+      opB.id,
+      "Actually, reconsider this one",
+      declined.projection.stateRevision,
+    );
+    expect(reopened.ok).toBe(true);
+    if (!reopened.ok) return;
+    expect(reopened.projection.status).toBe("PENDING");
+    expect(reopened.projection.stateRevision).toBe(2);
+
+    // A's stale Approve — still holding the original revision — must be
+    // rejected as a STALE_CONFLICT rather than silently converting a
+    // request whose PENDING state A never actually reviewed.
+    const staleConvert = await convertAccessRequestToInvitation(
+      request.id,
+      opA.id,
+      "Wave 1",
+      staleRevisionSeenByA,
+    );
+    expect(staleConvert).toMatchObject({ ok: false, code: "STALE_CONFLICT" });
+    if (staleConvert.ok || staleConvert.code !== "STALE_CONFLICT") return;
+    expect(staleConvert.conflict.status).toBe("PENDING");
+    expect(staleConvert.conflict.stateRevision).toBe(2);
+
+    const invitationCount = await prisma.betaInvitation.count({ where: { email: request.email } });
+    expect(invitationCount).toBe(0);
+  });
+
   it("blocks conversion and records CONVERSION_BLOCKED when the identity already has alliance access", async () => {
     const operator = await makeOperator();
     const email = `blocked-${suffix()}@example.test`;
     await makeUserWithAllianceAccess(email);
     const request = await makeAccessRequest(email);
 
-    const result = await convertAccessRequestToInvitation(request.id, operator.id, "Wave 1");
+    const result = await convertAccessRequestToInvitation(request.id, operator.id, "Wave 1", 0);
     expect(result).toMatchObject({ ok: false, code: "CONVERSION_BLOCKED", conflictType: "EXISTING_ALLIANCE_ACCESS" });
     if (result.ok || result.code !== "CONVERSION_BLOCKED") return;
     expect(result.projection.status).toBe("PENDING");
@@ -332,8 +383,9 @@ describeIntegration("accessRequestTriage [integration]", () => {
     });
     expect(events).toHaveLength(1);
     expect(events[0]!.eventType).toBe("CONVERSION_BLOCKED");
-    expect(events[0]!.previousStatus).toBe("PENDING");
-    expect(events[0]!.nextStatus).toBe("PENDING");
+    // Non-transition event (#177 review).
+    expect(events[0]!.previousStatus).toBeNull();
+    expect(events[0]!.nextStatus).toBeNull();
     expect(events[0]!.blockedConflictType).toBe("EXISTING_ALLIANCE_ACCESS");
 
     const invitationCount = await prisma.betaInvitation.count({ where: { email } });
@@ -344,10 +396,10 @@ describeIntegration("accessRequestTriage [integration]", () => {
     const operator = await makeOperator();
     const request = await makeAccessRequest();
 
-    const tooLong = await convertAccessRequestToInvitation(request.id, operator.id, "x".repeat(81));
+    const tooLong = await convertAccessRequestToInvitation(request.id, operator.id, "x".repeat(81), 0);
     expect(tooLong).toMatchObject({ ok: false, code: "VALIDATION" });
 
-    const blank = await convertAccessRequestToInvitation(request.id, operator.id, "   ");
+    const blank = await convertAccessRequestToInvitation(request.id, operator.id, "   ", 0);
     expect(blank).toMatchObject({ ok: false, code: "VALIDATION" });
 
     const projection = await prisma.accessRequestTriage.findUnique({ where: { accessRequestId: request.id } });

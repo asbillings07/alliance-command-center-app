@@ -85,8 +85,8 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
       data: {
         accessRequestId: ar.id,
         eventType: "NOTE_ADDED",
-        previousStatus: "PENDING",
-        nextStatus: "PENDING",
+        // NOTE_ADDED is a non-transition event: NULL/NULL, not a
+        // same-value pair (#177 review).
         noteText: "integration test note",
         actorEmail: "operator-int@example.test",
         createdAt: now,
@@ -461,8 +461,8 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
       data: {
         accessRequestId: ar.id,
         eventType: "NOTE_ADDED",
-        previousStatus: "PENDING",
-        nextStatus: "PENDING",
+        // NOTE_ADDED is a non-transition event: NULL/NULL, not a
+        // same-value pair (#177 review).
         noteText: "a second note added after the dry run was reviewed",
         actorEmail: "operator-int@example.test",
       },

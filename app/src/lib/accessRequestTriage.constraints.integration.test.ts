@@ -13,6 +13,8 @@ const describeIntegration = runDb ? describe.sequential : describe.skip;
  */
 describeIntegration("AccessRequestTriageEvent CHECK constraints [integration]", () => {
   const createdAccessRequestIds: string[] = [];
+  const createdInvitationIds: string[] = [];
+  const createdParticipantIds: string[] = [];
 
   let prisma: PrismaClient;
 
@@ -31,6 +33,14 @@ describeIntegration("AccessRequestTriageEvent CHECK constraints [integration]", 
       await prisma.accessRequest.deleteMany({ where: { id: { in: createdAccessRequestIds } } });
       createdAccessRequestIds.length = 0;
     }
+    if (createdInvitationIds.length > 0) {
+      await prisma.betaInvitation.deleteMany({ where: { id: { in: createdInvitationIds } } });
+      createdInvitationIds.length = 0;
+    }
+    if (createdParticipantIds.length > 0) {
+      await prisma.betaParticipant.deleteMany({ where: { id: { in: createdParticipantIds } } });
+      createdParticipantIds.length = 0;
+    }
   });
 
   async function makeAccessRequest() {
@@ -40,6 +50,24 @@ describeIntegration("AccessRequestTriageEvent CHECK constraints [integration]", 
     });
     createdAccessRequestIds.push(request.id);
     return request;
+  }
+
+  /** A minimal, real BetaInvitation — for constraint tests that need a valid FK target for linkedInvitationId. */
+  async function makeInvitation(email: string) {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const participant = await prisma.betaParticipant.create({ data: {} });
+    createdParticipantIds.push(participant.id);
+    const invitation = await prisma.betaInvitation.create({
+      data: {
+        email,
+        token: `token-${suffix}`,
+        code: `C${suffix.slice(0, 6).toUpperCase()}`,
+        expiresAt: new Date(Date.now() + 3600_000),
+        participantId: participant.id,
+      },
+    });
+    createdInvitationIds.push(invitation.id);
+    return invitation;
   }
 
   it("rejects a DECLINED event whose previousStatus is not PENDING", async () => {
@@ -65,9 +93,25 @@ describeIntegration("AccessRequestTriageEvent CHECK constraints [integration]", 
         data: {
           accessRequestId: request.id,
           eventType: "NOTE_ADDED",
+          // NOTE_ADDED is a non-transition event (previousStatus/nextStatus
+          // NULL) — see the dedicated transition-shape tests below.
+          noteText: "",
+          actorEmail: "actor@example.test",
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects a NOTE_ADDED event that carries a previousStatus/nextStatus pair instead of NULL/NULL", async () => {
+    const request = await makeAccessRequest();
+    await expect(
+      prisma.accessRequestTriageEvent.create({
+        data: {
+          accessRequestId: request.id,
+          eventType: "NOTE_ADDED",
           previousStatus: "PENDING",
           nextStatus: "PENDING",
-          noteText: "",
+          noteText: "a valid note",
           actorEmail: "actor@example.test",
         },
       }),
@@ -81,10 +125,29 @@ describeIntegration("AccessRequestTriageEvent CHECK constraints [integration]", 
         data: {
           accessRequestId: request.id,
           eventType: "CONVERSION_BLOCKED",
-          previousStatus: "PENDING",
-          nextStatus: "PENDING",
           blockedReason: "should not be allowed",
           blockedConflictType: "NONE",
+          actorEmail: "actor@example.test",
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects a CONVERSION_BLOCKED event that carries a previousStatus/nextStatus pair instead of NULL/NULL", async () => {
+    const request = await makeAccessRequest();
+    // Otherwise identical to the well-formed IDENTITY_AMBIGUOUS block below
+    // (same required evidence), isolating the transition-shape constraint as
+    // the only violation.
+    await expect(
+      prisma.accessRequestTriageEvent.create({
+        data: {
+          accessRequestId: request.id,
+          eventType: "CONVERSION_BLOCKED",
+          previousStatus: "PENDING",
+          nextStatus: "PENDING",
+          blockedReason: "identity ambiguous",
+          blockedConflictType: "IDENTITY_AMBIGUOUS",
+          conflictParticipantIdSnapshots: ["participant-a"],
           actorEmail: "actor@example.test",
         },
       }),
@@ -114,8 +177,6 @@ describeIntegration("AccessRequestTriageEvent CHECK constraints [integration]", 
         data: {
           accessRequestId: request.id,
           eventType: "CONVERSION_BLOCKED",
-          previousStatus: "PENDING",
-          nextStatus: "PENDING",
           blockedReason: "reissue conflict",
           blockedConflictType: "EXISTING_PARTICIPANT_REISSUE",
           conflictParticipantIdSnapshots: ["participant-a", "participant-b"],
@@ -147,8 +208,7 @@ describeIntegration("AccessRequestTriageEvent CHECK constraints [integration]", 
       data: {
         accessRequestId: request.id,
         eventType: "CONVERSION_BLOCKED",
-        previousStatus: "PENDING",
-        nextStatus: "PENDING",
+        // Non-transition event: NULL/NULL, not a PENDING/PENDING pair.
         blockedReason: "identity ambiguous",
         blockedConflictType: "IDENTITY_AMBIGUOUS",
         conflictParticipantIdSnapshots: ["participant-a"],
@@ -156,6 +216,23 @@ describeIntegration("AccessRequestTriageEvent CHECK constraints [integration]", 
       },
     });
     expect(event.id).toBeDefined();
+    expect(event.previousStatus).toBeNull();
+    expect(event.nextStatus).toBeNull();
+  });
+
+  it("accepts a well-formed NOTE_ADDED event with NULL previousStatus/nextStatus", async () => {
+    const request = await makeAccessRequest();
+    const event = await prisma.accessRequestTriageEvent.create({
+      data: {
+        accessRequestId: request.id,
+        eventType: "NOTE_ADDED",
+        noteText: "a valid note",
+        actorEmail: "actor@example.test",
+      },
+    });
+    expect(event.id).toBeDefined();
+    expect(event.previousStatus).toBeNull();
+    expect(event.nextStatus).toBeNull();
   });
 
   it("rejects an AccessRequestTriage projection stuck as INVITED without a linkedInvitationId", async () => {
@@ -169,5 +246,79 @@ describeIntegration("AccessRequestTriageEvent CHECK constraints [integration]", 
         data: { status: "INVITED" },
       }),
     ).rejects.toThrow();
+  });
+
+  it("rejects an AccessRequestTriage projection that is INVITED with a linkedInvitationId but no betaWave", async () => {
+    const request = await makeAccessRequest();
+    const invitation = await makeInvitation(request.email);
+    await expect(
+      prisma.accessRequestTriage.create({
+        data: {
+          accessRequestId: request.id,
+          status: "INVITED",
+          linkedInvitationId: invitation.id,
+          // betaWave intentionally omitted — INVITED requires both together.
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects an AccessRequestTriage projection that is PENDING but carries a non-null betaWave", async () => {
+    const request = await makeAccessRequest();
+    await expect(
+      prisma.accessRequestTriage.create({
+        data: { accessRequestId: request.id, status: "PENDING", betaWave: "Wave 1" },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects an AccessRequestTriage projection that is PENDING but carries a non-null currentReason", async () => {
+    const request = await makeAccessRequest();
+    await expect(
+      prisma.accessRequestTriage.create({
+        data: { accessRequestId: request.id, status: "PENDING", currentReason: "leftover from a prior decision" },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects an AccessRequestTriage projection that is DECLINED but has no currentReason", async () => {
+    const request = await makeAccessRequest();
+    await expect(
+      prisma.accessRequestTriage.create({
+        data: { accessRequestId: request.id, status: "DECLINED" },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects an AccessRequestTriage projection that is PENDING but still carries conflict-evidence snapshots", async () => {
+    const request = await makeAccessRequest();
+    await expect(
+      prisma.accessRequestTriage.create({
+        data: {
+          accessRequestId: request.id,
+          status: "PENDING",
+          conflictUserIdSnapshot: "user-1",
+          conflictUserEmail: "user@example.test",
+          conflictUserDisplayName: "User",
+          conflictAllianceIdSnapshot: "alliance-1",
+          conflictAllianceName: "Alliance",
+          conflictMembershipCount: 1,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("accepts a well-formed INVITED AccessRequestTriage projection with both linkedInvitationId and betaWave", async () => {
+    const request = await makeAccessRequest();
+    const invitation = await makeInvitation(request.email);
+    const projection = await prisma.accessRequestTriage.create({
+      data: {
+        accessRequestId: request.id,
+        status: "INVITED",
+        linkedInvitationId: invitation.id,
+        betaWave: "Wave 1",
+      },
+    });
+    expect(projection.accessRequestId).toBe(request.id);
   });
 });

@@ -111,6 +111,13 @@ const LATEST_ATTEMPT_ORDER: Prisma.BetaInvitationOrderByWithRelationInput[] = [
   { id: "desc" },
 ];
 
+/** Same shape/rationale as {@link LATEST_ATTEMPT_ORDER}: full tie-breakers so the selected pending invitation is deterministic. */
+const PENDING_INVITATION_ORDER: Prisma.BetaInvitationOrderByWithRelationInput[] = [
+  { issuedAt: "desc" },
+  { createdAt: "desc" },
+  { id: "desc" },
+];
+
 /**
  * Gather every fact `classifyInvitationConflict` needs for one email, inside
  * the caller's transaction. Scalar (single-identity) — see the module intro
@@ -130,7 +137,7 @@ export async function gatherInvitationConflictFacts(
       revokedAt: null,
       expiresAt: { gte: now },
     },
-    orderBy: { issuedAt: "desc" },
+    orderBy: PENDING_INVITATION_ORDER,
     select: { id: true },
   });
 
@@ -143,7 +150,10 @@ export async function gatherInvitationConflictFacts(
   if (existingUser) {
     const rows = await tx.allianceMembership.findMany({
       where: { userId: existingUser.id },
-      orderBy: { createdAt: "asc" },
+      // Full tie-breaker (not just createdAt) so the "first" membership
+      // used for EXISTING_ALLIANCE_ACCESS is deterministic even when two
+      // memberships share a createdAt timestamp.
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: { allianceId: true, alliance: { select: { name: true } } },
     });
     memberships = rows.map((r) => ({ allianceId: r.allianceId, allianceName: r.alliance.name }));
@@ -194,19 +204,28 @@ export async function gatherInvitationConflictFacts(
 
 /**
  * Pure classification over already-gathered facts. Precedence (highest
- * first), matching the pre-#177 production order for the first two checks
- * and splitting the former single "already a beta participant" branch into
- * three distinct, actionable outcomes:
+ * first) is chosen by what the operator should actually be told, not by
+ * which check happens to run first, and splits the former single "already a
+ * beta participant" branch into three distinct, actionable outcomes:
  *
- *   1. ACTIVE_PENDING_INVITATION — resend, don't re-invite.
- *   2. EXISTING_ALLIANCE_ACCESS — no invitation is needed at all; resolve.
- *   3. IDENTITY_AMBIGUOUS — the two identity lookups disagree (or a prior
- *      merge already flagged the participant); needs manual review.
+ *   1. EXISTING_ALLIANCE_ACCESS — no invitation is needed at all, full stop.
+ *      Must outrank a stale pending invite: telling an operator to "resend"
+ *      when the person already has access is actively wrong guidance.
+ *   2. IDENTITY_AMBIGUOUS — the two identity lookups disagree (or a prior
+ *      merge already flagged the participant); needs manual review. Must
+ *      outrank ACTIVE_PENDING_INVITATION: "resend" implies claiming through
+ *      the resolved participant, but the accept/claim path itself rejects
+ *      an ambiguous identity, so that recommendation would be a dead end.
+ *   3. ACTIVE_PENDING_INVITATION — resend, don't re-invite.
  *   4. ALREADY_ACCEPTED — the participant's latest attempt was accepted but
- *      they have no alliance yet (otherwise (2) would have already fired).
+ *      they have no alliance yet (otherwise (1) would have already fired).
  *   5. EXISTING_PARTICIPANT_REISSUE — latest attempt is terminal
  *      (expired/revoked); use Reissue.
  *   6. NONE — safe to issue.
+ *
+ * `all` is returned sorted in this same order, so `primary === all[0]`
+ * always holds for any caller that only reads `all` (e.g. a future batched
+ * read model) without re-deriving `primary` itself.
  */
 export function classifyInvitationConflict(
   facts: InvitationConflictFacts,
@@ -261,15 +280,15 @@ export function classifyInvitationConflict(
   }
 
   const precedence: InvitationConflictDetail["type"][] = [
-    "ACTIVE_PENDING_INVITATION",
     "EXISTING_ALLIANCE_ACCESS",
     "IDENTITY_AMBIGUOUS",
+    "ACTIVE_PENDING_INVITATION",
     "ALREADY_ACCEPTED",
     "EXISTING_PARTICIPANT_REISSUE",
   ];
-  const primary = all.slice().sort((a, b) => precedence.indexOf(a.type) - precedence.indexOf(b.type))[0]!;
+  const sorted = all.sort((a, b) => precedence.indexOf(a.type) - precedence.indexOf(b.type));
 
-  return { primary, all };
+  return { primary: sorted[0]!, all: sorted };
 }
 
 /** Map an {@link InvitationConflictDetail} onto the persisted enum for events/projections. */

@@ -287,8 +287,12 @@ export async function addAccessRequestNote(
       data: {
         accessRequestId,
         eventType: "NOTE_ADDED",
-        previousStatus: current.status,
-        nextStatus: current.status,
+        // NOTE_ADDED is a non-transition event — previousStatus/nextStatus
+        // are NULL (not a same-value pair) so history consumers can tell a
+        // real state transition from a note by the event shape itself,
+        // not by convention (#177 review).
+        previousStatus: null,
+        nextStatus: null,
         noteText: validation.value,
         actorUserId,
         actorEmail: actor.email,
@@ -297,10 +301,13 @@ export async function addAccessRequestNote(
       },
     });
 
+    // `currentReason` reflects the CURRENT decision (why this request is
+    // DECLINED/RESOLVED_EXISTING_ACCESS right now) — not the latest event's
+    // text. A note must never overwrite that decision reason, and must not
+    // populate currentReason while PENDING either. Only lastEvent* advances.
     const updated = await tx.accessRequestTriage.update({
       where: { accessRequestId },
       data: {
-        currentReason: truncateForProjection(validation.value, PROJECTION_REASON_MAX),
         lastEventAt: now,
         lastEventActorEmail: actor.email,
         lastEventActorDisplayName: actor.displayName,
@@ -565,7 +572,11 @@ export async function reopenAccessRequest(
         where: { accessRequestId },
         data: {
           status: "PENDING",
-          currentReason: truncateForProjection(validation.value, PROJECTION_REASON_MAX),
+          // `currentReason` is the current DECISION reason (why this
+          // request is declined/resolved), not the reopen reason — a
+          // successful reopen has no current decision anymore, so it clears
+          // rather than inheriting the reopen text (#177 review).
+          currentReason: null,
           stateRevision: current.stateRevision + 1,
           lastEventAt: now,
           lastEventActorEmail: actor.email,
@@ -603,7 +614,9 @@ export async function reopenAccessRequest(
         where: { accessRequestId },
         data: {
           status: "PENDING",
-          currentReason: truncateForProjection(validation.value, PROJECTION_REASON_MAX),
+          // Same rationale as the DECLINED reopen path above: the reopen
+          // reason is not a current decision reason.
+          currentReason: null,
           ...CLEARED_CONFLICT_PROJECTION_FIELDS,
           stateRevision: current.stateRevision + 1,
           lastEventAt: now,
@@ -630,8 +643,10 @@ export async function reopenAccessRequest(
       data: {
         accessRequestId,
         eventType: "NOTE_ADDED",
-        previousStatus: "RESOLVED_EXISTING_ACCESS",
-        nextStatus: "RESOLVED_EXISTING_ACCESS",
+        // Non-transition event — see the rationale on the other NOTE_ADDED
+        // writer above.
+        previousStatus: null,
+        nextStatus: null,
         noteText: deniedNote,
         ...buildConflictEventFields(accessDetail),
         actorUserId,
@@ -669,6 +684,7 @@ async function convertAccessRequestToInvitationWithTx(
   accessRequestId: string,
   actorUserId: string,
   betaWave: string,
+  lastSeenStateRevision: number,
 ): Promise<ConvertAccessRequestResult> {
   const request = await tx.accessRequest.findUnique({
     where: { id: accessRequestId },
@@ -721,6 +737,15 @@ async function convertAccessRequestToInvitationWithTx(
       code: "VALIDATION",
       message: `Only pending requests can be converted (current status: ${current.status})`,
     };
+  }
+
+  // Optimistic concurrency: the operator approved a specific PENDING
+  // revision they saw. Status alone can't detect e.g. decline -> reopen
+  // (status is PENDING again but the revision has moved) — without this
+  // check a stale Approve could silently convert a request the operator
+  // never actually reviewed at its current revision (#177 review).
+  if (lastSeenStateRevision !== current.stateRevision) {
+    return { ok: false, code: "STALE_CONFLICT", conflict: toProjection(current) };
   }
 
   try {
@@ -789,8 +814,12 @@ async function convertAccessRequestToInvitationWithTx(
       data: {
         accessRequestId,
         eventType: "CONVERSION_BLOCKED",
-        previousStatus: "PENDING",
-        nextStatus: "PENDING",
+        // Non-transition event — a blocked attempt never changes state, and
+        // is recorded as NULL/NULL rather than PENDING/PENDING so the event
+        // shape itself (not convention) distinguishes transitions from
+        // non-transitions (#177 review).
+        previousStatus: null,
+        nextStatus: null,
         blockedReason,
         blockedConflictType: conflictType,
         ...buildConflictEventFields(primary),
@@ -835,11 +864,18 @@ async function convertAccessRequestToInvitationWithTx(
  * itself AFTER this commits. `shouldDeliver: false` on an idempotent
  * re-conversion means "this call did not (re)trigger delivery" — it does
  * NOT mean delivery never happened; see ADR-014.
+ *
+ * `lastSeenStateRevision` guards against a stale Approve: status alone
+ * can't detect e.g. decline -> reopen (status returns to PENDING at a new
+ * revision), so a mismatch is checked AFTER the idempotent already-INVITED
+ * return (which must keep succeeding regardless of the caller's stale
+ * revision) but BEFORE creating anything new.
  */
 export async function convertAccessRequestToInvitation(
   accessRequestId: string,
   actorUserId: string,
   betaWave: string,
+  lastSeenStateRevision: number,
 ): Promise<ConvertAccessRequestResult> {
   const validation = validateBoundedText(betaWave, { min: WAVE_MIN, max: WAVE_MAX, label: "Beta wave" });
   if (!validation.ok) {
@@ -850,7 +886,13 @@ export async function convertAccessRequestToInvitation(
     try {
       return await prisma.$transaction(
         (tx) =>
-          convertAccessRequestToInvitationWithTx(tx, accessRequestId, actorUserId, validation.value),
+          convertAccessRequestToInvitationWithTx(
+            tx,
+            accessRequestId,
+            actorUserId,
+            validation.value,
+            lastSeenStateRevision,
+          ),
         { isolationLevel: "Serializable", maxWait: 5000, timeout: 10000 },
       );
     } catch (error) {

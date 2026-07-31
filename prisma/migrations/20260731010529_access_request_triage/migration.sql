@@ -139,13 +139,17 @@ ALTER TABLE "AccessRequestTriageEvent" ADD CONSTRAINT "AccessRequestTriageEvent_
 -- decision-history row (matches the BetaInvitationDeliveryAttempt/
 -- FeedbackTriageEvent precedent).
 
--- 1. Exact previousStatus/nextStatus pairs per eventType. A "blocked" attempt
---    never changes state (previousStatus = nextStatus = PENDING); REOPENED
---    always lands back on PENDING from either terminal state.
+-- 1. Exact previousStatus/nextStatus pairs per eventType. NOTE_ADDED and
+--    CONVERSION_BLOCKED are non-transition events (a note or a blocked
+--    attempt never changes state) and carry NULL/NULL rather than a
+--    same-value pair, so a history consumer can distinguish a real state
+--    transition from a non-transition by the event shape itself, not by
+--    convention. REOPENED always lands back on PENDING from either terminal
+--    state.
 ALTER TABLE "AccessRequestTriageEvent" ADD CONSTRAINT "AccessRequestTriageEvent_status_transition_check"
   CHECK (
-    ("eventType" = 'NOTE_ADDED' AND "previousStatus" IS NOT NULL AND "nextStatus" = "previousStatus")
-    OR ("eventType" = 'CONVERSION_BLOCKED' AND "previousStatus" = 'PENDING' AND "nextStatus" = 'PENDING')
+    ("eventType" = 'NOTE_ADDED' AND "previousStatus" IS NULL AND "nextStatus" IS NULL)
+    OR ("eventType" = 'CONVERSION_BLOCKED' AND "previousStatus" IS NULL AND "nextStatus" IS NULL)
     OR ("eventType" = 'INVITED' AND "previousStatus" = 'PENDING' AND "nextStatus" = 'INVITED')
     OR ("eventType" = 'DECLINED' AND "previousStatus" = 'PENDING' AND "nextStatus" = 'DECLINED')
     OR ("eventType" = 'REOPENED' AND "previousStatus" IN ('DECLINED', 'RESOLVED_EXISTING_ACCESS') AND "nextStatus" = 'PENDING')
@@ -322,21 +326,41 @@ ALTER TABLE "AccessRequestTriage" ADD CONSTRAINT "AccessRequestTriage_conflict_e
     ) IN (0, 6)
   );
 
--- RESOLVED_EXISTING_ACCESS always carries conflict evidence on the
--- projection; every other status leaves it null (cleared on a successful
--- REOPENED transition, since access no longer applies).
+-- Full conflict-evidence snapshot present IFF RESOLVED_EXISTING_ACCESS —
+-- not merely "required when resolved" (which would still let a stale
+-- snapshot survive on e.g. a PENDING row). `conflict_evidence_allornothing_check`
+-- above already forces the other 5 fields to agree with
+-- conflictUserIdSnapshot, so checking that one column here is sufficient to
+-- pin the whole group. A successful REOPENED transition clears these back
+-- to NULL precisely because this constraint requires it.
 ALTER TABLE "AccessRequestTriage" ADD CONSTRAINT "AccessRequestTriage_resolved_requires_evidence_check"
   CHECK (
     CASE WHEN "status" = 'RESOLVED_EXISTING_ACCESS'
       THEN "conflictUserIdSnapshot" IS NOT NULL
-      ELSE true
+      ELSE "conflictUserIdSnapshot" IS NULL
     END
   );
 
+-- linkedInvitationId AND betaWave present IFF INVITED — both are set
+-- together at conversion and must never survive (or be missing) at any
+-- other status.
 ALTER TABLE "AccessRequestTriage" ADD CONSTRAINT "AccessRequestTriage_linkedInvitation_status_check"
   CHECK (
     CASE WHEN "status" = 'INVITED'
-      THEN "linkedInvitationId" IS NOT NULL
-      ELSE "linkedInvitationId" IS NULL
+      THEN "linkedInvitationId" IS NOT NULL AND "betaWave" IS NOT NULL
+      ELSE "linkedInvitationId" IS NULL AND "betaWave" IS NULL
+    END
+  );
+
+-- currentReason (the CURRENT decision reason) present IFF DECLINED or
+-- RESOLVED_EXISTING_ACCESS. PENDING/INVITED must never carry a stale
+-- decision reason left over from a prior decline/resolve that was since
+-- reopened — accessRequestTriage.ts's reopen paths clear it to NULL
+-- specifically so this constraint holds.
+ALTER TABLE "AccessRequestTriage" ADD CONSTRAINT "AccessRequestTriage_currentReason_status_check"
+  CHECK (
+    CASE WHEN "status" IN ('DECLINED', 'RESOLVED_EXISTING_ACCESS')
+      THEN "currentReason" IS NOT NULL
+      ELSE "currentReason" IS NULL
     END
   );
