@@ -161,6 +161,49 @@ describeIntegration("accessRequestTriage [integration]", () => {
     expect(events[0]!.nextStatus).toBeNull();
   });
 
+  it("adding a note on a DECLINED request never overwrites the decision's currentReason or stateRevision", async () => {
+    const operator = await makeOperator();
+    const request = await makeAccessRequest();
+
+    const declined = await declineAccessRequest(request.id, operator.id, "Not a good fit", 0);
+    expect(declined.ok).toBe(true);
+    if (!declined.ok) return;
+    expect(declined.projection.currentReason).toBe("Not a good fit");
+
+    // A note with a different, equally valid non-null string must not
+    // clobber the actual decision reason — the DB CHECK constraint alone
+    // can't catch this, since both strings are valid non-null currentReason
+    // values (#177 review follow-up).
+    const noted = await addAccessRequestNote(request.id, operator.id, "Followed up on Discord, no reply yet");
+    expect(noted.ok).toBe(true);
+    if (!noted.ok) return;
+    expect(noted.projection.status).toBe("DECLINED");
+    expect(noted.projection.currentReason).toBe("Not a good fit");
+    expect(noted.projection.stateRevision).toBe(declined.projection.stateRevision);
+    expect(noted.projection.lastEventActorEmail).toBe(operator.email);
+  });
+
+  it("adding a note on a RESOLVED_EXISTING_ACCESS request never overwrites the resolution's currentReason, evidence, or stateRevision", async () => {
+    const operator = await makeOperator();
+    const email = `note-on-resolved-${suffix()}@example.test`;
+    const { user, alliance } = await makeUserWithAllianceAccess(email);
+    const request = await makeAccessRequest(email);
+
+    const resolved = await resolveExistingAccess(request.id, operator.id, "Already has access", 0);
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.projection.currentReason).toBe("Already has access");
+
+    const noted = await addAccessRequestNote(request.id, operator.id, "Confirmed via alliance roster too");
+    expect(noted.ok).toBe(true);
+    if (!noted.ok) return;
+    expect(noted.projection.status).toBe("RESOLVED_EXISTING_ACCESS");
+    expect(noted.projection.currentReason).toBe("Already has access");
+    expect(noted.projection.stateRevision).toBe(resolved.projection.stateRevision);
+    expect(noted.projection.conflictUserIdSnapshot).toBe(user.id);
+    expect(noted.projection.conflictAllianceIdSnapshot).toBe(alliance.id);
+  });
+
   it("declines a pending request and rejects a stale second decline", async () => {
     const opA = await makeOperator("op-a");
     const opB = await makeOperator("op-b");
