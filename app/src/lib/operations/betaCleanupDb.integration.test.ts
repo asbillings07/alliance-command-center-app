@@ -68,6 +68,33 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
     return row;
   }
 
+  /** An AccessRequest with real triage decision history (#177) — the shape a leader's note/decline leaves behind. */
+  async function makeAccessRequestWithTriage() {
+    const ar = await makeAccessRequest();
+    const now = new Date();
+    await prisma.accessRequestTriage.create({
+      data: {
+        accessRequestId: ar.id,
+        status: "PENDING",
+        stateRevision: 1,
+        lastEventAt: now,
+        lastEventActorEmail: "operator-int@example.test",
+      },
+    });
+    await prisma.accessRequestTriageEvent.create({
+      data: {
+        accessRequestId: ar.id,
+        eventType: "NOTE_ADDED",
+        // NOTE_ADDED is a non-transition event: NULL/NULL, not a
+        // same-value pair (#177 review).
+        noteText: "integration test note",
+        actorEmail: "operator-int@example.test",
+        createdAt: now,
+      },
+    });
+    return ar;
+  }
+
   async function makeAcceptedBetaInvitation() {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const user = await prisma.user.create({
@@ -242,6 +269,13 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
 
   afterEach(async () => {
     if (createdAccessRequestIds.length > 0) {
+      // AccessRequestTriage/AccessRequestTriageEvent are `onDelete: Restrict`
+      // against AccessRequest (#177) — unlike test tables under a real
+      // `Cascade` FK, leftover rows here (e.g. from an assertion that failed
+      // before the test's own execute() ran) would make this delete itself
+      // throw and mask the original failure.
+      await prisma.accessRequestTriageEvent.deleteMany({ where: { accessRequestId: { in: createdAccessRequestIds } } });
+      await prisma.accessRequestTriage.deleteMany({ where: { accessRequestId: { in: createdAccessRequestIds } } });
       await prisma.accessRequest.deleteMany({ where: { id: { in: createdAccessRequestIds } } });
       createdAccessRequestIds.length = 0;
     }
@@ -309,6 +343,67 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
     expect(remaining).toBe(0);
   });
 
+  it("integration: execute() deletes an AccessRequest's triage decision history as ordinary FK-ordered ops before the request itself (#177)", async () => {
+    const ar = await makeAccessRequestWithTriage();
+    const { args, manifest } = await manifestForAccessRequests([ar.id]);
+
+    // AccessRequestTriage/AccessRequestTriageEvent are `onDelete: Restrict`
+    // against AccessRequest — a silent Cascade would erase this decision
+    // history without ever showing up in deleteCounts. Ops-based deletion
+    // (not a side-channel count like FeedbackTriage's Cascade) means it must
+    // appear here explicitly, and in the right order or Postgres itself
+    // would reject the AccessRequest delete with a foreign-key violation.
+    expect(manifest.ops.map((o) => o.model)).toEqual([
+      "AccessRequestTriageEvent",
+      "AccessRequestTriage",
+      "AccessRequest",
+    ]);
+
+    const { deleteCounts } = await execute(args, manifest, identity);
+    expect(deleteCounts.AccessRequestTriageEvent).toBe(1);
+    expect(deleteCounts.AccessRequestTriage).toBe(1);
+    expect(deleteCounts.AccessRequest).toBe(1);
+
+    expect(await prisma.accessRequestTriageEvent.count({ where: { accessRequestId: ar.id } })).toBe(0);
+    expect(await prisma.accessRequestTriage.count({ where: { accessRequestId: ar.id } })).toBe(0);
+    expect(await prisma.accessRequest.count({ where: { id: ar.id } })).toBe(0);
+  });
+
+  it("integration: execute() cleans up an AccessRequest that was never triaged, without a projection-count mismatch (#177)", async () => {
+    // No AccessRequestTriage row exists for this request at all (an operator
+    // never opened/actioned it) — resolveStaleOps must only target
+    // AccessRequestTriage ids that actually have a projection row, or
+    // execute()'s strict affected===expected check would roll back the
+    // whole transaction over an op that could only ever affect 0 rows.
+    const ar = await makeAccessRequest();
+    const { args, manifest } = await manifestForAccessRequests([ar.id]);
+
+    expect(manifest.ops.some((o) => o.model === "AccessRequestTriage")).toBe(false);
+    expect(manifest.ops.some((o) => o.model === "AccessRequestTriageEvent")).toBe(false);
+
+    const { deleteCounts } = await execute(args, manifest, identity);
+    expect(deleteCounts.AccessRequest).toBe(1);
+    expect(deleteCounts.AccessRequestTriage).toBeUndefined();
+
+    expect(await prisma.accessRequest.count({ where: { id: ar.id } })).toBe(0);
+  });
+
+  it("integration: runVerify() correctly targets AccessRequestTriage by its own primary key (accessRequestId, not id) (#177)", async () => {
+    const ar = await makeAccessRequestWithTriage();
+    const { args, manifest } = await manifestForAccessRequests([ar.id]);
+
+    await execute(args, manifest, identity);
+
+    const manifestPath = join(tmpdir(), `beta-cleanup-manifest-art-verify-${Date.now()}.json`);
+    manifestPaths.push(manifestPath);
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+
+    const result = await runVerify(manifestPath);
+    expect(result.ok).toBe(true);
+    expect(result.lines.some((l) => l.includes("OK:   AccessRequestTriage delete"))).toBe(true);
+    expect(result.lines.some((l) => l.includes("OK:   AccessRequestTriageEvent delete"))).toBe(true);
+  });
+
   it("integration: execute() refuses and applies nothing when the database changed since the dry run", async () => {
     const a = await makeAccessRequest();
     const b = await makeAccessRequest();
@@ -350,6 +445,34 @@ describe.skipIf(!runDb)("betaCleanupDb [integration]", () => {
 
     const remaining = await prisma.accessRequest.count({ where: { id: { in: [a.id, b.id] } } });
     expect(remaining).toBe(2);
+  });
+
+  it("integration: execute() refuses and applies nothing when a new decision-history event is appended after the dry run (#177)", async () => {
+    const ar = await makeAccessRequestWithTriage();
+    const { args, manifest } = await manifestForAccessRequests([ar.id]);
+
+    // Simulate an operator adding another note between dry-run review and
+    // execute: the live AccessRequestTriageEvent op would now have 2 ids
+    // instead of the reviewed 1. A stale manifest must never partially
+    // delete an incomplete slice of someone's decision history — it has to
+    // reject the whole run via the checksum mismatch, same as any other
+    // live-plan drift.
+    await prisma.accessRequestTriageEvent.create({
+      data: {
+        accessRequestId: ar.id,
+        eventType: "NOTE_ADDED",
+        // NOTE_ADDED is a non-transition event: NULL/NULL, not a
+        // same-value pair (#177 review).
+        noteText: "a second note added after the dry run was reviewed",
+        actorEmail: "operator-int@example.test",
+      },
+    });
+
+    await expect(execute(args, manifest, identity)).rejects.toThrow(/Refusing to execute/);
+
+    expect(await prisma.accessRequestTriageEvent.count({ where: { accessRequestId: ar.id } })).toBe(2);
+    expect(await prisma.accessRequestTriage.count({ where: { accessRequestId: ar.id } })).toBe(1);
+    expect(await prisma.accessRequest.count({ where: { id: ar.id } })).toBe(1);
   });
 
   it("integration: concurrent execute() of the same manifest lets exactly one succeed", async () => {

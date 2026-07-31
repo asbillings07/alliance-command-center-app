@@ -32,6 +32,25 @@ export type BetaInvitationDeliveryActorSnapshot = {
 };
 
 /**
+ * Thrown by {@link resolveDeliveryActorSnapshot} when the acting user no
+ * longer exists. Always thrown *before* any transport call is attempted, so
+ * callers (#177's conversion action) can classify this as
+ * `DeliveryDisposition.NOT_ATTEMPTED` — delivery was never even tried — and
+ * distinguish it from an `UNKNOWN` outcome that occurred mid- or post-send.
+ */
+export class DeliveryActorUnavailableError extends Error {
+  constructor(userId: string) {
+    super(
+      "Cannot deliver beta invitation email: the acting user no longer exists",
+    );
+    this.name = "DeliveryActorUnavailableError";
+    this.userId = userId;
+  }
+
+  readonly userId: string;
+}
+
+/**
  * Resolve and snapshot the acting user's identity *before* attempting
  * delivery. Callers must do this ahead of invoking the transport (#175
  * review finding): looking the actor up only after send() would let a race
@@ -39,7 +58,7 @@ export type BetaInvitationDeliveryActorSnapshot = {
  * otherwise-successful delivery's audit row, since a foreign key can't be
  * inserted against an already-deleted user. Failing closed here — refusing
  * to send on behalf of an actor who no longer exists — is safer than
- * sending un-attributably.
+ * sending un-attributably. Throws {@link DeliveryActorUnavailableError}.
  */
 export async function resolveDeliveryActorSnapshot(
   userId: string,
@@ -50,9 +69,7 @@ export async function resolveDeliveryActorSnapshot(
   });
 
   if (!user) {
-    throw new Error(
-      "Cannot deliver beta invitation email: the acting user no longer exists",
-    );
+    throw new DeliveryActorUnavailableError(userId);
   }
 
   return { email: user.email, displayName: user.displayName ?? null };

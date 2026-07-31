@@ -16,6 +16,11 @@ import {
   resolveDeliveryActorSnapshot,
   type BetaInvitationDeliveryTriggerInput,
 } from "./betaInvitationDelivery";
+import {
+  resolveInvitationConflict,
+  BetaInvitationConflictError,
+  type InvitationConflictResolution,
+} from "./invitationConflict";
 
 function generateBetaCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -172,9 +177,11 @@ export async function assertInvitationIsLatestAttempt(
 }
 
 /**
- * Postgres serialization failure (40001 / Prisma P2034).
+ * Postgres serialization failure (40001 / Prisma P2034). Exported for
+ * accessRequestTriage.ts's convert flow (#177), which retries its own
+ * Serializable transaction with the same policy as issueBetaInvitation.
  */
-function isSerializationFailure(error: unknown): boolean {
+export function isSerializationFailure(error: unknown): boolean {
   if (
     error instanceof PrismaClientKnownRequestError &&
     error.code === "P2034"
@@ -439,14 +446,65 @@ export type IssueBetaInvitationOptions = {
 };
 
 /**
+ * Core issuance logic, executed inside a caller-supplied transaction (#177).
+ * Extracted from `issueBetaInvitation` so `convertAccessRequestToInvitation`
+ * (accessRequestTriage.ts) can create the invitation, update triage state,
+ * and append its INVITED event as one atomic unit — instead of issuing
+ * through a nested top-level `prisma.$transaction`.
+ *
+ * Business rules (owned entirely by this service, via invitationConflict.ts):
+ * - Only one pending invitation per email at a time
+ * - Cannot invite a user who already has alliance access
+ * - Cannot invite an identity with an ambiguous or already-resolved
+ *   BetaParticipant history (see invitationConflict.ts for the full,
+ *   precedence-ordered classification)
+ *
+ * Throws {@link BetaInvitationConflictError} for every conflict this module
+ * can classify. Callers that need to react to *which* conflict occurred
+ * (rather than letting it propagate) should catch that type specifically —
+ * never a bare `Error` — so unrelated failures (constraint violations,
+ * serialization failures) still propagate untouched.
+ */
+export async function issueBetaInvitationWithTx(
+  tx: Prisma.TransactionClient,
+  email: string,
+  options?: IssueBetaInvitationOptions,
+): Promise<BetaInvitation> {
+  const normalizedEmail = normalizeEmail(email);
+  const now = new Date();
+  const token = randomUUID();
+  const code = generateBetaCode();
+
+  const resolution = await resolveInvitationConflict(tx, normalizedEmail);
+  if (resolution.primary.type !== "NONE") {
+    throw new BetaInvitationConflictError(
+      resolution as Exclude<InvitationConflictResolution, { primary: { type: "NONE" } }>,
+    );
+  }
+
+  const participant = await tx.betaParticipant.create({ data: {} });
+
+  return tx.betaInvitation.create({
+    data: {
+      email: normalizedEmail,
+      token,
+      code,
+      notes: options?.notes?.trim() || null,
+      campaign: options?.campaign?.trim() || null,
+      expiresAt: addDays(now, 30),
+      createdAt: now,
+      issuedAt: now,
+      participantId: participant.id,
+      issuedByUserId: options?.issuedByUserId ?? null,
+    },
+  });
+}
+
+/**
  * Issue a beta invitation for an email address.
  *
  * BetaInvitation is a history table: every issuance creates a new record,
  * preserving revoked and expired invitations for audit history.
- *
- * Business rules (owned entirely by this service):
- * - Only one pending invitation per email at a time
- * - Cannot invite a user who already has alliance access
  *
  * @param email - The email address to invite
  * @param options - Optional notes and campaign/wave label
@@ -455,69 +513,9 @@ export async function issueBetaInvitation(
   email: string,
   options?: IssueBetaInvitationOptions
 ): Promise<IssueBetaInvitationResult> {
-  const normalizedEmail = normalizeEmail(email);
-
-  const now = new Date();
-  const token = randomUUID();
-  const code = generateBetaCode();
-
   const issueAttempt = () =>
     prisma.$transaction(
-      async (tx) => {
-        // Only one pending invitation per email
-        const pending = await tx.betaInvitation.findFirst({
-          where: pendingInvitationWhere(normalizedEmail, now),
-          orderBy: { issuedAt: "desc" },
-        });
-        if (pending) {
-          throw new Error(
-            "This person already has an active invitation — resend it instead of creating a new one",
-          );
-        }
-
-        // Cannot invite a user who already has alliance access
-        const existingUser = await tx.user.findUnique({
-          where: { email: normalizedEmail },
-        });
-
-        if (existingUser) {
-          const membership = await tx.allianceMembership.findFirst({
-            where: { userId: existingUser.id },
-          });
-
-          if (membership) {
-            throw new Error("This user already has access to an alliance");
-          }
-        }
-
-        const existingParticipantId = await findExistingParticipantIdForIdentity(
-          tx,
-          normalizedEmail,
-          existingUser?.id ?? null,
-        );
-        if (existingParticipantId) {
-          throw new Error(
-            "This person is already a beta participant — use Reissue on their latest attempt instead of creating a new invitation",
-          );
-        }
-
-        const participant = await tx.betaParticipant.create({ data: {} });
-
-        return tx.betaInvitation.create({
-          data: {
-            email: normalizedEmail,
-            token,
-            code,
-            notes: options?.notes?.trim() || null,
-            campaign: options?.campaign?.trim() || null,
-            expiresAt: addDays(now, 30),
-            createdAt: now,
-            issuedAt: now,
-            participantId: participant.id,
-            issuedByUserId: options?.issuedByUserId ?? null,
-          },
-        });
-      },
+      (tx) => issueBetaInvitationWithTx(tx, email, options),
       { isolationLevel: "Serializable" }
     );
 
@@ -542,9 +540,11 @@ export async function issueBetaInvitation(
 }
 
 /**
- * Build the invitation result with URL.
+ * Build the invitation result with URL. Exported for `accessRequestTriage.ts`
+ * (#177), which builds the same shape after issuing inside its own
+ * transaction via {@link issueBetaInvitationWithTx}.
  */
-function buildInvitationResult(
+export function buildInvitationResult(
   invitation: BetaInvitation
 ): IssueBetaInvitationResult {
   return {
@@ -1073,7 +1073,6 @@ export async function validateBetaCode(
 
 import {
   claimBetaParticipantUserIdWithTx,
-  findExistingParticipantIdForIdentity,
   mergeBetaParticipantsWithTx,
   pickMergeSurvivorParticipantId,
   PARTICIPANT_SURVIVOR_ORDER,

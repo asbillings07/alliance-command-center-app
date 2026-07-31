@@ -19,6 +19,9 @@ import {
   allianceKeepListViolations,
   canonicalJson,
   EXECUTION_CONFIRMATION_PHRASE,
+  legalModelsForVersion,
+  MANIFEST_VERSION,
+  KNOWN_MANIFEST_VERSIONS,
   type TenantResolved,
   type UserResolved,
   type CleanupOp,
@@ -523,5 +526,79 @@ describe("manifest integrity + shape validation", () => {
     expect(() => validateManifestShape(badEmails)).toThrow(/keep.userEmails.*arrays of strings/);
     const badAlliances = { ...manifest, keep: { userEmails: [], allianceIds: [null] } };
     expect(() => validateManifestShape(badAlliances)).toThrow(/keep.userEmails.*arrays of strings/);
+  });
+
+  it("validateManifestShape rejects an unknown manifest version", () => {
+    const manifest = buildManifest(args);
+    const bad = { ...manifest, version: 3 };
+    expect(() => validateManifestShape(bad)).toThrow(/version 3.*unsupported/);
+  });
+
+  it("validateManifestShape accepts a v1 manifest containing only v1-legal models (old manifests remain independently verifiable)", () => {
+    const manifest = buildManifest(args);
+    const v1 = { ...manifest, version: 1 };
+    expect(() => validateManifestShape(v1)).not.toThrow();
+  });
+
+  it("validateManifestShape rejects a v1 manifest referencing a #177 model that didn't exist in v1's grammar", () => {
+    const manifest = buildManifest(args);
+    const bad = {
+      ...manifest,
+      version: 1,
+      ops: [{ kind: "delete", model: "AccessRequestTriage", field: null, ids: ["ar1"] }],
+    };
+    expect(() => validateManifestShape(bad)).toThrow(/model is invalid for manifest version 1/);
+  });
+
+  it("validateManifestShape accepts a v2 manifest referencing the #177 models", () => {
+    const manifest = buildManifest(args);
+    const good = {
+      ...manifest,
+      ops: [
+        { kind: "delete", model: "AccessRequestTriageEvent", field: null, ids: ["ev1"] },
+        { kind: "delete", model: "AccessRequestTriage", field: null, ids: ["ar1"] },
+      ],
+    };
+    expect(() => validateManifestShape(good)).not.toThrow();
+  });
+});
+
+describe("MANIFEST_VERSION / legalModelsForVersion (#177)", () => {
+  it("verifyManifest refuses to execute a v1 manifest even though its ops are otherwise byte-identical to a fresh v2 plan", () => {
+    const tenantPlan = mergePlans([assembleTenantPlan(tenant)]);
+    const args = {
+      cutoff: null,
+      dbIdentity: "ep-prod-000000",
+      keep: { userEmails: [], allianceIds: [] },
+      plan: tenantPlan,
+    };
+    const manifest = buildManifest(args);
+    const staleV1Manifest = { ...manifest, version: 1 as const };
+
+    const verdict = verifyManifest(staleV1Manifest, {
+      dbIdentity: args.dbIdentity,
+      payload: toChecksumPayload(args),
+    });
+
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) {
+      expect(verdict.reason).toMatch(/out of date/);
+      expect(verdict.reason).toMatch(/regenerate a fresh dry run/);
+    }
+  });
+
+  it("legalModelsForVersion(1) excludes the #177 triage models; legalModelsForVersion(2) includes them", () => {
+    expect(legalModelsForVersion(1)).not.toContain("AccessRequestTriage");
+    expect(legalModelsForVersion(1)).not.toContain("AccessRequestTriageEvent");
+    expect(legalModelsForVersion(2)).toContain("AccessRequestTriage");
+    expect(legalModelsForVersion(2)).toContain("AccessRequestTriageEvent");
+  });
+
+  it("MANIFEST_VERSION is 2, matching the current (v2) grammar", () => {
+    expect(MANIFEST_VERSION).toBe(2);
+  });
+
+  it("KNOWN_MANIFEST_VERSIONS includes both the historical v1 and current v2 formats", () => {
+    expect(KNOWN_MANIFEST_VERSIONS).toEqual([1, 2]);
   });
 });

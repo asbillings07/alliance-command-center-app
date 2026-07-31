@@ -60,6 +60,55 @@ export async function resolveCanonicalParticipantIdForIssuance(
   return created.id;
 }
 
+/** Non-throwing view of both identity-resolution candidates (#177). */
+export type ParticipantIdentityCandidates = {
+  fromEmailHistory: { id: string; identityAmbiguous: boolean } | null;
+  fromUser: { id: string; identityAmbiguous: boolean } | null;
+};
+
+/**
+ * Resolve both possible participant candidates for an identity — by email
+ * invitation history, and by the linked user account — without throwing when
+ * they disagree (#177). This is the fact-gathering primitive the invitation
+ * conflict classifier (`invitationConflict.ts`) needs: a mismatch here is a
+ * genuine `IDENTITY_AMBIGUOUS` conflict to classify and surface, not a reason
+ * to abort the caller's transaction. `findExistingParticipantIdForIdentity`
+ * below still fails closed for its own callers; this sibling just reports
+ * what it found.
+ */
+export async function findParticipantIdentityCandidates(
+  tx: Prisma.TransactionClient,
+  normalizedEmail: string,
+  existingUserId: string | null = null,
+): Promise<ParticipantIdentityCandidates> {
+  const fromEmailHistory = await tx.betaParticipant.findFirst({
+    where: {
+      invitations: { some: { email: normalizedEmail } },
+    },
+    orderBy: PARTICIPANT_SURVIVOR_ORDER,
+    select: { id: true, identityAmbiguous: true },
+  });
+
+  let fromUser: { id: string; identityAmbiguous: boolean } | null = null;
+  let userId = existingUserId;
+  if (!userId) {
+    const existingUser = await tx.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true },
+    });
+    userId = existingUser?.id ?? null;
+  }
+  if (userId) {
+    fromUser = await tx.betaParticipant.findFirst({
+      where: { userId },
+      orderBy: PARTICIPANT_SURVIVOR_ORDER,
+      select: { id: true, identityAmbiguous: true },
+    });
+  }
+
+  return { fromEmailHistory, fromUser };
+}
+
 /**
  * Resolve an existing canonical participant for an identity without creating one.
  * Used to reject generic "invite new participant" when history already exists (#174).

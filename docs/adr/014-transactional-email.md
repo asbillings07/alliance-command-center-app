@@ -103,6 +103,24 @@ This means a database outage landing in the narrow window between a successful t
 
 **Rollback strategy.** The `BetaInvitationDeliveryAttempt` migration is purely additive — a new table and two new enums, with no `ALTER`/`DROP` of any pre-existing column or table. Per `docs/operations/rollback.md`'s "Option 1: Compensation Migration," rolling it back in production is just a forward-only migration that drops what it added (`DROP TABLE "BetaInvitationDeliveryAttempt"`, then the two enums). Because the audit-write is already isolated behind its own `try/catch` (above), that compensation migration is safe to apply even while application code is still deployed: `recordBetaInvitationDeliveryAttempt` degrades to "unrecorded" rather than breaking invitation delivery. This is validated end-to-end (compensation migration applied, then the forward migration re-applied with every constraint intact) against a disposable isolated database in `betaInvitationDeliveryMigration.integration.test.ts`.
 
+### Access request conversion delivery (#177)
+
+Converting an approved `AccessRequest` into a `BetaInvitation` (`convertAccessRequestToInvitation`, `app/src/lib/accessRequestTriage.ts`) is split the same way persistence and delivery are split everywhere else in this ADR: the Serializable transaction commits the invitation, the `AccessRequestTriage` projection, and the `INVITED` event together — it never calls `deliverBetaInvitationEmail`. The caller (the platform action layer, wired in issue #177's follow-on PR) is responsible for triggering delivery *after* that transaction commits, using the result's disposition to decide whether to:
+
+```ts
+{ createdNow: boolean; shouldDeliver: boolean }
+```
+
+- `createdNow: true, shouldDeliver: true` — this call just created the invitation; the caller must attempt delivery now.
+- `createdNow: false, shouldDeliver: false` — an idempotent re-conversion (retry, double-click, race) of an already-`INVITED` request. It returns the same invitation and existing `INVITED` event untouched. `shouldDeliver: false` means **this call did not (re)trigger delivery** — it does not mean delivery never happened, or that it failed. Re-sending here would violate the same non-duplication expectation `resendInvitationEmailAction` already protects for ordinary resends.
+
+**This introduces a delivery boundary strictly after commit**, alongside the existing post-send/pre-audit-write window documented above under "Delivery history (#175)". Two distinct gaps follow from it, and both must be described to an operator using the established **"Not recorded"** language — never "not sent" or "not yet attempted," since neither can be asserted from what's actually stored:
+
+1. **Pre-transport, deterministic:** `resolveDeliveryActorSnapshot` looks up the acting user *before* any transport call, to snapshot who issued the invitation for the email. If that user no longer exists (e.g. their account was deleted between conversion and delivery), it throws `DeliveryActorUnavailableError` (`app/src/lib/betaInvitationDelivery.ts`) before transport is ever reached. The caller can catch this specifically and report it as "not attempted" — the fact that transport never ran is known with certainty here, unlike the crash window below.
+2. **Post-commit, non-deterministic:** the conversion transaction has already committed — the invitation and its `INVITED` event are durable, real history — but the process crashes, is redeployed, or otherwise never reaches the `deliverBetaInvitationEmail` call at all (or that call fails for a reason other than case 1). No `BetaInvitationDeliveryAttempt` row exists, and unlike case 1, it is genuinely *unknown* whether transport ran: report delivery status as unknown and point at the existing **Resend** action rather than silently retrying or silently doing nothing. As with the pre-existing #175 gap, this never invalidates the invitation — the invitation is still the source of truth — and recovery is always an explicit resend, never an inferred one.
+
+Both gaps are accepted for the same reason as the pre-existing #175 window: closing them fully needs an outbox (see "Future Evolution" above), which beta volume does not yet justify. The action layer surfaces a `DeliveryDisposition` distinguishing "attempted" (with the real `EmailStatus`), "not retried — idempotent" (case matching `shouldDeliver: false`), "not attempted" (case 1), and "unknown" (case 2), so the UI never conflates a genuinely idempotent no-op with an unrecorded delivery gap.
+
 ### Password reset notifications (follow-on)
 
 Password reset (the request + set-new-password flow) is implemented on top of

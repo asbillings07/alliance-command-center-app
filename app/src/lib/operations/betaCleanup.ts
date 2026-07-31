@@ -37,10 +37,16 @@ export type CleanupModel =
   | "Feedback"
   | "AccessRequest"
   | "Alliance"
-  | "User";
+  | "User"
+  // #177: AccessRequestTriage/AccessRequestTriageEvent are Restrict-FK'd to
+  // AccessRequest, so deleting an AccessRequest now requires deleting these
+  // first, as ordinary FK-ordered plan ops (see resolveStaleOps). Legal only
+  // under manifest version 2 — see legalModelsForVersion.
+  | "AccessRequestTriage"
+  | "AccessRequestTriageEvent";
 
-/** Runtime mirror of {@link CleanupModel}, for validating manifests loaded from disk. */
-const CLEANUP_MODELS: readonly CleanupModel[] = [
+/** The original (v1) CleanupModel grammar — kept so a v1 manifest can still be independently `--verify`'d. */
+const CLEANUP_MODELS_V1: readonly CleanupModel[] = [
   "PasswordResetToken",
   "EmailChangeRequest",
   "MemberMetricEntry",
@@ -57,6 +63,35 @@ const CLEANUP_MODELS: readonly CleanupModel[] = [
   "Alliance",
   "User",
 ];
+
+/** v2 (current) CleanupModel grammar: v1 plus the #177 triage models. */
+const CLEANUP_MODELS_V2: readonly CleanupModel[] = [
+  ...CLEANUP_MODELS_V1,
+  "AccessRequestTriage",
+  "AccessRequestTriageEvent",
+];
+
+/** Every manifest.version this tool can still make sense of (oldest first). */
+export const KNOWN_MANIFEST_VERSIONS: readonly number[] = [1, 2];
+
+/**
+ * The legal `CleanupModel` set for a given manifest version. Adding a model
+ * to the grammar is a semantic format change even when the JSON shape is
+ * unchanged, so each version freezes its own legal set rather than always
+ * validating against the newest one — a v1 manifest predates
+ * AccessRequestTriage/AccessRequestTriageEvent and must never be treated as
+ * if it could have referenced them.
+ */
+export function legalModelsForVersion(version: number): readonly CleanupModel[] {
+  switch (version) {
+    case 1:
+      return CLEANUP_MODELS_V1;
+    case 2:
+      return CLEANUP_MODELS_V2;
+    default:
+      return CLEANUP_MODELS_V2;
+  }
+}
 
 /**
  * A single ordered plan step.
@@ -294,7 +329,17 @@ export interface ChecksumPayload {
   ops: Array<{ kind: OpKind; model: CleanupModel; field: string | null; ids: string[] }>;
 }
 
-export const MANIFEST_VERSION = 1 as const;
+/**
+ * Current manifest format version. Bumped to 2 for #177: adding
+ * AccessRequestTriage/AccessRequestTriageEvent to the legal `CleanupModel`
+ * grammar is a semantic format change. `--execute` always requires exactly
+ * this version (see `verifyManifest`, which is never version-relaxed); a v1
+ * manifest must be regenerated as a fresh dry run before it can execute.
+ * `--verify` (via `validateManifestShape`) accepts any version in
+ * {@link KNOWN_MANIFEST_VERSIONS} so old manifests remain independently
+ * auditable.
+ */
+export const MANIFEST_VERSION = 2 as const;
 
 /** Stable payload the checksum is computed over (order-independent for ids). */
 export function toChecksumPayload(args: {
@@ -376,7 +421,10 @@ export function verifyManifest(
   fresh: { dbIdentity: string; payload: ChecksumPayload }
 ): ManifestVerdict {
   if (manifest.version !== MANIFEST_VERSION) {
-    return { ok: false, reason: `manifest version ${manifest.version} is unsupported` };
+    return {
+      ok: false,
+      reason: `manifest version ${manifest.version} is out of date (execution requires version ${MANIFEST_VERSION}); regenerate a fresh dry run`,
+    };
   }
   if (manifest.dbIdentity !== fresh.dbIdentity) {
     return {
@@ -412,9 +460,10 @@ function manifestShapeProblem(value: unknown): string | null {
   if (!value || typeof value !== "object") return "manifest is not an object";
   const m = value as Record<string, unknown>;
 
-  if (m.version !== MANIFEST_VERSION) {
-    return `manifest version ${JSON.stringify(m.version)} is unsupported (expected ${MANIFEST_VERSION})`;
+  if (typeof m.version !== "number" || !KNOWN_MANIFEST_VERSIONS.includes(m.version)) {
+    return `manifest version ${JSON.stringify(m.version)} is unsupported (known versions: ${KNOWN_MANIFEST_VERSIONS.join(", ")})`;
   }
+  const legalModels = legalModelsForVersion(m.version);
   if (typeof m.checksum !== "string" || !/^[0-9a-f]{64}$/.test(m.checksum)) {
     return "checksum is missing or is not a 64-character hex string";
   }
@@ -449,8 +498,8 @@ function manifestShapeProblem(value: unknown): string | null {
     if (o.kind !== "delete" && o.kind !== "nullify" && o.kind !== "revoke") {
       return `ops[${i}].kind is invalid: ${JSON.stringify(o.kind)}`;
     }
-    if (typeof o.model !== "string" || !CLEANUP_MODELS.includes(o.model as CleanupModel)) {
-      return `ops[${i}].model is invalid: ${JSON.stringify(o.model)}`;
+    if (typeof o.model !== "string" || !legalModels.includes(o.model as CleanupModel)) {
+      return `ops[${i}].model is invalid for manifest version ${m.version}: ${JSON.stringify(o.model)}`;
     }
     if (o.kind === "delete") {
       if (o.field !== null) return `ops[${i}].field must be null for a delete op`;

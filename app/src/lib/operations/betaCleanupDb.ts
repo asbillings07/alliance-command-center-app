@@ -58,6 +58,36 @@ export const DELEGATE: Record<CleanupModel, string> = {
   AccessRequest: "accessRequest",
   Alliance: "alliance",
   User: "user",
+  AccessRequestTriage: "accessRequestTriage",
+  AccessRequestTriageEvent: "accessRequestTriageEvent",
+};
+
+/**
+ * Each model's actual primary-key field name (#177). Every model used `id`
+ * until AccessRequestTriage, whose primary key IS its foreign key
+ * (`accessRequestId`) — a one-to-one projection row keyed by its parent, like
+ * FeedbackTriage's `feedbackId`. `executeOp`/`runVerify` look this up instead
+ * of assuming `id`, so a delete/nullify/revoke targets the right column for
+ * every model, not just the pre-#177 ones.
+ */
+export const CLEANUP_MODEL_PRIMARY_KEY: Record<CleanupModel, string> = {
+  PasswordResetToken: "id",
+  EmailChangeRequest: "id",
+  MemberMetricEntry: "id",
+  LeadershipNote: "id",
+  Invitation: "id",
+  MetricPeriodMetric: "id", // unused — MetricPeriodMetric uses its own composite-key path, never this map.
+  Metric: "id",
+  MetricPeriod: "id",
+  AllianceMember: "id",
+  AllianceMembership: "id",
+  BetaInvitation: "id",
+  Feedback: "id",
+  AccessRequest: "id",
+  Alliance: "id",
+  User: "id",
+  AccessRequestTriage: "accessRequestId",
+  AccessRequestTriageEvent: "id",
 };
 
 // The Prisma client/transaction client is intentionally accessed dynamically
@@ -101,6 +131,8 @@ export async function inventory(db: Db): Promise<Record<string, number>> {
     metricPeriodMetrics,
     memberMetricEntries,
     leadershipNotes,
+    accessRequestTriages,
+    accessRequestTriageEvents,
   ] = await Promise.all([
     db.user.count(),
     db.alliance.count(),
@@ -117,6 +149,8 @@ export async function inventory(db: Db): Promise<Record<string, number>> {
     db.metricPeriodMetric.count(),
     db.memberMetricEntry.count(),
     db.leadershipNote.count(),
+    db.accessRequestTriage.count(),
+    db.accessRequestTriageEvent.count(),
   ]);
   return {
     User: users,
@@ -134,6 +168,8 @@ export async function inventory(db: Db): Promise<Record<string, number>> {
     MetricPeriodMetric: metricPeriodMetrics,
     MemberMetricEntry: memberMetricEntries,
     LeadershipNote: leadershipNotes,
+    AccessRequestTriage: accessRequestTriages,
+    AccessRequestTriageEvent: accessRequestTriageEvents,
   };
 }
 
@@ -286,7 +322,39 @@ export async function resolveStaleOps(
     });
     const found = new Set(ids(rows));
     unknownAccessRequestIds = args.accessRequestIds.filter((id) => !found.has(id));
-    ops.push({ kind: "delete", model: "AccessRequest", ids: ids(rows), reason: "explicitly identified test access request" });
+    const foundAccessRequestIds = ids(rows);
+    // #177: AccessRequestTriage/AccessRequestTriageEvent are `onDelete:
+    // Restrict` against AccessRequest (unlike FeedbackTriage's Cascade), by
+    // deliberate choice — this audit-shaped decision history must be
+    // reported and deleted explicitly, never silently cascaded. Children
+    // first, in FK order, as ordinary plan ops (not a side-channel count).
+    //
+    // Both queries only collect ids that actually exist: `execute()` asserts
+    // `affected === expected` (ids.length) per op and rolls back the whole
+    // transaction on a mismatch, so an accessRequestId with no projection
+    // row yet (never triaged) must never appear in the AccessRequestTriage
+    // op's ids.
+    const triageEventRows = await db.accessRequestTriageEvent.findMany({
+      where: { accessRequestId: { in: foundAccessRequestIds } },
+      select: { id: true },
+    });
+    ops.push({
+      kind: "delete",
+      model: "AccessRequestTriageEvent",
+      ids: ids(triageEventRows),
+      reason: "decision history of explicitly identified test access request",
+    });
+    const triageProjectionRows = await db.accessRequestTriage.findMany({
+      where: { accessRequestId: { in: foundAccessRequestIds } },
+      select: { accessRequestId: true },
+    });
+    ops.push({
+      kind: "delete",
+      model: "AccessRequestTriage",
+      ids: triageProjectionRows.map((r: { accessRequestId: string }) => r.accessRequestId),
+      reason: "triage projection of explicitly identified test access request",
+    });
+    ops.push({ kind: "delete", model: "AccessRequest", ids: foundAccessRequestIds, reason: "explicitly identified test access request" });
   }
 
   let unknownFeedbackIds: string[] = [];
@@ -478,11 +546,13 @@ export async function executeOp(tx: Db, op: CleanupOp, now: Date): Promise<numbe
       const { count } = await tx.metricPeriodMetric.deleteMany({ where: { OR: pairs } });
       return count;
     }
-    const { count } = await tx[DELEGATE[op.model]].deleteMany({ where: { id: { in: op.ids } } });
+    const pk = CLEANUP_MODEL_PRIMARY_KEY[op.model];
+    const { count } = await tx[DELEGATE[op.model]].deleteMany({ where: { [pk]: { in: op.ids } } });
     return count;
   }
+  const pk = CLEANUP_MODEL_PRIMARY_KEY[op.model];
   const data = op.kind === "nullify" ? { [op.field!]: null } : { [op.field!]: now };
-  const { count } = await tx[DELEGATE[op.model]].updateMany({ where: { id: { in: op.ids } }, data });
+  const { count } = await tx[DELEGATE[op.model]].updateMany({ where: { [pk]: { in: op.ids } }, data });
   return count;
 }
 
@@ -631,8 +701,9 @@ export async function runVerify(manifestPath: string): Promise<VerifyResult> {
     }
 
     const delegate = (prisma as Db)[DELEGATE[op.model]];
+    const pk = CLEANUP_MODEL_PRIMARY_KEY[op.model];
     if (op.kind === "delete") {
-      const remaining = await delegate.count({ where: { id: { in: op.ids } } });
+      const remaining = await delegate.count({ where: { [pk]: { in: op.ids } } });
       if (remaining > 0) {
         failures++;
         lines.push(`FAIL: ${remaining}/${op.ids.length} ${op.model} row(s) still exist (expected deleted)`);
@@ -644,9 +715,9 @@ export async function runVerify(manifestPath: string): Promise<VerifyResult> {
       // null/set" is vacuously true for a row that was unexpectedly deleted
       // entirely (id NOT IN the surviving rows also can't match "field is
       // not null"), which would silently pass verification.
-      const existing = await delegate.count({ where: { id: { in: op.ids } } });
+      const existing = await delegate.count({ where: { [pk]: { in: op.ids } } });
       const missing = op.ids.length - existing;
-      const notNulled = await delegate.count({ where: { id: { in: op.ids }, [op.field!]: { not: null } } });
+      const notNulled = await delegate.count({ where: { [pk]: { in: op.ids }, [op.field!]: { not: null } } });
       if (missing > 0) {
         failures++;
         lines.push(`FAIL: ${missing}/${op.ids.length} ${op.model} row(s) meant to be nullified are MISSING (unexpectedly deleted)`);
@@ -659,9 +730,9 @@ export async function runVerify(manifestPath: string): Promise<VerifyResult> {
         lines.push(`OK:   ${op.model}.${op.field} nullify (${op.ids.length} rows) fully applied`);
       }
     } else {
-      const existing = await delegate.count({ where: { id: { in: op.ids } } });
+      const existing = await delegate.count({ where: { [pk]: { in: op.ids } } });
       const missing = op.ids.length - existing;
-      const notRevoked = await delegate.count({ where: { id: { in: op.ids }, [op.field!]: null } });
+      const notRevoked = await delegate.count({ where: { [pk]: { in: op.ids }, [op.field!]: null } });
       if (missing > 0) {
         failures++;
         lines.push(`FAIL: ${missing}/${op.ids.length} ${op.model} row(s) meant to be revoked are MISSING (unexpectedly deleted)`);
