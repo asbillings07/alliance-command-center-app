@@ -262,8 +262,12 @@ describe.skipIf(!runDb)("betaInvitation accept identity [integration]", () => {
     });
     createdInvitationIds.push(staleInvitation.id);
 
+    // Recycled email history and the current user account resolve to two
+    // DIFFERENT participants — the invitationConflict resolver (#177)
+    // classifies this as IDENTITY_AMBIGUOUS rather than silently picking
+    // one, so an operator must resolve it manually before converting.
     await expect(issueBetaInvitation(email)).rejects.toThrow(
-      "different beta participant than the current account holder",
+      "identity is ambiguous across existing beta records",
     );
   });
 });

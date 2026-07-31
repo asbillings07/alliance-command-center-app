@@ -52,6 +52,11 @@ model Alliance {
   metricPeriods    MetricPeriod[]
   invitations      Invitation[]
   betaInvitations  BetaInvitation[]
+  // Live "current access evidence" links from #177 conflict snapshots. SetNull
+  // on delete: the immutable *IdSnapshot/*Name columns on those rows retain
+  // the audit trail independent of whether this alliance still exists.
+  accessRequestTriageConflicts      AccessRequestTriage[]
+  accessRequestTriageEventConflicts AccessRequestTriageEvent[]
   @@unique([name, server])
 }
 
@@ -143,6 +148,14 @@ model User {
   feedbackTriageEvents FeedbackTriageEvent[]
   emailChangeRequests EmailChangeRequest[]
   passwordResetTokens PasswordResetToken[]
+  // #177: live "current access evidence" links (SetNull on delete — the
+  // immutable conflictUserIdSnapshot/*Email/*DisplayName columns retain the
+  // audit trail independent of whether this account still exists) and the
+  // triage event actor link (also SetNull; actorEmail/actorDisplayName are
+  // snapshotted on every event so attribution survives account deletion).
+  accessRequestTriageConflicts      AccessRequestTriage[]
+  accessRequestTriageEventConflicts AccessRequestTriageEvent[] @relation("AccessRequestTriageEventConflictUser")
+  accessRequestTriageEventsActedOn  AccessRequestTriageEvent[] @relation("AccessRequestTriageEventActor")
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -321,6 +334,10 @@ model BetaParticipant {
   user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   identityAmbiguous Boolean  @default(false)
   invitations       BetaInvitation[]
+  // #177: live link from a CONVERSION_BLOCKED event's participant-identity
+  // conflict (EXISTING_PARTICIPANT_REISSUE / IDENTITY_AMBIGUOUS). SetNull on
+  // delete — conflictParticipantIdSnapshots retains the immutable audit trail.
+  accessRequestTriageEventConflicts AccessRequestTriageEvent[]
 }
 
 model BetaInvitation {
@@ -363,6 +380,13 @@ model BetaInvitation {
   alliance   Alliance? @relation(fields: [allianceId], references: [id])
 
   deliveryAttempts BetaInvitationDeliveryAttempt[]
+
+  // #177: reverse relations for the AccessRequest triage conversion contract.
+  // All Restrict — a BetaInvitation is durable history (ADR-004) and cleanup
+  // never hard-deletes it, so these can never block a legitimate cleanup run.
+  accessRequestTriageLink          AccessRequestTriage?      @relation("AccessRequestTriageInvitation")
+  accessRequestTriageEventConflicts AccessRequestTriageEvent[] @relation("AccessRequestTriageEventConflictInvitation")
+  accessRequestTriageEventLinks     AccessRequestTriageEvent[] @relation("AccessRequestTriageEventInvitation")
 
   @@index([email])
   @@index([participantId])
@@ -439,7 +463,177 @@ model AccessRequest {
   message      String?
   createdAt    DateTime @default(now())
 
+  // #177: operator triage state and its append-only decision history.
+  // Restrict on both — this row is the anchor for durable decision history
+  // (ADR-004) and must never be silently cascaded away; the cleanup tool
+  // deletes AccessRequestTriageEvent then AccessRequestTriage as explicit,
+  // FK-ordered plan ops before deleting an AccessRequest.
+  triage AccessRequestTriage?
+  events AccessRequestTriageEvent[]
+
   @@index([createdAt])
+}
+
+enum AccessRequestTriageStatus {
+  PENDING
+  INVITED
+  DECLINED
+  RESOLVED_EXISTING_ACCESS
+}
+
+enum AccessRequestTriageEventType {
+  NOTE_ADDED
+  CONVERSION_BLOCKED
+  INVITED
+  DECLINED
+  REOPENED
+  RESOLVED_EXISTING_ACCESS
+}
+
+// Authoritative classification of why an email cannot be issued a beta
+// invitation right now — shared between issueBetaInvitationWithTx's conflict
+// resolver (betaInvitation.ts / invitationConflict.ts) and the triage event
+// log below (#177).
+enum InvitationConflictType {
+  NONE
+  ACTIVE_PENDING_INVITATION
+  EXISTING_ALLIANCE_ACCESS
+  IDENTITY_AMBIGUOUS
+  ALREADY_ACCEPTED
+  EXISTING_PARTICIPANT_REISSUE
+}
+
+// Current triage state projection for one AccessRequest (#177), mirroring the
+// FeedbackTriage split: AccessRequest itself is the immutable submission,
+// this is the mutable "current state" row, and AccessRequestTriageEvent below
+// is the append-only decision trail. One row per AccessRequest, created
+// lazily (defaults to PENDING) the first time it is triaged.
+model AccessRequestTriage {
+  accessRequestId String                    @id
+  accessRequest   AccessRequest             @relation(fields: [accessRequestId], references: [id], onDelete: Restrict)
+  status          AccessRequestTriageStatus @default(PENDING)
+
+  // Set only once, at INVITED. @unique enforces "at most one live INVITED
+  // link" — the sole DB-level guarantee that a request is never converted
+  // twice. Restrict: this invitation is durable history (ADR-004).
+  linkedInvitationId String?         @unique
+  linkedInvitation   BetaInvitation? @relation("AccessRequestTriageInvitation", fields: [linkedInvitationId], references: [id], onDelete: Restrict)
+  // Denormalized copy of the wave the request was converted into, for list
+  // display/filtering without a join. Authoritative value lives on
+  // BetaInvitation.campaign; this is a read-model convenience only.
+  betaWave           String?
+
+  // "Current access evidence" for RESOLVED_EXISTING_ACCESS — refreshed (and
+  // stateRevision bumped) whenever a denied reopen re-derives access.
+  // Live links are optional and unconstrained by any CHECK (SetNull on
+  // delete); the *Snapshot/*Email/*Name/*Count columns are the immutable,
+  // required-when-populated audit record and are what every CHECK targets.
+  conflictUserId             String?
+  conflictUser               User?    @relation(fields: [conflictUserId], references: [id], onDelete: SetNull)
+  conflictUserIdSnapshot     String?
+  conflictUserEmail          String?
+  conflictUserDisplayName    String?
+  conflictAllianceId         String?
+  conflictAlliance           Alliance? @relation(fields: [conflictAllianceId], references: [id], onDelete: SetNull)
+  conflictAllianceIdSnapshot String?
+  conflictAllianceName       String?
+  conflictMembershipCount    Int?
+
+  // Operator-supplied free text for the CURRENT state (decline/resolution/
+  // reopen reason, or latest note) — bounded 1-500 chars when set. The full
+  // reasoning trail lives in AccessRequestTriageEvent; this is a display
+  // convenience so the queue doesn't need to join the latest event.
+  currentReason String?
+
+  stateRevision Int       @default(0)
+  lastEventAt   DateTime?
+  // Actor of the most recent event of ANY kind (including notes), so list
+  // rows can show "last touched by" without joining the event log.
+  lastEventActorEmail             String?
+  lastEventActorDisplayName       String?
+  // Actor of the most recent STATE-CHANGING event (mirrors FeedbackTriage).
+  lastStateChangeAt               DateTime?
+  lastStateChangeActorEmail       String?
+  lastStateChangeActorDisplayName String?
+
+  @@index([status])
+  @@index([betaWave])
+}
+
+// Append-only decision history for one AccessRequest (#177). Every row is a
+// single meaningful, request-scoped event — never page views, validation
+// errors, or generic system noise (ADR-004: leadership-relevant history is
+// preserved, never overwritten). Payload columns are event-type-specific;
+// see the migration's CHECK constraints for the exact required-vs-forbidden
+// matrix per eventType/blockedConflictType.
+model AccessRequestTriageEvent {
+  id              String        @id @default(cuid())
+  accessRequestId String
+  accessRequest   AccessRequest @relation(fields: [accessRequestId], references: [id], onDelete: Restrict)
+
+  eventType      AccessRequestTriageEventType
+  previousStatus AccessRequestTriageStatus?
+  nextStatus     AccessRequestTriageStatus?
+
+  noteText         String? // NOTE_ADDED only — required, 1-2000 chars (incl. the canonical denied-reopen note)
+  declineReason    String? // DECLINED only — required, 1-500 chars
+  resolutionReason String? // RESOLVED_EXISTING_ACCESS only — required, 1-500 chars
+  reopenReason     String? // REOPENED only — required, 1-500 chars
+  betaWave         String? // INVITED only — required, 1-80 chars
+
+  // CONVERSION_BLOCKED only — both required together, blockedConflictType <> NONE.
+  blockedReason       String?
+  blockedConflictType InvitationConflictType?
+
+  // Populated for RESOLVED_EXISTING_ACCESS (always) and CONVERSION_BLOCKED
+  // where blockedConflictType = EXISTING_ALLIANCE_ACCESS, and optionally for
+  // a NOTE_ADDED denied-reopen event (refreshed evidence). Live links are
+  // optional/unconstrained (SetNull); the snapshot/email/name/count columns
+  // are the immutable evidence every CHECK targets.
+  conflictUserId             String?
+  conflictUser               User?     @relation("AccessRequestTriageEventConflictUser", fields: [conflictUserId], references: [id], onDelete: SetNull)
+  conflictUserIdSnapshot     String?
+  conflictUserEmail          String?
+  conflictUserDisplayName    String?
+  conflictAllianceId         String?
+  conflictAlliance           Alliance? @relation(fields: [conflictAllianceId], references: [id], onDelete: SetNull)
+  conflictAllianceIdSnapshot String?
+  conflictAllianceName       String?
+  conflictMembershipCount    Int?
+
+  // CONVERSION_BLOCKED only, blockedConflictType IN (ACTIVE_PENDING_INVITATION, ALREADY_ACCEPTED).
+  // Restrict: BetaInvitation is durable history, never deleted by cleanup.
+  conflictInvitationId String?
+  conflictInvitation   BetaInvitation? @relation("AccessRequestTriageEventConflictInvitation", fields: [conflictInvitationId], references: [id], onDelete: Restrict)
+
+  // CONVERSION_BLOCKED only, blockedConflictType IN (EXISTING_PARTICIPANT_REISSUE, IDENTITY_AMBIGUOUS).
+  // conflictParticipantId is a live, unconstrained convenience link (SetNull);
+  // conflictParticipantIdSnapshots is the immutable evidence — exactly one
+  // entry for EXISTING_PARTICIPANT_REISSUE, two or more for IDENTITY_AMBIGUOUS.
+  conflictParticipantId          String?
+  conflictParticipant            BetaParticipant? @relation(fields: [conflictParticipantId], references: [id], onDelete: SetNull)
+  conflictParticipantIdSnapshots String[]         @default([])
+
+  // INVITED only — required. Not @unique: the projection's linkedInvitationId
+  // is the sole "at most one live link" invariant; this is just a record of
+  // which invitation THIS event produced.
+  linkedInvitationId String?
+  linkedInvitation   BetaInvitation? @relation("AccessRequestTriageEventInvitation", fields: [linkedInvitationId], references: [id], onDelete: Restrict)
+
+  // Actor snapshot, resolved from the database inside the same transaction
+  // that writes this event (never trusted from the caller). SetNull so
+  // history survives operator deletion; email/displayName are the durable
+  // record.
+  actorUserId      String?
+  actor            User?   @relation("AccessRequestTriageEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmail       String
+  actorDisplayName String?
+
+  createdAt DateTime @default(now())
+
+  @@index([accessRequestId, createdAt, id])
+  @@index([actorUserId])
+  @@index([linkedInvitationId])
 }
 
 enum FeedbackTriageStatus {

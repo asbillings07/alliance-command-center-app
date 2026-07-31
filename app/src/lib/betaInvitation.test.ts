@@ -40,6 +40,7 @@ vi.mock("./prisma", () => ({
     },
     allianceMembership: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
     },
     betaInvitationDeliveryAttempt: {
       create: vi.fn(),
@@ -71,6 +72,7 @@ const mockPrisma = prisma as unknown as {
   };
   allianceMembership: {
     findFirst: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
   };
   betaInvitationDeliveryAttempt: {
     create: ReturnType<typeof vi.fn>;
@@ -175,6 +177,7 @@ describe("issueBetaInvitation", () => {
   beforeEach(() => {
     mockPrisma.betaParticipant.findFirst.mockResolvedValue(null);
     mockPrisma.betaParticipant.create.mockResolvedValue({ id: "participant-1" });
+    mockPrisma.allianceMembership.findMany.mockResolvedValue([]);
   });
 
   it("creates a new invitation with token and code", async () => {
@@ -290,10 +293,14 @@ describe("issueBetaInvitation", () => {
 
   it("throws if user already has an alliance", async () => {
     mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
-    mockPrisma.user.findUnique.mockResolvedValue({ id: "user-1" });
-    mockPrisma.allianceMembership.findFirst.mockResolvedValue({
-      id: "membership-1",
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      displayName: "Test User",
     });
+    mockPrisma.allianceMembership.findMany.mockResolvedValue([
+      { allianceId: "alliance-1", alliance: { name: "Alliance One" } },
+    ]);
 
     await expect(issueBetaInvitation("test@example.com")).rejects.toThrow(
       "This user already has access to an alliance"
@@ -301,15 +308,35 @@ describe("issueBetaInvitation", () => {
     expect(mockPrisma.betaInvitation.create).not.toHaveBeenCalled();
   });
 
-  it("rejects when an established participant already exists for the email", async () => {
-    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
+  it("rejects when an established participant's latest attempt is terminal (reissue-eligible)", async () => {
+    mockPrisma.betaInvitation.findFirst
+      .mockResolvedValueOnce(null) // pending-by-email check
+      .mockResolvedValueOnce(makeInvitation({ revokedAt: new Date(), acceptedAt: null })); // latest attempt for participant
     mockPrisma.user.findUnique.mockResolvedValue(null);
     mockPrisma.betaParticipant.findFirst.mockResolvedValue({
       id: "participant-existing",
+      identityAmbiguous: false,
     });
 
     await expect(issueBetaInvitation("test@example.com")).rejects.toThrow(
       "This person is already a beta participant — use Reissue",
+    );
+    expect(mockPrisma.betaParticipant.create).not.toHaveBeenCalled();
+    expect(mockPrisma.betaInvitation.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects with a distinct message when the established participant already accepted", async () => {
+    mockPrisma.betaInvitation.findFirst
+      .mockResolvedValueOnce(null) // pending-by-email check
+      .mockResolvedValueOnce(makeInvitation({ acceptedAt: new Date() })); // latest attempt for participant
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.betaParticipant.findFirst.mockResolvedValue({
+      id: "participant-existing",
+      identityAmbiguous: false,
+    });
+
+    await expect(issueBetaInvitation("test@example.com")).rejects.toThrow(
+      "This person has already accepted a beta invitation",
     );
     expect(mockPrisma.betaParticipant.create).not.toHaveBeenCalled();
     expect(mockPrisma.betaInvitation.create).not.toHaveBeenCalled();
@@ -335,27 +362,37 @@ describe("issueBetaInvitation", () => {
     expect(mockPrisma.betaParticipant.create).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects when email history and current user participant disagree", async () => {
+  it("rejects with IDENTITY_AMBIGUOUS when email history and current user participant disagree", async () => {
     mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
-    mockPrisma.user.findUnique.mockResolvedValue({ id: "user-1" });
-    mockPrisma.allianceMembership.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      displayName: "Test User",
+    });
+    mockPrisma.allianceMembership.findMany.mockResolvedValue([]);
     mockPrisma.betaParticipant.findFirst
-      .mockResolvedValueOnce({ id: "participant-email-history" })
-      .mockResolvedValueOnce({ id: "participant-current-user" });
+      .mockResolvedValueOnce({ id: "participant-email-history", identityAmbiguous: false })
+      .mockResolvedValueOnce({ id: "participant-current-user", identityAmbiguous: false });
 
     await expect(issueBetaInvitation("test@example.com")).rejects.toThrow(
-      "different beta participant than the current account holder",
+      "identity is ambiguous",
     );
     expect(mockPrisma.betaInvitation.create).not.toHaveBeenCalled();
   });
 
   it("rejects existing participant when email history and current user participant agree", async () => {
-    mockPrisma.betaInvitation.findFirst.mockResolvedValue(null);
-    mockPrisma.user.findUnique.mockResolvedValue({ id: "user-1" });
-    mockPrisma.allianceMembership.findFirst.mockResolvedValue(null);
+    mockPrisma.betaInvitation.findFirst
+      .mockResolvedValueOnce(null) // pending-by-email check
+      .mockResolvedValueOnce(makeInvitation({ revokedAt: new Date(), acceptedAt: null })); // latest attempt for participant
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      displayName: "Test User",
+    });
+    mockPrisma.allianceMembership.findMany.mockResolvedValue([]);
     mockPrisma.betaParticipant.findFirst
-      .mockResolvedValueOnce({ id: "participant-shared" })
-      .mockResolvedValueOnce({ id: "participant-shared" });
+      .mockResolvedValueOnce({ id: "participant-shared", identityAmbiguous: false })
+      .mockResolvedValueOnce({ id: "participant-shared", identityAmbiguous: false });
 
     await expect(issueBetaInvitation("test@example.com")).rejects.toThrow(
       "This person is already a beta participant — use Reissue",
