@@ -162,39 +162,52 @@ describeIntegration("accessRequestTriage [integration]", () => {
   });
 
   it("adding a note on a DECLINED request never overwrites the decision's currentReason or stateRevision", async () => {
-    const operator = await makeOperator();
+    const decliningOperator = await makeOperator("decliner");
+    const notingOperator = await makeOperator("noter");
     const request = await makeAccessRequest();
 
-    const declined = await declineAccessRequest(request.id, operator.id, "Not a good fit", 0);
+    const declined = await declineAccessRequest(request.id, decliningOperator.id, "Not a good fit", 0);
     expect(declined.ok).toBe(true);
     if (!declined.ok) return;
     expect(declined.projection.currentReason).toBe("Not a good fit");
+    expect(declined.projection.lastEventActorEmail).toBe(decliningOperator.email);
 
     // A note with a different, equally valid non-null string must not
     // clobber the actual decision reason — the DB CHECK constraint alone
     // can't catch this, since both strings are valid non-null currentReason
-    // values (#177 review follow-up).
-    const noted = await addAccessRequestNote(request.id, operator.id, "Followed up on Discord, no reply yet");
+    // values (#177 review follow-up). Using a DIFFERENT operator for the
+    // note proves lastEvent* actually advances — same-operator assertions
+    // would still pass even if the note stopped updating it at all.
+    const noted = await addAccessRequestNote(
+      request.id,
+      notingOperator.id,
+      "Followed up on Discord, no reply yet",
+    );
     expect(noted.ok).toBe(true);
     if (!noted.ok) return;
     expect(noted.projection.status).toBe("DECLINED");
     expect(noted.projection.currentReason).toBe("Not a good fit");
     expect(noted.projection.stateRevision).toBe(declined.projection.stateRevision);
-    expect(noted.projection.lastEventActorEmail).toBe(operator.email);
+    expect(noted.projection.lastEventActorEmail).toBe(notingOperator.email);
   });
 
   it("adding a note on a RESOLVED_EXISTING_ACCESS request never overwrites the resolution's currentReason, evidence, or stateRevision", async () => {
-    const operator = await makeOperator();
+    const resolvingOperator = await makeOperator("resolver");
+    const notingOperator = await makeOperator("noter");
     const email = `note-on-resolved-${suffix()}@example.test`;
     const { user, alliance } = await makeUserWithAllianceAccess(email);
     const request = await makeAccessRequest(email);
 
-    const resolved = await resolveExistingAccess(request.id, operator.id, "Already has access", 0);
+    const resolved = await resolveExistingAccess(request.id, resolvingOperator.id, "Already has access", 0);
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
     expect(resolved.projection.currentReason).toBe("Already has access");
+    expect(resolved.projection.lastEventActorEmail).toBe(resolvingOperator.email);
 
-    const noted = await addAccessRequestNote(request.id, operator.id, "Confirmed via alliance roster too");
+    // Distinct operator for the note, same rationale as the DECLINED case
+    // above: proves lastEvent* actually advances rather than just happening
+    // to already match.
+    const noted = await addAccessRequestNote(request.id, notingOperator.id, "Confirmed via alliance roster too");
     expect(noted.ok).toBe(true);
     if (!noted.ok) return;
     expect(noted.projection.status).toBe("RESOLVED_EXISTING_ACCESS");
@@ -202,6 +215,7 @@ describeIntegration("accessRequestTriage [integration]", () => {
     expect(noted.projection.stateRevision).toBe(resolved.projection.stateRevision);
     expect(noted.projection.conflictUserIdSnapshot).toBe(user.id);
     expect(noted.projection.conflictAllianceIdSnapshot).toBe(alliance.id);
+    expect(noted.projection.lastEventActorEmail).toBe(notingOperator.email);
   });
 
   it("declines a pending request and rejects a stale second decline", async () => {
