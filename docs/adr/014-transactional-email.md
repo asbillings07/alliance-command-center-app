@@ -105,7 +105,7 @@ This means a database outage landing in the narrow window between a successful t
 
 ### Access request conversion delivery (#177)
 
-Converting an approved `AccessRequest` into a `BetaInvitation` (`convertAccessRequestToInvitation`, `app/src/lib/accessRequestTriage.ts`) is split the same way persistence and delivery are split everywhere else in this ADR: the Serializable transaction commits the invitation, the `AccessRequestTriage` projection, and the `INVITED` event together — it never calls `deliverBetaInvitationEmail`. The caller (the platform action layer, wired in issue #177's follow-on PR) is responsible for triggering delivery *after* that transaction commits, using the result's disposition to decide whether to:
+Converting an approved `AccessRequest` into a `BetaInvitation` (`convertAccessRequestToInvitation`, `app/src/lib/accessRequestTriage.ts`) is split the same way persistence and delivery are split everywhere else in this ADR: the Serializable transaction commits the invitation, the `AccessRequestTriage` projection, and the `INVITED` event together — it never calls `deliverBetaInvitationEmail`. The caller (`convertAccessRequestAction`, `app/platform/beta/requests/actions.ts`) is responsible for triggering delivery *after* that transaction commits, using the result's disposition to decide whether to:
 
 ```ts
 { createdNow: boolean; shouldDeliver: boolean }
