@@ -59,6 +59,11 @@ export function findEligibleComparisonPeriods<T extends ComparablePeriodCandidat
   return candidates.filter((candidate) => isEligibleComparisonPeriod(candidate, selected));
 }
 
+/** A missing date sorts as if it were infinitely old, rather than throwing. */
+function timeOrMinInfinity(date: Date | null): number {
+  return date ? date.getTime() : Number.NEGATIVE_INFINITY;
+}
+
 /**
  * Deterministic ordering for already-eligible candidates: latest startsAt
  * first, then endsAt desc, createdAt desc, id desc as pure tiebreakers —
@@ -67,12 +72,18 @@ export function findEligibleComparisonPeriods<T extends ComparablePeriodCandidat
  * (the recommended default) and `resolveComparisonPeriodSelection` (the full
  * `eligiblePeriods` list exposed to callers/UI), so the recommended period
  * and the option list it's drawn from can never disagree on ordering.
+ *
+ * `startsAt`/`endsAt` are null-safe (sorting last) even though every caller
+ * in this module only ever sorts an already-`isEligibleComparisonPeriod`-filtered
+ * list (which guarantees non-null dates) — `sortEligibleComparisonPeriods` is
+ * exported and its type signature doesn't enforce that precondition, so a
+ * misuse should degrade gracefully rather than throw.
  */
 function compareEligibleCandidates(a: ComparablePeriodCandidate, b: ComparablePeriodCandidate): number {
-  const startDiff = (b.startsAt as Date).getTime() - (a.startsAt as Date).getTime();
+  const startDiff = timeOrMinInfinity(b.startsAt) - timeOrMinInfinity(a.startsAt);
   if (startDiff !== 0) return startDiff;
 
-  const endDiff = (b.endsAt as Date).getTime() - (a.endsAt as Date).getTime();
+  const endDiff = timeOrMinInfinity(b.endsAt) - timeOrMinInfinity(a.endsAt);
   if (endDiff !== 0) return endDiff;
 
   const createdDiff = b.createdAt.getTime() - a.createdAt.getTime();

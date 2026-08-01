@@ -150,6 +150,20 @@ describe("sortEligibleComparisonPeriods", () => {
     sortEligibleComparisonPeriods(input);
     expect(input.map((p) => p.id)).toEqual(originalOrder);
   });
+
+  it("sorts a candidate with a null startsAt/endsAt last, instead of throwing", () => {
+    // This function's exported type signature doesn't enforce the
+    // already-eligible (non-null dates) precondition its callers uphold, so
+    // a caller that passes an unfiltered candidate must degrade gracefully.
+    const withDates = candidate({ id: "with-dates" });
+    const nullDates = candidate({ id: "null-dates", startsAt: null, endsAt: null });
+
+    expect(() => sortEligibleComparisonPeriods([nullDates, withDates])).not.toThrow();
+    expect(sortEligibleComparisonPeriods([nullDates, withDates]).map((p) => p.id)).toEqual([
+      "with-dates",
+      "null-dates",
+    ]);
+  });
 });
 
 describe("resolveComparisonPeriodSelection", () => {
