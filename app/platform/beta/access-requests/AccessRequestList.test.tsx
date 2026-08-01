@@ -148,4 +148,43 @@ describe("AccessRequestList", () => {
       expect(panel.textContent).toBe("waveOptions:1");
     }
   });
+
+  it("resets its loading guard and lets a later row retry when the fetch action rejects outright", async () => {
+    // fetchBetaWaveOptionsAction rejects (rather than resolving with
+    // { success: false }) when requirePlatformAdmin throws — e.g. an
+    // expired session. Without resetting the loading guard on rejection,
+    // every row's combobox would be stuck loading forever (review feedback
+    // on PR #260).
+    mockFetchWaveOptions.mockRejectedValueOnce(new Error("session expired"));
+
+    await mount([buildItem({ accessRequestId: "ar_1" }), buildItem({ accessRequestId: "ar_2" })]);
+    const toggles = Array.from(container.querySelectorAll("button")).filter((b) =>
+      (b.getAttribute("data-testid") ?? "").startsWith("access-request-toggle-"),
+    );
+
+    await act(async () => {
+      toggles[0]!.click(); // opens ar_1's panel, triggering the failing fetch
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockFetchWaveOptions).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-testid="mock-panel-ar_1"]')?.textContent).toBe("waveOptions:loading");
+
+    mockFetchWaveOptions.mockResolvedValue({
+      success: true,
+      waves: [{ id: "Wave 1", name: "Wave 1" }],
+    });
+    await act(async () => {
+      toggles[1]!.click(); // opens ar_2's panel — must retry, not stay stuck forever
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockFetchWaveOptions).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-testid="mock-panel-ar_2"]')?.textContent).toBe("waveOptions:1");
+  });
 });

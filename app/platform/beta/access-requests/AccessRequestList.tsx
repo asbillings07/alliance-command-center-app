@@ -110,9 +110,18 @@ export function AccessRequestList({ items }: { items: AccessRequestInboxListItem
   const ensureWaveOptionsLoaded = useCallback(() => {
     if (loadingRef.current || waveOptions !== null) return;
     loadingRef.current = true;
-    fetchBetaWaveOptionsAction().then((result) => {
-      setWaveOptions(result.success ? result.waves : []);
-    });
+    fetchBetaWaveOptionsAction()
+      .then((result) => {
+        setWaveOptions(result.success ? result.waves : []);
+      })
+      .catch(() => {
+        // fetchBetaWaveOptionsAction rejects outright when requirePlatformAdmin
+        // throws (e.g. an expired session), rather than resolving with
+        // { success: false } — without this, loadingRef would stay true
+        // forever and every row's combobox would be stuck loading until a
+        // full page refresh (review feedback).
+        loadingRef.current = false;
+      });
     // waveOptions intentionally omitted: this guard must only ever gate on
     // "have we started/finished a load", not re-run when the array itself
     // changes identity.

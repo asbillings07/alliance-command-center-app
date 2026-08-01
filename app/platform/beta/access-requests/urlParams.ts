@@ -20,12 +20,17 @@ export type AccessRequestPageSearchParams = {
 
 function parsePageParam(raw: string | undefined): number {
   const parsed = raw ? Number.parseInt(raw, 10) : 1;
-  return Number.isFinite(parsed) ? parsed : 1;
+  // The read model clamps page to >= 1 server-side regardless; clamping here
+  // too keeps the URL/UI (pagination links, filter state) from reflecting an
+  // invalid value like `?page=0` that would silently mismatch what's shown.
+  return Number.isFinite(parsed) ? Math.max(1, parsed) : 1;
 }
 
 function parsePageSizeParam(raw: string | undefined): number {
   const parsed = raw ? Number.parseInt(raw, 10) : DEFAULT_PAGE_SIZE;
-  return Number.isFinite(parsed) ? parsed : DEFAULT_PAGE_SIZE;
+  // Same rationale as parsePageParam — the read model clamps pageSize
+  // server-side too, but the URL/UI shouldn't persist a nonsensical value.
+  return Number.isFinite(parsed) ? Math.max(1, parsed) : DEFAULT_PAGE_SIZE;
 }
 
 export function parseAccessRequestPageParams(

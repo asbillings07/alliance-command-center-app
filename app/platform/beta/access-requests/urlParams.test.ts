@@ -23,6 +23,17 @@ describe("parseAccessRequestPageParams", () => {
       "someone@example.test",
     );
   });
+
+  it("clamps a zero or negative page/pageSize to a sane minimum instead of reflecting it into URL state", () => {
+    // The read model clamps page/pageSize server-side regardless, but an
+    // unclamped value here would still leak into pagination links and other
+    // URL state built from this result, showing e.g. "?page=0" (review
+    // feedback on PR #260).
+    expect(parseAccessRequestPageParams({ page: "0" }).page).toBe(1);
+    expect(parseAccessRequestPageParams({ page: "-5" }).page).toBe(1);
+    expect(parseAccessRequestPageParams({ pageSize: "0" }).pageSize).toBe(1);
+    expect(parseAccessRequestPageParams({ pageSize: "-10" }).pageSize).toBe(1);
+  });
 });
 
 describe("buildAccessRequestHref", () => {
