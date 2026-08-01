@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/app/src/components/client";
 import { fetchAccessRequestHistoryAction } from "./actions";
 import { formatActorLabel, formatHistoryEventDetails, formatHistoryEventSummary } from "./labels";
@@ -47,8 +47,20 @@ function HistoryEventRow({ event }: { event: AccessRequestTriageHistoryItem }) {
  *   2. "Show history" here loads the 5 newest events.
  *   3. "View full history" switches the same view to real pagination, so
  *      every event remains reachable.
+ *
+ * `refreshSignal` lets the owning ActionsPanel invalidate an already-loaded
+ * history after a commit-bearing action (note/decline/resolve/reopen/
+ * convert, or a denied-but-committed reopen/conversion) — this component
+ * fetches independently of the panel's own baseline, so revalidatePath()
+ * alone can never refresh it; only a change to this signal does (#177 review).
  */
-export function AccessRequestHistory({ accessRequestId }: { accessRequestId: string }) {
+export function AccessRequestHistory({
+  accessRequestId,
+  refreshSignal = 0,
+}: {
+  accessRequestId: string;
+  refreshSignal?: number;
+}) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"compact" | "full">("compact");
   const [isPending, startTransition] = useTransition();
@@ -62,23 +74,54 @@ export function AccessRequestHistory({ accessRequestId }: { accessRequestId: str
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const loadPage = (targetPage: number, targetPageSize: number) => {
-    setError(null);
+    // setError(null) lives inside the transition (rather than as loadPage's
+    // first statement) so loadPage's only synchronous top-level call is
+    // startTransition() itself — the sanctioned way to trigger an update
+    // from a useEffect body (the refreshSignal effect below calls loadPage
+    // directly; react-hooks/set-state-in-effect otherwise flags it).
     startTransition(async () => {
-      const result = await fetchAccessRequestHistoryAction(
-        accessRequestId,
-        targetPage,
-        targetPageSize,
-      );
-      if (!result.success) {
-        setError(result.error);
-        return;
+      setError(null);
+      try {
+        const result = await fetchAccessRequestHistoryAction(
+          accessRequestId,
+          targetPage,
+          targetPageSize,
+        );
+        if (!result.success) {
+          setError(result.error);
+          return;
+        }
+        setItems(result.items);
+        setTotal(result.total);
+        setPage(result.page);
+        setLoaded(true);
+      } catch (err) {
+        // fetchAccessRequestHistoryAction can reject outright (e.g.
+        // requirePlatformAdmin throws on an expired session) rather than
+        // resolving with { success: false } — without this catch, that
+        // rejection was unhandled and history failed silently (review
+        // feedback on PR #260).
+        setError(err instanceof Error ? err.message : "Failed to load history");
       }
-      setItems(result.items);
-      setTotal(result.total);
-      setPage(result.page);
-      setLoaded(true);
     });
   };
+
+  const previousRefreshSignalRef = useRef(refreshSignal);
+  useEffect(() => {
+    if (refreshSignal === previousRefreshSignalRef.current) return;
+    previousRefreshSignalRef.current = refreshSignal;
+    // Only an already-loaded history can go stale; if it was never opened,
+    // the next open fetches fresh data anyway. Reset to page 1 since a new
+    // event may shift which items belong in "the 5/10 newest" (review
+    // feedback: "history stays stale after a mutation").
+    if (!loaded) return;
+    loadPage(1, pageSize);
+    // loadPage/loaded/pageSize intentionally omitted: this must only re-run
+    // when refreshSignal itself changes, using whatever the latest render's
+    // closure captured — re-running on every loaded/pageSize identity change
+    // would refetch far more often than a mutation actually occurs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
 
   const handleToggle = () => {
     const nextOpen = !open;

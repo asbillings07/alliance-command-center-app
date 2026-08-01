@@ -6,7 +6,7 @@ import {
   type BetaJourneyStage,
   boundBetaParticipantsInput,
 } from "@/app/src/lib/platform/betaParticipants";
-import { listAccessRequestsForTriage } from "@/app/src/lib/platform/accessRequestInbox";
+import { getAccessRequestPendingCount } from "@/app/src/lib/platform/accessRequestInbox";
 import { InviteBetaTester } from "./InviteBetaTester";
 import { ParticipantFilters } from "./ParticipantFilters";
 import { ParticipantCard, ParticipantTableRow } from "./ParticipantList";
@@ -80,8 +80,7 @@ export default async function PlatformBeta({ searchParams }: PageProps) {
   // still links through, it just omits the number (#177 design decision).
   let pendingAccessRequestCount: number | null = null;
   try {
-    const accessRequestSnapshot = await listAccessRequestsForTriage({}, 1, 1);
-    pendingAccessRequestCount = accessRequestSnapshot.statusCounts.PENDING;
+    pendingAccessRequestCount = await getAccessRequestPendingCount();
   } catch {
     pendingAccessRequestCount = null;
   }

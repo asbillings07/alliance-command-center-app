@@ -4,6 +4,7 @@ import { requirePlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import { listAccessRequestsForTriage } from "@/app/src/lib/platform/accessRequestInbox";
 import { AccessRequestFilters } from "./AccessRequestFilters";
 import { AccessRequestList } from "./AccessRequestList";
+import { AccessRequestQueueUnavailable } from "./AccessRequestQueueUnavailable";
 import { AccessRequestSummaryCards } from "./AccessRequestSummaryCards";
 import {
   accessRequestFiltersToUrlState,
@@ -30,9 +31,34 @@ export default async function AccessRequestsPage({ searchParams }: PageProps) {
 
   const params = await searchParams;
   const { filters, page, pageSize } = parseAccessRequestPageParams(params);
-  const urlState = accessRequestFiltersToUrlState(filters, page, pageSize);
 
-  const result = await listAccessRequestsForTriage(filters, page, pageSize);
+  let result;
+  try {
+    result = await listAccessRequestsForTriage(filters, page, pageSize);
+  } catch {
+    return (
+      <div className="space-y-8 max-w-6xl" data-testid="platform-access-requests-page">
+        <nav className="text-sm text-text-muted" aria-label="Breadcrumb">
+          <Link href="/platform/beta" className="text-primary hover:text-primary-hover underline">
+            Beta
+          </Link>
+          {" / "}
+          <span className="text-text-secondary">Access requests</span>
+        </nav>
+        <section>
+          <h2 className="text-lg font-semibold text-text-secondary mb-4">Access Requests</h2>
+          <AccessRequestQueueUnavailable />
+        </section>
+      </div>
+    );
+  }
+
+  // Built from the CLAMPED page/pageSize the list actually rendered, not
+  // the raw parsed params — otherwise an out-of-range value like
+  // `?pageSize=999&page=999999` would leak unchanged into the summary
+  // cards' navigation links even though the displayed page/size disagreed
+  // with it (review feedback on PR #260).
+  const urlState = accessRequestFiltersToUrlState(filters, result.page, result.pageSize);
 
   return (
     <div className="space-y-8 max-w-6xl" data-testid="platform-access-requests-page">

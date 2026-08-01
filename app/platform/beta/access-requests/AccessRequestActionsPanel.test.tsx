@@ -50,7 +50,10 @@ vi.mock("@/app/src/components/client", () => {
 });
 
 vi.mock("./AccessRequestHistory", () => ({
-  AccessRequestHistory: () => null,
+  // Exposes refreshSignal via a testid so the "history staleness" fix can be
+  // asserted without re-implementing AccessRequestHistory's own tests here.
+  AccessRequestHistory: ({ refreshSignal }: { refreshSignal?: number }) =>
+    React.createElement("div", { "data-testid": "mock-history", "data-refresh-signal": refreshSignal ?? 0 }),
 }));
 
 const mockCheckConflict = vi.fn();
@@ -125,7 +128,13 @@ function buildProjection(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function mount(item: AccessRequestInboxListItem) {
+async function mount(
+  item: AccessRequestInboxListItem,
+  overrides: {
+    waveOptionsState?: import("./AccessRequestActionsPanel").WaveOptionsState;
+    onRequestWaveOptions?: () => void;
+  } = {},
+) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -133,8 +142,11 @@ async function mount(item: AccessRequestInboxListItem) {
     root.render(
       createElement(AccessRequestActionsPanel, {
         item,
-        waveOptions: [{ id: "Wave 1", name: "Wave 1" }],
-        onRequestWaveOptions: vi.fn(),
+        waveOptionsState: overrides.waveOptionsState ?? {
+          status: "loaded",
+          waves: [{ id: "Wave 1", name: "Wave 1" }],
+        },
+        onRequestWaveOptions: overrides.onRequestWaveOptions ?? vi.fn(),
       }),
     );
   });
@@ -201,6 +213,50 @@ describe("AccessRequestActionsPanel — conflict-gated approval", () => {
     expect(container.textContent).toContain("Alpha Alliance");
     expect(findButton("Resolve — already has access")).toBeDefined();
     expect(container.querySelector('[data-testid="access-request-approve-section"]')).toBeNull();
+  });
+
+  it("shows a retryable error instead of hanging on 'Checking for conflicts…' when the pre-check rejects outright", async () => {
+    // checkAccessRequestConflictAction can reject (e.g. requirePlatformAdmin
+    // throws on an expired session) rather than resolving with
+    // { success: false } — review feedback on PR #260.
+    mockCheckConflict.mockRejectedValueOnce(new Error("session expired"));
+
+    await mount(buildItem());
+    await flush();
+
+    expect(container.querySelector('[data-testid="access-request-conflict-loading"]')).toBeNull();
+    const error = container.querySelector('[data-testid="access-request-conflict-check-error"]');
+    expect(error).not.toBeNull();
+    expect(error?.textContent).toContain("session expired");
+
+    mockCheckConflict.mockResolvedValue({ success: true, resolution: { primary: { type: "NONE" }, all: [] } });
+    await act(async () => {
+      findButton("Retry")!.click();
+    });
+    await flush();
+
+    expect(container.querySelector('[data-testid="access-request-approve-section"]')).not.toBeNull();
+  });
+
+  it("shows a retryable error instead of the wave combobox when beta-wave options failed to load", async () => {
+    mockCheckConflict.mockResolvedValue({ success: true, resolution: { primary: { type: "NONE" }, all: [] } });
+    const onRequestWaveOptions = vi.fn();
+
+    await mount(buildItem(), {
+      waveOptionsState: { status: "error", message: "Database unavailable" },
+      onRequestWaveOptions,
+    });
+    await flush();
+
+    const error = container.querySelector('[data-testid="access-request-wave-options-error"]');
+    expect(error).not.toBeNull();
+    expect(error?.textContent).toContain("Database unavailable");
+    expect(container.querySelector(`[data-testid="ar_1-wave-select"]`)).toBeNull();
+
+    await act(async () => {
+      findButton("Retry")!.click();
+    });
+    expect(onRequestWaveOptions).toHaveBeenCalledTimes(1);
   });
 
   it("shows a plain-language notice and a Beta-page link for other conflict types, with no Resolve action", async () => {
@@ -349,7 +405,7 @@ describe("AccessRequestActionsPanel — decline / note / reopen", () => {
     );
   });
 
-  it("shows the reopen-denied recovery banner without silently retrying", async () => {
+  it("shows the reopen-denied recovery banner without silently retrying, and still refreshes history since the denial committed a note", async () => {
     mockReopen.mockResolvedValue({
       success: false,
       code: "REOPEN_DENIED_ACCESS_STILL_EXISTS",
@@ -361,6 +417,10 @@ describe("AccessRequestActionsPanel — decline / note / reopen", () => {
     });
 
     await mount(buildItem({ status: "RESOLVED_EXISTING_ACCESS", currentReason: "Already a member" }));
+
+    const signalBefore = container.querySelector('[data-testid="mock-history"]')?.getAttribute(
+      "data-refresh-signal",
+    );
 
     await act(async () => {
       findButton("Reopen")!.click();
@@ -382,14 +442,68 @@ describe("AccessRequestActionsPanel — decline / note / reopen", () => {
     expect(recovery).not.toBeNull();
     expect(recovery?.textContent).toContain("Reopen denied");
     expect(recovery?.textContent).toContain("Alpha Alliance");
+
+    // REOPEN_DENIED_ACCESS_STILL_EXISTS still commits a note + refreshed
+    // evidence server-side, so any already-loaded history must be told to
+    // reload even though the reopen itself was denied (review feedback:
+    // "history stays stale after a mutation").
+    const signalAfter = container.querySelector('[data-testid="mock-history"]')?.getAttribute(
+      "data-refresh-signal",
+    );
+    expect(signalAfter).not.toBe(signalBefore);
   });
 
-  it("adds an internal note without changing status", async () => {
+  it("does NOT bump the history refresh signal on a STALE_CONFLICT, which commits nothing", async () => {
+    mockDecline.mockResolvedValue({
+      success: false,
+      code: "STALE_CONFLICT",
+      error: "Someone else updated this request while you were working on it.",
+      conflict: buildProjection({ status: "PENDING", stateRevision: 5 }),
+    });
+    mockCheckConflict.mockResolvedValue({ success: true, resolution: { primary: { type: "NONE" }, all: [] } });
+
+    await mount(buildItem());
+    await flush();
+
+    const signalBefore = container.querySelector('[data-testid="mock-history"]')?.getAttribute(
+      "data-refresh-signal",
+    );
+
+    await act(async () => {
+      findButton("Decline")!.click();
+    });
+    const textarea = container.querySelector(
+      '[data-testid="access-request-decline-reason"]',
+    ) as HTMLTextAreaElement;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+    await act(async () => {
+      setter?.call(textarea, "Spam signup");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      findButton("Confirm decline")!.click();
+    });
+    await flush();
+
+    expect(container.querySelector('[data-testid="access-request-conflict-recovery"]')?.textContent).toContain(
+      "changed while you were working",
+    );
+    const signalAfter = container.querySelector('[data-testid="mock-history"]')?.getAttribute(
+      "data-refresh-signal",
+    );
+    expect(signalAfter).toBe(signalBefore);
+  });
+
+  it("adds an internal note without changing status, and bumps the history refresh signal", async () => {
     mockCheckConflict.mockResolvedValue({ success: true, resolution: { primary: { type: "NONE" }, all: [] } });
     mockAddNote.mockResolvedValue({ success: true, projection: buildProjection({ stateRevision: 1 }) });
 
     await mount(buildItem());
     await flush();
+
+    const signalBefore = container.querySelector('[data-testid="mock-history"]')?.getAttribute(
+      "data-refresh-signal",
+    );
 
     const textarea = container.querySelector('[data-testid="access-request-note-input"]') as HTMLTextAreaElement;
     const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
@@ -406,5 +520,12 @@ describe("AccessRequestActionsPanel — decline / note / reopen", () => {
     expect(container.querySelector('[data-testid="access-request-success"]')?.textContent).toContain(
       "Note added",
     );
+    // An already-loaded history has no other way to learn a note just
+    // committed (revalidatePath doesn't touch client-owned history state) —
+    // review feedback: "history stays stale after a mutation".
+    const signalAfter = container.querySelector('[data-testid="mock-history"]')?.getAttribute(
+      "data-refresh-signal",
+    );
+    expect(signalAfter).not.toBe(signalBefore);
   });
 });

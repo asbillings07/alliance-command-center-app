@@ -2,7 +2,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import React, { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { AccessRequestInboxListItem, BetaWaveOption } from "@/app/src/lib/platform/accessRequestInbox";
+import type { AccessRequestInboxListItem } from "@/app/src/lib/platform/accessRequestInbox";
+import type { WaveOptionsState } from "./AccessRequestActionsPanel";
 
 vi.mock("@/app/src/components/client", () => ({
   Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) =>
@@ -11,24 +12,39 @@ vi.mock("@/app/src/components/client", () => ({
 
 vi.mock("./AccessRequestActionsPanel", () => ({
   // Mimics the one real behavior this test cares about: the real panel's
-  // BetaWaveSelect calls onRequestWaveOptions once on mount.
+  // BetaWaveSelect calls onRequestWaveOptions once on mount, and a real
+  // Retry button calls it again from the "error" state.
   AccessRequestActionsPanel: ({
     item,
-    waveOptions,
+    waveOptionsState,
     onRequestWaveOptions,
   }: {
     item: { accessRequestId: string };
-    waveOptions: BetaWaveOption[] | null;
+    waveOptionsState: WaveOptionsState;
     onRequestWaveOptions: () => void;
   }) => {
     React.useEffect(() => {
       onRequestWaveOptions();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+    const label =
+      waveOptionsState.status === "loaded"
+        ? `waveOptionsState:loaded:${waveOptionsState.waves.length}`
+        : `waveOptionsState:${waveOptionsState.status}`;
     return React.createElement(
       "div",
       { "data-testid": `mock-panel-${item.accessRequestId}` },
-      `waveOptions:${waveOptions === null ? "loading" : waveOptions.length}`,
+      label,
+      waveOptionsState.status === "error" &&
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            "data-testid": `mock-retry-${item.accessRequestId}`,
+            onClick: onRequestWaveOptions,
+          },
+          "Retry",
+        ),
     );
   },
 }));
@@ -74,6 +90,13 @@ async function mount(items: AccessRequestInboxListItem[]) {
   root = createRoot(container);
   await act(async () => {
     root.render(createElement(AccessRequestList, { items }));
+  });
+}
+
+async function flush() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
   });
 }
 
@@ -138,14 +161,12 @@ describe("AccessRequestList", () => {
       toggles[0]!.click();
       toggles[1]!.click();
     });
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await flush();
 
     expect(mockFetchWaveOptions).toHaveBeenCalledTimes(1);
     const panels = container.querySelectorAll('[data-testid^="mock-panel-"]');
     for (const panel of Array.from(panels)) {
-      expect(panel.textContent).toBe("waveOptions:1");
+      expect(panel.textContent).toBe("waveOptionsState:loaded:1");
     }
   });
 
@@ -165,12 +186,11 @@ describe("AccessRequestList", () => {
     await act(async () => {
       toggles[0]!.click(); // opens ar_1's panel, triggering the failing fetch
     });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await flush();
     expect(mockFetchWaveOptions).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('[data-testid="mock-panel-ar_1"]')?.textContent).toBe("waveOptions:loading");
+    expect(container.querySelector('[data-testid="mock-panel-ar_1"]')?.textContent).toContain(
+      "waveOptionsState:error",
+    );
 
     mockFetchWaveOptions.mockResolvedValue({
       success: true,
@@ -179,12 +199,47 @@ describe("AccessRequestList", () => {
     await act(async () => {
       toggles[1]!.click(); // opens ar_2's panel — must retry, not stay stuck forever
     });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await flush();
 
     expect(mockFetchWaveOptions).toHaveBeenCalledTimes(2);
-    expect(container.querySelector('[data-testid="mock-panel-ar_2"]')?.textContent).toBe("waveOptions:1");
+    expect(container.querySelector('[data-testid="mock-panel-ar_2"]')?.textContent).toBe(
+      "waveOptionsState:loaded:1",
+    );
+  });
+
+  it("surfaces a resolved { success: false } as a retryable error, rather than caching it as an empty successful list forever", async () => {
+    // Review feedback on PR #260: a resolved { success: false } (as opposed
+    // to an outright rejection) was previously mapped straight to an empty
+    // `waves: []` array — indistinguishable from "there are genuinely no
+    // waves yet" and with no way to retry short of a full page refresh.
+    mockFetchWaveOptions.mockResolvedValueOnce({ success: false, error: "Database unavailable" });
+
+    await mount([buildItem({ accessRequestId: "ar_1" })]);
+    const toggle = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.getAttribute("data-testid") === "access-request-toggle-ar_1",
+    );
+    await act(async () => {
+      toggle?.click();
+    });
+    await flush();
+
+    expect(container.querySelector('[data-testid="mock-panel-ar_1"]')?.textContent).toContain(
+      "waveOptionsState:error",
+    );
+
+    mockFetchWaveOptions.mockResolvedValue({
+      success: true,
+      waves: [{ id: "Wave 1", name: "Wave 1" }],
+    });
+    const retry = container.querySelector<HTMLButtonElement>('[data-testid="mock-retry-ar_1"]');
+    await act(async () => {
+      retry?.click();
+    });
+    await flush();
+
+    expect(mockFetchWaveOptions).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-testid="mock-panel-ar_1"]')?.textContent).toBe(
+      "waveOptionsState:loaded:1",
+    );
   });
 });

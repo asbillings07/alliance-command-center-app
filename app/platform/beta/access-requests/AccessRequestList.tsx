@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import type { AccessRequestInboxListItem } from "@/app/src/lib/platform/accessRequestInbox";
-import type { BetaWaveOption } from "@/app/src/lib/platform/accessRequestInbox";
 import { fetchBetaWaveOptionsAction } from "./actions";
-import { AccessRequestActionsPanel } from "./AccessRequestActionsPanel";
+import { AccessRequestActionsPanel, type WaveOptionsState } from "./AccessRequestActionsPanel";
 import { ACCESS_REQUEST_STATUS_LABELS, ACCESS_REQUEST_STATUS_VARIANTS, formatActorLabel } from "./labels";
 
 function formatDateTime(date: Date | string): string {
@@ -21,11 +20,11 @@ function formatDateTime(date: Date | string): string {
 
 function AccessRequestRowBody({
   item,
-  waveOptions,
+  waveOptionsState,
   onRequestWaveOptions,
 }: {
   item: AccessRequestInboxListItem;
-  waveOptions: BetaWaveOption[] | null;
+  waveOptionsState: WaveOptionsState;
   onRequestWaveOptions: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -88,7 +87,7 @@ function AccessRequestRowBody({
       {open && (
         <AccessRequestActionsPanel
           item={item}
-          waveOptions={waveOptions}
+          waveOptionsState={waveOptionsState}
           onRequestWaveOptions={onRequestWaveOptions}
         />
       )}
@@ -104,29 +103,44 @@ function AccessRequestRowBody({
  * one of them.
  */
 export function AccessRequestList({ items }: { items: AccessRequestInboxListItem[] }) {
-  const [waveOptions, setWaveOptions] = useState<BetaWaveOption[] | null>(null);
-  const loadingRef = useRef(false);
+  const [waveOptionsState, setWaveOptionsState] = useState<WaveOptionsState>({ status: "idle" });
 
+  // Transitions "idle"/"error" -> "loading"; a no-op while already loading
+  // or loaded. Also serves as the Retry affordance: calling this again from
+  // the "error" state re-enters "loading" and the effect below refetches.
   const ensureWaveOptionsLoaded = useCallback(() => {
-    if (loadingRef.current || waveOptions !== null) return;
-    loadingRef.current = true;
+    setWaveOptionsState((prev) =>
+      prev.status === "loading" || prev.status === "loaded" ? prev : { status: "loading" },
+    );
+  }, []);
+
+  useEffect(() => {
+    if (waveOptionsState.status !== "loading") return;
+    let cancelled = false;
     fetchBetaWaveOptionsAction()
       .then((result) => {
-        setWaveOptions(result.success ? result.waves : []);
+        if (cancelled) return;
+        setWaveOptionsState(
+          result.success
+            ? { status: "loaded", waves: result.waves }
+            : { status: "error", message: result.error },
+        );
       })
-      .catch(() => {
+      .catch((err) => {
+        if (cancelled) return;
         // fetchBetaWaveOptionsAction rejects outright when requirePlatformAdmin
         // throws (e.g. an expired session), rather than resolving with
-        // { success: false } — without this, loadingRef would stay true
-        // forever and every row's combobox would be stuck loading until a
-        // full page refresh (review feedback).
-        loadingRef.current = false;
+        // { success: false } — both land in the same retryable "error" state
+        // so no row's combobox is stuck loading forever (review feedback).
+        setWaveOptionsState({
+          status: "error",
+          message: err instanceof Error ? err.message : "Failed to load beta waves",
+        });
       });
-    // waveOptions intentionally omitted: this guard must only ever gate on
-    // "have we started/finished a load", not re-run when the array itself
-    // changes identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [waveOptionsState.status]);
 
   return (
     <section>
@@ -139,7 +153,7 @@ export function AccessRequestList({ items }: { items: AccessRequestInboxListItem
           >
             <AccessRequestRowBody
               item={item}
-              waveOptions={waveOptions}
+              waveOptionsState={waveOptionsState}
               onRequestWaveOptions={ensureWaveOptionsLoaded}
             />
           </article>
@@ -162,7 +176,7 @@ export function AccessRequestList({ items }: { items: AccessRequestInboxListItem
                 <td className="py-4 px-4 space-y-3">
                   <AccessRequestRowBody
                     item={item}
-                    waveOptions={waveOptions}
+                    waveOptionsState={waveOptionsState}
                     onRequestWaveOptions={ensureWaveOptionsLoaded}
                   />
                 </td>

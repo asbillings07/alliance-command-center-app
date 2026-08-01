@@ -2,6 +2,7 @@ import { test, expect } from "../shared/fixtures";
 import { checkA11yWithOptions } from "../shared/accessibility";
 import { prisma } from "@/app/src/lib/prisma";
 import { addAccessRequestNote, declineAccessRequest, reopenAccessRequest } from "@/app/src/lib/accessRequestTriage";
+import { getAccessRequestPendingCount } from "@/app/src/lib/platform/accessRequestInbox";
 
 async function seedAccessRequest(args: {
   suffix: string;
@@ -74,6 +75,13 @@ test.describe("Platform Access Requests", () => {
     const accessRequest = await seedAccessRequest({ suffix });
 
     try {
+      // The seeded request is PENDING, so the exact count the card must
+      // show is whatever the read model reports right now — asserted
+      // directly rather than assuming a clean database (review feedback on
+      // PR #260: "the discovery test seeds a pending request but never
+      // asserts the count").
+      const expectedPendingCount = await getAccessRequestPendingCount();
+
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto("/platform/beta");
 
@@ -83,6 +91,8 @@ test.describe("Platform Access Requests", () => {
       await expect(card).toContainText(
         "Review pending requests, approve invitations, or record why access was declined.",
       );
+      await expect(card).toContainText("Pending");
+      await expect(card.getByText(String(expectedPendingCount), { exact: true })).toBeVisible();
 
       await card.click();
       await page.waitForURL("/platform/beta/access-requests");
@@ -431,7 +441,7 @@ test.describe("Platform Access Requests", () => {
     }
   });
 
-  test("loads the 5 newest history events, then switches to full paginated history", async ({
+  test("loads the 5 newest history events, then switches to full paginated history and navigates to a real page 2 without losing or duplicating events", async ({
     page,
   }, testInfo) => {
     const suffix = `${Date.now()}-${testInfo.retry}`;
@@ -443,8 +453,11 @@ test.describe("Platform Access Requests", () => {
     test.skip(!operator, "Platform admin user not found in database");
 
     try {
-      // Six notes: more than the compact page size of five.
-      for (let i = 0; i < 6; i++) {
+      // Twelve notes: more than the compact page size (5) AND more than a
+      // single full-history page (10), so a real page 2 exists to navigate
+      // to — the original test only ever rendered "Page 1 of 2" without
+      // clicking Next (review feedback on PR #260).
+      for (let i = 0; i < 12; i++) {
         const result = await addAccessRequestNote(accessRequest.id, operator!.id, `Note number ${i}`);
         expect(result.ok).toBe(true);
       }
@@ -459,14 +472,66 @@ test.describe("Platform Access Requests", () => {
 
       const history = panel.locator('[data-testid="access-request-history"]');
       await history.getByTestId("access-request-history-toggle").click();
-      await expect(history.getByText("Note number 5")).toBeVisible({ timeout: 10000 });
+      await expect(history.getByText("Note number 11", { exact: true })).toBeVisible({ timeout: 10000 });
       const viewFull = history.getByTestId("access-request-history-view-full");
       await expect(viewFull).toBeVisible();
-      await expect(viewFull).toContainText("(6)");
+      await expect(viewFull).toContainText("(12)");
 
       await viewFull.click();
-      await expect(history.getByText("Note number 0")).toBeVisible({ timeout: 10000 });
+      await expect(history.getByText("Page 1 of 2")).toBeVisible({ timeout: 10000 });
+      // Page 1 of the full view holds the 10 newest (notes 11 down to 2).
+      await expect(history.getByText("Note number 11", { exact: true })).toBeVisible();
+      await expect(history.getByText("Note number 2", { exact: true })).toBeVisible();
+      await expect(history.getByText("Note number 1", { exact: true })).toHaveCount(0);
+      await expect(history.getByText("Note number 0", { exact: true })).toHaveCount(0);
       await expect(history.getByTestId("access-request-history-view-full")).toHaveCount(0);
+
+      await history.getByRole("button", { name: "Next" }).click();
+      await expect(history.getByText("Page 2 of 2")).toBeVisible({ timeout: 10000 });
+      // Page 2 holds the 2 oldest (notes 1 and 0) — and NONE of page 1's
+      // items, proving events are neither duplicated across pages nor lost.
+      await expect(history.getByText("Note number 1", { exact: true })).toBeVisible();
+      await expect(history.getByText("Note number 0", { exact: true })).toBeVisible();
+      await expect(history.getByText("Note number 2", { exact: true })).toHaveCount(0);
+      await expect(history.getByText("Note number 11", { exact: true })).toHaveCount(0);
+
+      await history.getByRole("button", { name: "Previous" }).click();
+      await expect(history.getByText("Page 1 of 2")).toBeVisible({ timeout: 10000 });
+      await expect(history.getByText("Note number 11", { exact: true })).toBeVisible();
+      await expect(history.getByText("Note number 0", { exact: true })).toHaveCount(0);
+    } finally {
+      await cleanupAccessRequest(accessRequest.id);
+    }
+  });
+
+  test("an already-open history panel reflects a note added while it was expanded, without needing to close and reopen it", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const accessRequest = await seedAccessRequest({ suffix });
+
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(`/platform/beta/access-requests?search=${encodeURIComponent(suffix)}`);
+      const row = desktopAccessRequestRow(page, accessRequest.id);
+      await expect(row).toBeVisible({ timeout: 15000 });
+      await row.getByTestId(`access-request-toggle-${accessRequest.id}`).click();
+      const panel = row.locator('[data-testid="access-request-actions-panel"]');
+
+      const history = panel.locator('[data-testid="access-request-history"]');
+      await history.getByTestId("access-request-history-toggle").click();
+      await expect(history.getByText("No history events yet.")).toBeVisible({ timeout: 10000 });
+
+      // Add a note while history is already expanded — a client-owned,
+      // independently-fetched history has no way to learn about this from
+      // revalidatePath() alone (review feedback: "history stays stale
+      // after a mutation").
+      await panel.getByTestId("access-request-note-input").fill("Added while history was open");
+      await panel.getByTestId("access-request-note-submit").click();
+      await expect(panel.getByTestId("access-request-success")).toContainText("Note added");
+
+      await expect(history.getByText("Added while history was open")).toBeVisible({ timeout: 10000 });
+      await expect(history.getByText("No history events yet.")).toHaveCount(0);
     } finally {
       await cleanupAccessRequest(accessRequest.id);
     }

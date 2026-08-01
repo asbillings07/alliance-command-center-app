@@ -383,6 +383,22 @@ export async function listBetaWaveOptions(): Promise<BetaWaveOption[]> {
   return rows;
 }
 
+/**
+ * Cheap PENDING-only count for the Beta page's discovery-card badge (#177
+ * review) — avoids running listAccessRequestsForTriage's full paginated
+ * rows + total + per-status-count queries (3 round trips) just to read one
+ * number on every /platform/beta render.
+ */
+export async function getAccessRequestPendingCount(): Promise<number> {
+  const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT COUNT(*)::bigint AS count
+    FROM "AccessRequest" ar
+    LEFT JOIN "AccessRequestTriage" art ON art."accessRequestId" = ar.id
+    WHERE COALESCE(art.status, 'PENDING'::"AccessRequestTriageStatus") = 'PENDING'::"AccessRequestTriageStatus"
+  `;
+  return Number(rows[0]?.count ?? BigInt(0));
+}
+
 export type AccessRequestConflictCheckResult =
   | { ok: true; resolution: InvitationConflictResolution }
   | { ok: false; error: "NOT_FOUND" };

@@ -8,10 +8,7 @@ import type {
   InvitationConflictDetail,
   InvitationConflictResolution,
 } from "@/app/src/lib/invitationConflict";
-import type {
-  AccessRequestInboxListItem,
-  BetaWaveOption,
-} from "@/app/src/lib/platform/accessRequestInbox";
+import type { AccessRequestInboxListItem, BetaWaveOption } from "@/app/src/lib/platform/accessRequestInbox";
 import {
   addAccessRequestNoteAction,
   checkAccessRequestConflictAction,
@@ -38,6 +35,21 @@ import {
   type AccessRequestBaseline,
   type AccessRequestConflictPayload,
 } from "./staleConflict";
+
+/**
+ * Shared, page-level beta-wave options loader state (#177 design decision
+ * 3), owned by AccessRequestList.tsx. Distinguishes "not requested yet" /
+ * "in flight" / "loaded" / "errored" so a failed load surfaces a visible,
+ * retryable error instead of being silently cached as an empty-but-
+ * successful list forever (review feedback on PR #260). Defined here
+ * (rather than in AccessRequestList.tsx, which renders this component) to
+ * avoid a circular import.
+ */
+export type WaveOptionsState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "loaded"; waves: BetaWaveOption[] }
+  | { status: "error"; message: string };
 
 type ConflictRecoveryKind = "stale" | "reopen_denied" | "conversion_blocked";
 
@@ -268,7 +280,7 @@ function OtherConflictNotice({
 
 type AccessRequestActionsPanelProps = {
   item: AccessRequestInboxListItem;
-  waveOptions: BetaWaveOption[] | null;
+  waveOptionsState: WaveOptionsState;
   onRequestWaveOptions: () => void;
 };
 
@@ -286,7 +298,7 @@ type AccessRequestActionsPanelProps = {
  */
 export function AccessRequestActionsPanel({
   item,
-  waveOptions,
+  waveOptionsState,
   onRequestWaveOptions,
 }: AccessRequestActionsPanelProps) {
   const [baseline, setBaseline] = useState<AccessRequestBaseline>({
@@ -327,18 +339,41 @@ export function AccessRequestActionsPanel({
   const isConflictCheckLoading =
     baseline.status === "PENDING" && conflictCheckResult?.key !== conflictCheckKey;
 
+  // History is fetched independently by AccessRequestHistory and is never
+  // touched by revalidatePath(), so an already-open/loaded history has no
+  // other way to learn that a mutation just committed (review feedback:
+  // "history stays stale after a mutation"). Bumped after every successful
+  // commit and after the two commit-bearing non-success outcomes
+  // (REOPEN_DENIED_ACCESS_STILL_EXISTS, CONVERSION_BLOCKED) — never after
+  // STALE_CONFLICT, which commits nothing.
+  const [historyRefreshSignal, setHistoryRefreshSignal] = useState(0);
+  const bumpHistoryRefresh = () => setHistoryRefreshSignal((n) => n + 1);
+
   useEffect(() => {
     if (baseline.status !== "PENDING") return;
     let cancelled = false;
     const key = conflictCheckKey;
-    checkAccessRequestConflictAction(item.accessRequestId).then((result) => {
-      if (cancelled) return;
-      if (!result.success) {
-        setConflictCheckResult({ key, status: "error", message: result.error });
-        return;
-      }
-      setConflictCheckResult({ key, status: "loaded", resolution: result.resolution });
-    });
+    checkAccessRequestConflictAction(item.accessRequestId)
+      .then((result) => {
+        if (cancelled) return;
+        if (!result.success) {
+          setConflictCheckResult({ key, status: "error", message: result.error });
+          return;
+        }
+        setConflictCheckResult({ key, status: "loaded", resolution: result.resolution });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        // checkAccessRequestConflictAction can reject outright (e.g.
+        // requirePlatformAdmin throws on an expired session) rather than
+        // resolving with { success: false } — without this catch, the panel
+        // was stuck on "Checking for conflicts…" forever (review feedback).
+        setConflictCheckResult({
+          key,
+          status: "error",
+          message: err instanceof Error ? err.message : "Failed to check for conflicts",
+        });
+      });
     return () => {
       cancelled = true;
     };
@@ -349,7 +384,10 @@ export function AccessRequestActionsPanel({
     if (result.code === "STALE_CONFLICT") {
       setConflictRecovery({ kind: "stale", message: result.error, payload: result.conflict });
     } else if (result.code === "REOPEN_DENIED_ACCESS_STILL_EXISTS") {
+      // Denied, but the domain service still committed a note + refreshed
+      // evidence snapshot + stateRevision bump — history must reflect that.
       setConflictRecovery({ kind: "reopen_denied", message: result.error, payload: result.conflict });
+      bumpHistoryRefresh();
     }
   };
 
@@ -358,12 +396,15 @@ export function AccessRequestActionsPanel({
     if (result.code === "STALE_CONFLICT") {
       setConflictRecovery({ kind: "stale", message: result.error, payload: result.conflict });
     } else if (result.code === "CONVERSION_BLOCKED") {
+      // Blocked, but the domain service still committed a CONVERSION_BLOCKED
+      // event + refreshed evidence + stateRevision bump — same as above.
       setConflictRecovery({
         kind: "conversion_blocked",
         message: result.error,
         payload: result.conflict,
         conflictType: result.conflictType,
       });
+      bumpHistoryRefresh();
     }
   };
 
@@ -390,6 +431,7 @@ export function AccessRequestActionsPanel({
         setBaseline(applyConflictBaseline(result.projection));
         setSuccess("Note added.");
         setNote("");
+        bumpHistoryRefresh();
         return;
       }
       applyFailure(result);
@@ -412,6 +454,7 @@ export function AccessRequestActionsPanel({
         setSuccess("Request declined.");
         setDeclineOpen(false);
         setDeclineReason("");
+        bumpHistoryRefresh();
         return;
       }
       applyFailure(result);
@@ -434,6 +477,7 @@ export function AccessRequestActionsPanel({
         setSuccess("Request resolved — already has access.");
         setResolveOpen(false);
         setResolveReason("");
+        bumpHistoryRefresh();
         return;
       }
       applyFailure(result);
@@ -456,6 +500,7 @@ export function AccessRequestActionsPanel({
         setSuccess("Request reopened.");
         setReopenOpen(false);
         setReopenReason("");
+        bumpHistoryRefresh();
         return;
       }
       applyFailure(result);
@@ -474,6 +519,7 @@ export function AccessRequestActionsPanel({
         setBaseline(applyConflictBaseline(result.projection));
         setConvertSuccess(result);
         setWaveChoice(NONE_WAVE_CHOICE);
+        bumpHistoryRefresh();
         return;
       }
       applyConvertFailure(result);
@@ -507,11 +553,34 @@ export function AccessRequestActionsPanel({
     const { primary } = conflictCheckResult.resolution;
 
     if (primary.type === "NONE") {
+      if (waveOptionsState.status === "error") {
+        return (
+          <div className="space-y-3" data-testid="access-request-approve-section">
+            <div
+              className="rounded-lg border border-danger/30 bg-danger/5 p-3 space-y-2"
+              data-testid="access-request-wave-options-error"
+            >
+              <p className="text-sm text-danger">
+                Couldn&apos;t load beta waves: {waveOptionsState.message}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={onRequestWaveOptions}
+                data-testid="access-request-wave-options-retry"
+              >
+                Retry
+              </Button>
+            </div>
+          </div>
+        );
+      }
       return (
         <div className="space-y-3" data-testid="access-request-approve-section">
           <BetaWaveSelect
             idPrefix={item.accessRequestId}
-            waveOptions={waveOptions}
+            waveOptions={waveOptionsState.status === "loaded" ? waveOptionsState.waves : null}
             onRequestOptions={onRequestWaveOptions}
             value={waveChoice}
             onChange={setWaveChoice}
@@ -779,7 +848,7 @@ export function AccessRequestActionsPanel({
         </Button>
       </div>
 
-      <AccessRequestHistory accessRequestId={item.accessRequestId} />
+      <AccessRequestHistory accessRequestId={item.accessRequestId} refreshSignal={historyRefreshSignal} />
     </div>
   );
 }

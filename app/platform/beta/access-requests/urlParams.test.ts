@@ -34,6 +34,15 @@ describe("parseAccessRequestPageParams", () => {
     expect(parseAccessRequestPageParams({ pageSize: "0" }).pageSize).toBe(1);
     expect(parseAccessRequestPageParams({ pageSize: "-10" }).pageSize).toBe(1);
   });
+
+  it("clamps an oversized pageSize to the read model's maximum instead of reflecting it into URL state", () => {
+    // Only the minimum was clamped before — `?pageSize=999` rendered 50 rows
+    // (the read model's own cap) while the URL/pagination math still
+    // silently assumed a 999-row page (review feedback on PR #260).
+    expect(parseAccessRequestPageParams({ pageSize: "999" }).pageSize).toBe(50);
+    expect(parseAccessRequestPageParams({ pageSize: "51" }).pageSize).toBe(50);
+    expect(parseAccessRequestPageParams({ pageSize: "50" }).pageSize).toBe(50);
+  });
 });
 
 describe("buildAccessRequestHref", () => {

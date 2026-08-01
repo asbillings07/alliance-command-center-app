@@ -20,7 +20,7 @@ vi.mock("./AccessRequestFilters", () => ({
 }));
 
 vi.mock("./AccessRequestSummaryCards", () => ({
-  AccessRequestSummaryCards: () => React.createElement("div", null, "Summary cards"),
+  AccessRequestSummaryCards: vi.fn(() => React.createElement("div", null, "Summary cards")),
 }));
 
 vi.mock("./AccessRequestList", () => ({
@@ -30,6 +30,11 @@ vi.mock("./AccessRequestList", () => ({
       null,
       items.map((item) => `Row ${item.accessRequestId}`).join(", "),
     ),
+}));
+
+vi.mock("./AccessRequestQueueUnavailable", () => ({
+  AccessRequestQueueUnavailable: () =>
+    React.createElement("div", { "data-testid": "mock-queue-unavailable" }, "Queue unavailable"),
 }));
 
 vi.mock("@/app/src/lib/platform/accessRequestInbox", () => ({
@@ -149,6 +154,51 @@ describe("AccessRequestsPage", () => {
       { status: undefined, search: undefined },
       1,
       20,
+    );
+  });
+
+  it("renders a recoverable, scoped error state instead of letting a rejected read model escape the route", async () => {
+    // Review feedback on PR #260: "the queue's initial read has no
+    // deliberate error state" — a thrown listAccessRequestsForTriage()
+    // previously escaped into Next.js's generic error boundary.
+    vi.mocked(listAccessRequestsForTriage).mockRejectedValue(new Error("db down"));
+
+    const page = await AccessRequestsPage({ searchParams: Promise.resolve({}) });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain('data-testid="platform-access-requests-page"');
+    // Still on a route scoped to Beta / Access requests — the breadcrumb
+    // survives even though the queue itself failed.
+    expect(html).toContain("Beta");
+    expect(html).toContain('data-testid="mock-queue-unavailable"');
+    expect(html).not.toContain("Summary cards");
+  });
+
+  it("builds summary-card/filter URL state from the read model's clamped page/pageSize, not the raw parsed params", async () => {
+    // Review feedback on PR #260: an out-of-range `?pageSize=999&page=999999`
+    // previously leaked unchanged into navigation links even though the
+    // read model actually clamped and rendered a different page/size.
+    vi.mocked(listAccessRequestsForTriage).mockResolvedValue({
+      items: [sampleItem],
+      total: 1,
+      page: 3, // what the read model actually clamped to
+      pageSize: 50, // what the read model actually clamped to
+      statusCounts: { ...emptyStatusCounts, PENDING: 1 },
+    });
+
+    const page = await AccessRequestsPage({
+      searchParams: Promise.resolve({ page: "999999", pageSize: "999" }),
+    });
+    renderToStaticMarkup(page);
+
+    // AccessRequestFilters already receives result.page/result.pageSize
+    // directly; this asserts the *shared* urlState (summary cards) matches
+    // rather than the raw, unclamped request params.
+    const { AccessRequestSummaryCards } = await import("./AccessRequestSummaryCards");
+    expect(vi.mocked(AccessRequestSummaryCards).mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        urlState: expect.objectContaining({ page: "3", pageSize: "50" }),
+      }),
     );
   });
 });

@@ -1,5 +1,9 @@
 import type { AccessRequestTriageStatus } from "@/app/generated/prisma/enums";
-import { boundBetaParticipantsInput } from "@/app/src/lib/platform/betaParticipants";
+import {
+  boundBetaParticipantsInput,
+  BETA_PARTICIPANTS_PAGE_SIZE_MAX,
+  BETA_PARTICIPANTS_PAGE_SIZE_MIN,
+} from "@/app/src/lib/platform/betaParticipants";
 import type { AccessRequestInboxFilters } from "@/app/src/lib/platform/accessRequestInbox";
 
 const VALID_STATUSES = new Set<AccessRequestTriageStatus>([
@@ -28,9 +32,14 @@ function parsePageParam(raw: string | undefined): number {
 
 function parsePageSizeParam(raw: string | undefined): number {
   const parsed = raw ? Number.parseInt(raw, 10) : DEFAULT_PAGE_SIZE;
-  // Same rationale as parsePageParam — the read model clamps pageSize
+  // Same rationale as parsePageParam — the read model clamps pageSize to
+  // [BETA_PARTICIPANTS_PAGE_SIZE_MIN, BETA_PARTICIPANTS_PAGE_SIZE_MAX]
   // server-side too, but the URL/UI shouldn't persist a nonsensical value.
-  return Number.isFinite(parsed) ? Math.max(1, parsed) : DEFAULT_PAGE_SIZE;
+  // Only clamping the minimum (not the max) let something like
+  // `?pageSize=999` render 20 rows while the URL/pagination math still
+  // silently assumed a 999-row page (review feedback on PR #260).
+  if (!Number.isFinite(parsed)) return DEFAULT_PAGE_SIZE;
+  return Math.min(BETA_PARTICIPANTS_PAGE_SIZE_MAX, Math.max(BETA_PARTICIPANTS_PAGE_SIZE_MIN, parsed));
 }
 
 export function parseAccessRequestPageParams(
