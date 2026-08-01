@@ -38,12 +38,31 @@ vi.mock("@/app/src/lib/platform/betaParticipants", () => ({
   boundBetaParticipantsInput: (v: string) => v,
 }));
 
+vi.mock("@/app/src/lib/platform/accessRequestInbox", () => ({
+  listAccessRequestsForTriage: vi.fn(),
+}));
+
 import { listBetaParticipants } from "@/app/src/lib/platform/betaParticipants";
+import { listAccessRequestsForTriage } from "@/app/src/lib/platform/accessRequestInbox";
 import PlatformBeta from "./page";
+
+const EMPTY_STATUS_COUNTS = {
+  PENDING: 0,
+  INVITED: 0,
+  DECLINED: 0,
+  RESOLVED_EXISTING_ACCESS: 0,
+};
 
 describe("PlatformBeta page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(listAccessRequestsForTriage).mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 1,
+      statusCounts: { ...EMPTY_STATUS_COUNTS, PENDING: 3 },
+    });
   });
 
   it("renders participant-centric summary cards and list", async () => {
@@ -111,6 +130,39 @@ describe("PlatformBeta page", () => {
     expect(html).toContain("Setup complete");
     expect(html).toContain("Card p1");
     expect(html).toContain("p1");
+
+    // Access-request discovery card (#177 design decision): links through
+    // to the queue and shows the exact pending count when available.
+    expect(html).toContain("Access requests");
+    expect(html).toContain('href="/platform/beta/access-requests"');
+    expect(html).toContain(">3<");
+  });
+
+  it("renders the access-request discovery card without a count when the queue is unavailable", async () => {
+    vi.mocked(listAccessRequestsForTriage).mockRejectedValue(new Error("db down"));
+    vi.mocked(listBetaParticipants).mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 25,
+      summary: {
+        totalParticipants: 0,
+        totalInvitationAttempts: 0,
+        acceptedParticipants: 0,
+        needsAttention: 0,
+        distinctAlliancesCreated: 0,
+        distinctAlliancesSetupComplete: 0,
+      },
+    });
+
+    const page = await PlatformBeta({ searchParams: Promise.resolve({}) });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("Access requests");
+    expect(html).toContain('href="/platform/beta/access-requests"');
+    // No pending-count figure rendered when the snapshot query fails —
+    // the card still links through, it just omits the number.
+    expect(html).not.toContain("Pending");
   });
 
   it("renders empty state when no participants match", async () => {
