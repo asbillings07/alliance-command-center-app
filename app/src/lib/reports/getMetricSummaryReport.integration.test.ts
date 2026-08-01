@@ -218,6 +218,34 @@ describe.skipIf(!runDb)("getMetricSummaryReport [integration]", () => {
     expect(trueRow?.rank).toBeNull();
   });
 
+  it("sorts a legacy invalid boolean value last under value_desc, never above valid TRUE/FALSE rows", async () => {
+    const alliance = await makeAlliance();
+    const trueMember = await makeMember(alliance.id, "True Member");
+    const falseMember = await makeMember(alliance.id, "False Member");
+    const legacyInvalidMember = await makeMember(alliance.id, "Legacy Invalid Member");
+    const period = await makePeriod(alliance.id, "Week 1");
+    const metric = await makeMetric(alliance.id, "Attended Rally", Metric_Type.BOOLEAN, MetricSummaryKind.NONE);
+    await attach(period.id, metric.id);
+
+    await addEntry(trueMember.id, period.id, metric.id, 1, new Date("2026-03-01T10:00:00Z"));
+    await addEntry(falseMember.id, period.id, metric.id, 0, new Date("2026-03-01T10:00:00Z"));
+    // A raw value of 2 is numerically greater than 0/1, but must not outrank valid rows.
+    await addEntry(legacyInvalidMember.id, period.id, metric.id, 2, new Date("2026-03-01T10:00:00Z"));
+
+    const report = await getMetricSummaryReport({
+      allianceId: alliance.id,
+      metricId: metric.id,
+      periodId: period.id,
+      sort: "value_desc",
+    });
+
+    expect(report.rows.map((row) => row.allianceMemberId)).toEqual([
+      trueMember.id,
+      falseMember.id,
+      legacyInvalidMember.id,
+    ]);
+  });
+
   it("paginates the roster server-side and clamps an out-of-range page to the last real page", async () => {
     const alliance = await makeAlliance();
     const period = await makePeriod(alliance.id, "Week 1");

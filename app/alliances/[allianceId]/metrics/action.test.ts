@@ -130,6 +130,16 @@ describe("createMetric", () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
+  it("rejects a non-string unitLabel value (e.g. a File) with a friendly error, not a crash", async () => {
+    const formData = buildFormData({ allianceId, name: "VS Score", type: "NUMERIC" });
+    formData.set("unitLabel", new File(["x"], "not-text.txt"));
+
+    const result = await createMetric(formData);
+
+    expect(result).toEqual({ error: "Invalid unit label" });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it("rejects a unit label over the max length with zero writes", async () => {
     const result = await createMetric(
       buildFormData({

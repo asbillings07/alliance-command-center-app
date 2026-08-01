@@ -527,15 +527,27 @@ function buildRosterFromWhere(params: RosterQueryParams): Prisma.Sql {
   `;
 }
 
-function buildRosterOrderBy(sort: MetricReportSort): Prisma.Sql {
+/**
+ * Sorting by value uses an "effective" value that is NULL for a legacy
+ * out-of-range boolean value (mirroring `ranked`'s exclusion) — otherwise an
+ * INVALID row would sort above every valid TRUE/FALSE row under
+ * `value_desc`, contradicting its exclusion from ranking and the rate.
+ */
+function buildRosterOrderBy(sort: MetricReportSort, isBooleanMetric: boolean): Prisma.Sql {
+  const effectiveValue = Prisma.sql`(
+    CASE
+      WHEN ${isBooleanMetric}::boolean AND l.value IS NOT NULL AND l.value NOT IN (0, 1) THEN NULL
+      ELSE l.value
+    END
+  )`;
   switch (sort) {
     case "value_asc":
-      return Prisma.sql`l.value ASC NULLS LAST, am."playerName" ASC, am.id ASC`;
+      return Prisma.sql`${effectiveValue} ASC NULLS LAST, am."playerName" ASC, am.id ASC`;
     case "name_asc":
       return Prisma.sql`am."playerName" ASC, am.id ASC`;
     case "value_desc":
     default:
-      return Prisma.sql`l.value DESC NULLS LAST, am."playerName" ASC, am.id ASC`;
+      return Prisma.sql`${effectiveValue} DESC NULLS LAST, am."playerName" ASC, am.id ASC`;
   }
 }
 
@@ -563,7 +575,7 @@ async function queryRosterRows(
       l.value AS value,
       r.rank AS rank
     ${buildRosterFromWhere(params)}
-    ORDER BY ${buildRosterOrderBy(sort)}
+    ORDER BY ${buildRosterOrderBy(sort, params.isBooleanMetric)}
     LIMIT ${pageSize}
     OFFSET ${offset}
   `;

@@ -46,7 +46,11 @@ function parseReportingFields(
     return { error: describeSummaryKindMismatch(type, summaryKind) };
   }
 
-  const unitLabelValidation = validateUnitLabel(formData.get("unitLabel") as string | null);
+  const rawUnitLabel = formData.get("unitLabel");
+  if (rawUnitLabel !== null && typeof rawUnitLabel !== "string") {
+    return { error: "Invalid unit label" };
+  }
+  const unitLabelValidation = validateUnitLabel(rawUnitLabel);
   if (!unitLabelValidation.ok) {
     return { error: unitLabelValidation.message };
   }
