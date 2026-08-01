@@ -33,4 +33,13 @@ describe("formatMetricAverage", () => {
   it("renders zero as a whole number", () => {
     expect(formatMetricAverage(0)).toBe("0");
   });
+
+  it("rounds a negative half-tie away from zero, symmetric with its positive counterpart", () => {
+    // Plain Math.round(-4256.5) === -4256 (rounds toward zero), while
+    // Math.round(4256.5) === 4257 (rounds away from zero) — an
+    // equal-magnitude positive and negative average must round to the same
+    // magnitude.
+    expect(formatMetricAverage(42.565)).toBe("42.57");
+    expect(formatMetricAverage(-42.565)).toBe("-42.57");
+  });
 });

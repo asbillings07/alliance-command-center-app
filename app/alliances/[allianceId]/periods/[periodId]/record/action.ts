@@ -109,6 +109,8 @@ export async function recordMemberMetrics(
   revalidateAllianceData({
     allianceId,
     periodId,
-    domains: ["evaluation-results", "reports"],
+    // "setup" matches the touchAllianceSetupActivity call above — without it
+    // the setup checklist can show a stale setupActivityAt after recording.
+    domains: ["setup", "evaluation-results", "reports"],
   });
 }

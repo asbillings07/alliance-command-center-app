@@ -43,4 +43,12 @@ describe("formatPercent", () => {
   it("combines signed with the pp unit for a true-rate point change", () => {
     expect(formatPercent(-2.1, { unit: "pp", signed: true })).toBe("-2.1pp");
   });
+
+  it("rounds a negative half-tie away from zero, symmetric with its positive counterpart", () => {
+    // Plain Math.round(-45.5) === -45 (rounds toward zero), while
+    // Math.round(45.5) === 46 (rounds away from zero) — an equal-magnitude
+    // gain and loss must render with the same magnitude.
+    expect(formatPercent(4.55)).toBe("4.6%");
+    expect(formatPercent(-4.55)).toBe("-4.6%");
+  });
 });

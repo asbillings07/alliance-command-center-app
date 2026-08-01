@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterEach, beforeEach, vi } from "vite
 import type { PrismaClient } from "@/app/generated/prisma/client";
 import type * as RecordAction from "./action";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
@@ -134,5 +135,24 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
       where: { periodId: period.id, metricId: metric.id },
     });
     expect(entry?.value).toBe(4200);
+  });
+
+  it("revalidates the setup domain, matching the touchAllianceSetupActivity call in the same transaction", async () => {
+    const { alliance, member, period, metric } = await makeSetup("NUMERIC");
+
+    await recordMemberMetrics({
+      allianceId: alliance.id,
+      periodId: period.id,
+      metricId: metric.id,
+      entries: [{ memberId: member.id, value: 100 }],
+    });
+
+    expect(revalidateAllianceData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allianceId: alliance.id,
+        periodId: period.id,
+        domains: expect.arrayContaining(["setup", "evaluation-results", "reports"]),
+      }),
+    );
   });
 });

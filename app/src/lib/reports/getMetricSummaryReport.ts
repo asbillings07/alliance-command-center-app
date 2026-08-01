@@ -116,7 +116,7 @@ export type MetricCoverage = {
   invalidActiveMemberCount: number;
   missingActiveMemberCount: number;
   complete: boolean;
-  /** Active-and-contributing members with a value this period, whether or not the current filter shows them. */
+  /** Archived members who recorded a value this period, whether or not the current filter shows them. */
   archivedContributingMemberCount: number;
 };
 
