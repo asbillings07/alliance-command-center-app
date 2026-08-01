@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition, useRef } from "react";
-import { Metric_Type } from "@/app/generated/prisma/enums";
+import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/enums";
 import { createMetric, editMetric } from "./action";
+import { METRIC_SUMMARY_KINDS_BY_TYPE } from "@/app/src/lib/metrics/metricSummaryKind";
 import { Card } from "@/app/src/components";
 import { Button, Input, Textarea, Select, Label } from "@/app/src/components/client";
 
@@ -13,9 +14,18 @@ type MetricFormProps = {
   name?: string;
   description?: string;
   type?: Metric_Type;
+  summaryKind?: MetricSummaryKind;
+  unitLabel?: string | null;
   returnTo?: string;
   onCancel: () => void;
   onSuccess?: () => void;
+};
+
+const SUMMARY_KIND_LABELS: Record<MetricSummaryKind, string> = {
+  [MetricSummaryKind.NONE]: "No rollup",
+  [MetricSummaryKind.SUM]: "Total (sum across members)",
+  [MetricSummaryKind.AVERAGE]: "Average across members",
+  [MetricSummaryKind.TRUE_RATE]: "True rate (% yes)",
 };
 
 export function MetricForm({
@@ -25,6 +35,8 @@ export function MetricForm({
   name = "",
   description = "",
   type = Metric_Type.NUMERIC,
+  summaryKind = MetricSummaryKind.NONE,
+  unitLabel = "",
   returnTo,
   onCancel,
   onSuccess,
@@ -32,6 +44,13 @@ export function MetricForm({
   const formRef = useRef<HTMLFormElement>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Type is immutable after creation (#190): on create, the type select is
+  // interactive and its choice drives which summary kinds are offered below.
+  // On edit, type is disabled and fixed to the metric's existing type.
+  const [selectedType, setSelectedType] = useState<Metric_Type>(type);
+  const [selectedSummaryKind, setSelectedSummaryKind] =
+    useState<MetricSummaryKind>(summaryKind);
+  const availableSummaryKinds = METRIC_SUMMARY_KINDS_BY_TYPE[selectedType];
 
   const submitLabel = mode === "create" ? "Create Metric" : "Update Metric";
   const pendingLabel = mode === "create" ? "Creating..." : "Updating...";
@@ -106,12 +125,65 @@ export function MetricForm({
             <Select
               id="type"
               name="type"
-              defaultValue={type}
-              disabled={isPending}
+              value={selectedType}
+              disabled={isPending || mode === "edit"}
+              onChange={(e) => {
+                const nextType = e.target.value as Metric_Type;
+                setSelectedType(nextType);
+                // Reset the summary kind if it's no longer valid for the
+                // newly selected type, so the form can never submit an
+                // incompatible (type, summaryKind) pair.
+                if (!METRIC_SUMMARY_KINDS_BY_TYPE[nextType].includes(selectedSummaryKind)) {
+                  setSelectedSummaryKind(MetricSummaryKind.NONE);
+                }
+              }}
             >
               <option value={Metric_Type.NUMERIC}>Numeric</option>
               <option value={Metric_Type.BOOLEAN}>Boolean</option>
             </Select>
+            {mode === "edit" && (
+              <p className="mt-1 text-sm text-text-muted">
+                Type cannot be changed after creation — archive this metric and create a new
+                one instead.
+              </p>
+            )}
+          </div>
+
+          <div className="border-t border-border pt-4 flex flex-col gap-4">
+            <h3 className="text-sm font-semibold text-text-secondary">Reporting</h3>
+            <div>
+              <Label htmlFor="summaryKind">Summary</Label>
+              <Select
+                id="summaryKind"
+                name="summaryKind"
+                value={selectedSummaryKind}
+                disabled={isPending}
+                onChange={(e) =>
+                  setSelectedSummaryKind(e.target.value as MetricSummaryKind)
+                }
+              >
+                {availableSummaryKinds.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {SUMMARY_KIND_LABELS[kind]}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-sm text-text-muted">
+                Controls how this metric&apos;s per-metric report rolls up member values.
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="unitLabel">Unit label (optional)</Label>
+              <Input
+                id="unitLabel"
+                name="unitLabel"
+                type="text"
+                defaultValue={unitLabel ?? ""}
+                disabled={isPending}
+                placeholder="e.g., pts, donations"
+                maxLength={24}
+              />
+            </div>
           </div>
 
           <div className="flex gap-2 justify-end">

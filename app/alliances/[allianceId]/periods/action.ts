@@ -93,6 +93,10 @@ function revalidatePeriodPaths(allianceId: string): void {
   revalidatePath(`/alliances/${allianceId}/setup`);
   revalidatePath(`/alliances/${allianceId}/setup/import`);
   revalidatePath(`/alliances/${allianceId}`);
+  // #190: period create/edit/archive/restore all change comparison eligibility
+  // and/or the default period a metric's report resolves to.
+  revalidatePath(`/alliances/${allianceId}/reports`);
+  revalidatePath("/alliances/[allianceId]/reports/metrics/[metricId]", "page");
 }
 
 export async function createMetricPeriod(

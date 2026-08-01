@@ -100,6 +100,9 @@ export async function addMember(formData: FormData): Promise<AddMemberResult> {
         );
 
         revalidatePath(`/alliances/${allianceId}/members`);
+        // #190: new member changes roster composition/coverage for every report.
+        revalidatePath(`/alliances/${allianceId}/reports`);
+        revalidatePath("/alliances/[allianceId]/reports/metrics/[metricId]", "page");
         return { success: true, memberId: member.id };
     } catch (error) {
         if (error instanceof ArchivedMemberError) {
@@ -172,6 +175,9 @@ export async function restoreMember(formData: FormData): Promise<AddMemberResult
 
         revalidatePath(`/alliances/${allianceId}/members`);
         revalidatePath(`/alliances/${allianceId}/members/${memberId}`);
+        // #190: restoring an archived member changes roster coverage for every report.
+        revalidatePath(`/alliances/${allianceId}/reports`);
+        revalidatePath("/alliances/[allianceId]/reports/metrics/[metricId]", "page");
         return { success: true, memberId: member.id };
     } catch (error) {
         if (error instanceof Error) {

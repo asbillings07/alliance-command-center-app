@@ -265,7 +265,7 @@ export async function importMembers(
 
         revalidateAllianceData({
             allianceId,
-            domains: ["members", "setup", "dashboard"],
+            domains: ["members", "setup", "dashboard", "reports"],
         });
 
         return result;

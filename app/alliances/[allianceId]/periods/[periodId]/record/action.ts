@@ -3,6 +3,9 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
+import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
+import { Metric_Type } from "@/app/generated/prisma/enums";
+import { isValidBooleanMetricValue } from "@/app/src/lib/metrics/booleanMetricValue";
 import { revalidatePath } from "next/cache";
 
 type RecordMemberMetricsInput = {
@@ -42,21 +45,31 @@ export async function recordMemberMetrics(
     throw new Error("Period not found");
   }
 
-  // Validate metric is configured for this period
+  // Validate metric is configured for this period, and load the authoritative
+  // metric type so BOOLEAN metrics can be validated below.
   const periodMetric = await prisma.metricPeriodMetric.findUnique({
     where: {
       periodId_metricId: { periodId, metricId },
     },
+    include: { metric: { select: { type: true } } },
   });
 
   if (!periodMetric) {
     throw new Error("Metric is not configured for this period");
   }
 
-  // Validate all entries have integer values
+  // Validate all entries have integer values; BOOLEAN metrics additionally
+  // require exactly 0 or 1 (#190) so the value can never be misinterpreted as
+  // a true/false rate downstream.
   for (const entry of entries) {
     if (typeof entry.value !== "number" || !Number.isInteger(entry.value)) {
       throw new Error("All values must be integers");
+    }
+    if (
+      periodMetric.metric.type === Metric_Type.BOOLEAN &&
+      !isValidBooleanMetricValue(entry.value)
+    ) {
+      throw new Error("Boolean metric values must be exactly 0 or 1");
     }
     if (typeof entry.memberId !== "string" || !entry.memberId) {
       throw new Error("Invalid member ID");
@@ -93,4 +106,9 @@ export async function recordMemberMetrics(
   });
 
   revalidatePath(`/alliances/${period.allianceId}/periods/${period.id}/record`);
+  revalidateAllianceData({
+    allianceId,
+    periodId,
+    domains: ["evaluation-results", "reports"],
+  });
 }

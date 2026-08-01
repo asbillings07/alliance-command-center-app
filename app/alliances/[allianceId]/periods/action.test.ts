@@ -71,6 +71,11 @@ describe("createMetricPeriod", () => {
     expect(revalidatePath).toHaveBeenCalledWith(`/alliances/${allianceId}/setup`);
     expect(revalidatePath).toHaveBeenCalledWith(`/alliances/${allianceId}/setup/import`);
     expect(revalidatePath).toHaveBeenCalledWith(`/alliances/${allianceId}`);
+    expect(revalidatePath).toHaveBeenCalledWith(`/alliances/${allianceId}/reports`);
+    expect(revalidatePath).toHaveBeenCalledWith(
+      "/alliances/[allianceId]/reports/metrics/[metricId]",
+      "page",
+    );
   });
 
   it("rejects reversed dates with zero writes", async () => {

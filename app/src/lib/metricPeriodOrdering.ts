@@ -42,7 +42,7 @@ export function compareMetricPeriodsForCurrent(
 }
 
 export function pickCurrentMetricPeriod<T extends MetricPeriodOrderingFields>(
-  periods: T[],
+  periods: readonly T[],
 ): T | null {
   if (periods.length === 0) {
     return null;

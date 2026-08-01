@@ -66,6 +66,8 @@ export default async function MetricsPage({ params, searchParams }: Params) {
                                 name: metric.name,
                                 description: metric.description,
                                 type: metric.type,
+                                summaryKind: metric.summaryKind,
+                                unitLabel: metric.unitLabel,
                                 active: metric.active,
                                 metricKey: `${metric.id}-${metric.createdAt.getTime()}`,
                             }}

@@ -19,6 +19,18 @@ enum Metric_Type {
   BOOLEAN
 }
 
+// Reporting semantics for a metric (#190): how per-member values should be
+// rolled up into an alliance-level summary. SUM/AVERAGE are only valid for
+// NUMERIC metrics; TRUE_RATE is only valid for BOOLEAN metrics; NONE is valid
+// for either. Enforced both in the domain layer and by a DB CHECK constraint
+// (see migration) tying this to Metric.type.
+enum MetricSummaryKind {
+  SUM
+  AVERAGE
+  TRUE_RATE
+  NONE
+}
+
 enum LeadershipNoteType {
   POSITIVE
   WARNING
@@ -219,6 +231,13 @@ model Metric {
   type   Metric_Type
   active Boolean @default(true)
 
+  // #190: reporting semantics. summaryKind defaults to NONE ("no rollup
+  // configured yet") rather than guessing, so every existing metric backfills
+  // to an honest, valid state. unitLabel is a short display suffix (e.g.
+  // "pts", "donations") shown alongside formatted values.
+  summaryKind MetricSummaryKind @default(NONE)
+  unitLabel   String?
+
   periodMetrics MetricPeriodMetric[]
 
   createdAt DateTime @default(now())
@@ -276,6 +295,11 @@ model MemberMetricEntry {
 
   @@index([allianceMemberId, periodId])
   @@index([metricId])
+  // #190: supports the per-metric report's `DISTINCT ON ("allianceMemberId")`
+  // latest-entry-per-member query as an index-only scan — the trailing
+  // sort-ordered columns match that query's ORDER BY exactly, so no separate
+  // sort step is needed.
+  @@index([periodId, metricId, allianceMemberId, recordedAt(sort: Desc), createdAt(sort: Desc), id(sort: Desc)])
 }
 
 model LeadershipNote {

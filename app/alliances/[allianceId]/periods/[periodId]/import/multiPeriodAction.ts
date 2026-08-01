@@ -19,6 +19,7 @@ import {
   validateMultiPeriodImportGroups,
   type MultiPeriodImportGroupInput,
 } from "@/app/src/lib/import/multiPeriodImport";
+import { assertBooleanMetricValuesValid } from "@/app/src/lib/metrics/assertBooleanMetricValues";
 
 export type MultiPeriodImportMetricsInput = {
   allianceId: string;
@@ -217,6 +218,10 @@ export async function importMultiPeriodMetrics(
       }));
       const plan = buildMetricImportPlan(finalMappings);
 
+      // Re-check authoritative metric types after resolution and reject any
+      // BOOLEAN-mapped value outside {0, 1} before writing anything (#190).
+      await assertBooleanMetricValuesValid(tx, plan.mappings);
+
       for (const mapping of plan.mappings) {
         await tx.memberMetricEntry.createMany({
           data: mapping.entries.map((entry) => ({
@@ -250,7 +255,7 @@ export async function importMultiPeriodMetrics(
   }
   revalidateAllianceData({
     allianceId,
-    domains: ["members", "dashboard", "setup"],
+    domains: ["members", "dashboard", "setup", "reports"],
   });
 
   const allMetricIds = [
