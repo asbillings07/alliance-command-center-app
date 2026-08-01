@@ -296,9 +296,11 @@ model MemberMetricEntry {
   @@index([allianceMemberId, periodId])
   @@index([metricId])
   // #190: supports the per-metric report's `DISTINCT ON ("allianceMemberId")`
-  // latest-entry-per-member query as an index-only scan — the trailing
-  // sort-ordered columns match that query's ORDER BY exactly, so no separate
-  // sort step is needed.
+  // latest-entry-per-member query: an index scan filters by periodId/metricId
+  // and the trailing sort-ordered columns match that query's ORDER BY
+  // exactly, so Postgres needs no separate sort step for the DISTINCT ON.
+  // Not an index-only scan — `value` isn't part of the index, so a heap
+  // fetch is still required for each selected row.
   @@index([periodId, metricId, allianceMemberId, recordedAt(sort: Desc), createdAt(sort: Desc), id(sort: Desc)])
 }
 
