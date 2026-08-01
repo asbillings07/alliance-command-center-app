@@ -6,6 +6,7 @@ import {
   type BetaJourneyStage,
   boundBetaParticipantsInput,
 } from "@/app/src/lib/platform/betaParticipants";
+import { getAccessRequestPendingCount } from "@/app/src/lib/platform/accessRequestInbox";
 import { InviteBetaTester } from "./InviteBetaTester";
 import { ParticipantFilters } from "./ParticipantFilters";
 import { ParticipantCard, ParticipantTableRow } from "./ParticipantList";
@@ -74,8 +75,44 @@ export default async function PlatformBeta({ searchParams }: PageProps) {
     pageSize,
   );
 
+  // Best-effort: the discovery card's pending count is a nice-to-have, not
+  // load-bearing — if the access-request queue is unavailable, the card
+  // still links through, it just omits the number (#177 design decision).
+  let pendingAccessRequestCount: number | null = null;
+  try {
+    pendingAccessRequestCount = await getAccessRequestPendingCount();
+  } catch {
+    pendingAccessRequestCount = null;
+  }
+
   return (
     <div className="space-y-8 max-w-6xl">
+      <section>
+        <Link
+          href="/platform/beta/access-requests"
+          className="block rounded-lg border border-primary/20 bg-primary/5 p-6 hover:border-primary/40 transition-colors"
+          data-testid="access-requests-discovery-card"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-text-primary">Access requests</h2>
+              <p className="text-sm text-text-muted mt-1">
+                Review pending requests, approve invitations, or record why access was declined.
+              </p>
+            </div>
+            {pendingAccessRequestCount !== null && (
+              <div className="text-right shrink-0">
+                <div className="text-2xl font-bold text-primary">{pendingAccessRequestCount}</div>
+                <div className="text-xs text-text-muted">Pending</div>
+              </div>
+            )}
+          </div>
+          <span className="inline-block mt-4 text-sm font-medium text-primary">
+            Review access requests →
+          </span>
+        </Link>
+      </section>
+
       <section>
         <InviteBetaTester />
       </section>

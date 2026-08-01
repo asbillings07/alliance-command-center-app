@@ -5,6 +5,7 @@ import {
   listAccessRequestTriageHistory,
   listBetaWaveOptions,
   checkAccessRequestConflict,
+  getAccessRequestPendingCount,
   ALL_ACCESS_REQUEST_TRIAGE_STATUSES,
   ACCESS_REQUEST_INBOX_WAVE_OPTIONS_LIMIT,
 } from "./accessRequestInbox";
@@ -228,6 +229,28 @@ describeIntegration("accessRequestInbox [integration]", () => {
       // Three deliberate queries: rows, total, status counts — documented as
       // simpler-but-more-round-trips than feedbackInbox's single-CTE shape.
       expect(queryRawSpy).toHaveBeenCalledTimes(3);
+      queryRawSpy.mockRestore();
+    });
+  });
+
+  describe("getAccessRequestPendingCount", () => {
+    it("counts only PENDING requests, matching listAccessRequestsForTriage's PENDING statusCount", async () => {
+      const operator = await makeOperator();
+      const before = await getAccessRequestPendingCount();
+
+      await makeAccessRequest();
+      const declinedRequest = await makeAccessRequest();
+      await declineAccessRequest(declinedRequest.id, operator.id, "no", 0);
+
+      const after = await getAccessRequestPendingCount();
+      // Exactly one new PENDING row (the second request moved to DECLINED).
+      expect(after).toBe(before + 1);
+    });
+
+    it("runs a single lightweight query rather than the full three-query list read model (#177 review: avoid unnecessary DB load on every /platform/beta render)", async () => {
+      const queryRawSpy = vi.spyOn(prisma, "$queryRaw");
+      await getAccessRequestPendingCount();
+      expect(queryRawSpy).toHaveBeenCalledTimes(1);
       queryRawSpy.mockRestore();
     });
   });
