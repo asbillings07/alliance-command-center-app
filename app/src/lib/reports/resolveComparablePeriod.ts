@@ -60,28 +60,38 @@ export function findEligibleComparisonPeriods<T extends ComparablePeriodCandidat
 }
 
 /**
- * Default pick among already-eligible candidates: latest startsAt first,
- * then endsAt desc, createdAt desc, id desc as pure tiebreakers — never a
- * comparability signal on their own (a candidate must already be eligible to
- * reach this function).
+ * Deterministic ordering for already-eligible candidates: latest startsAt
+ * first, then endsAt desc, createdAt desc, id desc as pure tiebreakers —
+ * never a comparability signal on their own (a candidate must already be
+ * eligible to be sorted by this comparator). Shared by `pickDefaultComparisonPeriod`
+ * (the recommended default) and `resolveComparisonPeriodSelection` (the full
+ * `eligiblePeriods` list exposed to callers/UI), so the recommended period
+ * and the option list it's drawn from can never disagree on ordering.
  */
+function compareEligibleCandidates(a: ComparablePeriodCandidate, b: ComparablePeriodCandidate): number {
+  const startDiff = (b.startsAt as Date).getTime() - (a.startsAt as Date).getTime();
+  if (startDiff !== 0) return startDiff;
+
+  const endDiff = (b.endsAt as Date).getTime() - (a.endsAt as Date).getTime();
+  if (endDiff !== 0) return endDiff;
+
+  const createdDiff = b.createdAt.getTime() - a.createdAt.getTime();
+  if (createdDiff !== 0) return createdDiff;
+
+  return b.id.localeCompare(a.id);
+}
+
+export function sortEligibleComparisonPeriods<T extends ComparablePeriodCandidate>(
+  eligible: readonly T[],
+): T[] {
+  return [...eligible].sort(compareEligibleCandidates);
+}
+
 export function pickDefaultComparisonPeriod<T extends ComparablePeriodCandidate>(
   eligible: readonly T[],
 ): T | null {
   if (eligible.length === 0) return null;
-
-  return [...eligible].sort((a, b) => {
-    const startDiff = (b.startsAt as Date).getTime() - (a.startsAt as Date).getTime();
-    if (startDiff !== 0) return startDiff;
-
-    const endDiff = (b.endsAt as Date).getTime() - (a.endsAt as Date).getTime();
-    if (endDiff !== 0) return endDiff;
-
-    const createdDiff = b.createdAt.getTime() - a.createdAt.getTime();
-    if (createdDiff !== 0) return createdDiff;
-
-    return b.id.localeCompare(a.id);
-  })[0]!;
+  return sortEligibleComparisonPeriods(eligible)[0]!;
 }
 
 function toOption(period: ComparablePeriodCandidate): EligiblePeriodOption {
@@ -117,8 +127,9 @@ export function resolveComparisonPeriodSelection(params: {
 }): ComparisonPeriodSelection {
   const { requestedPeriodId, candidates, selected } = params;
   const eligible = findEligibleComparisonPeriods(candidates, selected);
-  const eligibleOptions = eligible.map(toOption);
-  const recommended = pickDefaultComparisonPeriod(eligible);
+  const sortedEligible = sortEligibleComparisonPeriods(eligible);
+  const eligibleOptions = sortedEligible.map(toOption);
+  const recommended = sortedEligible[0] ?? null;
 
   if (!requestedPeriodId) {
     if (!recommended) return { status: "NO_ELIGIBLE_PERIOD" };

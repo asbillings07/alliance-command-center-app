@@ -291,9 +291,13 @@ describe("getMetricSummaryReport orchestration", () => {
       });
     });
 
-    it("is NO_DATA_IN_COMPARISON_PERIOD when the eligible period has zero recorded entries", async () => {
+    it("is NO_DATA_IN_COMPARISON_PERIOD when the selected period has data but the eligible comparison period has zero recorded entries", async () => {
       mockAttachedActiveSum();
-      mockCoreQueries({});
+      // The selected period must itself have data here, so this test
+      // isolates "comparison period is empty" from "selected period is
+      // empty" (see NO_DATA_IN_SELECTED_PERIOD below) — otherwise the new
+      // selected-side gate would short-circuit before this branch ever runs.
+      mockCoreQueries({ aggregateRow: zeroAggregateRow({ sum_value: BigInt(100), latest_entry_count: BigInt(1) }) });
       vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
         {
           id: "eligible-period",
@@ -315,6 +319,38 @@ describe("getMetricSummaryReport orchestration", () => {
 
       expect(report.comparison).toEqual({
         status: "NO_DATA_IN_COMPARISON_PERIOD",
+        period: { id: "eligible-period", name: "Week 11" },
+        eligiblePeriods: [{ id: "eligible-period", name: "Week 11" }],
+      });
+    });
+
+    it("is NO_DATA_IN_SELECTED_PERIOD (never a fabricated decline) when the selected period has no data but the eligible comparison period does", async () => {
+      mockAttachedActiveSum();
+      // Selected period aggregate is zero (the default) -> dataStatus NO_VALUES.
+      mockCoreQueries({});
+      vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
+        {
+          id: "eligible-period",
+          name: "Week 11",
+          startsAt: new Date("2026-02-15"),
+          endsAt: new Date("2026-02-28"),
+          createdAt: new Date("2026-02-15"),
+          periodMetrics: [{ active: true }],
+        },
+      ] as never);
+
+      const report = await getMetricSummaryReport({
+        allianceId: ALLIANCE_ID,
+        metricId: METRIC_ID,
+        periodId: PERIOD_ID,
+      });
+
+      expect(report.dataStatus).toBe("NO_VALUES");
+      // Must never reach the comparison-period aggregate query, let alone
+      // compute an absoluteChange/percentageChange against it.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+      expect(report.comparison).toEqual({
+        status: "NO_DATA_IN_SELECTED_PERIOD",
         period: { id: "eligible-period", name: "Week 11" },
         eligiblePeriods: [{ id: "eligible-period", name: "Week 11" }],
       });

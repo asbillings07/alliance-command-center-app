@@ -3,6 +3,7 @@ import {
   isEligibleComparisonPeriod,
   findEligibleComparisonPeriods,
   pickDefaultComparisonPeriod,
+  sortEligibleComparisonPeriods,
   resolveComparisonPeriodSelection,
   type ComparablePeriodCandidate,
 } from "./resolveComparablePeriod";
@@ -131,6 +132,26 @@ describe("pickDefaultComparisonPeriod", () => {
   });
 });
 
+describe("sortEligibleComparisonPeriods", () => {
+  it("sorts by the same startsAt/endsAt/createdAt/id desc precedence as pickDefaultComparisonPeriod, independent of input order", () => {
+    const oldest = candidate({ id: "oldest", startsAt: new Date("2026-01-01T00:00:00Z") });
+    const middle = candidate({ id: "middle", startsAt: new Date("2026-02-01T00:00:00Z") });
+    const newest = candidate({ id: "newest", startsAt: new Date("2026-03-18T00:00:00Z") });
+
+    // Deliberately unsorted input.
+    const sorted = sortEligibleComparisonPeriods([middle, oldest, newest]);
+
+    expect(sorted.map((p) => p.id)).toEqual(["newest", "middle", "oldest"]);
+  });
+
+  it("does not mutate its input array", () => {
+    const input = [candidate({ id: "a" }), candidate({ id: "b", startsAt: new Date("2026-01-01T00:00:00Z") })];
+    const originalOrder = input.map((p) => p.id);
+    sortEligibleComparisonPeriods(input);
+    expect(input.map((p) => p.id)).toEqual(originalOrder);
+  });
+});
+
 describe("resolveComparisonPeriodSelection", () => {
   it("returns NO_ELIGIBLE_PERIOD when there are no eligible candidates and no request", () => {
     const result = resolveComparisonPeriodSelection({
@@ -177,6 +198,40 @@ describe("resolveComparisonPeriodSelection", () => {
     if (result.status === "RESOLVED") {
       expect(result.period.id).toBe("p2");
     }
+  });
+
+  it("returns eligiblePeriods sorted deterministically (recommended-first), regardless of candidate input order", () => {
+    // Each candidate must independently satisfy the matching-duration
+    // (13-day) eligibility rule, not just have an earlier startsAt.
+    const oldest = candidate({
+      id: "oldest",
+      name: "Oldest",
+      startsAt: new Date("2026-01-01T00:00:00Z"),
+      endsAt: new Date("2026-01-14T00:00:00Z"),
+    });
+    const middle = candidate({
+      id: "middle",
+      name: "Middle",
+      startsAt: new Date("2026-02-01T00:00:00Z"),
+      endsAt: new Date("2026-02-14T00:00:00Z"),
+    });
+    const newest = candidate({
+      id: "newest",
+      name: "Newest",
+      startsAt: new Date("2026-03-18T00:00:00Z"),
+      endsAt: new Date("2026-03-31T00:00:00Z"),
+    });
+
+    // Input order deliberately does not match chronological/recommended order.
+    const result = resolveComparisonPeriodSelection({
+      candidates: [middle, oldest, newest],
+      selected,
+    });
+
+    expect(result.status).toBe("RESOLVED");
+    if (result.status !== "RESOLVED") throw new Error("unreachable");
+    expect(result.period.id).toBe("newest");
+    expect(result.eligiblePeriods.map((p) => p.id)).toEqual(["newest", "middle", "oldest"]);
   });
 
   it("never silently substitutes an explicit but ineligible request — returns INVALID_COMPARISON_PERIOD with a recommendation", () => {

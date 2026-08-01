@@ -83,6 +83,33 @@ describe.skipIf(!runDb)("getMetricSummaryReport [integration]", () => {
     });
   }
 
+  /**
+   * Full control over recordedAt/createdAt/id independently, for exercising
+   * the "latest entry" tie-break precedence
+   * (`recordedAt DESC, createdAt DESC, id DESC`) one column at a time.
+   */
+  async function addEntryWithTiebreak(params: {
+    id?: string;
+    allianceMemberId: string;
+    periodId: string;
+    metricId: string;
+    value: number;
+    recordedAt: Date;
+    createdAt: Date;
+  }) {
+    return prisma.memberMetricEntry.create({
+      data: {
+        id: params.id,
+        allianceMemberId: params.allianceMemberId,
+        periodId: params.periodId,
+        metricId: params.metricId,
+        value: params.value,
+        recordedAt: params.recordedAt,
+        createdAt: params.createdAt,
+      },
+    });
+  }
+
   it("uses the latest entry per member (never sums correction history) for the SUM rollup", async () => {
     const alliance = await makeAlliance();
     const member = await makeMember(alliance.id, "Alice");
@@ -104,6 +131,74 @@ describe.skipIf(!runDb)("getMetricSummaryReport [integration]", () => {
     expect(report.rollup).toEqual({ kind: "SUM", total: 500, hasNegativeValues: false });
     expect(report.rows).toHaveLength(1);
     expect(report.rows[0]).toMatchObject({ allianceMemberId: member.id, value: 500, rank: 1 });
+  });
+
+  it("breaks a recordedAt tie by createdAt, not by id, for the latest-entry pick", async () => {
+    const alliance = await makeAlliance();
+    const member = await makeMember(alliance.id, "Alice");
+    const period = await makePeriod(alliance.id, "Week 1");
+    const metric = await makeMetric(alliance.id, "VS Score", Metric_Type.NUMERIC, MetricSummaryKind.SUM);
+    await attach(period.id, metric.id);
+
+    const recordedAt = new Date("2026-03-01T10:00:00Z");
+    // Deliberately give the createdAt-loser the lexically *larger* id, so
+    // this test only passes if createdAt is genuinely compared before id —
+    // an implementation that (incorrectly) tie-broke by id first would pick
+    // this row and fail the assertion below.
+    await addEntryWithTiebreak({
+      id: "zz-tiebreak-recordedat-loser",
+      allianceMemberId: member.id,
+      periodId: period.id,
+      metricId: metric.id,
+      value: 100,
+      recordedAt,
+      createdAt: new Date("2026-03-01T09:00:00Z"),
+    });
+    await addEntryWithTiebreak({
+      id: "aa-tiebreak-recordedat-winner",
+      allianceMemberId: member.id,
+      periodId: period.id,
+      metricId: metric.id,
+      value: 500,
+      recordedAt,
+      createdAt: new Date("2026-03-01T09:30:00Z"),
+    });
+
+    const report = await getMetricSummaryReport({ allianceId: alliance.id, metricId: metric.id, periodId: period.id });
+
+    expect(report.rows[0]).toMatchObject({ allianceMemberId: member.id, value: 500 });
+  });
+
+  it("breaks a recordedAt + createdAt tie by id descending, for the latest-entry pick", async () => {
+    const alliance = await makeAlliance();
+    const member = await makeMember(alliance.id, "Alice");
+    const period = await makePeriod(alliance.id, "Week 1");
+    const metric = await makeMetric(alliance.id, "VS Score", Metric_Type.NUMERIC, MetricSummaryKind.SUM);
+    await attach(period.id, metric.id);
+
+    const timestamp = new Date("2026-03-01T10:00:00Z");
+    await addEntryWithTiebreak({
+      id: "aa-tiebreak-id-loser",
+      allianceMemberId: member.id,
+      periodId: period.id,
+      metricId: metric.id,
+      value: 100,
+      recordedAt: timestamp,
+      createdAt: timestamp,
+    });
+    await addEntryWithTiebreak({
+      id: "zz-tiebreak-id-winner",
+      allianceMemberId: member.id,
+      periodId: period.id,
+      metricId: metric.id,
+      value: 500,
+      recordedAt: timestamp,
+      createdAt: timestamp,
+    });
+
+    const report = await getMetricSummaryReport({ allianceId: alliance.id, metricId: metric.id, periodId: period.id });
+
+    expect(report.rows[0]).toMatchObject({ allianceMemberId: member.id, value: 500 });
   });
 
   it("includes archived contributors in the total, shows a missing member as null, and honors the active-only default filter", async () => {
@@ -382,6 +477,75 @@ describe.skipIf(!runDb)("getMetricSummaryReport [integration]", () => {
       rollup: { kind: "SUM", total: 100 },
       absoluteChange: 100,
       percentageChange: 100,
+    });
+  });
+
+  it("reports NO_DATA_IN_SELECTED_PERIOD (not a fabricated decline) when an active but empty selected period is compared against a populated prior period", async () => {
+    const alliance = await makeAlliance();
+    const member = await makeMember(alliance.id, "Alice");
+    const metric = await makeMetric(alliance.id, "VS Score", Metric_Type.NUMERIC, MetricSummaryKind.SUM);
+
+    // Selected: attached and active, but nobody has recorded a value yet.
+    const selected = await makePeriod(alliance.id, "Week 2", {
+      startsAt: new Date("2026-03-08T00:00:00Z"),
+      endsAt: new Date("2026-03-14T00:00:00Z"),
+    });
+    await attach(selected.id, metric.id);
+
+    // Prior: same duration, ends before selected starts, and has real data.
+    const prior = await makePeriod(alliance.id, "Week 1", {
+      startsAt: new Date("2026-03-01T00:00:00Z"),
+      endsAt: new Date("2026-03-07T00:00:00Z"),
+    });
+    await attach(prior.id, metric.id);
+    await addEntry(member.id, prior.id, metric.id, 500, new Date("2026-03-05T00:00:00Z"));
+
+    const report = await getMetricSummaryReport({
+      allianceId: alliance.id,
+      metricId: metric.id,
+      periodId: selected.id,
+    });
+
+    expect(report.attachmentStatus).toBe("ACTIVE");
+    expect(report.dataStatus).toBe("NO_VALUES");
+    expect(report.rollup).toEqual({ kind: "SUM", total: 0, hasNegativeValues: false });
+    // Must not fabricate a -100% "decline" against the prior period's real total.
+    expect(report.comparison).toMatchObject({
+      status: "NO_DATA_IN_SELECTED_PERIOD",
+      period: { id: prior.id, name: "Week 1" },
+    });
+  });
+
+  it("reports NO_DATA_IN_SELECTED_PERIOD when a NOT_ATTACHED selected period is compared against a populated prior period", async () => {
+    const alliance = await makeAlliance();
+    const member = await makeMember(alliance.id, "Alice");
+    const metric = await makeMetric(alliance.id, "VS Score", Metric_Type.NUMERIC, MetricSummaryKind.SUM);
+
+    // Selected: has dates (so duration/date eligibility can be evaluated),
+    // but the metric was never attached to it at all.
+    const selected = await makePeriod(alliance.id, "Week 2", {
+      startsAt: new Date("2026-03-08T00:00:00Z"),
+      endsAt: new Date("2026-03-14T00:00:00Z"),
+    });
+
+    const prior = await makePeriod(alliance.id, "Week 1", {
+      startsAt: new Date("2026-03-01T00:00:00Z"),
+      endsAt: new Date("2026-03-07T00:00:00Z"),
+    });
+    await attach(prior.id, metric.id);
+    await addEntry(member.id, prior.id, metric.id, 500, new Date("2026-03-05T00:00:00Z"));
+
+    const report = await getMetricSummaryReport({
+      allianceId: alliance.id,
+      metricId: metric.id,
+      periodId: selected.id,
+    });
+
+    expect(report.attachmentStatus).toBe("NOT_ATTACHED");
+    expect(report.dataStatus).toBe("NO_VALUES");
+    expect(report.comparison).toMatchObject({
+      status: "NO_DATA_IN_SELECTED_PERIOD",
+      period: { id: prior.id, name: "Week 1" },
     });
   });
 

@@ -134,6 +134,20 @@ export type MetricSummaryComparison =
       eligiblePeriods: EligiblePeriodOption[];
     }
   | {
+      /**
+       * The resolved comparison period has data, but the *selected* period
+       * doesn't (dataStatus === "NO_VALUES", which also covers
+       * attachmentStatus === "NOT_ATTACHED"). Reported separately from
+       * `COMPARED` because the selected rollup — e.g. a SUM total of 0 —
+       * is an absence of data, not a measured decline to zero. Computing a
+       * change against it would fabricate a misleading swing (typically
+       * -100%) for a period that simply has nothing recorded yet.
+       */
+      status: "NO_DATA_IN_SELECTED_PERIOD";
+      period: EligiblePeriodOption;
+      eligiblePeriods: EligiblePeriodOption[];
+    }
+  | {
       status: "COMPARED";
       period: EligiblePeriodOption;
       eligiblePeriods: EligiblePeriodOption[];
@@ -596,6 +610,11 @@ async function loadComparisonCandidates(
       createdAt: true,
       periodMetrics: { where: { metricId }, select: { active: true } },
     },
+    // Matches `sortEligibleComparisonPeriods`'s tiebreak precedence so this
+    // list is deterministic before the pure eligibility/ordering logic ever
+    // sees it, not only after — Postgres gives no ordering guarantee
+    // without an explicit ORDER BY.
+    orderBy: [{ startsAt: "desc" }, { endsAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
   });
 
   return periods.map((period) => ({
@@ -615,10 +634,19 @@ async function buildComparisonSection(params: {
   summaryKind: MetricSummaryKind;
   selectedPeriod: PeriodInfo;
   selectedRollup: MetricRollup;
+  selectedDataStatus: MetricPeriodDataStatus;
   comparePeriodId: string | undefined;
 }): Promise<MetricSummaryComparison | null> {
-  const { allianceId, metricId, isBooleanMetric, summaryKind, selectedPeriod, selectedRollup, comparePeriodId } =
-    params;
+  const {
+    allianceId,
+    metricId,
+    isBooleanMetric,
+    summaryKind,
+    selectedPeriod,
+    selectedRollup,
+    selectedDataStatus,
+    comparePeriodId,
+  } = params;
 
   if (summaryKind === MetricSummaryKind.NONE) {
     return null;
@@ -640,6 +668,14 @@ async function buildComparisonSection(params: {
       status: "INVALID_COMPARISON_PERIOD",
       requestedPeriodId: selection.requestedPeriodId,
       recommended: selection.recommended,
+      eligiblePeriods: selection.eligiblePeriods,
+    };
+  }
+
+  if (selectedDataStatus === "NO_VALUES") {
+    return {
+      status: "NO_DATA_IN_SELECTED_PERIOD",
+      period: selection.period,
       eligiblePeriods: selection.eligiblePeriods,
     };
   }
@@ -796,6 +832,7 @@ export async function getMetricSummaryReport(params: {
     summaryKind: metric.summaryKind,
     selectedPeriod: periodInfo,
     selectedRollup: rollup,
+    selectedDataStatus: dataStatus,
     comparePeriodId,
   });
 
