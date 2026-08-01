@@ -1,16 +1,62 @@
 "use server";
-import { Metric_Type } from "@/app/generated/prisma/client";
+import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/client";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
+import {
+  isValidSummaryKindForType,
+  describeSummaryKindMismatch,
+  validateUnitLabel,
+} from "@/app/src/lib/metrics/metricSummaryKind";
 import { revalidatePath } from "next/cache";
 
 export type MetricActionResult = {
   error?: string;
   success?: boolean;
 };
+
+function revalidateReportRoutes(allianceId: string): void {
+  revalidatePath(`/alliances/${allianceId}/reports`);
+  revalidatePath("/alliances/[allianceId]/reports/metrics/[metricId]", "page");
+}
+
+type ReportingFields = { summaryKind: MetricSummaryKind; unitLabel: string | null };
+
+/**
+ * Reads and validates the "Reporting" section of the metric form: the
+ * summaryKind enum value and the optional unitLabel, rejecting any
+ * (type, summaryKind) combination outside the compatibility matrix. This is
+ * a fast, friendly pre-check; the migration's DB CHECK constraint is the
+ * actual invariant (#190).
+ */
+function parseReportingFields(
+  formData: FormData,
+  type: Metric_Type,
+): { data: ReportingFields } | { error: string } {
+  const rawSummaryKind = formData.get("summaryKind");
+  const summaryKind = (
+    typeof rawSummaryKind === "string" && rawSummaryKind ? rawSummaryKind : MetricSummaryKind.NONE
+  ) as MetricSummaryKind;
+  if (!Object.values(MetricSummaryKind).includes(summaryKind)) {
+    return { error: "Invalid summary kind" };
+  }
+  if (!isValidSummaryKindForType(type, summaryKind)) {
+    return { error: describeSummaryKindMismatch(type, summaryKind) };
+  }
+
+  const rawUnitLabel = formData.get("unitLabel");
+  if (rawUnitLabel !== null && typeof rawUnitLabel !== "string") {
+    return { error: "Invalid unit label" };
+  }
+  const unitLabelValidation = validateUnitLabel(rawUnitLabel);
+  if (!unitLabelValidation.ok) {
+    return { error: unitLabelValidation.message };
+  }
+
+  return { data: { summaryKind, unitLabel: unitLabelValidation.value } };
+}
 
 async function revalidateMetricStateChange(
   allianceId: string,
@@ -23,7 +69,7 @@ async function revalidateMetricStateChange(
 
   revalidateAllianceData({
     allianceId,
-    domains: ["setup", "dashboard"],
+    domains: ["setup", "dashboard", "reports"],
   });
   revalidatePath(`/alliances/${allianceId}/metrics`);
   revalidatePath(`/alliances/${allianceId}/periods`);
@@ -64,6 +110,11 @@ export async function createMetric(
     return { error: "Invalid metric type" };
   }
 
+  const reporting = parseReportingFields(formData, type);
+  if ("error" in reporting) {
+    return { error: reporting.error };
+  }
+
   try {
     await prisma.$transaction(async (tx) => {
       await tx.metric.create({
@@ -72,6 +123,8 @@ export async function createMetric(
           name: name.trim(),
           description,
           type,
+          summaryKind: reporting.data.summaryKind,
+          unitLabel: reporting.data.unitLabel,
         },
       });
       await touchAllianceSetupActivity(tx, allianceId);
@@ -82,6 +135,7 @@ export async function createMetric(
   }
 
   revalidatePath(`/alliances/${allianceId}/metrics`);
+  revalidateReportRoutes(allianceId);
   return { success: true };
 }
 
@@ -128,9 +182,16 @@ export async function editMetric(
   const description =
     typeof rawDescription === "string" ? rawDescription.trim() || null : null;
 
-  const type = formData.get("type") as Metric_Type;
-  if (!Object.values(Metric_Type).includes(type)) {
-    return { error: "Invalid metric type" };
+  // #190: type is immutable after creation. A metric's historical entries
+  // are only meaningful under the type they were recorded with, and a
+  // count-then-write check for "any entries yet?" would still race a
+  // concurrent result write. The submitted `type` field (disabled in the
+  // edit form) is always ignored in favor of the metric's existing type.
+  const type = metric.type;
+
+  const reporting = parseReportingFields(formData, type);
+  if ("error" in reporting) {
+    return { error: reporting.error };
   }
 
   try {
@@ -140,7 +201,8 @@ export async function editMetric(
         data: {
           name: name.trim(),
           description,
-          type,
+          summaryKind: reporting.data.summaryKind,
+          unitLabel: reporting.data.unitLabel,
         },
       });
       await touchAllianceSetupActivity(tx, allianceId);
@@ -151,6 +213,7 @@ export async function editMetric(
   }
 
   revalidatePath(`/alliances/${allianceId}/metrics`);
+  revalidateReportRoutes(allianceId);
   return { success: true };
 }
 

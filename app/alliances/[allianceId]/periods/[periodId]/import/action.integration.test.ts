@@ -536,4 +536,115 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             })
         ).rejects.toThrow(/You do not have permission to create a metric for column 'VS 7'/i);
     });
+
+    describe("BOOLEAN metric value enforcement (#190)", () => {
+        it("rejects a non-0/1 value for an existing attached BOOLEAN metric with zero writes", async () => {
+            const { alliance, member, periodA } = await makeTestSetup();
+            const boolMetric = await prisma.metric.create({
+                data: { allianceId: alliance.id, name: "Attendance", type: "BOOLEAN" },
+            });
+            await prisma.metricPeriodMetric.create({
+                data: { periodId: periodA.id, metricId: boolMetric.id, weight: 1, required: false },
+            });
+
+            await expect(
+                importMemberMetrics({
+                    periodId: periodA.id,
+                    allianceId: alliance.id,
+                    mappings: [
+                        {
+                            sourceColumnName: "Attendance",
+                            target: { kind: "existing", metricId: boolMetric.id },
+                            entries: [{ memberId: member.id, rawValue: "2" }],
+                        },
+                    ],
+                }),
+            ).rejects.toThrow("Boolean metric values must be exactly 0 or 1");
+
+            const entriesCount = await prisma.memberMetricEntry.count({
+                where: { periodId: periodA.id, metricId: boolMetric.id },
+            });
+            expect(entriesCount).toBe(0);
+        });
+
+        it("accepts 0 and 1 for an existing attached BOOLEAN metric", async () => {
+            const { alliance, member, periodA } = await makeTestSetup();
+            const boolMetric = await prisma.metric.create({
+                data: { allianceId: alliance.id, name: "Attendance", type: "BOOLEAN" },
+            });
+            await prisma.metricPeriodMetric.create({
+                data: { periodId: periodA.id, metricId: boolMetric.id, weight: 1, required: false },
+            });
+
+            const result = await importMemberMetrics({
+                periodId: periodA.id,
+                allianceId: alliance.id,
+                mappings: [
+                    {
+                        sourceColumnName: "Attendance",
+                        target: { kind: "existing", metricId: boolMetric.id },
+                        entries: [{ memberId: member.id, rawValue: "1" }],
+                    },
+                ],
+            });
+
+            expect(result.success).toBe(true);
+            const entry = await prisma.memberMetricEntry.findFirst({
+                where: { periodId: periodA.id, metricId: boolMetric.id },
+            });
+            expect(entry?.value).toBe(1);
+        });
+
+        it("rejects a non-0/1 value against a BOOLEAN metric only resolved mid-transaction (a 'create' target that name-matches an existing library metric)", async () => {
+            const { alliance, member, periodA } = await makeTestSetup();
+            // Not attached to periodA yet — resolveMetricTargets will attach it
+            // as part of this import's transaction, so its authoritative type
+            // is only knowable *after* resolution, not from any pre-resolution
+            // snapshot.
+            const boolMetric = await prisma.metric.create({
+                data: { allianceId: alliance.id, name: "Attendance", type: "BOOLEAN" },
+            });
+
+            vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
+                user: { id: "integration-test-user", email: "test@local" },
+                permissions: {
+                    canImportMetrics: true,
+                    canConfigurePeriods: true,
+                    canConfigureMetrics: true,
+                } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["permissions"],
+                membership: { role: "ADMIN" } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["membership"],
+            });
+
+            const initialAttachmentCount = await prisma.metricPeriodMetric.count({
+                where: { periodId: periodA.id, metricId: boolMetric.id },
+            });
+
+            await expect(
+                importMemberMetrics({
+                    periodId: periodA.id,
+                    allianceId: alliance.id,
+                    mappings: [
+                        {
+                            // "create" intent that classifyTargets downgrades to
+                            // "attach" because the name already matches boolMetric.
+                            sourceColumnName: "Attendance",
+                            target: { kind: "create", name: "Attendance" },
+                            entries: [{ memberId: member.id, rawValue: "5" }],
+                        },
+                    ],
+                }),
+            ).rejects.toThrow("Boolean metric values must be exactly 0 or 1");
+
+            // The whole transaction (including the mid-transaction attach) rolled back.
+            const finalAttachmentCount = await prisma.metricPeriodMetric.count({
+                where: { periodId: periodA.id, metricId: boolMetric.id },
+            });
+            expect(finalAttachmentCount).toBe(initialAttachmentCount);
+
+            const entriesCount = await prisma.memberMetricEntry.count({
+                where: { periodId: periodA.id, metricId: boolMetric.id },
+            });
+            expect(entriesCount).toBe(0);
+        });
+    });
 });

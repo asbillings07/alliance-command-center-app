@@ -18,6 +18,7 @@ import {
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { classifyColumn } from "@/app/src/lib/columnClassifier";
+import { assertBooleanMetricValuesValid } from "@/app/src/lib/metrics/assertBooleanMetricValues";
 
 type ImportMetricsInput = {
   periodId: string;
@@ -174,6 +175,11 @@ export async function importMemberMetrics(
     }));
     const plan = buildMetricImportPlan(finalMappings);
 
+    // Re-check authoritative metric types after resolution (a "create" target
+    // only becomes a concrete metric mid-transaction above) and reject any
+    // BOOLEAN-mapped value outside {0, 1} before writing anything (#190).
+    await assertBooleanMetricValuesValid(tx, plan.mappings);
+
     for (const mapping of plan.mappings) {
       await tx.memberMetricEntry.createMany({
         data: mapping.entries.map((entry) => ({
@@ -193,7 +199,7 @@ export async function importMemberMetrics(
   revalidateAllianceData({
     allianceId,
     periodId,
-    domains: ["evaluation-results", "members", "dashboard", "setup"],
+    domains: ["evaluation-results", "members", "dashboard", "setup", "reports"],
   });
 
   // Resolve metric names for the UI from the persisted rows, not the active

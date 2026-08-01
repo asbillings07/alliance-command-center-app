@@ -103,7 +103,7 @@ describe("addMetricToPeriod", () => {
     expect(revalidateAllianceData).toHaveBeenCalledWith({
       allianceId,
       periodId,
-      domains: ["evaluation-results", "setup", "dashboard"],
+      domains: ["evaluation-results", "setup", "dashboard", "reports"],
     });
   });
 });

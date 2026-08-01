@@ -98,7 +98,7 @@ export async function addMetricToPeriod(
   revalidateAllianceData({
     allianceId,
     periodId,
-    domains: ["evaluation-results", "setup", "dashboard"],
+    domains: ["evaluation-results", "setup", "dashboard", "reports"],
   });
   return { success: true };
 }
@@ -151,7 +151,7 @@ export async function editPeriodMetric(
   revalidateAllianceData({
     allianceId,
     periodId,
-    domains: ["evaluation-results", "setup", "dashboard"],
+    domains: ["evaluation-results", "setup", "dashboard", "reports"],
   });
   return { success: true };
 }

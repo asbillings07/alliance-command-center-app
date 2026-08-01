@@ -78,4 +78,17 @@ describe("revalidateAllianceData", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/setup");
     expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/setup/import");
   });
+
+  it("revalidating reports invalidates the index and the per-metric route pattern", () => {
+    revalidateAllianceData({
+      allianceId: "all_123",
+      domains: ["reports"],
+    });
+
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/reports");
+    expect(revalidatePath).toHaveBeenCalledWith(
+      "/alliances/[allianceId]/reports/metrics/[metricId]",
+      "page",
+    );
+  });
 });

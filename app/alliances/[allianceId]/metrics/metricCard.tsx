@@ -1,6 +1,6 @@
 "use client";
 
-import { Metric_Type } from "@/app/generated/prisma/enums";
+import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/enums";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { MetricForm } from "./metricForm";
@@ -13,6 +13,8 @@ type MetricData = {
   name: string;
   description: string | null;
   type: Metric_Type;
+  summaryKind: MetricSummaryKind;
+  unitLabel: string | null;
   active: boolean;
   metricKey: string;
 };
@@ -28,6 +30,13 @@ type MetricCardProps = {
 const METRIC_TYPE_VARIANTS: Record<Metric_Type, { label: string; variant: "info" | "success" }> = {
   [Metric_Type.NUMERIC]: { label: "Numeric", variant: "info" },
   [Metric_Type.BOOLEAN]: { label: "Boolean", variant: "success" },
+};
+
+const SUMMARY_KIND_BADGE_LABELS: Record<MetricSummaryKind, string> = {
+  [MetricSummaryKind.NONE]: "No rollup",
+  [MetricSummaryKind.SUM]: "Total",
+  [MetricSummaryKind.AVERAGE]: "Average",
+  [MetricSummaryKind.TRUE_RATE]: "True rate",
 };
 
 export function MetricCard({
@@ -159,6 +168,8 @@ export function MetricCard({
         name={metric.name}
         description={metric.description || ""}
         type={metric.type}
+        summaryKind={metric.summaryKind}
+        unitLabel={metric.unitLabel}
         onCancel={() => setCardState("view")}
       />
     );
@@ -179,6 +190,12 @@ export function MetricCard({
               <Badge variant={typeInfo.variant} size="sm">
                 {typeInfo.label}
               </Badge>
+              {metric.summaryKind !== MetricSummaryKind.NONE && (
+                <Badge variant="neutral" size="sm">
+                  {SUMMARY_KIND_BADGE_LABELS[metric.summaryKind]}
+                  {metric.unitLabel ? ` (${metric.unitLabel})` : ""}
+                </Badge>
+              )}
               {!metric.active && (
                 <Badge variant="neutral" size="sm">
                   Archived

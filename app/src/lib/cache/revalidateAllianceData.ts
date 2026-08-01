@@ -5,7 +5,8 @@ export type InvalidationDomain =
   | "members"
   | "evaluation-results"
   | "setup"
-  | "dashboard";
+  | "dashboard"
+  | "reports";
 
 export type RevalidateAllianceDataParams = {
   allianceId: string;
@@ -24,6 +25,7 @@ export type RevalidateAllianceDataParams = {
   * - "evaluation-results": Period detail (/alliances/[id]/periods/[periodId]), record page, and import page
   * - "setup": Alliance onboarding setup checklist (/alliances/[id]/setup) and guided import (/alliances/[id]/setup/import)
   * - "dashboard": Alliance overview dashboard (/alliances/[id])
+  * - "reports": Reports index (/alliances/[id]/reports) and per-metric report route pattern (/alliances/[allianceId]/reports/metrics/[metricId])
   */
 export function revalidateAllianceData(params: RevalidateAllianceDataParams): void {
   const { allianceId, domains, periodId } = params;
@@ -57,5 +59,10 @@ export function revalidateAllianceData(params: RevalidateAllianceDataParams): vo
 
   if (domainsSet.has("dashboard")) {
     revalidatePath(`/alliances/${allianceId}`);
+  }
+
+  if (domainsSet.has("reports")) {
+    revalidatePath(`/alliances/${allianceId}/reports`);
+    revalidatePath("/alliances/[allianceId]/reports/metrics/[metricId]", "page");
   }
 }

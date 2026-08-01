@@ -697,4 +697,69 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
       }),
     ).rejects.toThrow(/new period name may only appear once/i);
   });
+
+  describe("BOOLEAN metric value enforcement (#190)", () => {
+    it("rejects a non-0/1 value for an existing attached BOOLEAN metric across periods with zero writes", async () => {
+      const { alliance, member, periodA, periodB } = await makeTestSetup();
+      const boolMetric = await prisma.metric.create({
+        data: { allianceId: alliance.id, name: "Attendance", type: "BOOLEAN" },
+      });
+      await prisma.metricPeriodMetric.create({
+        data: { periodId: periodA.id, metricId: boolMetric.id, weight: 1, required: false },
+      });
+
+      await expect(
+        importMultiPeriodMetrics({
+          allianceId: alliance.id,
+          groups: [
+            {
+              target: { kind: "existing", periodId: periodA.id },
+              mappings: [
+                {
+                  sourceColumnName: "Attendance",
+                  target: { kind: "existing", metricId: boolMetric.id },
+                  entries: [{ memberId: member.id, rawValue: "2" }],
+                },
+              ],
+            },
+          ],
+        }),
+      ).rejects.toThrow("Boolean metric values must be exactly 0 or 1");
+
+      expect(await prisma.memberMetricEntry.count({ where: { periodId: periodA.id } })).toBe(0);
+      expect(await prisma.memberMetricEntry.count({ where: { periodId: periodB.id } })).toBe(0);
+    });
+
+    it("accepts 0 and 1 for an existing attached BOOLEAN metric", async () => {
+      const { alliance, member, periodA } = await makeTestSetup();
+      const boolMetric = await prisma.metric.create({
+        data: { allianceId: alliance.id, name: "Attendance", type: "BOOLEAN" },
+      });
+      await prisma.metricPeriodMetric.create({
+        data: { periodId: periodA.id, metricId: boolMetric.id, weight: 1, required: false },
+      });
+
+      const result = await importMultiPeriodMetrics({
+        allianceId: alliance.id,
+        groups: [
+          {
+            target: { kind: "existing", periodId: periodA.id },
+            mappings: [
+              {
+                sourceColumnName: "Attendance",
+                target: { kind: "existing", metricId: boolMetric.id },
+                entries: [{ memberId: member.id, rawValue: "0" }],
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(result.success).toBe(true);
+      const entry = await prisma.memberMetricEntry.findFirst({
+        where: { periodId: periodA.id, metricId: boolMetric.id },
+      });
+      expect(entry?.value).toBe(0);
+    });
+  });
 });

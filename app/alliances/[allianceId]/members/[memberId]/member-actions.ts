@@ -18,6 +18,13 @@ function parseIntOrNull(value: string | undefined): number | null {
     return Number.isFinite(num) ? num : null;
 }
 
+// #190: archive/restore/rename all change roster composition or the display
+// name shown in every metric report.
+function revalidateReportPaths(allianceId: string): void {
+    revalidatePath(`/alliances/${allianceId}/reports`);
+    revalidatePath("/alliances/[allianceId]/reports/metrics/[metricId]", "page");
+}
+
 export async function archiveMember(
     formData: FormData
 ): Promise<MemberActionResult> {
@@ -62,6 +69,7 @@ export async function archiveMember(
 
     revalidatePath(`/alliances/${allianceId}/members`);
     revalidatePath(`/alliances/${allianceId}/members/${memberId}`);
+    revalidateReportPaths(allianceId);
     return { success: true };
 }
 
@@ -116,6 +124,7 @@ export async function restoreMember(
 
         revalidatePath(`/alliances/${allianceId}/members`);
         revalidatePath(`/alliances/${allianceId}/members/${memberId}`);
+        revalidateReportPaths(allianceId);
         return { success: true };
     } catch (error) {
         if (error instanceof Error) {
@@ -205,6 +214,7 @@ export async function updateMember(
 
         revalidatePath(`/alliances/${allianceId}/members`);
         revalidatePath(`/alliances/${allianceId}/members/${memberId}`);
+        revalidateReportPaths(allianceId);
         return { success: true };
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
