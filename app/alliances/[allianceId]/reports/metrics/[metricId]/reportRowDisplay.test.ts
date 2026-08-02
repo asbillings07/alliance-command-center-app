@@ -43,8 +43,16 @@ describe("formatRowRank", () => {
     expect(formatRowRank(row({ rank: null }), metric())).toBe("—");
   });
 
-  it("hides rank entirely for a BOOLEAN metric, even when the backend computed one", () => {
-    expect(formatRowRank(row({ rank: 1 }), metric({ type: Metric_Type.BOOLEAN, summaryKind: MetricSummaryKind.NONE }))).toBeNull();
+  it("shows the rank for a NONE-kind BOOLEAN metric — NONE's contract includes ranking regardless of type", () => {
+    expect(
+      formatRowRank(row({ rank: 1 }), metric({ type: Metric_Type.BOOLEAN, summaryKind: MetricSummaryKind.NONE })),
+    ).toBe("#1");
+  });
+
+  it("hides rank for TRUE_RATE — its contract is yes/no counts and rate, not ranking", () => {
+    expect(
+      formatRowRank(row({ rank: 1 }), metric({ type: Metric_Type.BOOLEAN, summaryKind: MetricSummaryKind.TRUE_RATE })),
+    ).toBeNull();
   });
 });
 

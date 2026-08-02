@@ -7,15 +7,16 @@ import type { MetricInfo, MetricReportRow } from "@/app/src/lib/reports/getMetri
 export type RowValueDisplay = { text: string; title?: string };
 
 /**
- * Rank is only ever shown for NUMERIC metrics (#190), even though the read
- * model computes a non-null rank for a NONE-kind BOOLEAN metric too (it
- * ranks by the raw 0/1 value). Displaying "rank" over a true/false roster
- * reads as ranking a coin flip rather than a leadership signal, so this is a
- * deliberate UI simplification on top of an otherwise-faithful backend
- * contract — not a bug if a BOOLEAN row's rank is silently dropped here.
+ * Rank is shown for every summary kind except TRUE_RATE (#190) — the spec's
+ * contract is "NONE: member values, ranking, and coverage", which applies
+ * to a BOOLEAN metric just as much as a NUMERIC one (ranked by raw 0/1
+ * value). TRUE_RATE's own contract ("yes/no counts, rate, and member
+ * status") never mentions ranking, so it's the one kind this hides —
+ * gating on `type` instead would have wrongly hidden rank for every
+ * BOOLEAN metric, including NONE-kind ones.
  */
 export function formatRowRank(row: MetricReportRow, metric: MetricInfo): string | null {
-  if (metric.type !== Metric_Type.NUMERIC) return null;
+  if (metric.summaryKind === MetricSummaryKind.TRUE_RATE) return null;
   return row.rank !== null ? `#${row.rank}` : "—";
 }
 

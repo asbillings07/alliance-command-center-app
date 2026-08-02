@@ -14,6 +14,7 @@ import { listReportPeriodOptions } from "@/app/src/lib/reports/listReportPeriodO
 import { PageLayout, Card, Badge, EmptyState } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { MetricReportPeriodSelect, type PeriodSelectOption } from "./MetricReportPeriodSelect";
+import { MetricComparisonControl } from "./MetricComparisonControl";
 import { MetricRollupCard } from "./MetricRollupCard";
 import { MetricCoverageCard } from "./MetricCoverageCard";
 import { MetricReportFilterControls } from "./MetricReportFilterControls";
@@ -197,29 +198,72 @@ export default async function MetricReportPage({ params, searchParams }: Params)
         {report.dataStatus === "NO_VALUES" ? (
           <Card>
             <Card.Body>
-              <EmptyState
-                title={`No results recorded yet for ${report.period.name}`}
-                description={
-                  report.coverage.currentActiveMemberCount > 0
-                    ? `0 of ${report.coverage.currentActiveMemberCount} current active members have a recorded value.`
-                    : undefined
-                }
-                action={
-                  report.attachmentStatus !== "NOT_ATTACHED" && permissions.canImportMetrics ? (
-                    <div className="flex gap-2">
-                      <Button href={`/alliances/${allianceId}/periods/${report.period.id}/record`} variant="primary" size="sm">
-                        Record Now
+              {report.attachmentStatus === "INACTIVE" ? (
+                // Recording/importing only ever target *active* attachments
+                // (the record page's metric picker and the import
+                // resolution both require it) — offering "Record Now" here
+                // would be a dead end. The fix is reactivating the
+                // attachment, which only a period-configuring role can do.
+                <EmptyState
+                  title={`${metric.name}'s attachment to ${report.period.name} is inactive`}
+                  description="No results can be recorded or imported while a metric's attachment to a period is inactive."
+                  action={
+                    permissions.canConfigurePeriods ? (
+                      <Button href={`/alliances/${allianceId}/periods/${report.period.id}`} variant="primary" size="sm">
+                        Reactivate This Attachment
                       </Button>
-                      <Button href={`/alliances/${allianceId}/periods/${report.period.id}/import`} variant="secondary" size="sm">
-                        Import Results
-                      </Button>
-                    </div>
-                  ) : undefined
-                }
-              />
+                    ) : undefined
+                  }
+                  secondaryAction={
+                    !permissions.canConfigurePeriods ? (
+                      <p className="text-sm text-text-secondary">
+                        Ask an Admin or Owner to reactivate it for {report.period.name}.
+                      </p>
+                    ) : undefined
+                  }
+                />
+              ) : (
+                <EmptyState
+                  title={`No results recorded yet for ${report.period.name}`}
+                  description={
+                    report.coverage.currentActiveMemberCount > 0
+                      ? `0 of ${report.coverage.currentActiveMemberCount} current active members have a recorded value.`
+                      : undefined
+                  }
+                  action={
+                    report.attachmentStatus === "ACTIVE" && permissions.canImportMetrics ? (
+                      <div className="flex gap-2">
+                        <Button href={`/alliances/${allianceId}/periods/${report.period.id}/record`} variant="primary" size="sm">
+                          Record Now
+                        </Button>
+                        <Button href={`/alliances/${allianceId}/periods/${report.period.id}/import`} variant="secondary" size="sm">
+                          Import Results
+                        </Button>
+                      </div>
+                    ) : undefined
+                  }
+                />
+              )}
             </Card.Body>
           </Card>
-        ) : (
+        ) : null}
+
+        {/*
+          Rendered independently of the dataStatus branch above:
+          NO_DATA_IN_SELECTED_PERIOD (the comparison period has data even
+          though this one doesn't) is only reachable when dataStatus is
+          NO_VALUES, so nesting it inside the "has values" branch below
+          would make it permanently unreachable.
+        */}
+        {report.dataStatus === "NO_VALUES" && report.comparison?.status === "NO_DATA_IN_SELECTED_PERIOD" && (
+          <Card>
+            <Card.Body>
+              <MetricComparisonControl allianceId={allianceId} metricId={metricId} comparison={report.comparison} />
+            </Card.Body>
+          </Card>
+        )}
+
+        {report.dataStatus !== "NO_VALUES" && (
           <>
             <MetricRollupCard
               allianceId={allianceId}

@@ -15,8 +15,11 @@ type Props = {
  * Resolves the comparison period for a metric report (#190): selects among
  * the read model's `eligiblePeriods`, and surfaces the specific reason a
  * comparison isn't currently showing a change (no eligible period at all,
- * an invalid/stale `comparePeriodId` in the URL, or an eligible period with
- * no recorded data yet). Never silently substitutes a different period than
+ * an invalid/stale `comparePeriodId` in the URL, the comparison period has
+ * no recorded data yet, or — the reverse — the *selected* period has none
+ * even though the comparison period does). The caller renders this even on
+ * the report's no-values empty state so `NO_DATA_IN_SELECTED_PERIOD` isn't
+ * silently dropped. Never silently substitutes a different period than
  * what the URL asked for — `INVALID_COMPARISON_PERIOD` requires an explicit
  * "Use recommended" action from the leader.
  */
@@ -46,7 +49,9 @@ export function MetricComparisonControl({ allianceId, metricId, comparison }: Pr
   }
 
   const currentValue =
-    comparison.status === "COMPARED" || comparison.status === "NO_DATA_IN_COMPARISON_PERIOD"
+    comparison.status === "COMPARED" ||
+    comparison.status === "NO_DATA_IN_COMPARISON_PERIOD" ||
+    comparison.status === "NO_DATA_IN_SELECTED_PERIOD"
       ? comparison.period.id
       : "";
 
@@ -71,6 +76,12 @@ export function MetricComparisonControl({ allianceId, metricId, comparison }: Pr
       {comparison.status === "NO_DATA_IN_COMPARISON_PERIOD" && (
         <p className="text-sm text-text-muted" data-testid="comparison-no-data-banner">
           No results were recorded in {comparison.period.name} to compare against.
+        </p>
+      )}
+      {comparison.status === "NO_DATA_IN_SELECTED_PERIOD" && (
+        <p className="text-sm text-text-muted" data-testid="comparison-no-data-in-selected-period-banner">
+          This period has no recorded results yet, so there&apos;s nothing to compare. {comparison.period.name} does
+          have recorded results, once this period has some too.
         </p>
       )}
       {comparison.eligiblePeriods.length > 0 && (

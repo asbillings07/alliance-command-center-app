@@ -184,6 +184,8 @@ test.describe("Metric Summary Report", () => {
       await expect(page.getByTestId(`report-row-${bob.id}`)).toContainText("No");
       await expect(page.getByTestId(`report-row-${carol.id}`)).toContainText("Invalid");
       await expect(page.getByTestId("coverage-invalid-note")).toBeVisible();
+      // TRUE_RATE's contract is yes/no counts and rate, not ranking.
+      await expect(page.getByRole("columnheader", { name: "Rank" })).toHaveCount(0);
     } finally {
       await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id, bob.id, carol.id] });
     }
@@ -211,6 +213,10 @@ test.describe("Metric Summary Report", () => {
 
       await expect(page.getByTestId("rollup-headline")).toHaveCount(0);
       await expect(page.getByTestId(`report-row-${alice.id}`)).toContainText("55");
+      // NONE's contract includes ranking even for a (hypothetically) BOOLEAN
+      // metric — this NUMERIC case at least confirms the column isn't
+      // dropped just because there's no alliance-wide rollup.
+      await expect(page.getByTestId(`report-row-${alice.id}`)).toContainText("#1");
       await expect(page.getByText(new RegExp(`1 of ${currentActiveMemberCount} current active members`))).toBeVisible();
     } finally {
       await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id] });
@@ -351,22 +357,157 @@ test.describe("Metric Summary Report", () => {
     await recordEntry(period.id, metric.id, zed.id, 90);
 
     try {
-      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
+      // Search narrows the roster to just this test's two seeded members —
+      // both names embed `suffix` — so rank/order assertions below can't be
+      // thrown off by the shared fixture alliance's other active members
+      // (whose names aren't controlled by this test).
+      await page.goto(
+        `/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}&search=${suffix}`,
+      );
 
       // Default sort (value_desc): Zed (90) ranks above Alice (10). Scoped to
       // `tr` to exclude the mobile card layout, whose
       // `report-row-card-{id}` testid also matches this prefix.
       const rows = page.locator("tr[data-testid^='report-row-']");
+      await expect(rows).toHaveCount(2);
       await expect(rows.first()).toHaveAttribute("data-testid", `report-row-${zed.id}`);
 
-      // Search narrows to a single matching member.
+      // Sort by name instead: Alice sorts before Zed alphabetically,
+      // reversing the default value-based order above.
+      await page.getByLabel(/sort/i).selectOption("name_asc");
+      await page.getByRole("button", { name: /apply/i }).click();
+      await page.waitForURL(/sort=name_asc/);
+      await expect(rows.first()).toHaveAttribute("data-testid", `report-row-${alice.id}`);
+
+      // Narrowing the search further to only Alice's name excludes Zed.
       await page.getByLabel(/search/i).fill(`Alice-${suffix}`);
       await page.getByRole("button", { name: /apply/i }).click();
-      await page.waitForURL(/search=/);
+      await page.waitForURL(/search=Alice/);
       await expect(page.getByTestId(`report-row-${alice.id}`)).toBeVisible();
       await expect(page.getByTestId(`report-row-${zed.id}`)).toHaveCount(0);
     } finally {
       await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id, zed.id] });
+    }
+  });
+
+  test("an out-of-range page number clamps to the last valid page instead of showing an empty result", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix);
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+    const alice = await seedMember(`Alice-${suffix}`);
+    await recordEntry(period.id, metric.id, alice.id, 10);
+
+    try {
+      // Only one page of results exists, but the URL asks for page 999.
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}&page=999`);
+
+      await expect(page.getByText(/page 1 of 1/i)).toBeVisible();
+      await expect(page.getByTestId(`report-row-${alice.id}`)).toBeVisible();
+      await expect(page.getByTestId("report-no-rows")).toHaveCount(0);
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id] });
+    }
+  });
+
+  test("an archived member's filter is independent of the alliance total: hidden by the active filter, visible under archived/all, and reconciled by a note", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix, { unitLabel: "pts" });
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+    const alice = await seedMember(`Alice-${suffix}`);
+    const zed = await seedMember(`Zed-${suffix}`, { archived: true });
+    await recordEntry(period.id, metric.id, alice.id, 10);
+    await recordEntry(period.id, metric.id, zed.id, 90);
+
+    try {
+      // Default filter is active members: the alliance total honestly
+      // includes Zed's contribution even though the active-only roster
+      // below doesn't show her row, and the coverage card says so.
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
+
+      await expect(page.getByTestId("rollup-headline")).toContainText("100");
+      await expect(page.getByTestId(`report-row-${alice.id}`)).toBeVisible();
+      await expect(page.getByTestId(`report-row-${zed.id}`)).toHaveCount(0);
+      await expect(page.getByTestId("archived-contributors-note")).toContainText("1 archived contributor");
+
+      // Switching to the archived filter surfaces Zed instead of Alice.
+      await page.getByLabel(/roster/i).selectOption("archived");
+      await page.getByRole("button", { name: /apply/i }).click();
+      await page.waitForURL(/filter=archived/);
+      await expect(page.getByTestId(`report-row-${zed.id}`)).toBeVisible();
+      await expect(page.getByTestId(`report-row-${alice.id}`)).toHaveCount(0);
+
+      // The "all" filter shows both, and the reconciliation note disappears
+      // since nothing is hidden by the filter anymore.
+      await page.getByLabel(/roster/i).selectOption("all");
+      await page.getByRole("button", { name: /apply/i }).click();
+      await page.waitForURL(/filter=all/);
+      await expect(page.getByTestId(`report-row-${alice.id}`)).toBeVisible();
+      await expect(page.getByTestId(`report-row-${zed.id}`)).toBeVisible();
+      await expect(page.getByTestId("archived-contributors-note")).toHaveCount(0);
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id, zed.id] });
+    }
+  });
+
+  test("an inactive attachment with no recorded values offers reactivation guidance, not a dead-end Record Now link", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix);
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id, /* active */ false);
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
+
+      await expect(page.getByTestId("attachment-status-badge")).toContainText("Inactive attachment");
+      await expect(page.getByRole("heading", { name: /is inactive/i })).toBeVisible();
+      // The record/import flows only ever target active attachments, so
+      // offering them here would be a dead end — the fix is reactivating
+      // the attachment itself.
+      await expect(page.getByRole("link", { name: /record now/i })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: /import results/i })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: /reactivate this attachment/i })).toBeVisible();
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id] });
+    }
+  });
+
+  test("an empty selected period compared against a populated prior period shows NO_DATA_IN_SELECTED_PERIOD, not a fabricated decline", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix);
+    const previous = await seedPeriod(`${suffix}-prev`, {
+      startsAt: new Date("2026-03-01T00:00:00.000Z"),
+      endsAt: new Date("2026-03-07T23:59:59.999Z"),
+    });
+    const current = await seedPeriod(`${suffix}-curr`, {
+      startsAt: new Date("2026-03-08T00:00:00.000Z"),
+      endsAt: new Date("2026-03-14T23:59:59.999Z"),
+    });
+    await attachMetric(previous.id, metric.id);
+    await attachMetric(current.id, metric.id);
+    const alice = await seedMember(`Alice-${suffix}`);
+    await recordEntry(previous.id, metric.id, alice.id, 100);
+    // No entries recorded in `current` — its dataStatus is NO_VALUES even
+    // though the eligible comparison period has data.
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${current.id}`);
+
+      await expect(page.getByTestId("rollup-headline")).toHaveCount(0);
+      await expect(page.getByTestId("comparison-no-data-in-selected-period-banner")).toContainText(previous.name);
+      // Never a fabricated "-100%"/decline badge alongside the empty state.
+      await expect(page.getByTestId("rollup-change")).toHaveCount(0);
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [previous.id, current.id], memberIds: [alice.id] });
     }
   });
 

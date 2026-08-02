@@ -1,4 +1,4 @@
-import { Metric_Type } from "@/app/generated/prisma/enums";
+import { MetricSummaryKind } from "@/app/generated/prisma/enums";
 import { Badge } from "@/app/src/components";
 import type { MetricInfo, MetricReportRow } from "@/app/src/lib/reports/getMetricSummaryReport";
 import { formatRowRank, formatRowValue, formatRowKindSpecific, metricReportKindSpecificColumnLabel } from "./reportRowDisplay";
@@ -40,14 +40,14 @@ function RowBody({ metric, row, showRank, kindSpecificLabel }: {
 }
 
 /**
- * The member roster table (#190) — columns adapt to the metric's type and
- * summary kind: rank is hidden for BOOLEAN metrics (see `reportRowDisplay`),
- * and the fourth "kind-specific" column (share of total / vs. average) only
- * appears for SUM/AVERAGE. Dual mobile-card / desktop-table layout matches
- * the platform Access Request queue's established pattern.
+ * The member roster table (#190) — columns adapt to the metric's summary
+ * kind: rank is hidden only for TRUE_RATE (see `reportRowDisplay`), and the
+ * fourth "kind-specific" column (share of total / vs. average) only appears
+ * for SUM/AVERAGE. Dual mobile-card / desktop-table layout matches the
+ * platform Access Request queue's established pattern.
  */
 export function MetricReportTable({ metric, rows }: Props) {
-  const showRank = metric.type === Metric_Type.NUMERIC;
+  const showRank = metric.summaryKind !== MetricSummaryKind.TRUE_RATE;
   const kindSpecificLabel = metricReportKindSpecificColumnLabel(metric.summaryKind);
 
   if (rows.length === 0) {
