@@ -242,6 +242,11 @@ export default async function MetricReportPage({ params, searchParams }: Params)
                       </div>
                     ) : undefined
                   }
+                  secondaryAction={
+                    report.attachmentStatus === "ACTIVE" && !permissions.canImportMetrics ? (
+                      <p className="text-sm text-text-secondary">Ask an Admin or Owner to record or import results.</p>
+                    ) : undefined
+                  }
                 />
               )}
             </Card.Body>

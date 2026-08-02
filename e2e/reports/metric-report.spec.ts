@@ -412,6 +412,58 @@ test.describe("Metric Summary Report", () => {
     }
   });
 
+  test("Next/Previous pagination actually moves between pages and preserves the other URL params", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix);
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+
+    // 26 members (default page size is 25) whose names all embed `suffix`,
+    // sortable by a zero-padded index, so a search for `suffix` isolates
+    // exactly this test's own roster into 2 real pages — independent of
+    // however many other active members the shared fixture alliance has.
+    const memberNames = Array.from({ length: 26 }, (_, i) => `Page-${String(i + 1).padStart(2, "0")}-${suffix}`);
+    const members = await Promise.all(memberNames.map((name) => seedMember(name)));
+    await Promise.all(members.map((m) => recordEntry(period.id, metric.id, m.id, 1)));
+    const memberIds = members.map((m) => m.id);
+    const firstMember = members[0]!;
+    const lastMember = members[members.length - 1]!;
+
+    try {
+      await page.goto(
+        `/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}&search=${suffix}&sort=name_asc`,
+      );
+
+      // Scoped to the report page (not `exact`-matched by accessible name
+      // alone): a dev-only "Open Next.js Dev Tools" button also matches an
+      // unscoped, non-exact getByRole("button", { name: "Next" }).
+      const reportPage = page.getByTestId("metric-report-page");
+      await expect(page.getByText(/page 1 of 2 \(26 members\)/i)).toBeVisible();
+      await expect(page.getByTestId(`report-row-${firstMember.id}`)).toBeVisible();
+      await expect(page.getByTestId(`report-row-${lastMember.id}`)).toHaveCount(0);
+      await expect(reportPage.getByRole("button", { name: "Previous", exact: true })).toBeDisabled();
+
+      await reportPage.getByRole("button", { name: "Next", exact: true }).click();
+      await page.waitForURL(/page=2/);
+      // The search/sort params applied before paginating must survive the
+      // page change, not just the page number itself.
+      expect(page.url()).toContain(`search=${suffix}`);
+      expect(page.url()).toContain("sort=name_asc");
+      await expect(page.getByText(/page 2 of 2 \(26 members\)/i)).toBeVisible();
+      await expect(page.getByTestId(`report-row-${lastMember.id}`)).toBeVisible();
+      await expect(page.getByTestId(`report-row-${firstMember.id}`)).toHaveCount(0);
+      await expect(reportPage.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+
+      await reportPage.getByRole("button", { name: "Previous", exact: true }).click();
+      await page.waitForURL(/page=1/);
+      await expect(page.getByTestId(`report-row-${firstMember.id}`)).toBeVisible();
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds });
+    }
+  });
+
   test("an archived member's filter is independent of the alliance total: hidden by the active filter, visible under archived/all, and reconciled by a note", async ({
     page,
   }, testInfo) => {
@@ -673,6 +725,11 @@ test.describe("Metric Summary Report — Viewer permissions", () => {
       await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${attachedPeriod.id}`);
       await expect(page.getByTestId("metric-report-page")).toBeVisible();
       await expect(page.getByRole("link", { name: /manage metric/i })).toHaveCount(0);
+      // This period is ACTIVE + NO_VALUES for the viewer: no Record/Import
+      // CTA (viewers lack IMPORT_METRICS), but not a silent dead end either.
+      await expect(page.getByRole("link", { name: /record now/i })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: /import results/i })).toHaveCount(0);
+      await expect(page.getByText(/ask an admin or owner to record or import results/i)).toBeVisible();
 
       await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${unattachedPeriod.id}`);
       await expect(page.getByTestId("not-attached-message")).toContainText("Ask an Admin or Owner");
