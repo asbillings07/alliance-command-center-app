@@ -359,9 +359,34 @@ describe.skipIf(!runDb)("getAlliancePerformanceReport [integration]", () => {
       notAttachedCount: 1,
       inactiveAttachmentCount: 1,
       expectedCells: 4, // 2 active members x 2 active-attachment metrics
-      recordedCells: 3, // 2 (complete) + 1 (partial)
+      validCells: 3, // 2 (complete) + 1 (partial)
       coveragePercent: 75,
     });
     void notAttached;
+  });
+
+  it("excludes an invalid legacy boolean value from validCells while still counting it in expectedCells", async () => {
+    const alliance = await makeAlliance();
+    const active1 = await makeMember(alliance.id, "Active One");
+    const active2 = await makeMember(alliance.id, "Active Two");
+    const period = await makePeriod(alliance.id, "Week 1");
+
+    const rate = await makeMetric(alliance.id, "Rate", Metric_Type.BOOLEAN, MetricSummaryKind.TRUE_RATE);
+    await attach(period.id, rate.id);
+    await addEntry(active1.id, period.id, rate.id, 1, new Date("2026-03-01T10:00:00Z"));
+    // A legacy invalid boolean value (neither 0 nor 1) — active1's submission
+    // does not vanish from `expectedCells`, but must never count as "valid".
+    await addEntry(active2.id, period.id, rate.id, 5, new Date("2026-03-01T10:00:00Z"));
+
+    const report = await getAlliancePerformanceReport({ allianceId: alliance.id, periodId: period.id });
+
+    expect(report.overallCoverage).toEqual({
+      activeAttachmentCount: 1,
+      notAttachedCount: 0,
+      inactiveAttachmentCount: 0,
+      expectedCells: 2,
+      validCells: 1,
+      coveragePercent: 50,
+    });
   });
 });

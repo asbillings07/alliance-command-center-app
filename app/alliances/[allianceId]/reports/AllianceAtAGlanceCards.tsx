@@ -47,7 +47,8 @@ export function AllianceAtAGlanceCards({ totalMetricCount, overallCoverage }: Pr
           </p>
           {overallCoverage.expectedCells > 0 && (
             <p className="text-sm text-text-secondary mt-2">
-              {overallCoverage.recordedCells} of {overallCoverage.expectedCells} active-member/metric cells recorded
+              {overallCoverage.validCells} of {overallCoverage.expectedCells} active-member/metric cells have a valid
+              result
             </p>
           )}
         </Card.Body>

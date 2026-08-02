@@ -139,7 +139,7 @@ describe("computeOverallCoverage", () => {
       notAttachedCount: 1,
       inactiveAttachmentCount: 1,
       expectedCells: 0,
-      recordedCells: 0,
+      validCells: 0,
       coveragePercent: null,
     });
   });
@@ -166,8 +166,30 @@ describe("computeOverallCoverage", () => {
       notAttachedCount: 1,
       inactiveAttachmentCount: 0,
       expectedCells: 20,
-      recordedCells: 18,
+      validCells: 18,
       coveragePercent: 90,
+    });
+  });
+
+  it("counts an invalid value toward expectedCells but not validCells — an active member who submitted an invalid value is not 'missing', but isn't valid either", () => {
+    const result = computeOverallCoverage([
+      {
+        attachmentStatus: "ACTIVE",
+        coverage: coverage({
+          currentActiveMemberCount: 1,
+          recordedActiveMemberCount: 0,
+          invalidActiveMemberCount: 1,
+          missingActiveMemberCount: 0,
+        }),
+      },
+    ]);
+    expect(result).toEqual({
+      activeAttachmentCount: 1,
+      notAttachedCount: 0,
+      inactiveAttachmentCount: 0,
+      expectedCells: 1,
+      validCells: 0,
+      coveragePercent: 0,
     });
   });
 });

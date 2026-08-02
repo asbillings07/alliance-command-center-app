@@ -46,8 +46,17 @@ describe("formatCardCoverageSummary", () => {
     expect(formatCardCoverageSummary("ACTIVE", coverage({ currentActiveMemberCount: 0 }))).toBeNull();
   });
 
-  it("summarizes recorded vs. active member count when actively attached", () => {
-    expect(formatCardCoverageSummary("ACTIVE", coverage())).toBe("8 of 10 active members recorded");
+  it("summarizes valid results vs. active member count when actively attached", () => {
+    expect(formatCardCoverageSummary("ACTIVE", coverage())).toBe("8 of 10 active members have a valid result");
+  });
+
+  it("calls out invalid values separately rather than folding them into 'recorded' — a member who submitted an invalid value did submit something", () => {
+    expect(
+      formatCardCoverageSummary(
+        "ACTIVE",
+        coverage({ currentActiveMemberCount: 1, recordedActiveMemberCount: 0, invalidActiveMemberCount: 1, missingActiveMemberCount: 0 }),
+      ),
+    ).toBe("0 of 1 active members have a valid result (1 invalid, excluded)");
   });
 });
 
@@ -115,7 +124,7 @@ describe("formatOverallCoveragePercent", () => {
       notAttachedCount: 0,
       inactiveAttachmentCount: 0,
       expectedCells: 0,
-      recordedCells: 0,
+      validCells: 0,
       coveragePercent: null,
       ...overrides,
     };
@@ -142,7 +151,7 @@ describe("buildMetricCardBody", () => {
     ).toEqual({ kind: "NO_VALUES", text: "Not attached to this period" });
   });
 
-  it("shows a historical-results message when there are no values and the attachment is inactive", () => {
+  it("shows an inactive-attachment message (not a claim about history) when there are no values and the attachment is inactive", () => {
     expect(
       buildMetricCardBody({
         dataStatus: "NO_VALUES",
@@ -150,7 +159,7 @@ describe("buildMetricCardBody", () => {
         rollup: { kind: "SUM", total: 0, hasNegativeValues: false },
         unitLabel: null,
       }),
-    ).toEqual({ kind: "NO_VALUES", text: "No historical results" });
+    ).toEqual({ kind: "NO_VALUES", text: "No results recorded while inactive" });
   });
 
   it("shows a generic no-results message when actively attached with no values", () => {

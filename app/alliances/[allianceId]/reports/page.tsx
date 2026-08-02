@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { isFeatureEnabled } from "@/app/src/lib/features";
-import { resolveTargetPeriod } from "@/app/src/lib/periods/resolveTargetPeriod";
 import {
   getAlliancePerformanceReport,
   AlliancePerformanceReportNotFoundError,
@@ -46,13 +45,14 @@ export default async function ReportsIndexPage({ params, searchParams }: Params)
 
   let periodId = sp.periodId;
   if (!periodId) {
-    const currentPeriod = await resolveTargetPeriod(allianceId);
+    // The current active period is just the first ACTIVE entry here —
+    // `periodOptions` is already ordered newest-first via the same
+    // `metricPeriodChronologicalOrderBy` that `resolveTargetPeriod` uses,
+    // so a second DB round-trip to re-derive the same answer isn't needed.
     // Falls back to the most recently configured period (any status) when
-    // the alliance has no *active* period right now — a report for an
-    // archived/completed period is still meaningful, and this only ever
-    // triggers this fallback because `periodOptions` is already
-    // chronologically ordered newest-first.
-    periodId = currentPeriod?.id ?? periodOptions[0]?.id;
+    // the alliance has no active period at all — a report for an
+    // archived/completed period is still meaningful.
+    periodId = periodOptions.find((p) => p.active)?.id ?? periodOptions[0]?.id;
   }
 
   if (!periodId) {
@@ -123,6 +123,13 @@ export default async function ReportsIndexPage({ params, searchParams }: Params)
     ? periodOptions
     : [{ id: report.period.id, name: report.period.name, active: report.period.active }, ...periodOptions];
 
+  // Carried into each card's drill-down link so the resolved shared
+  // comparison period survives the trip: without it, the per-metric page
+  // would independently re-resolve its own default comparison, which can
+  // silently land on a different period than the one this overview showed.
+  const resolvedComparePeriodId =
+    report.comparisonSelection.status === "RESOLVED" ? report.comparisonSelection.period.id : undefined;
+
   return (
     <PageLayout
       breadcrumb={breadcrumbFor(allianceId)}
@@ -152,6 +159,7 @@ export default async function ReportsIndexPage({ params, searchParams }: Params)
               key={performance.metric.id}
               allianceId={allianceId}
               periodId={report.period.id}
+              comparePeriodId={resolvedComparePeriodId}
               performance={performance}
             />
           ))}

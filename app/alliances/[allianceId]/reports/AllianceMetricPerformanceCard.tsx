@@ -12,6 +12,14 @@ import {
 type Props = {
   allianceId: string;
   periodId: string;
+  /**
+   * The alliance overview's resolved shared comparison period, if any.
+   * Carried into the drill-down link so the per-metric page evaluates
+   * against the *same* comparison this card showed — without it, the
+   * drill-down would independently re-resolve its own default comparison
+   * period, which can silently differ from the one shown here.
+   */
+  comparePeriodId?: string;
   performance: AllianceMetricPerformance;
 };
 
@@ -24,7 +32,7 @@ type Props = {
  * (Record Now, Attach, Reactivate) already live on the per-metric drill-down
  * page this card links to, so they aren't duplicated here.
  */
-export function AllianceMetricPerformanceCard({ allianceId, periodId, performance }: Props) {
+export function AllianceMetricPerformanceCard({ allianceId, periodId, comparePeriodId, performance }: Props) {
   const { metric, attachmentStatus, dataStatus, rollup, coverage, comparison } = performance;
 
   const attachmentBadge = attachmentStatusBadge(attachmentStatus);
@@ -32,6 +40,9 @@ export function AllianceMetricPerformanceCard({ allianceId, periodId, performanc
   const body = buildMetricCardBody({ dataStatus, attachmentStatus, rollup, unitLabel: metric.unitLabel });
   const coverageSummary = formatCardCoverageSummary(attachmentStatus, coverage);
   const comparisonSummary = formatCardComparisonSummary(comparison, metric.summaryKind, metric.unitLabel);
+  const reportHref = `/alliances/${allianceId}/reports/metrics/${metric.id}?periodId=${periodId}${
+    comparePeriodId ? `&comparePeriodId=${comparePeriodId}` : ""
+  }`;
 
   return (
     <div data-testid={`alliance-metric-card-${metric.id}`}>
@@ -84,11 +95,7 @@ export function AllianceMetricPerformanceCard({ allianceId, periodId, performanc
               )}
             </div>
 
-            <Button
-              href={`/alliances/${allianceId}/reports/metrics/${metric.id}?periodId=${periodId}`}
-              variant="secondary"
-              size="sm"
-            >
+            <Button href={reportHref} variant="secondary" size="sm">
               View Report
             </Button>
           </div>

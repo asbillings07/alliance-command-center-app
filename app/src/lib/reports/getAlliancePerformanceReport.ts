@@ -102,8 +102,16 @@ export type AllianceOverallCoverage = {
   inactiveAttachmentCount: number;
   /** Sum of `currentActiveMemberCount` across active-attachment metrics only. */
   expectedCells: number;
-  /** Sum of `recordedActiveMemberCount` (valid, non-invalid) across active-attachment metrics only. */
-  recordedCells: number;
+  /**
+   * Sum of `recordedActiveMemberCount` across active-attachment metrics
+   * only — i.e. cells with a *valid* value. An active member who submitted
+   * an invalid legacy value still counts toward `expectedCells` but not
+   * here, so this must never be surfaced to a leader as "recorded": with
+   * one invalid entry and nothing else, "0 of 1 recorded" would falsely
+   * imply nobody entered anything, when one member did (just invalidly).
+   * Always label this "valid results," never "recorded."
+   */
+  validCells: number;
   /** Null when there are no active attachments to measure. */
   coveragePercent: number | null;
 };
@@ -186,13 +194,13 @@ export function computeOverallCoverage(
   let notAttachedCount = 0;
   let inactiveAttachmentCount = 0;
   let expectedCells = 0;
-  let recordedCells = 0;
+  let validCells = 0;
 
   for (const m of metrics) {
     if (m.attachmentStatus === "ACTIVE") {
       activeAttachmentCount += 1;
       expectedCells += m.coverage.currentActiveMemberCount;
-      recordedCells += m.coverage.recordedActiveMemberCount;
+      validCells += m.coverage.recordedActiveMemberCount;
     } else if (m.attachmentStatus === "NOT_ATTACHED") {
       notAttachedCount += 1;
     } else {
@@ -205,8 +213,8 @@ export function computeOverallCoverage(
     notAttachedCount,
     inactiveAttachmentCount,
     expectedCells,
-    recordedCells,
-    coveragePercent: expectedCells > 0 ? (recordedCells / expectedCells) * 100 : null,
+    validCells,
+    coveragePercent: expectedCells > 0 ? (validCells / expectedCells) * 100 : null,
   };
 }
 

@@ -255,6 +255,65 @@ test.describe("Alliance Performance Overview", () => {
     }
   });
 
+  test("View Report carries the resolved shared comparison period into the drill-down, instead of letting it silently re-resolve a different one", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    // Three chronologically-ordered periods. The alliance overview's shared
+    // comparison selector only checks structural (date) eligibility, so it
+    // resolves the nearest one — `middle` — as the comparison for `current`,
+    // even though this metric is only ever attached to `oldest` and
+    // `current`, never `middle`. The per-metric drill-down's own comparison
+    // resolution, by contrast, *does* require real attachment: if the
+    // "View Report" link only carried `periodId` (dropping the resolved
+    // comparison), the drill-down would silently auto-resolve its *own*
+    // nearest eligible period — `oldest` — and show a real comparison
+    // against it, contradicting the "Not attached in the comparison period"
+    // status this exact card just displayed on the overview.
+    const oldest = await seedPeriod(`${suffix}-oldest`, {
+      startsAt: new Date("2026-05-01T00:00:00.000Z"),
+      endsAt: new Date("2026-05-07T23:59:59.999Z"),
+    });
+    const middle = await seedPeriod(`${suffix}-middle`, {
+      startsAt: new Date("2026-05-08T00:00:00.000Z"),
+      endsAt: new Date("2026-05-14T23:59:59.999Z"),
+    });
+    const current = await seedPeriod(`${suffix}-current`, {
+      startsAt: new Date("2026-05-15T00:00:00.000Z"),
+      endsAt: new Date("2026-05-21T23:59:59.999Z"),
+    });
+    const alice = await seedMember(`Alice-${suffix}`);
+
+    const metric = await seedMetric(suffix, { unitLabel: "pts" });
+    await attachMetric(oldest.id, metric.id);
+    await recordEntry(oldest.id, metric.id, alice.id, 40);
+    await attachMetric(current.id, metric.id);
+    await recordEntry(current.id, metric.id, alice.id, 90);
+    // Deliberately not attached to `middle`.
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports?periodId=${current.id}`);
+      await expect(page.getByTestId("alliance-compare-period-select")).toHaveValue(middle.id);
+
+      const card = page.getByTestId(`alliance-metric-card-${metric.id}`);
+      await expect(card.getByTestId("alliance-card-comparison")).toContainText("Not attached in the comparison period");
+
+      await card.getByRole("link", { name: "View Report" }).click();
+
+      // The resolved `middle` period id must survive the trip...
+      await expect(page).toHaveURL(new RegExp(`comparePeriodId=${middle.id}`));
+      // ...and the drill-down must honestly report that `middle` isn't a
+      // valid comparison for *this* metric (recommending the real eligible
+      // one, `oldest`) rather than silently substituting `oldest` and
+      // presenting it as if it were the requested comparison.
+      await expect(page.getByTestId("comparison-invalid-banner")).toBeVisible();
+      await expect(page.getByTestId("comparison-use-recommended")).toContainText(oldest.name);
+      await expect(page.getByTestId("rollup-change")).toHaveCount(0);
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [oldest.id, middle.id, current.id], memberIds: [alice.id] });
+    }
+  });
+
   test("overall coverage is computed only across active attachments, excluding not-attached metrics from the denominator", async ({
     page,
   }, testInfo) => {

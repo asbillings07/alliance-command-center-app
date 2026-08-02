@@ -42,8 +42,15 @@ export const SUMMARY_KIND_BADGE_LABEL: Record<MetricSummaryKind, string | null> 
 /**
  * Coverage is only a meaningful sentence when the metric has an active
  * attachment on the selected period — a NOT_ATTACHED/INACTIVE metric has no
- * cells a member could possibly have filled in, so "0 of N recorded" would
+ * cells a member could possibly have filled in, so "0 of N" would
  * misrepresent a structural impossibility as an ordinary gap.
+ *
+ * Says "valid result," never "recorded": `recordedActiveMemberCount`
+ * excludes invalid legacy values, so a member who submitted one still
+ * counts toward `currentActiveMemberCount` but not here. Calling that
+ * "recorded" would be false — they did record something, just not a valid
+ * one — so an invalid count, when present, is surfaced explicitly instead
+ * of silently folded into a "missing" gap.
  */
 export function formatCardCoverageSummary(
   attachmentStatus: MetricPeriodAttachmentStatus,
@@ -51,7 +58,10 @@ export function formatCardCoverageSummary(
 ): string | null {
   if (attachmentStatus !== "ACTIVE") return null;
   if (coverage.currentActiveMemberCount === 0) return null;
-  return `${coverage.recordedActiveMemberCount} of ${coverage.currentActiveMemberCount} active members recorded`;
+  const base = `${coverage.recordedActiveMemberCount} of ${coverage.currentActiveMemberCount} active members have a valid result`;
+  return coverage.invalidActiveMemberCount > 0
+    ? `${base} (${coverage.invalidActiveMemberCount} invalid, excluded)`
+    : base;
 }
 
 /**
@@ -113,7 +123,7 @@ export function buildMetricCardBody(params: {
       attachmentStatus === "NOT_ATTACHED"
         ? "Not attached to this period"
         : attachmentStatus === "INACTIVE"
-          ? "No historical results"
+          ? "No results recorded while inactive"
           : "No results recorded yet";
     return { kind: "NO_VALUES", text };
   }
