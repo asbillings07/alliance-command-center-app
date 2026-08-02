@@ -112,7 +112,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
     );
   });
 
-  it("defaults to the active period when one exists, even if it's not first in the (name/id ordered) list", async () => {
+  it("defaults to the active period when one exists, even if a chronologically newer (but inactive) period sorts first", async () => {
     vi.mocked(isFeatureEnabled).mockReturnValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([
       { id: "per_newest", name: "Newest (inactive)", active: false },

@@ -233,6 +233,28 @@ type BulkAggregateRawRow = AggregateRawRow & { metric_id: string };
  * metric — a metric with zero attachment/entries still gets a full row of
  * honest zeros/nulls via that cross join, so "not attached" and "attached
  * but empty" never need special-casing here.
+ *
+ * Scalability note: this is constant in DB round-trips (one query here, run
+ * at most twice per request — selected period, and again for the
+ * comparison period if one resolves — never once per metric), but the
+ * `cells` CTE's intermediate rowset grows multiplicatively, as
+ * O(metrics × members), not just linearly with either. At today's expected
+ * alliance/metric-library sizes (tens of metrics, low hundreds of members)
+ * that's a few thousand rows for Postgres to materialize and aggregate in
+ * one scan — cheap — but it's worth being explicit that this doesn't hold
+ * indefinitely as either dimension grows.
+ *
+ * If this ever needs revisiting, the concrete lever is: per-member coverage
+ * counts (`current/recorded/invalid/missing_active_member_count`,
+ * `archived_contributing_member_count`) are only ever consumed by the UI
+ * for ACTIVE-attachment metrics (`formatCardCoverageSummary` and
+ * `computeOverallCoverage` both discard them for NOT_ATTACHED/INACTIVE) —
+ * so the cross join could be restricted to just that period's
+ * active-attachment subset of `metricIds`, while the rollup-only aggregates
+ * (sum/avg/true/false/invalid counts) stay computed from `latest` alone,
+ * with no cross join, for every metric. Deferred until a real alliance/
+ * metric-library size or a benchmark actually demonstrates this as a
+ * bottleneck, rather than restructuring this query speculatively.
  */
 async function queryBulkAggregates(
   allianceId: string,
