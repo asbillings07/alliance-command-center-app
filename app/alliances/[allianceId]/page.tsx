@@ -104,6 +104,20 @@ export default async function AlliancePage({ params }: Params) {
               </Card.Body>
             </Card>
 
+            {permissions.canViewMembers && (
+              <Card>
+                <Card.Body>
+                  <h3 className="font-medium text-primary mb-2">Reports</h3>
+                  <p className="text-sm text-text-secondary mb-4">
+                    Metric summaries, rankings, and period-over-period change.
+                  </p>
+                  <Button href={`/alliances/${allianceId}/reports`} variant="primary" size="sm">
+                    View Reports
+                  </Button>
+                </Card.Body>
+              </Card>
+            )}
+
             {permissions.canImportMetrics && !activePeriod && (
               <Card>
                 <Card.Body>

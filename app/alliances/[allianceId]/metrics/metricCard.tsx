@@ -176,6 +176,7 @@ export function MetricCard({
   }
 
   return (
+    <div data-testid={`metric-card-${metric.id}`}>
     <Card className={!metric.active ? "opacity-60" : ""}>
       <Card.Body>
         {error && (
@@ -207,6 +208,9 @@ export function MetricCard({
             )}
           </div>
           <div className="flex items-center gap-2">
+            <Button href={`/alliances/${allianceId}/reports/metrics/${metric.id}`} variant="link" size="sm">
+              View Report
+            </Button>
             {metric.active && (
               <Button
                 variant="link"
@@ -240,5 +244,6 @@ export function MetricCard({
         </div>
       </Card.Body>
     </Card>
+    </div>
   );
 }
