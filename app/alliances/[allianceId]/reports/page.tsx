@@ -1,51 +1,100 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { isFeatureEnabled } from "@/app/src/lib/features";
-import { MetricSummaryKind } from "@/app/generated/prisma/enums";
-import { PageLayout, Card, Badge, EmptyState } from "@/app/src/components";
+import { resolveTargetPeriod } from "@/app/src/lib/periods/resolveTargetPeriod";
+import {
+  getAlliancePerformanceReport,
+  AlliancePerformanceReportNotFoundError,
+} from "@/app/src/lib/reports/getAlliancePerformanceReport";
+import { listAlliancePeriodOptions } from "@/app/src/lib/reports/listAlliancePeriodOptions";
+import { PageLayout, EmptyState } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
+import { AlliancePeriodSelect } from "./AlliancePeriodSelect";
+import { AllianceComparisonControl } from "./AllianceComparisonControl";
+import { AllianceAtAGlanceCards } from "./AllianceAtAGlanceCards";
+import { AllianceMetricPerformanceCard } from "./AllianceMetricPerformanceCard";
 
 type Params = {
   params: Promise<{ allianceId: string }>;
+  searchParams: Promise<{ periodId?: string; comparePeriodId?: string }>;
 };
 
-const SUMMARY_KIND_BADGE_LABEL: Record<MetricSummaryKind, string | null> = {
-  [MetricSummaryKind.SUM]: "Total",
-  [MetricSummaryKind.AVERAGE]: "Average",
-  [MetricSummaryKind.TRUE_RATE]: "True rate",
-  [MetricSummaryKind.NONE]: null,
-};
+const breadcrumbFor = (allianceId: string) => [
+  { label: "Dashboard", href: `/alliances/${allianceId}` },
+  { label: "Reports" },
+];
 
 /**
- * Reports index (#190) — a discovery hub for every alliance-configured
- * metric's report, rather than a single hardcoded "VS Contribution" page.
- * The selected metric is authoritative; any metric (numeric or boolean,
- * with or without a configured rollup) works identically.
+ * Alliance performance overview (#264) — replaces the flat per-metric
+ * directory (#190's original `/reports`) with a period-scoped snapshot of
+ * every configured metric at once. The per-metric drill-down page
+ * (`/reports/metrics/[metricId]`) remains the detailed roster/member view;
+ * this page answers "how is the alliance doing this period," not "who
+ * contributed what."
  */
-export default async function ReportsIndexPage({ params }: Params) {
+export default async function ReportsIndexPage({ params, searchParams }: Params) {
   if (!isFeatureEnabled("reports")) {
     notFound();
   }
 
   const { allianceId } = await params;
+  const sp = await searchParams;
   const { permissions } = await requireAllianceAccess({ allianceId, requiredPermission: Permissions.VIEW_MEMBERS });
 
-  const metrics = await prisma.metric.findMany({
-    where: { allianceId },
-    select: { id: true, name: true, description: true, summaryKind: true, unitLabel: true, active: true },
-    orderBy: [{ active: "desc" }, { name: "asc" }],
-  });
+  const periodOptions = await listAlliancePeriodOptions(allianceId);
 
-  return (
-    <PageLayout
-      breadcrumb={[{ label: "Dashboard", href: `/alliances/${allianceId}` }, { label: "Reports" }]}
-      title="Reports"
-      description="Metric summaries and member breakdowns for your alliance"
-      maxWidth="3xl"
-    >
-      {metrics.length === 0 ? (
+  let periodId = sp.periodId;
+  if (!periodId) {
+    const currentPeriod = await resolveTargetPeriod(allianceId);
+    // Falls back to the most recently configured period (any status) when
+    // the alliance has no *active* period right now — a report for an
+    // archived/completed period is still meaningful, and this only ever
+    // triggers this fallback because `periodOptions` is already
+    // chronologically ordered newest-first.
+    periodId = currentPeriod?.id ?? periodOptions[0]?.id;
+  }
+
+  if (!periodId) {
+    return (
+      <PageLayout breadcrumb={breadcrumbFor(allianceId)} title="Reports" maxWidth="3xl">
+        <EmptyState
+          title="No evaluation periods configured yet"
+          description="The alliance performance report is generated per evaluation period. Create one first, then attach metrics and record results."
+          action={
+            permissions.canConfigurePeriods ? (
+              <Button href={`/alliances/${allianceId}/periods`} variant="primary">
+                Go to Evaluation Periods
+              </Button>
+            ) : undefined
+          }
+          secondaryAction={
+            !permissions.canConfigurePeriods ? (
+              <p className="text-sm text-text-secondary">Ask an Admin or Owner to set up an evaluation period.</p>
+            ) : undefined
+          }
+        />
+      </PageLayout>
+    );
+  }
+
+  let report;
+  try {
+    report = await getAlliancePerformanceReport({
+      allianceId,
+      periodId,
+      comparePeriodId: sp.comparePeriodId || undefined,
+    });
+  } catch (err) {
+    if (err instanceof AlliancePerformanceReportNotFoundError) {
+      notFound();
+    }
+    throw err;
+  }
+
+  if (report.metrics.length === 0) {
+    return (
+      <PageLayout breadcrumb={breadcrumbFor(allianceId)} title="Reports" maxWidth="3xl">
         <EmptyState
           title="No metrics configured yet"
           description="Reports are generated from your alliance's configured metrics. Create a metric first, then attach it to an evaluation period and record results to see a report."
@@ -62,43 +111,52 @@ export default async function ReportsIndexPage({ params }: Params) {
             ) : undefined
           }
         />
-      ) : (
-        <div className="flex flex-col gap-4" data-testid="reports-index-list">
-          {metrics.map((metric) => {
-            const badgeLabel = SUMMARY_KIND_BADGE_LABEL[metric.summaryKind];
-            return (
-              <div key={metric.id} data-testid={`reports-index-card-${metric.id}`}>
-                <Card className={!metric.active ? "opacity-60" : ""}>
-                  <Card.Body>
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h2 className="text-lg font-semibold text-primary">{metric.name}</h2>
-                          {badgeLabel && (
-                            <Badge variant="neutral" size="sm">
-                              {badgeLabel}
-                              {metric.unitLabel ? ` (${metric.unitLabel})` : ""}
-                            </Badge>
-                          )}
-                          {!metric.active && (
-                            <Badge variant="neutral" size="sm">
-                              Archived
-                            </Badge>
-                          )}
-                        </div>
-                        {metric.description && <p className="text-sm text-text-secondary">{metric.description}</p>}
-                      </div>
-                      <Button href={`/alliances/${allianceId}/reports/metrics/${metric.id}`} variant="primary" size="sm">
-                        View Report
-                      </Button>
-                    </div>
-                  </Card.Body>
-                </Card>
-              </div>
-            );
-          })}
+      </PageLayout>
+    );
+  }
+
+  // Guarantee the currently-selected period always appears in the dropdown,
+  // even if it's somehow absent from `periodOptions` (defensive only —
+  // `listAlliancePeriodOptions` lists every alliance period, so this
+  // shouldn't normally happen).
+  const periodOptionsWithSelected = periodOptions.some((o) => o.id === report.period.id)
+    ? periodOptions
+    : [{ id: report.period.id, name: report.period.name, active: report.period.active }, ...periodOptions];
+
+  return (
+    <PageLayout
+      breadcrumb={breadcrumbFor(allianceId)}
+      title="Reports"
+      description="Alliance-wide performance across every configured metric"
+      maxWidth="4xl"
+    >
+      <div className="flex flex-col gap-6" data-testid="alliance-reports-page">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-4 p-4 bg-surface border border-border rounded-lg">
+          <div className="flex-1">
+            <AlliancePeriodSelect
+              allianceId={allianceId}
+              periodOptions={periodOptionsWithSelected}
+              selectedPeriodId={report.period.id}
+            />
+          </div>
+          <div className="flex-1">
+            <AllianceComparisonControl allianceId={allianceId} comparisonSelection={report.comparisonSelection} />
+          </div>
         </div>
-      )}
+
+        <AllianceAtAGlanceCards totalMetricCount={report.metrics.length} overallCoverage={report.overallCoverage} />
+
+        <div className="flex flex-col gap-4" data-testid="alliance-metric-cards">
+          {report.metrics.map((performance) => (
+            <AllianceMetricPerformanceCard
+              key={performance.metric.id}
+              allianceId={allianceId}
+              periodId={report.period.id}
+              performance={performance}
+            />
+          ))}
+        </div>
+      </div>
     </PageLayout>
   );
 }

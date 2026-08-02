@@ -1,6 +1,6 @@
 import { Card, Badge } from "@/app/src/components";
 import type { MetricInfo, MetricRollup, MetricSummaryComparison } from "@/app/src/lib/reports/getMetricSummaryReport";
-import { formatRollupHeadline, formatRollupChange } from "./reportRollupDisplay";
+import { formatRollupHeadline, formatRollupChange } from "../../reportRollupDisplay";
 import { MetricComparisonControl } from "./MetricComparisonControl";
 
 type Props = {
