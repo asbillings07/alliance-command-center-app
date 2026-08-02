@@ -47,8 +47,9 @@ export function MetricCoverageCard({ coverage, filter }: Props) {
           )}
           {coverage.archivedContributingMemberCount > 0 && filter === "active" && (
             <p className="text-xs text-text-muted" data-testid="archived-contributors-note">
-              Total also includes {coverage.archivedContributingMemberCount} archived contributor
-              {coverage.archivedContributingMemberCount === 1 ? "" : "s"} currently hidden by this filter.
+              {coverage.archivedContributingMemberCount} archived contributor
+              {coverage.archivedContributingMemberCount === 1 ? " with a recorded value is" : "s with a recorded value are"} hidden
+              by this filter.
             </p>
           )}
         </div>

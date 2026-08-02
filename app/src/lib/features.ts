@@ -43,10 +43,9 @@ export const features = {
   /**
    * Metric Summary Reports (#190)
    * Per-metric alliance rollups, rankings, and member breakdowns. Ships
-   * dark: both report routes fail closed (notFound) and all discovery
-   * touchpoints (dashboard, Metrics Library, period detail) hide their
-   * links when this is off, so a direct URL guess is the only way in
-   * even before the flag is flipped.
+   * dark: both report routes fail closed (notFound) while this is off, so
+   * even a direct URL guess 404s, and all discovery touchpoints (dashboard,
+   * Metrics Library, period detail) hide their links too.
    */
   reports: process.env.FEATURE_REPORTS === "true",
 } as const;
