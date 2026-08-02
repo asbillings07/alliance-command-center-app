@@ -145,7 +145,7 @@ export function zeroAggregateSnapshot(): AggregateSnapshot {
  * comparison period. Order matters: a metric with no rollup at all is
  * checked first (there's nothing to compare regardless of attachment), then
  * whether the *selected* period has data (comparing against a fabricated
- * zero would misrepresent "nothing recorded yet" as a measured decline),
+ * zero would misrepresent "nothing recorded yet" as a measured decrease),
  * then the comparison period's own attachment/data state.
  */
 export function buildAllianceMetricComparison(params: {
