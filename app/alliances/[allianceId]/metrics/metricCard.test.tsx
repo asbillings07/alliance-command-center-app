@@ -129,3 +129,45 @@ describe("MetricCard create flow", () => {
     );
   });
 });
+
+describe("MetricCard view mode — FEATURE_REPORTS gate (#190)", () => {
+  const metric = {
+    id: "met_1",
+    name: "VS Points",
+    description: null,
+    type: "NUMERIC" as const,
+    summaryKind: "SUM" as const,
+    unitLabel: null,
+    active: true,
+    metricKey: "met_1-1",
+  };
+
+  async function mountView(showReportLink?: boolean) {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(MetricCard, {
+          allianceId: "all_1",
+          mode: "view",
+          metric,
+          showReportLink,
+        }),
+      );
+    });
+  }
+
+  it("hides the View Report link when the flag-derived prop is false (or omitted)", async () => {
+    await mountView(false);
+    expect(container.textContent).not.toContain("View Report");
+  });
+
+  it("shows the View Report link when the server parent resolves the flag as enabled", async () => {
+    await mountView(true);
+    expect(container.textContent).toContain("View Report");
+    expect(container.innerHTML).toContain(
+      'href="/alliances/all_1/reports/metrics/met_1"',
+    );
+  });
+});

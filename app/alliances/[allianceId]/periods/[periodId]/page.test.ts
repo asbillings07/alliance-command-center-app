@@ -23,6 +23,10 @@ vi.mock("@/app/src/lib/reports/getPeriodResultsSummary", () => ({
   getPeriodResultsSummary: vi.fn(),
 }));
 
+vi.mock("@/app/src/lib/features", () => ({
+  isFeatureEnabled: vi.fn().mockReturnValue(false),
+}));
+
 vi.mock("@/app/src/lib/prisma", () => ({
   prisma: {
     metricPeriod: {
@@ -38,6 +42,7 @@ vi.mock("@/app/src/lib/prisma", () => ({
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { getPeriodResultsSummary } from "@/app/src/lib/reports/getPeriodResultsSummary";
+import { isFeatureEnabled } from "@/app/src/lib/features";
 import PeriodPage from "./page";
 
 const adminPermissions = {
@@ -69,6 +74,7 @@ describe("Period detail page", () => {
       metrics: [],
     });
     vi.mocked(prisma.metric.count).mockResolvedValue(0);
+    vi.mocked(isFeatureEnabled).mockReturnValue(false);
   });
 
   it("shows Record and Import when prerequisites are met", async () => {
@@ -117,5 +123,39 @@ describe("Period detail page", () => {
 
     expect(html).not.toContain("Record Results");
     expect(html).toContain("Import Evaluation Results");
+  });
+
+  describe("metric coverage 'View Report' link — FEATURE_REPORTS gate (#190)", () => {
+    beforeEach(() => {
+      vi.mocked(getPeriodResultsSummary).mockResolvedValue({
+        participatingMemberCount: 3,
+        currentActiveMemberCount: 5,
+        participatingActiveMemberCount: 3,
+        metrics: [{ metricId: "met_1", metricName: "VS", activeMemberCount: 3, memberCount: 3 }],
+      });
+    });
+
+    it("hides the link when the flag is off, even though the viewer can view members", async () => {
+      vi.mocked(isFeatureEnabled).mockReturnValue(false);
+
+      const page = await PeriodPage({
+        params: Promise.resolve({ allianceId: "all_1", periodId: "per_1" }),
+      });
+      const html = renderToStaticMarkup(page);
+
+      expect(html).not.toContain("View Report");
+    });
+
+    it("shows the link once the flag is on", async () => {
+      vi.mocked(isFeatureEnabled).mockReturnValue(true);
+
+      const page = await PeriodPage({
+        params: Promise.resolve({ allianceId: "all_1", periodId: "per_1" }),
+      });
+      const html = renderToStaticMarkup(page);
+
+      expect(html).toContain("View Report");
+      expect(html).toContain("/alliances/all_1/reports/metrics/met_1?periodId=per_1");
+    });
   });
 });

@@ -25,6 +25,10 @@ type MetricCardProps = {
   metric?: MetricData;
   returnTo?: string;
   targetPeriodId?: string | null;
+  // FEATURE_REPORTS ships dark (#190): this is a client component, so the
+  // env-backed flag can't be read here directly — the server parent resolves
+  // it once and passes the result down.
+  showReportLink?: boolean;
 };
 
 const METRIC_TYPE_VARIANTS: Record<Metric_Type, { label: string; variant: "info" | "success" }> = {
@@ -45,6 +49,7 @@ export function MetricCard({
   metric,
   returnTo,
   targetPeriodId = null,
+  showReportLink = false,
 }: MetricCardProps) {
   const router = useRouter();
   const [cardState, setCardState] = useState<"closed" | "form" | "view" | "created">(
@@ -208,9 +213,11 @@ export function MetricCard({
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Button href={`/alliances/${allianceId}/reports/metrics/${metric.id}`} variant="link" size="sm">
-              View Report
-            </Button>
+            {showReportLink && (
+              <Button href={`/alliances/${allianceId}/reports/metrics/${metric.id}`} variant="link" size="sm">
+                View Report
+              </Button>
+            )}
             {metric.active && (
               <Button
                 variant="link"

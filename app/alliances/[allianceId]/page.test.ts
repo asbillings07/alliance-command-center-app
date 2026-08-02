@@ -19,6 +19,10 @@ vi.mock("@/app/src/lib/auth/requireAllianceAccess", () => ({
   requireAllianceAccess: vi.fn(),
 }));
 
+vi.mock("@/app/src/lib/features", () => ({
+  isFeatureEnabled: vi.fn().mockReturnValue(false),
+}));
+
 vi.mock("@/app/src/lib/prisma", () => ({
   prisma: {
     alliance: {
@@ -48,6 +52,7 @@ vi.mock("@/app/src/lib/prisma", () => ({
 
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { isFeatureEnabled } from "@/app/src/lib/features";
 import AlliancePage from "./page";
 import { metricPeriodChronologicalOrderBy } from "@/app/src/lib/metricPeriodOrdering";
 
@@ -78,6 +83,7 @@ describe("AllianceDashboardPage", () => {
     vi.mocked(prisma.allianceMembership.count).mockResolvedValue(1);
     vi.mocked(prisma.invitation.count).mockResolvedValue(0);
     vi.mocked(prisma.memberMetricEntry.count).mockResolvedValue(0);
+    vi.mocked(isFeatureEnabled).mockReturnValue(false);
   });
 
   it("renders Record Now and Import Evaluation Results when prerequisites are met", async () => {
@@ -258,6 +264,33 @@ describe("AllianceDashboardPage", () => {
           select: { metricId: true },
         },
       },
+    });
+  });
+
+  describe("Reports module card — FEATURE_REPORTS gate (#190)", () => {
+    async function renderWithViewMembers() {
+      vi.mocked(requireAllianceAccess).mockResolvedValue({
+        membership: { role: "ADMIN" },
+        permissions: { ...adminPermissions, canViewMembers: true },
+      } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
+      mockAlliance();
+      vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(null);
+
+      const page = await AlliancePage({ params: Promise.resolve({ allianceId: "all_1" }) });
+      return renderToStaticMarkup(page);
+    }
+
+    it("hides the Reports card for a permitted viewer when the flag is off", async () => {
+      vi.mocked(isFeatureEnabled).mockReturnValue(false);
+      const html = await renderWithViewMembers();
+      expect(html).not.toContain("View Reports");
+    });
+
+    it("shows the Reports card for a permitted viewer once the flag is on", async () => {
+      vi.mocked(isFeatureEnabled).mockReturnValue(true);
+      const html = await renderWithViewMembers();
+      expect(html).toContain("View Reports");
+      expect(html).toContain("/alliances/all_1/reports");
     });
   });
 });

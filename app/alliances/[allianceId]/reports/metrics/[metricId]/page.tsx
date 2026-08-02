@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
+import { isFeatureEnabled } from "@/app/src/lib/features";
 import { prisma } from "@/app/src/lib/prisma";
 import { MetricSummaryKind } from "@/app/generated/prisma/enums";
 import {
@@ -40,6 +41,10 @@ const SUMMARY_KIND_DESCRIPTION: Record<MetricSummaryKind, string> = {
 };
 
 export default async function MetricReportPage({ params, searchParams }: Params) {
+  if (!isFeatureEnabled("reports")) {
+    notFound();
+  }
+
   const { allianceId, metricId } = await params;
   const sp = await searchParams;
 

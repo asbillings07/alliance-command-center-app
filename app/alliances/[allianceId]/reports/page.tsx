@@ -1,6 +1,8 @@
+import { notFound } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
+import { isFeatureEnabled } from "@/app/src/lib/features";
 import { MetricSummaryKind } from "@/app/generated/prisma/enums";
 import { PageLayout, Card, Badge, EmptyState } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
@@ -23,6 +25,10 @@ const SUMMARY_KIND_BADGE_LABEL: Record<MetricSummaryKind, string | null> = {
  * with or without a configured rollup) works identically.
  */
 export default async function ReportsIndexPage({ params }: Params) {
+  if (!isFeatureEnabled("reports")) {
+    notFound();
+  }
+
   const { allianceId } = await params;
   const { permissions } = await requireAllianceAccess({ allianceId, requiredPermission: Permissions.VIEW_MEMBERS });
 

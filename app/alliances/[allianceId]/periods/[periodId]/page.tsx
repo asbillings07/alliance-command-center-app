@@ -7,6 +7,7 @@ import { PageLayout, Card } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { getPeriodResultsSummary } from "@/app/src/lib/reports/getPeriodResultsSummary";
 import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvisionMetricsForPeriod";
+import { isFeatureEnabled } from "@/app/src/lib/features";
 
 type Params = {
     params: Promise<{
@@ -172,7 +173,7 @@ export default async function PeriodPage({ params }: Params) {
                                                         </span>
                                                     )}
                                                 </span>
-                                                {permissions.canViewMembers && (
+                                                {permissions.canViewMembers && isFeatureEnabled("reports") && (
                                                     <Button
                                                         href={`/alliances/${allianceId}/reports/metrics/${m.metricId}?periodId=${periodId}`}
                                                         variant="link"
