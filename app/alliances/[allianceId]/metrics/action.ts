@@ -1,5 +1,5 @@
 "use server";
-import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/client";
+import { Metric_Type, MetricSummaryKind, MetricTrendDirection } from "@/app/generated/prisma/client";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
@@ -22,14 +22,21 @@ function revalidateReportRoutes(allianceId: string): void {
   revalidatePath("/alliances/[allianceId]/reports/metrics/[metricId]", "page");
 }
 
-type ReportingFields = { summaryKind: MetricSummaryKind; unitLabel: string | null };
+type ReportingFields = {
+  summaryKind: MetricSummaryKind;
+  unitLabel: string | null;
+  trendDirection: MetricTrendDirection;
+};
 
 /**
  * Reads and validates the "Reporting" section of the metric form: the
- * summaryKind enum value and the optional unitLabel, rejecting any
- * (type, summaryKind) combination outside the compatibility matrix. This is
- * a fast, friendly pre-check; the migration's DB CHECK constraint is the
- * actual invariant (#190).
+ * summaryKind enum value, the optional unitLabel, and trendDirection —
+ * rejecting any (type, summaryKind) combination outside the compatibility
+ * matrix. This is a fast, friendly pre-check; the migration's DB CHECK
+ * constraint is the actual invariant for (type, summaryKind) (#190).
+ * trendDirection (#264 PR2) has no such constraint — every direction is
+ * valid for every type/summaryKind, since it's a leadership judgment about
+ * what the metric measures, not derivable from its shape.
  */
 function parseReportingFields(
   formData: FormData,
@@ -55,7 +62,15 @@ function parseReportingFields(
     return { error: unitLabelValidation.message };
   }
 
-  return { data: { summaryKind, unitLabel: unitLabelValidation.value } };
+  const rawTrendDirection = formData.get("trendDirection");
+  const trendDirection = (
+    typeof rawTrendDirection === "string" && rawTrendDirection ? rawTrendDirection : MetricTrendDirection.NEUTRAL
+  ) as MetricTrendDirection;
+  if (!Object.values(MetricTrendDirection).includes(trendDirection)) {
+    return { error: "Invalid trend direction" };
+  }
+
+  return { data: { summaryKind, unitLabel: unitLabelValidation.value, trendDirection } };
 }
 
 async function revalidateMetricStateChange(
@@ -125,6 +140,7 @@ export async function createMetric(
           type,
           summaryKind: reporting.data.summaryKind,
           unitLabel: reporting.data.unitLabel,
+          trendDirection: reporting.data.trendDirection,
         },
       });
       await touchAllianceSetupActivity(tx, allianceId);
@@ -203,6 +219,7 @@ export async function editMetric(
           description,
           summaryKind: reporting.data.summaryKind,
           unitLabel: reporting.data.unitLabel,
+          trendDirection: reporting.data.trendDirection,
         },
       });
       await touchAllianceSetupActivity(tx, allianceId);

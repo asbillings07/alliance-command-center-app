@@ -138,6 +138,7 @@ describe("MetricCard view mode — FEATURE_REPORTS gate (#190)", () => {
     type: "NUMERIC" as const,
     summaryKind: "SUM" as const,
     unitLabel: null,
+    trendDirection: "NEUTRAL" as const,
     active: true,
     metricKey: "met_1-1",
   };

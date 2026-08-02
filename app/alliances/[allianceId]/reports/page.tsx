@@ -12,7 +12,9 @@ import { Button } from "@/app/src/components/client";
 import { AlliancePeriodSelect } from "./AlliancePeriodSelect";
 import { AllianceComparisonControl } from "./AllianceComparisonControl";
 import { AllianceAtAGlanceCards } from "./AllianceAtAGlanceCards";
+import { AllianceFindingsList } from "./AllianceFindingsList";
 import { AllianceMetricPerformanceCard } from "./AllianceMetricPerformanceCard";
+import { computeAllianceFindings } from "@/app/src/lib/reports/allianceFindings";
 
 type Params = {
   params: Promise<{ allianceId: string }>;
@@ -130,6 +132,8 @@ export default async function ReportsIndexPage({ params, searchParams }: Params)
   const resolvedComparePeriodId =
     report.comparisonSelection.status === "RESOLVED" ? report.comparisonSelection.period.id : undefined;
 
+  const findings = computeAllianceFindings(report.metrics);
+
   return (
     <PageLayout
       breadcrumb={breadcrumbFor(allianceId)}
@@ -152,6 +156,13 @@ export default async function ReportsIndexPage({ params, searchParams }: Params)
         </div>
 
         <AllianceAtAGlanceCards totalMetricCount={report.metrics.length} overallCoverage={report.overallCoverage} />
+
+        <AllianceFindingsList
+          allianceId={allianceId}
+          periodId={report.period.id}
+          comparePeriodId={resolvedComparePeriodId}
+          findings={findings}
+        />
 
         <div className="flex flex-col gap-4" data-testid="alliance-metric-cards">
           {report.metrics.map((performance) => (

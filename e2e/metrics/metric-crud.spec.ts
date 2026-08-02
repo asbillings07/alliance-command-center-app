@@ -45,6 +45,42 @@ test.describe("Metrics CRUD", () => {
     await expect(page.getByText(metricName)).toBeVisible();
   });
 
+  test("can configure a trend direction on create, and it's badged on the card (#264 PR2)", async ({ page }) => {
+    await page.goto(`/alliances/${testAllianceId}/metrics`);
+
+    await page.getByRole("button", { name: /create metric/i }).click();
+
+    const metricName = `Trend Direction Test Metric ${Date.now()}`;
+    await page.getByLabel(/name/i).fill(metricName);
+    await page.getByRole("combobox", { name: /type/i }).selectOption("NUMERIC");
+    await page.getByLabel(/trend direction/i).selectOption("HIGHER_IS_BETTER");
+    await page.getByRole("button", { name: /create|save/i }).click();
+
+    const card = page.locator('[data-testid^="metric-card-"]').filter({ hasText: metricName });
+    await expect(card.getByText("Higher is better")).toBeVisible();
+  });
+
+  test("defaults to Neutral when trend direction is left unset, and edits persist a change", async ({ page }) => {
+    await page.goto(`/alliances/${testAllianceId}/metrics`);
+
+    await page.getByRole("button", { name: /create metric/i }).click();
+    const metricName = `Neutral Metric ${Date.now()}`;
+    await page.getByLabel(/name/i).fill(metricName);
+    await page.getByRole("combobox", { name: /type/i }).selectOption("NUMERIC");
+    await page.getByRole("button", { name: /create|save/i }).click();
+
+    const card = page.locator('[data-testid^="metric-card-"]').filter({ hasText: metricName });
+    // NEUTRAL is the default and renders no badge (mirrors the "no rollup" convention).
+    await expect(card.getByText("Higher is better")).toHaveCount(0);
+    await expect(card.getByText("Lower is better")).toHaveCount(0);
+
+    await card.getByRole("button", { name: /^edit$/i }).click();
+    await page.getByLabel(/trend direction/i).selectOption("LOWER_IS_BETTER");
+    await page.getByRole("button", { name: /update|save/i }).click();
+
+    await expect(card.getByText("Lower is better")).toBeVisible();
+  });
+
   test("can create boolean metric", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}/metrics`);
 

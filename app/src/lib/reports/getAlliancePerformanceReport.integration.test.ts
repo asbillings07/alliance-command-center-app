@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
-import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/enums";
+import { Metric_Type, MetricSummaryKind, MetricTrendDirection } from "@/app/generated/prisma/enums";
 import { getAlliancePerformanceReport, AlliancePerformanceReportNotFoundError } from "./getAlliancePerformanceReport";
+import { computeAllianceFindings } from "./allianceFindings";
 
 const runDb = process.env.INTEGRATION_DB === "true";
 
@@ -50,8 +51,9 @@ describe.skipIf(!runDb)("getAlliancePerformanceReport [integration]", () => {
     type: Metric_Type,
     summaryKind: MetricSummaryKind,
     active = true,
+    trendDirection: MetricTrendDirection = MetricTrendDirection.NEUTRAL,
   ) {
-    return prisma.metric.create({ data: { allianceId, name, type, summaryKind, active } });
+    return prisma.metric.create({ data: { allianceId, name, type, summaryKind, active, trendDirection } });
   }
 
   async function attach(periodId: string, metricId: string, active = true) {
@@ -388,5 +390,66 @@ describe.skipIf(!runDb)("getAlliancePerformanceReport [integration]", () => {
       validCells: 1,
       coveragePercent: 50,
     });
+  });
+
+  it("surfaces a metric's configured trendDirection, and the findings engine turns an adverse real comparison into an ADVERSE_COMPARISON finding (#264 PR2)", async () => {
+    const alliance = await makeAlliance();
+    const member = await makeMember(alliance.id, "Alice");
+
+    const priorPeriod = await makePeriod(alliance.id, "Week 1", {
+      startsAt: new Date("2026-04-01T00:00:00Z"),
+      endsAt: new Date("2026-04-07T00:00:00Z"),
+    });
+    const selectedPeriod = await makePeriod(alliance.id, "Week 2", {
+      startsAt: new Date("2026-04-08T00:00:00Z"),
+      endsAt: new Date("2026-04-14T00:00:00Z"),
+    });
+
+    // Higher-is-better metric whose total dropped period over period — an
+    // explicit configuration choice, not something inferred from name/kind.
+    const donations = await makeMetric(
+      alliance.id,
+      "Donations",
+      Metric_Type.NUMERIC,
+      MetricSummaryKind.SUM,
+      true,
+      MetricTrendDirection.HIGHER_IS_BETTER,
+    );
+    await attach(priorPeriod.id, donations.id);
+    await attach(selectedPeriod.id, donations.id);
+    await addEntry(member.id, priorPeriod.id, donations.id, 100, new Date("2026-04-02T00:00:00Z"));
+    await addEntry(member.id, selectedPeriod.id, donations.id, 60, new Date("2026-04-09T00:00:00Z"));
+
+    // A NEUTRAL metric with the exact same shape of decrease must never
+    // generate a finding — the engine only acts on an explicit direction.
+    const untouched = await makeMetric(alliance.id, "Untouched", Metric_Type.NUMERIC, MetricSummaryKind.SUM);
+    await attach(priorPeriod.id, untouched.id);
+    await attach(selectedPeriod.id, untouched.id);
+    await addEntry(member.id, priorPeriod.id, untouched.id, 100, new Date("2026-04-02T00:00:00Z"));
+    await addEntry(member.id, selectedPeriod.id, untouched.id, 60, new Date("2026-04-09T00:00:00Z"));
+
+    const report = await getAlliancePerformanceReport({
+      allianceId: alliance.id,
+      periodId: selectedPeriod.id,
+      comparePeriodId: priorPeriod.id,
+    });
+
+    const donationsPerformance = report.metrics.find((m) => m.metric.id === donations.id)!;
+    expect(donationsPerformance.metric.trendDirection).toBe(MetricTrendDirection.HIGHER_IS_BETTER);
+    expect(donationsPerformance.comparison).toMatchObject({ status: "COMPARED", absoluteChange: -40 });
+
+    const findings = computeAllianceFindings(report.metrics);
+    expect(findings).toEqual([
+      {
+        kind: "ADVERSE_COMPARISON",
+        metricId: donations.id,
+        metricName: "Donations",
+        summaryKind: MetricSummaryKind.SUM,
+        trendDirection: MetricTrendDirection.HIGHER_IS_BETTER,
+        unitLabel: null,
+        absoluteChange: -40,
+        percentageChange: -40,
+      },
+    ]);
   });
 });

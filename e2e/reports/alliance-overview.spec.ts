@@ -1,7 +1,7 @@
 import { test, expect } from "../shared/fixtures";
 import { checkA11yWithOptions } from "../shared/accessibility";
 import { prisma } from "@/app/src/lib/prisma";
-import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/enums";
+import { Metric_Type, MetricSummaryKind, MetricTrendDirection } from "@/app/generated/prisma/enums";
 import { formatPercent } from "@/app/src/lib/format/formatPercent";
 
 /**
@@ -34,6 +34,7 @@ async function seedMetric(
     unitLabel?: string | null;
     active?: boolean;
     allianceId?: string;
+    trendDirection?: MetricTrendDirection;
   } = {},
 ): Promise<SeededMetric> {
   return prisma.metric.create({
@@ -44,6 +45,7 @@ async function seedMetric(
       summaryKind: opts.summaryKind ?? MetricSummaryKind.SUM,
       unitLabel: opts.unitLabel ?? null,
       active: opts.active ?? true,
+      trendDirection: opts.trendDirection ?? MetricTrendDirection.NEUTRAL,
     },
   });
 }
@@ -346,6 +348,133 @@ test.describe("Alliance Performance Overview", () => {
       await expect(page.getByTestId("at-a-glance-coverage")).toContainText(expectedCoveragePercent);
     } finally {
       await cleanup({ metricIds: [complete.id, notAttached.id], periodIds: [period.id], memberIds: [alice.id, bob.id] });
+    }
+  });
+
+  test("the 'Needs attention' findings section flags an adverse comparison only for the metric with an explicit trendDirection (#264 PR2)", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const priorPeriod = await seedPeriod(`${suffix}-prior`, {
+      startsAt: new Date("2026-05-01T00:00:00Z"),
+      endsAt: new Date("2026-05-07T00:00:00Z"),
+    });
+    const selectedPeriod = await seedPeriod(`${suffix}-selected`, {
+      startsAt: new Date("2026-05-08T00:00:00Z"),
+      endsAt: new Date("2026-05-14T00:00:00Z"),
+    });
+    const alice = await seedMember(`Alice-${suffix}`);
+
+    // Configured HIGHER_IS_BETTER, and its total dropped — expect a finding.
+    const donations = await seedMetric(`${suffix}-donations`, { trendDirection: MetricTrendDirection.HIGHER_IS_BETTER });
+    await attachMetric(priorPeriod.id, donations.id);
+    await attachMetric(selectedPeriod.id, donations.id);
+    await recordEntry(priorPeriod.id, donations.id, alice.id, 100, new Date("2026-05-02T00:00:00Z"));
+    await recordEntry(selectedPeriod.id, donations.id, alice.id, 40, new Date("2026-05-09T00:00:00Z"));
+
+    // Identical drop, but NEUTRAL (the default) — must never generate a finding.
+    const untouched = await seedMetric(`${suffix}-untouched`);
+    await attachMetric(priorPeriod.id, untouched.id);
+    await attachMetric(selectedPeriod.id, untouched.id);
+    await recordEntry(priorPeriod.id, untouched.id, alice.id, 100, new Date("2026-05-02T00:00:00Z"));
+    await recordEntry(selectedPeriod.id, untouched.id, alice.id, 40, new Date("2026-05-09T00:00:00Z"));
+
+    try {
+      await page.goto(
+        `/alliances/${ALLIANCE_ID}/reports?periodId=${selectedPeriod.id}&comparePeriodId=${priorPeriod.id}`,
+      );
+
+      // Both metrics likely also trigger their own INCOMPLETE_COVERAGE
+      // finding (the shared fixture alliance has other active members who
+      // never recorded either brand-new metric), so this asserts precisely
+      // on ADVERSE_COMPARISON — the one kind that's conditional on an
+      // explicit trendDirection — rather than "untouched never appears at
+      // all" in the whole findings section.
+      const findings = page.getByTestId("alliance-findings-list");
+      // The testid is keyed by `${metricId}-${kind}` (unique per finding),
+      // so a plain getByTestId won't match — select on the ADVERSE_COMPARISON
+      // suffix instead.
+      const adverseFindings = findings.locator('[data-testid$="-ADVERSE_COMPARISON"]');
+      await expect(adverseFindings).toHaveCount(1);
+      await expect(adverseFindings).toContainText(donations.name);
+
+      // The finding links straight to the flagged metric's drill-down.
+      await adverseFindings.getByRole("link").click();
+      await expect(page).toHaveURL(new RegExp(`/reports/metrics/${donations.id}`));
+    } finally {
+      await cleanup({
+        metricIds: [donations.id, untouched.id],
+        periodIds: [priorPeriod.id, selectedPeriod.id],
+        memberIds: [alice.id],
+      });
+    }
+  });
+
+  test("the 'Needs attention' section flags an active metric not attached to the selected period, with attach-or-archive guidance (#264 PR2 review)", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const period = await seedPeriod(suffix);
+    // Deliberately never attached to `period` — "not attached intentionally"
+    // and "not attached accidentally" are indistinguishable from stored data
+    // alone, so this must surface rather than be silently suppressed.
+    const neverAttached = await seedMetric(`${suffix}-never-attached`);
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports?periodId=${period.id}`);
+
+      const findings = page.getByTestId("alliance-findings-list");
+      const notAttachedFinding = findings.locator(`[data-testid="alliance-finding-${neverAttached.id}-NOT_ATTACHED"]`);
+      await expect(notAttachedFinding).toBeVisible();
+      await expect(notAttachedFinding).toContainText("isn't attached to this period");
+      await expect(notAttachedFinding).toContainText("Attach it to start tracking, or archive it");
+
+      await notAttachedFinding.getByRole("link").click();
+      await expect(page).toHaveURL(new RegExp(`/reports/metrics/${neverAttached.id}`));
+    } finally {
+      await cleanup({ metricIds: [neverAttached.id], periodIds: [period.id] });
+    }
+  });
+
+  test("the 'Needs attention' section flags a metric whose explicitly selected comparison period lacks an attachment, with the reason preserved, but never when no comparison is selected (#264 PR2 review)", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const priorPeriod = await seedPeriod(`${suffix}-prior`, {
+      startsAt: new Date("2026-06-01T00:00:00Z"),
+      endsAt: new Date("2026-06-07T00:00:00Z"),
+    });
+    const selectedPeriod = await seedPeriod(`${suffix}-selected`, {
+      startsAt: new Date("2026-06-08T00:00:00Z"),
+      endsAt: new Date("2026-06-14T00:00:00Z"),
+    });
+    const alice = await seedMember(`Alice-${suffix}`);
+
+    // Attached and has data in the selected period, but was never attached
+    // in `priorPeriod` — an explicitly requested comparison against it must
+    // still flag the gap, even though the metric's own card already
+    // explains why in its comparison summary text.
+    const metric = await seedMetric(`${suffix}-cmp-unavailable`);
+    await attachMetric(selectedPeriod.id, metric.id);
+    await recordEntry(selectedPeriod.id, metric.id, alice.id, 25);
+
+    try {
+      // Explicitly select the comparison period the metric was never
+      // attached to. (The "no comparison selected at all" case — no
+      // COMPARISON_UNAVAILABLE finding — is covered deterministically at
+      // the unit level in allianceFindings.test.ts; it isn't reliably
+      // constructible here since the alliance-wide selector may still
+      // auto-resolve *some* structurally-eligible period as the default.)
+      await page.goto(
+        `/alliances/${ALLIANCE_ID}/reports?periodId=${selectedPeriod.id}&comparePeriodId=${priorPeriod.id}`,
+      );
+
+      const finding = page.getByTestId(`alliance-finding-${metric.id}-COMPARISON_UNAVAILABLE`);
+      await expect(finding).toBeVisible();
+      await expect(finding).toContainText("wasn't attached in the comparison period");
+      await expect(finding).toContainText("no change could be measured");
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [priorPeriod.id, selectedPeriod.id], memberIds: [alice.id] });
     }
   });
 

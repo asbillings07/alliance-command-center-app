@@ -31,6 +31,21 @@ enum MetricSummaryKind {
   NONE
 }
 
+// #264 PR2: tells the deterministic findings engine whether a period-over-
+// period change is worth surfacing as "needs attention" — HIGHER_IS_BETTER
+// flags a decrease as adverse, LOWER_IS_BETTER flags an increase, and
+// NEUTRAL (the default, safe for every existing metric on migration) never
+// produces an adverse-comparison finding regardless of which way the number
+// moves. Deliberately never inferred from Metric_Type/MetricSummaryKind/name
+// — directionality is a leadership judgment about what the metric measures,
+// not something the platform can safely assume (a "reports needed" count
+// could be good or bad depending on the alliance's process).
+enum MetricTrendDirection {
+  HIGHER_IS_BETTER
+  LOWER_IS_BETTER
+  NEUTRAL
+}
+
 enum LeadershipNoteType {
   POSITIVE
   WARNING
@@ -237,6 +252,11 @@ model Metric {
   // "pts", "donations") shown alongside formatted values.
   summaryKind MetricSummaryKind @default(NONE)
   unitLabel   String?
+
+  // #264 PR2: see MetricTrendDirection. Defaults to NEUTRAL so every
+  // existing metric backfills to "no adverse-comparison finding possible"
+  // rather than silently reinterpreting its historical comparisons.
+  trendDirection MetricTrendDirection @default(NEUTRAL)
 
   periodMetrics MetricPeriodMetric[]
 

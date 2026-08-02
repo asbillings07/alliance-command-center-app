@@ -35,10 +35,13 @@ import {
  * `schemaVersion` exists so a future consumer (e.g. an AI interpretation
  * layer sitting on top of this report — see the linked follow-up issue for
  * Orion-assisted interpretation) can detect when the shape of this contract
- * changes, without this module needing to know that consumer exists.
+ * changes, without this module needing to know that consumer exists. Bump
+ * it whenever a field is added, removed, or reinterpreted on
+ * `AlliancePerformanceReport` or anything it embeds (e.g. `MetricInfo`) —
+ * 2 (#264 PR2) added the required `metric.trendDirection` field.
  */
 
-export const ALLIANCE_PERFORMANCE_REPORT_SCHEMA_VERSION = 1 as const;
+export const ALLIANCE_PERFORMANCE_REPORT_SCHEMA_VERSION = 2 as const;
 
 export class AlliancePerformanceReportNotFoundError extends Error {
   constructor() {
@@ -404,7 +407,7 @@ export async function getAlliancePerformanceReport(params: {
       allianceId,
       OR: [{ active: true }, { periodMetrics: { some: { periodId } } }],
     },
-    select: { id: true, name: true, type: true, summaryKind: true, unitLabel: true, active: true },
+    select: { id: true, name: true, type: true, summaryKind: true, unitLabel: true, active: true, trendDirection: true },
     orderBy: [{ active: "desc" }, { name: "asc" }, { id: "asc" }],
   });
   const metricIds = metrics.map((m) => m.id);
@@ -472,6 +475,7 @@ export async function getAlliancePerformanceReport(params: {
         summaryKind: metric.summaryKind,
         unitLabel: metric.unitLabel,
         active: metric.active,
+        trendDirection: metric.trendDirection,
       },
       attachmentStatus,
       dataStatus,
