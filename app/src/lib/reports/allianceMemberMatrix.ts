@@ -21,6 +21,16 @@ export type MatrixColumnCandidate = {
   type: Metric_Type;
   unitLabel: string | null;
   attachmentStatus: MetricPeriodAttachmentStatus;
+  /**
+   * The *metric's own* active/archived state — independent of
+   * `attachmentStatus` (which is period-scoped). An archived metric can
+   * still be `ACTIVE`-attached with real values for a past period (the
+   * report's inclusion rule keeps it visible as long as it has results
+   * this period), so both states must be surfaced: "archived" says
+   * "leadership retired this metric," "inactive/not attached" says
+   * "nothing recorded against it this period."
+   */
+  metricActive: boolean;
 };
 
 export type MatrixSortKey =

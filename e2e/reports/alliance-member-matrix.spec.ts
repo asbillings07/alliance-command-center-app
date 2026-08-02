@@ -30,7 +30,7 @@ type SeededMember = Awaited<ReturnType<typeof prisma.allianceMember.create>>;
 
 async function seedMetric(
   suffix: string,
-  opts: { type?: Metric_Type; unitLabel?: string | null } = {},
+  opts: { type?: Metric_Type; unitLabel?: string | null; active?: boolean } = {},
 ): Promise<SeededMetric> {
   return prisma.metric.create({
     data: {
@@ -39,7 +39,7 @@ async function seedMetric(
       type: opts.type ?? Metric_Type.NUMERIC,
       summaryKind: "SUM",
       unitLabel: opts.unitLabel ?? null,
-      active: true,
+      active: opts.active ?? true,
     },
   });
 }
@@ -282,6 +282,179 @@ test.describe("Alliance Member Matrix", () => {
       await expect(page).toHaveURL(new RegExp(`comparePeriodId=${previous.id}`));
     } finally {
       await cleanup({ metricIds: [metric.id], periodIds: [previous.id, current.id] });
+    }
+  });
+
+  test("at the 6-column cap on a narrow viewport, mobile cards show every metric with an honest attachment/archived badge", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const period = await seedPeriod(suffix);
+    const alice = await seedMember(`E2E Matrix Member Alice-${suffix}`);
+
+    // Exactly MATRIX_MAX_COLUMNS (6) candidates, so every metric below is
+    // selected by default and rendered — exercising the mobile card at its
+    // full, capped width, not just a couple of columns.
+    const activeMetric = await seedMetric(`${suffix}-active`, { unitLabel: "pts" });
+    await attachMetric(period.id, activeMetric.id);
+    await recordEntry(period.id, activeMetric.id, alice.id, 42);
+
+    // Archived at the metric level, but still ACTIVE-attached with a result
+    // this period — the report's inclusion rule keeps it visible, and the
+    // card must say "Archived," not silently look like a normal metric.
+    const archivedMetric = await seedMetric(`${suffix}-archived`, { active: false });
+    await attachMetric(period.id, archivedMetric.id);
+    await recordEntry(period.id, archivedMetric.id, alice.id, 7);
+
+    // Not archived, but its attachment is currently inactive — must say
+    // "Inactive attachment," not be indistinguishable from an active one.
+    const inactiveAttachmentMetric = await seedMetric(`${suffix}-inactive`);
+    await prisma.metricPeriodMetric.create({
+      data: { periodId: period.id, metricId: inactiveAttachmentMetric.id, active: false, weight: 1, required: false },
+    });
+
+    const neverAttachedMetric = await seedMetric(`${suffix}-not-attached`);
+    // Deliberately not attached to `period` at all.
+
+    const fillerMetrics = await Promise.all(
+      Array.from({ length: 2 }, (_, i) => seedMetric(`${suffix}-filler-${i}`)),
+    );
+    await Promise.all(fillerMetrics.map((m) => attachMetric(period.id, m.id)));
+
+    const metricIds = [
+      activeMetric.id,
+      archivedMetric.id,
+      inactiveAttachmentMetric.id,
+      neverAttachedMetric.id,
+      ...fillerMetrics.map((m) => m.id),
+    ];
+
+    try {
+      await page.setViewportSize({ width: 375, height: 667 });
+      // Explicitly requests exactly these 6 metrics as the selection — the
+      // shared fixture alliance can carry other active metrics that would
+      // otherwise crowd this test's own metrics out of the default 6-column
+      // selection (mirrors the "changing column selection" test's fix for
+      // the same nondeterminism).
+      await page.goto(
+        `/alliances/${ALLIANCE_ID}/reports?periodId=${period.id}&matrixSearch=${encodeURIComponent(suffix)}&matrixColumns=${metricIds.join(",")}`,
+      );
+
+      const card = page.getByTestId(`matrix-row-card-${alice.id}`);
+      await expect(card).toBeVisible();
+
+      // All 6 selected metrics render in the card, at the cap, each with
+      // its own honest badge state — mirrors the desktop table's per-column
+      // `matrix-cell-` testid convention so mobile assertions aren't
+      // fragile text-content scraping.
+      const mobileCell = (metricId: string) => page.getByTestId(`matrix-cell-mobile-${alice.id}-${metricId}`);
+
+      const activeCell = mobileCell(activeMetric.id);
+      await expect(activeCell).toContainText(activeMetric.name);
+      await expect(activeCell).toContainText("42");
+      await expect(activeCell).not.toContainText("Archived");
+      await expect(activeCell).not.toContainText("Inactive");
+      await expect(activeCell).not.toContainText("Not attached");
+
+      // Archived at the metric level, but still shows its real recorded
+      // value — archived, not blank.
+      const archivedCell = mobileCell(archivedMetric.id);
+      await expect(archivedCell).toContainText("Archived");
+      await expect(archivedCell).toContainText("7");
+
+      const inactiveCell = mobileCell(inactiveAttachmentMetric.id);
+      await expect(inactiveCell).toContainText("Inactive attachment");
+      await expect(inactiveCell).not.toContainText("Archived");
+
+      const notAttachedCell = mobileCell(neverAttachedMetric.id);
+      await expect(notAttachedCell).toContainText("Not attached");
+
+      for (const filler of fillerMetrics) {
+        await expect(mobileCell(filler.id)).toContainText(filler.name);
+      }
+    } finally {
+      await cleanup({ metricIds, periodIds: [period.id], memberIds: [alice.id] });
+    }
+  });
+
+  test("the matrix controls are fully keyboard-operable: tab order across the form, and a keyboard-only column change + submission", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const period = await seedPeriod(suffix);
+    const metric = await seedMetric(suffix);
+    const other = await seedMetric(`${suffix}-other`);
+    await attachMetric(period.id, metric.id);
+    await attachMetric(period.id, other.id);
+    const alice = await seedMember(`E2E Matrix Member Alice-${suffix}`);
+    await recordEntry(period.id, metric.id, alice.id, 42);
+
+    try {
+      await page.goto(
+        `/alliances/${ALLIANCE_ID}/reports?periodId=${period.id}&matrixSearch=${encodeURIComponent(suffix)}&matrixColumns=${metric.id},${other.id}`,
+      );
+      await expect(page.getByTestId(`matrix-cell-${alice.id}-${metric.id}`)).toBeVisible();
+
+      // Tab order across the control surface, starting from a stable known
+      // field. The shared fixture alliance can carry any number of other
+      // active metrics (each rendering its own column checkbox before this
+      // point in the DOM), so the assertion deliberately starts right after
+      // them, at the first field every test run can rely on.
+      const searchInput = page.locator("#matrix-search");
+      await searchInput.focus();
+      await expect(searchInput).toBeFocused();
+
+      const filterSelect = page.locator("#matrix-filter");
+      await page.keyboard.press("Tab");
+      await expect(filterSelect).toBeFocused();
+
+      const sortSelect = page.locator("#matrix-sort");
+      await page.keyboard.press("Tab");
+      await expect(sortSelect).toBeFocused();
+
+      const sortDirSelect = page.locator("#matrix-sort-dir");
+      await page.keyboard.press("Tab");
+      await expect(sortDirSelect).toBeFocused();
+
+      const applyButton = page.getByTestId("matrix-controls-form").getByRole("button", { name: "Apply" });
+      await page.keyboard.press("Tab");
+      await expect(applyButton).toBeFocused();
+
+      // Keyboard-only column change + submission, no mouse at any point:
+      // focus the `other` checkbox directly, toggle it off with Space, tab
+      // forward to Apply, and submit with Enter — proving the checkbox and
+      // the submit are both fully operable from the keyboard, with a real,
+      // observable result (the column actually leaves the URL/table), not
+      // just a focus-order tour.
+      const otherCheckbox = page.locator(`#matrix-column-${other.id}`);
+      await otherCheckbox.focus();
+      await expect(otherCheckbox).toBeChecked();
+      await page.keyboard.press("Space");
+      await expect(otherCheckbox).not.toBeChecked();
+
+      // Tab forward from the checkbox to Apply. The exact number of fields
+      // in between (remaining checkboxes, search, filter, sort, sort-dir)
+      // isn't itself under test here, so this loop is bounded rather than
+      // a fixed count — mirrors the bounded tab-order search already used
+      // elsewhere in the suite (`spreadsheet-first-setup.spec.ts`).
+      let reachedApply = false;
+      for (let i = 0; i < 60; i += 1) {
+        await page.keyboard.press("Tab");
+        if (await applyButton.evaluate((el) => el === document.activeElement)) {
+          reachedApply = true;
+          break;
+        }
+      }
+      expect(reachedApply).toBe(true);
+      await expect(applyButton).toBeFocused();
+      await page.keyboard.press("Enter");
+
+      await page.waitForURL((url) => url.searchParams.get("matrixColumns") === metric.id);
+
+      const table = page.getByTestId("alliance-member-matrix");
+      await expect(table.getByRole("link", { name: new RegExp(other.name) })).toHaveCount(0);
+    } finally {
+      await cleanup({ metricIds: [metric.id, other.id], periodIds: [period.id], memberIds: [alice.id] });
     }
   });
 

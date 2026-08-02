@@ -158,6 +158,7 @@ export default async function ReportsIndexPage({ params, searchParams }: Params)
     type: metric.type,
     unitLabel: metric.unitLabel,
     attachmentStatus,
+    metricActive: metric.active,
   }));
 
   const requestedMatrixColumnIds = sp.matrixColumns?.split(",").filter(Boolean);

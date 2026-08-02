@@ -462,9 +462,11 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
     );
     vi.mocked(getAllianceMemberMetricMatrix).mockResolvedValue(
       emptyMatrix({
-        columns: [{ id: "met_1", name: "Donations", type: "NUMERIC", unitLabel: "pts", attachmentStatus: "ACTIVE" }],
+        columns: [
+          { id: "met_1", name: "Donations", type: "NUMERIC", unitLabel: "pts", attachmentStatus: "ACTIVE", metricActive: true },
+        ],
         availableColumns: [
-          { id: "met_1", name: "Donations", type: "NUMERIC", unitLabel: "pts", attachmentStatus: "ACTIVE" },
+          { id: "met_1", name: "Donations", type: "NUMERIC", unitLabel: "pts", attachmentStatus: "ACTIVE", metricActive: true },
         ],
         rows: [
           {
@@ -489,7 +491,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
         allianceId: "all_1",
         periodId: "per_1",
         candidates: [
-          { id: "met_1", name: "Donations", type: "NUMERIC", unitLabel: "pts", attachmentStatus: "ACTIVE" },
+          { id: "met_1", name: "Donations", type: "NUMERIC", unitLabel: "pts", attachmentStatus: "ACTIVE", metricActive: true },
         ],
         requestedColumnIds: ["met_1"],
         search: "ali",
@@ -497,5 +499,58 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
     );
     expect(html).toContain('data-testid="alliance-member-matrix"');
     expect(html).toContain("Alice");
+  });
+
+  it("carries the metric's own archived state into the matrix candidates, independent of attachmentStatus", async () => {
+    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
+    vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
+      emptyReport({
+        metrics: [
+          {
+            // Archived at the metric level, but still ACTIVE-attached with
+            // results this period (the report's own inclusion rule keeps
+            // it visible) — the matrix must not collapse this into "active".
+            metric: {
+              id: "met_1",
+              name: "Retired Metric",
+              type: "NUMERIC",
+              summaryKind: "SUM",
+              unitLabel: "pts",
+              active: false,
+              trendDirection: "NEUTRAL",
+            },
+            attachmentStatus: "ACTIVE",
+            dataStatus: "HAS_VALUES",
+            rollup: { kind: "SUM", total: 500, hasNegativeValues: false },
+            coverage: {
+              currentActiveMemberCount: 10,
+              recordedActiveMemberCount: 10,
+              invalidActiveMemberCount: 0,
+              missingActiveMemberCount: 0,
+              complete: true,
+              archivedContributingMemberCount: 0,
+            },
+            comparison: null,
+          },
+        ],
+      }) as unknown as Awaited<ReturnType<typeof getAlliancePerformanceReport>>,
+    );
+    vi.mocked(getAllianceMemberMetricMatrix).mockResolvedValue(
+      emptyMatrix() as unknown as Awaited<ReturnType<typeof getAllianceMemberMetricMatrix>>,
+    );
+
+    await ReportsIndexPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({}),
+    });
+
+    expect(getAllianceMemberMetricMatrix).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidates: [
+          expect.objectContaining({ id: "met_1", attachmentStatus: "ACTIVE", metricActive: false }),
+        ],
+      }),
+    );
   });
 });

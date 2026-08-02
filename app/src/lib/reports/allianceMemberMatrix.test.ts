@@ -15,6 +15,7 @@ function candidate(overrides: Partial<MatrixColumnCandidate> = {}): MatrixColumn
     type: Metric_Type.NUMERIC,
     unitLabel: "pts",
     attachmentStatus: "ACTIVE",
+    metricActive: true,
     ...overrides,
   };
 }

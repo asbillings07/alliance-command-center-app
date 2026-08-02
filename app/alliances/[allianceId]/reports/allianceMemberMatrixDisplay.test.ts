@@ -10,6 +10,7 @@ function column(overrides: Partial<MatrixColumnCandidate> = {}): MatrixColumnCan
     type: Metric_Type.NUMERIC,
     unitLabel: "pts",
     attachmentStatus: "ACTIVE",
+    metricActive: true,
     ...overrides,
   };
 }
@@ -54,5 +55,20 @@ describe("formatMatrixColumnChooserLabel", () => {
 
   it("suffixes an INACTIVE column", () => {
     expect(formatMatrixColumnChooserLabel(column({ attachmentStatus: "INACTIVE" }))).toBe("Donations (inactive)");
+  });
+
+  it("suffixes an archived metric even when its attachment is ACTIVE", () => {
+    expect(formatMatrixColumnChooserLabel(column({ metricActive: false, attachmentStatus: "ACTIVE" }))).toBe(
+      "Donations (archived)",
+    );
+  });
+
+  it("combines the archived and attachment-status suffixes rather than letting one hide the other", () => {
+    expect(formatMatrixColumnChooserLabel(column({ metricActive: false, attachmentStatus: "NOT_ATTACHED" }))).toBe(
+      "Donations (archived, not attached)",
+    );
+    expect(formatMatrixColumnChooserLabel(column({ metricActive: false, attachmentStatus: "INACTIVE" }))).toBe(
+      "Donations (archived, inactive)",
+    );
   });
 });

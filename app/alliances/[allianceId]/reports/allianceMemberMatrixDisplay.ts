@@ -33,14 +33,19 @@ export function formatMatrixCell(cell: MatrixCell, column: MatrixColumnCandidate
 }
 
 /**
- * The column-chooser checkbox label — suffixes non-`ACTIVE` columns so a
- * leader isn't surprised to select a column that turns out empty for every
- * row. `ACTIVE` columns (the common case) get no suffix, matching the
- * report's existing "no badge for the normal state" convention
- * (`attachmentStatusBadge`).
+ * The column-chooser checkbox label — suffixes archived metrics and
+ * non-`ACTIVE` attachments so a leader isn't surprised to select a column
+ * that's been retired or turns out empty for every row. A metric can be
+ * both (an archived metric that still has an active/inactive/not-attached
+ * period attachment), so the suffixes combine rather than one hiding the
+ * other. The common case — active metric, active attachment — gets no
+ * suffix, matching the report's existing "no badge for the normal state"
+ * convention (`attachmentStatusBadge`).
  */
 export function formatMatrixColumnChooserLabel(column: MatrixColumnCandidate): string {
-  if (column.attachmentStatus === "NOT_ATTACHED") return `${column.name} (not attached)`;
-  if (column.attachmentStatus === "INACTIVE") return `${column.name} (inactive)`;
-  return column.name;
+  const suffixes: string[] = [];
+  if (!column.metricActive) suffixes.push("archived");
+  if (column.attachmentStatus === "NOT_ATTACHED") suffixes.push("not attached");
+  else if (column.attachmentStatus === "INACTIVE") suffixes.push("inactive");
+  return suffixes.length > 0 ? `${column.name} (${suffixes.join(", ")})` : column.name;
 }

@@ -65,8 +65,9 @@ describe.skipIf(!runDb)("getAllianceMemberMetricMatrix [integration]", () => {
     metric: { id: string; name: string; type: Metric_Type },
     attachmentStatus: MatrixColumnCandidate["attachmentStatus"],
     unitLabel: string | null = null,
+    metricActive = true,
   ): MatrixColumnCandidate {
-    return { id: metric.id, name: metric.name, type: metric.type, unitLabel, attachmentStatus };
+    return { id: metric.id, name: metric.name, type: metric.type, unitLabel, attachmentStatus, metricActive };
   }
 
   it("builds one cell per (member, selected column), reporting VALUE/MISSING/INVALID/NOT_ATTACHED honestly", async () => {

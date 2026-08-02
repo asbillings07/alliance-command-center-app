@@ -57,9 +57,22 @@ export function AllianceMemberMatrixTable({ allianceId, periodId, comparePeriodI
             <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
               {columns.map((column, index) => {
                 const display = formatMatrixCell(row.cells[index]!, column);
+                const badge = attachmentStatusBadge(column.attachmentStatus);
                 return (
-                  <div key={column.id}>
-                    <dt className="text-text-muted text-xs">{column.name}</dt>
+                  <div key={column.id} data-testid={`matrix-cell-mobile-${row.allianceMemberId}-${column.id}`}>
+                    <dt className="text-text-muted text-xs flex items-center gap-1 flex-wrap">
+                      <span>{column.name}</span>
+                      {!column.metricActive && (
+                        <Badge variant="neutral" size="sm">
+                          Archived
+                        </Badge>
+                      )}
+                      {badge && (
+                        <Badge variant={badge.variant} size="sm">
+                          {badge.label}
+                        </Badge>
+                      )}
+                    </dt>
                     <dd className="text-text-primary" title={display.title}>
                       {display.text}
                     </dd>
@@ -85,6 +98,11 @@ export function AllianceMemberMatrixTable({ allianceId, periodId, comparePeriodI
                     <Link href={metricHref(column.id)} className="hover:underline text-text-secondary">
                       {column.name}
                     </Link>
+                    {!column.metricActive && (
+                      <Badge variant="neutral" size="sm" className="ml-2">
+                        Archived
+                      </Badge>
+                    )}
                     {badge && (
                       <Badge variant={badge.variant} size="sm" className="ml-2">
                         {badge.label}
