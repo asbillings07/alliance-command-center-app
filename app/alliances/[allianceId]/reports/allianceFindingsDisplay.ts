@@ -33,7 +33,7 @@ export const FINDING_KIND_BADGE: Record<AllianceFinding["kind"], { label: string
 export function formatFindingText(finding: AllianceFinding): string {
   switch (finding.kind) {
     case "INACTIVE_ATTACHMENT":
-      return `${finding.metricName}'s attachment is inactive this period — no new results can be recorded until it's reactivated.`;
+      return `Attachment for ${finding.metricName} is inactive this period — no new results can be recorded until it's reactivated.`;
     case "MISSING_RESULTS":
       return `${finding.metricName} has no results recorded yet this period.`;
     case "INVALID_VALUES":

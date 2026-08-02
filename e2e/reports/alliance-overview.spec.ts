@@ -391,7 +391,10 @@ test.describe("Alliance Performance Overview", () => {
       // explicit trendDirection — rather than "untouched never appears at
       // all" in the whole findings section.
       const findings = page.getByTestId("alliance-findings-list");
-      const adverseFindings = findings.getByTestId("alliance-finding-ADVERSE_COMPARISON");
+      // The testid is keyed by `${metricId}-${kind}` (unique per finding),
+      // so a plain getByTestId won't match — select on the ADVERSE_COMPARISON
+      // suffix instead.
+      const adverseFindings = findings.locator('[data-testid$="-ADVERSE_COMPARISON"]');
       await expect(adverseFindings).toHaveCount(1);
       await expect(adverseFindings).toContainText(donations.name);
 

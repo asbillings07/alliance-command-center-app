@@ -20,11 +20,11 @@ describe("FINDING_KIND_BADGE", () => {
 });
 
 describe("formatFindingText", () => {
-  it("describes an inactive attachment", () => {
+  it("describes an inactive attachment, avoiding a possessive so it reads correctly for any metric name", () => {
     expect(
       formatFindingText({ kind: "INACTIVE_ATTACHMENT", metricId: "m1", metricName: "Donations" }),
     ).toBe(
-      "Donations's attachment is inactive this period — no new results can be recorded until it's reactivated.",
+      "Attachment for Donations is inactive this period — no new results can be recorded until it's reactivated.",
     );
   });
 

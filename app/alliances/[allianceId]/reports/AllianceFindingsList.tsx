@@ -37,13 +37,20 @@ export function AllianceFindingsList({ allianceId, periodId, comparePeriodId, fi
           </p>
         ) : (
           <ul className="flex flex-col gap-3">
-            {findings.map((finding, index) => {
+            {findings.map((finding) => {
               const badge = FINDING_KIND_BADGE[finding.kind];
+              // `metricId-kind` is a stable, unique key: `computeAllianceFindings`
+              // never emits more than one finding of the same kind for a given
+              // metric, so unlike an index-based key this never remounts an
+              // unrelated row when findings are added/removed elsewhere in the
+              // list, and unlike a kind-only id it stays unique when multiple
+              // metrics share the same finding kind.
+              const testId = `alliance-finding-${finding.metricId}-${finding.kind}`;
               return (
                 <li
-                  key={`${finding.metricId}-${finding.kind}-${index}`}
+                  key={testId}
                   className="flex flex-wrap items-start gap-2"
-                  data-testid={`alliance-finding-${finding.kind}`}
+                  data-testid={testId}
                 >
                   <Badge variant={badge.variant} size="sm">
                     {badge.label}
