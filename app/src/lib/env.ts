@@ -34,6 +34,7 @@ const optionalVars = [
   "FEATURE_RECOGNITION",
   "FEATURE_DISCORD",
   "FEATURE_ANALYTICS",
+  "FEATURE_REPORTS",
 ] as const;
 
 type RequiredVar = (typeof requiredVars)[number];

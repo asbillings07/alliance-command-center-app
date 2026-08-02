@@ -37,7 +37,11 @@ async function seedMetric(
   return prisma.metric.create({
     data: {
       allianceId: opts.allianceId ?? ALLIANCE_ID!,
-      name: `E2E Report Metric ${suffix}`,
+      // Metric.name is unique per alliance. `suffix` alone (usually
+      // Date.now()+retry) can collide across parallel/rapid test runs in the
+      // same millisecond; the random component keeps names unique while
+      // `suffix` stays a stable substring for search/filter assertions.
+      name: `E2E Report Metric ${suffix} ${crypto.randomUUID().slice(0, 8)}`,
       type: opts.type ?? Metric_Type.NUMERIC,
       summaryKind: opts.summaryKind ?? MetricSummaryKind.SUM,
       unitLabel: opts.unitLabel ?? null,
@@ -70,7 +74,9 @@ async function seedMember(suffix: string, opts: { archived?: boolean; allianceId
   return prisma.allianceMember.create({
     data: {
       allianceId: opts.allianceId ?? ALLIANCE_ID!,
-      playerName: `E2E Report Member ${suffix}`,
+      // AllianceMember.playerName is unique per alliance; see the matching
+      // comment on seedMetric above for why the random component is needed.
+      playerName: `E2E Report Member ${suffix} ${crypto.randomUUID().slice(0, 8)}`,
       archivedAt: opts.archived ? new Date("2026-01-01") : null,
     },
   });
