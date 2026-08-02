@@ -7,6 +7,7 @@ import { PageLayout, Card } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { getPeriodResultsSummary } from "@/app/src/lib/reports/getPeriodResultsSummary";
 import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvisionMetricsForPeriod";
+import { isFeatureEnabled } from "@/app/src/lib/features";
 
 type Params = {
     params: Promise<{
@@ -161,16 +162,27 @@ export default async function PeriodPage({ params }: Params) {
                             {resultsSummary.metrics.length > 0 && (
                                 <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden bg-surface-secondary">
                                     {resultsSummary.metrics.map((m) => (
-                                        <li key={m.metricId} className="flex items-center justify-between p-3 text-sm">
+                                        <li key={m.metricId} className="flex items-center justify-between p-3 text-sm gap-3">
                                             <span className="font-medium text-text-primary">{m.metricName}</span>
-                                            <span className="text-text-secondary">
-                                                <strong className="text-text-primary">{m.activeMemberCount}</strong> / {resultsSummary.currentActiveMemberCount} active members
-                                                {m.memberCount > m.activeMemberCount && (
-                                                    <span className="text-text-muted text-xs ml-1.5">
-                                                        ({m.memberCount} total incl. archived)
-                                                    </span>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-text-secondary">
+                                                    <strong className="text-text-primary">{m.activeMemberCount}</strong> / {resultsSummary.currentActiveMemberCount} active members
+                                                    {m.memberCount > m.activeMemberCount && (
+                                                        <span className="text-text-muted text-xs ml-1.5">
+                                                            ({m.memberCount} total incl. archived)
+                                                        </span>
+                                                    )}
+                                                </span>
+                                                {permissions.canViewMembers && isFeatureEnabled("reports") && (
+                                                    <Button
+                                                        href={`/alliances/${allianceId}/reports/metrics/${m.metricId}?periodId=${periodId}`}
+                                                        variant="link"
+                                                        size="sm"
+                                                    >
+                                                        View Report
+                                                    </Button>
                                                 )}
-                                            </span>
+                                            </div>
                                         </li>
                                     ))}
                                 </ul>

@@ -3,6 +3,7 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { validateSetupPeriodReturnTo } from "@/app/src/lib/setup/validateSetupPeriodReturnTo";
 import { resolveTargetPeriod } from "@/app/src/lib/periods/resolveTargetPeriod";
+import { isFeatureEnabled } from "@/app/src/lib/features";
 import { MetricCard } from "./metricCard";
 import { PageLayout, EmptyState } from "@/app/src/components";
 
@@ -24,6 +25,7 @@ export default async function MetricsPage({ params, searchParams }: Params) {
     });
     const returnTo = validateSetupPeriodReturnTo(rawReturnTo, allianceId);
     const targetPeriod = await resolveTargetPeriod(allianceId);
+    const showReportLink = isFeatureEnabled("reports");
     const metrics = await prisma.metric.findMany({
         where: {
             allianceId: allianceId,
@@ -61,6 +63,7 @@ export default async function MetricsPage({ params, searchParams }: Params) {
                             key={metric.id}
                             allianceId={allianceId}
                             mode="view"
+                            showReportLink={showReportLink}
                             metric={{
                                 id: metric.id,
                                 name: metric.name,

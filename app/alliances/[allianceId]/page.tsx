@@ -4,6 +4,7 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 import { resolveTargetPeriod } from "@/app/src/lib/periods/resolveTargetPeriod";
 import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvisionMetricsForPeriod";
+import { isFeatureEnabled } from "@/app/src/lib/features";
 import { PageLayout, Card, Badge, SetupProgressCard } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 
@@ -103,6 +104,20 @@ export default async function AlliancePage({ params }: Params) {
                 </Button>
               </Card.Body>
             </Card>
+
+            {permissions.canViewMembers && isFeatureEnabled("reports") && (
+              <Card>
+                <Card.Body>
+                  <h3 className="font-medium text-primary mb-2">Reports</h3>
+                  <p className="text-sm text-text-secondary mb-4">
+                    Metric summaries, rankings, and period-over-period change.
+                  </p>
+                  <Button href={`/alliances/${allianceId}/reports`} variant="primary" size="sm">
+                    View Reports
+                  </Button>
+                </Card.Body>
+              </Card>
+            )}
 
             {permissions.canImportMetrics && !activePeriod && (
               <Card>

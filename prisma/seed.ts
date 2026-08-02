@@ -460,6 +460,9 @@ EMAIL_FROM=
 
 # Simulated inbox query failures for feedback inbox retry E2E (#176)
 FEEDBACK_INBOX_TEST_HOOKS=true
+
+# Metric Summary Reports ship dark by default (#190); enabled for E2E only.
+FEATURE_REPORTS=true
 `;
 
   if (WRITE_ENV_FILE) {

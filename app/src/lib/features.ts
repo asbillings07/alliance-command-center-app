@@ -39,6 +39,15 @@ export const features = {
    * Advanced analytics and reporting (future)
    */
   analytics: process.env.FEATURE_ANALYTICS === "true",
+
+  /**
+   * Metric Summary Reports (#190)
+   * Per-metric alliance rollups, rankings, and member breakdowns. Ships
+   * dark: both report routes fail closed (notFound) while this is off, so
+   * even a direct URL guess 404s, and all discovery touchpoints (dashboard,
+   * Metrics Library, period detail) hide their links too.
+   */
+  reports: process.env.FEATURE_REPORTS === "true",
 } as const;
 
 export type FeatureName = keyof typeof features;
