@@ -1,7 +1,7 @@
 import { test, expect } from "../shared/fixtures";
 import { checkA11yWithOptions } from "../shared/accessibility";
 import { prisma } from "@/app/src/lib/prisma";
-import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/enums";
+import { Metric_Type, MetricSummaryKind, MetricTrendDirection } from "@/app/generated/prisma/enums";
 import { formatPercent } from "@/app/src/lib/format/formatPercent";
 
 /**
@@ -34,6 +34,7 @@ async function seedMetric(
     unitLabel?: string | null;
     active?: boolean;
     allianceId?: string;
+    trendDirection?: MetricTrendDirection;
   } = {},
 ): Promise<SeededMetric> {
   return prisma.metric.create({
@@ -44,6 +45,7 @@ async function seedMetric(
       summaryKind: opts.summaryKind ?? MetricSummaryKind.SUM,
       unitLabel: opts.unitLabel ?? null,
       active: opts.active ?? true,
+      trendDirection: opts.trendDirection ?? MetricTrendDirection.NEUTRAL,
     },
   });
 }
@@ -346,6 +348,62 @@ test.describe("Alliance Performance Overview", () => {
       await expect(page.getByTestId("at-a-glance-coverage")).toContainText(expectedCoveragePercent);
     } finally {
       await cleanup({ metricIds: [complete.id, notAttached.id], periodIds: [period.id], memberIds: [alice.id, bob.id] });
+    }
+  });
+
+  test("the 'Needs attention' findings section flags an adverse comparison only for the metric with an explicit trendDirection (#264 PR2)", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const priorPeriod = await seedPeriod(`${suffix}-prior`, {
+      startsAt: new Date("2026-05-01T00:00:00Z"),
+      endsAt: new Date("2026-05-07T00:00:00Z"),
+    });
+    const selectedPeriod = await seedPeriod(`${suffix}-selected`, {
+      startsAt: new Date("2026-05-08T00:00:00Z"),
+      endsAt: new Date("2026-05-14T00:00:00Z"),
+    });
+    const alice = await seedMember(`Alice-${suffix}`);
+
+    // Configured HIGHER_IS_BETTER, and its total dropped — expect a finding.
+    const donations = await seedMetric(`${suffix}-donations`, { trendDirection: MetricTrendDirection.HIGHER_IS_BETTER });
+    await attachMetric(priorPeriod.id, donations.id);
+    await attachMetric(selectedPeriod.id, donations.id);
+    await recordEntry(priorPeriod.id, donations.id, alice.id, 100, new Date("2026-05-02T00:00:00Z"));
+    await recordEntry(selectedPeriod.id, donations.id, alice.id, 40, new Date("2026-05-09T00:00:00Z"));
+
+    // Identical drop, but NEUTRAL (the default) — must never generate a finding.
+    const untouched = await seedMetric(`${suffix}-untouched`);
+    await attachMetric(priorPeriod.id, untouched.id);
+    await attachMetric(selectedPeriod.id, untouched.id);
+    await recordEntry(priorPeriod.id, untouched.id, alice.id, 100, new Date("2026-05-02T00:00:00Z"));
+    await recordEntry(selectedPeriod.id, untouched.id, alice.id, 40, new Date("2026-05-09T00:00:00Z"));
+
+    try {
+      await page.goto(
+        `/alliances/${ALLIANCE_ID}/reports?periodId=${selectedPeriod.id}&comparePeriodId=${priorPeriod.id}`,
+      );
+
+      // Both metrics likely also trigger their own INCOMPLETE_COVERAGE
+      // finding (the shared fixture alliance has other active members who
+      // never recorded either brand-new metric), so this asserts precisely
+      // on ADVERSE_COMPARISON — the one kind that's conditional on an
+      // explicit trendDirection — rather than "untouched never appears at
+      // all" in the whole findings section.
+      const findings = page.getByTestId("alliance-findings-list");
+      const adverseFindings = findings.getByTestId("alliance-finding-ADVERSE_COMPARISON");
+      await expect(adverseFindings).toHaveCount(1);
+      await expect(adverseFindings).toContainText(donations.name);
+
+      // The finding links straight to the flagged metric's drill-down.
+      await adverseFindings.getByRole("link").click();
+      await expect(page).toHaveURL(new RegExp(`/reports/metrics/${donations.id}`));
+    } finally {
+      await cleanup({
+        metricIds: [donations.id, untouched.id],
+        periodIds: [priorPeriod.id, selectedPeriod.id],
+        memberIds: [alice.id],
+      });
     }
   });
 

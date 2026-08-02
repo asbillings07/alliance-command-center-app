@@ -1,6 +1,6 @@
 import "server-only";
 import { Prisma } from "@/app/generated/prisma/client";
-import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/enums";
+import { Metric_Type, MetricSummaryKind, MetricTrendDirection } from "@/app/generated/prisma/enums";
 import { prisma } from "@/app/src/lib/prisma";
 import { isValidBooleanMetricValue } from "@/app/src/lib/metrics/booleanMetricValue";
 import {
@@ -54,6 +54,8 @@ export type MetricInfo = {
   summaryKind: MetricSummaryKind;
   unitLabel: string | null;
   active: boolean;
+  /** #264 PR2 — see metricTrendDirection.ts. Consumed by the deterministic findings engine, not by this report. */
+  trendDirection: MetricTrendDirection;
 };
 
 export type PeriodInfo = {
@@ -748,7 +750,7 @@ export async function getMetricSummaryReport(params: {
   const [metric, period, attachment] = await Promise.all([
     prisma.metric.findFirst({
       where: { id: metricId, allianceId },
-      select: { id: true, name: true, type: true, summaryKind: true, unitLabel: true, active: true },
+      select: { id: true, name: true, type: true, summaryKind: true, unitLabel: true, active: true, trendDirection: true },
     }),
     prisma.metricPeriod.findFirst({
       where: { id: periodId, allianceId },
@@ -848,6 +850,7 @@ export async function getMetricSummaryReport(params: {
       summaryKind: metric.summaryKind,
       unitLabel: metric.unitLabel,
       active: metric.active,
+      trendDirection: metric.trendDirection,
     },
     period: periodInfo,
     attachmentStatus,

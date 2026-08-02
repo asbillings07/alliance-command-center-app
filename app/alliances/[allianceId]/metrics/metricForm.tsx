@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition, useRef } from "react";
-import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/enums";
+import { Metric_Type, MetricSummaryKind, MetricTrendDirection } from "@/app/generated/prisma/enums";
 import { createMetric, editMetric } from "./action";
 import { METRIC_SUMMARY_KINDS_BY_TYPE } from "@/app/src/lib/metrics/metricSummaryKind";
+import { METRIC_TREND_DIRECTION_LABELS } from "@/app/src/lib/metrics/metricTrendDirection";
 import { Card } from "@/app/src/components";
 import { Button, Input, Textarea, Select, Label } from "@/app/src/components/client";
 
@@ -16,6 +17,7 @@ type MetricFormProps = {
   type?: Metric_Type;
   summaryKind?: MetricSummaryKind;
   unitLabel?: string | null;
+  trendDirection?: MetricTrendDirection;
   returnTo?: string;
   onCancel: () => void;
   onSuccess?: () => void;
@@ -37,6 +39,7 @@ export function MetricForm({
   type = Metric_Type.NUMERIC,
   summaryKind = MetricSummaryKind.NONE,
   unitLabel = "",
+  trendDirection = MetricTrendDirection.NEUTRAL,
   returnTo,
   onCancel,
   onSuccess,
@@ -183,6 +186,27 @@ export function MetricForm({
                 placeholder="e.g., pts, donations"
                 maxLength={24}
               />
+            </div>
+            <div>
+              <Label htmlFor="trendDirection">Trend direction</Label>
+              <Select
+                id="trendDirection"
+                name="trendDirection"
+                defaultValue={trendDirection}
+                disabled={isPending}
+              >
+                {Object.values(MetricTrendDirection).map((direction) => (
+                  <option key={direction} value={direction}>
+                    {METRIC_TREND_DIRECTION_LABELS[direction]}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-sm text-text-muted">
+                Tells the reports &quot;needs attention&quot; findings whether a period-over-period
+                change is worth flagging. Only used when this metric has a rollup to compare
+                (Total, Average, or True rate) — leave as Neutral unless you know which direction
+                means better.
+              </p>
             </div>
           </div>
 

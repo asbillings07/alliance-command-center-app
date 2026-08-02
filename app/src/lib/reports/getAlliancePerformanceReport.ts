@@ -404,7 +404,7 @@ export async function getAlliancePerformanceReport(params: {
       allianceId,
       OR: [{ active: true }, { periodMetrics: { some: { periodId } } }],
     },
-    select: { id: true, name: true, type: true, summaryKind: true, unitLabel: true, active: true },
+    select: { id: true, name: true, type: true, summaryKind: true, unitLabel: true, active: true, trendDirection: true },
     orderBy: [{ active: "desc" }, { name: "asc" }, { id: "asc" }],
   });
   const metricIds = metrics.map((m) => m.id);
@@ -472,6 +472,7 @@ export async function getAlliancePerformanceReport(params: {
         summaryKind: metric.summaryKind,
         unitLabel: metric.unitLabel,
         active: metric.active,
+        trendDirection: metric.trendDirection,
       },
       attachmentStatus,
       dataStatus,

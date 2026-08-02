@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/enums";
+import { Metric_Type, MetricSummaryKind, MetricTrendDirection } from "@/app/generated/prisma/enums";
 import type { MetricInfo, MetricReportRow } from "@/app/src/lib/reports/getMetricSummaryReport";
 import {
   formatRowRank,
@@ -16,6 +16,7 @@ function metric(overrides: Partial<MetricInfo> = {}): MetricInfo {
     summaryKind: MetricSummaryKind.SUM,
     unitLabel: null,
     active: true,
+    trendDirection: MetricTrendDirection.NEUTRAL,
     ...overrides,
   };
 }

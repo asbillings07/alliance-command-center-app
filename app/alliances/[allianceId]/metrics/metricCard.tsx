@@ -1,6 +1,6 @@
 "use client";
 
-import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/enums";
+import { Metric_Type, MetricSummaryKind, MetricTrendDirection } from "@/app/generated/prisma/enums";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { MetricForm } from "./metricForm";
@@ -15,6 +15,7 @@ type MetricData = {
   type: Metric_Type;
   summaryKind: MetricSummaryKind;
   unitLabel: string | null;
+  trendDirection: MetricTrendDirection;
   active: boolean;
   metricKey: string;
 };
@@ -41,6 +42,12 @@ const SUMMARY_KIND_BADGE_LABELS: Record<MetricSummaryKind, string> = {
   [MetricSummaryKind.SUM]: "Total",
   [MetricSummaryKind.AVERAGE]: "Average",
   [MetricSummaryKind.TRUE_RATE]: "True rate",
+};
+
+const TREND_DIRECTION_BADGE_LABELS: Record<MetricTrendDirection, string> = {
+  [MetricTrendDirection.NEUTRAL]: "Neutral",
+  [MetricTrendDirection.HIGHER_IS_BETTER]: "Higher is better",
+  [MetricTrendDirection.LOWER_IS_BETTER]: "Lower is better",
 };
 
 export function MetricCard({
@@ -175,6 +182,7 @@ export function MetricCard({
         type={metric.type}
         summaryKind={metric.summaryKind}
         unitLabel={metric.unitLabel}
+        trendDirection={metric.trendDirection}
         onCancel={() => setCardState("view")}
       />
     );
@@ -200,6 +208,11 @@ export function MetricCard({
                 <Badge variant="neutral" size="sm">
                   {SUMMARY_KIND_BADGE_LABELS[metric.summaryKind]}
                   {metric.unitLabel ? ` (${metric.unitLabel})` : ""}
+                </Badge>
+              )}
+              {metric.trendDirection !== MetricTrendDirection.NEUTRAL && (
+                <Badge variant="neutral" size="sm">
+                  {TREND_DIRECTION_BADGE_LABELS[metric.trendDirection]}
                 </Badge>
               )}
               {!metric.active && (

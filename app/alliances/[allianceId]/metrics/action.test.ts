@@ -155,6 +155,40 @@ describe("createMetric", () => {
     });
     expect(mockCreate).not.toHaveBeenCalled();
   });
+
+  it("defaults trendDirection to NEUTRAL when omitted", async () => {
+    mockCreate.mockResolvedValue({ id: "metric-1" });
+
+    await createMetric(buildFormData({ allianceId, name: "Some Metric", type: "NUMERIC" }));
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ trendDirection: "NEUTRAL" }) }),
+    );
+  });
+
+  it.each(["HIGHER_IS_BETTER", "LOWER_IS_BETTER", "NEUTRAL"])(
+    "accepts an explicit trendDirection of %s",
+    async (trendDirection) => {
+      mockCreate.mockResolvedValue({ id: "metric-1" });
+
+      await createMetric(
+        buildFormData({ allianceId, name: "Some Metric", type: "NUMERIC", trendDirection }),
+      );
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ trendDirection }) }),
+      );
+    },
+  );
+
+  it("rejects an invalid trendDirection value with zero writes", async () => {
+    const result = await createMetric(
+      buildFormData({ allianceId, name: "Some Metric", type: "NUMERIC", trendDirection: "SIDEWAYS" }),
+    );
+
+    expect(result).toEqual({ error: "Invalid trend direction" });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
 });
 
 describe("editMetric", () => {
@@ -195,6 +229,24 @@ describe("editMetric", () => {
 
     expect(result).toEqual({ error: "Total requires a Numeric metric" });
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("updates trendDirection on edit", async () => {
+    mockFindFirst.mockResolvedValue({ id: metricId, allianceId, active: true, type: "NUMERIC" });
+    mockUpdate.mockResolvedValue({});
+
+    await editMetric(
+      buildFormData({
+        allianceId,
+        metricId,
+        name: "VS Score",
+        type: "NUMERIC",
+        trendDirection: "HIGHER_IS_BETTER",
+      }),
+    );
+
+    const updateCall = mockUpdate.mock.calls[0][0];
+    expect(updateCall.data.trendDirection).toBe("HIGHER_IS_BETTER");
   });
 
   it("revalidates reports paths on success", async () => {

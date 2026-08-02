@@ -171,7 +171,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
         },
         metrics: [
           {
-            metric: { id: "met_1", name: "Donations", type: "NUMERIC", summaryKind: "SUM", unitLabel: "pts", active: true },
+            metric: { id: "met_1", name: "Donations", type: "NUMERIC", summaryKind: "SUM", unitLabel: "pts", active: true, trendDirection: "NEUTRAL" },
             attachmentStatus: "ACTIVE",
             dataStatus: "HAS_VALUES",
             rollup: { kind: "SUM", total: 500, hasNegativeValues: false },
@@ -186,7 +186,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
             comparison: null,
           },
           {
-            metric: { id: "met_2", name: "Never Attached", type: "NUMERIC", summaryKind: "SUM", unitLabel: null, active: true },
+            metric: { id: "met_2", name: "Never Attached", type: "NUMERIC", summaryKind: "SUM", unitLabel: null, active: true, trendDirection: "NEUTRAL" },
             attachmentStatus: "NOT_ATTACHED",
             dataStatus: "NO_VALUES",
             rollup: { kind: "SUM", total: 0, hasNegativeValues: false },
@@ -217,6 +217,98 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
     expect(html).toContain("Not attached");
     expect(html).toContain("70%");
     expect(html).toContain('href="/alliances/all_1/reports/metrics/met_1?periodId=per_1"');
+    // met_1's own coverage gap (7 of 10 recorded) surfaces as a deterministic
+    // INCOMPLETE_COVERAGE finding; met_2 is NOT_ATTACHED, which never findings.
+    expect(html).toContain("Needs attention (1)");
+    expect(html).toContain("Donations: 3 of 10 active members haven&#x27;t recorded a value.");
+  });
+
+  it("renders the healthy empty state when no metric's data triggers a finding", async () => {
+    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
+    vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
+      emptyReport({
+        metrics: [
+          {
+            metric: {
+              id: "met_1",
+              name: "Donations",
+              type: "NUMERIC",
+              summaryKind: "SUM",
+              unitLabel: "pts",
+              active: true,
+              trendDirection: "NEUTRAL",
+            },
+            attachmentStatus: "ACTIVE",
+            dataStatus: "HAS_VALUES",
+            rollup: { kind: "SUM", total: 500, hasNegativeValues: false },
+            coverage: {
+              currentActiveMemberCount: 10,
+              recordedActiveMemberCount: 10,
+              invalidActiveMemberCount: 0,
+              missingActiveMemberCount: 0,
+              complete: true,
+              archivedContributingMemberCount: 0,
+            },
+            comparison: null,
+          },
+        ],
+      }) as unknown as Awaited<ReturnType<typeof getAlliancePerformanceReport>>,
+    );
+
+    const page = await ReportsIndexPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({}),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("No metrics need attention this period.");
+    expect(html).not.toContain("Needs attention (");
+  });
+
+  it("renders a deterministic finding when a metric has no results recorded yet, linking to its drill-down", async () => {
+    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
+    vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
+      emptyReport({
+        metrics: [
+          {
+            metric: {
+              id: "met_1",
+              name: "Donations",
+              type: "NUMERIC",
+              summaryKind: "SUM",
+              unitLabel: "pts",
+              active: true,
+              trendDirection: "NEUTRAL",
+            },
+            attachmentStatus: "ACTIVE",
+            dataStatus: "NO_VALUES",
+            rollup: { kind: "SUM", total: 0, hasNegativeValues: false },
+            coverage: {
+              currentActiveMemberCount: 10,
+              recordedActiveMemberCount: 0,
+              invalidActiveMemberCount: 0,
+              missingActiveMemberCount: 10,
+              complete: false,
+              archivedContributingMemberCount: 0,
+            },
+            comparison: null,
+          },
+        ],
+      }) as unknown as Awaited<ReturnType<typeof getAlliancePerformanceReport>>,
+    );
+
+    const page = await ReportsIndexPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({}),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("Needs attention (1)");
+    expect(html).toContain("Donations has no results recorded yet this period.");
+    expect(html).toContain('href="/alliances/all_1/reports/metrics/met_1?periodId=per_1"');
+    expect(html).not.toContain("No metrics need attention this period.");
   });
 
   it("carries the resolved shared comparison period into every card's drill-down link, so it isn't silently re-resolved differently there", async () => {
@@ -231,7 +323,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
         },
         metrics: [
           {
-            metric: { id: "met_1", name: "Donations", type: "NUMERIC", summaryKind: "SUM", unitLabel: "pts", active: true },
+            metric: { id: "met_1", name: "Donations", type: "NUMERIC", summaryKind: "SUM", unitLabel: "pts", active: true, trendDirection: "NEUTRAL" },
             attachmentStatus: "ACTIVE",
             dataStatus: "HAS_VALUES",
             rollup: { kind: "SUM", total: 500, hasNegativeValues: false },

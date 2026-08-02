@@ -71,6 +71,7 @@ export default async function MetricsPage({ params, searchParams }: Params) {
                                 type: metric.type,
                                 summaryKind: metric.summaryKind,
                                 unitLabel: metric.unitLabel,
+                                trendDirection: metric.trendDirection,
                                 active: metric.active,
                                 metricKey: `${metric.id}-${metric.createdAt.getTime()}`,
                             }}
