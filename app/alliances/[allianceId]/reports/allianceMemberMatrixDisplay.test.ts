@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Metric_Type } from "@/app/generated/prisma/enums";
-import type { MatrixCell, MatrixColumnCandidate } from "@/app/src/lib/reports/getAllianceMemberMetricMatrix";
+import type { MatrixCell, MatrixColumnCandidate } from "@/app/src/lib/reports/allianceMemberMatrix";
 import { formatMatrixCell, formatMatrixColumnChooserLabel } from "./allianceMemberMatrixDisplay";
 
 function column(overrides: Partial<MatrixColumnCandidate> = {}): MatrixColumnCandidate {
