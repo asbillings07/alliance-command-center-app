@@ -533,10 +533,13 @@ test.describe("Metric Summary Report", () => {
       await page.goto(`/alliances/${ALLIANCE_ID}/reports`);
 
       await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
-      const card = page.getByTestId("reports-index-list").getByText(metric.name);
-      await expect(card).toBeVisible();
-      await page.getByRole("link", { name: "View Report" }).first().click();
-      await page.waitForURL(/\/reports\/metrics\//);
+      // Scoped to this test's own seeded metric's card — the shared fixture
+      // alliance can have other metrics, so ".first()" on an unscoped "View
+      // Report" locator could silently click a different metric's link.
+      const card = page.getByTestId(`reports-index-card-${metric.id}`);
+      await expect(card).toContainText(metric.name);
+      await card.getByRole("link", { name: "View Report" }).click();
+      await page.waitForURL(new RegExp(`/reports/metrics/${metric.id}`));
     } finally {
       await cleanup({ metricIds: [metric.id] });
     }

@@ -61,32 +61,34 @@ export default async function ReportsIndexPage({ params }: Params) {
           {metrics.map((metric) => {
             const badgeLabel = SUMMARY_KIND_BADGE_LABEL[metric.summaryKind];
             return (
-              <Card key={metric.id} className={!metric.active ? "opacity-60" : ""}>
-                <Card.Body>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h2 className="text-lg font-semibold text-primary">{metric.name}</h2>
-                        {badgeLabel && (
-                          <Badge variant="neutral" size="sm">
-                            {badgeLabel}
-                            {metric.unitLabel ? ` (${metric.unitLabel})` : ""}
-                          </Badge>
-                        )}
-                        {!metric.active && (
-                          <Badge variant="neutral" size="sm">
-                            Archived
-                          </Badge>
-                        )}
+              <div key={metric.id} data-testid={`reports-index-card-${metric.id}`}>
+                <Card className={!metric.active ? "opacity-60" : ""}>
+                  <Card.Body>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h2 className="text-lg font-semibold text-primary">{metric.name}</h2>
+                          {badgeLabel && (
+                            <Badge variant="neutral" size="sm">
+                              {badgeLabel}
+                              {metric.unitLabel ? ` (${metric.unitLabel})` : ""}
+                            </Badge>
+                          )}
+                          {!metric.active && (
+                            <Badge variant="neutral" size="sm">
+                              Archived
+                            </Badge>
+                          )}
+                        </div>
+                        {metric.description && <p className="text-sm text-text-secondary">{metric.description}</p>}
                       </div>
-                      {metric.description && <p className="text-sm text-text-secondary">{metric.description}</p>}
+                      <Button href={`/alliances/${allianceId}/reports/metrics/${metric.id}`} variant="primary" size="sm">
+                        View Report
+                      </Button>
                     </div>
-                    <Button href={`/alliances/${allianceId}/reports/metrics/${metric.id}`} variant="primary" size="sm">
-                      View Report
-                    </Button>
-                  </div>
-                </Card.Body>
-              </Card>
+                  </Card.Body>
+                </Card>
+              </div>
             );
           })}
         </div>
