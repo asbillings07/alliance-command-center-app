@@ -20,30 +20,30 @@ describe("FINDING_KIND_BADGE", () => {
 });
 
 describe("formatFindingText", () => {
-  it("describes an inactive attachment, avoiding a possessive so it reads correctly for any metric name", () => {
+  it("describes an inactive attachment, avoiding a possessive, with reactivation guidance", () => {
     expect(
       formatFindingText({ kind: "INACTIVE_ATTACHMENT", metricId: "m1", metricName: "Donations" }),
-    ).toBe(
-      "Attachment for Donations is inactive this period — no new results can be recorded until it's reactivated.",
-    );
+    ).toBe("Attachment for Donations is inactive this period. Reactivate it to resume recording new results.");
   });
 
-  it("describes missing results", () => {
+  it("describes missing results, with recovery guidance", () => {
     expect(formatFindingText({ kind: "MISSING_RESULTS", metricId: "m1", metricName: "Donations" })).toBe(
-      "Donations has no results recorded yet this period.",
+      "Donations has no results recorded yet this period. Record results for active members to start tracking it.",
     );
   });
 
-  it("describes invalid values, pluralizing correctly for one vs. many", () => {
+  it("describes invalid values, pluralizing correctly for one vs. many, with recovery guidance", () => {
     expect(
       formatFindingText({ kind: "INVALID_VALUES", metricId: "m1", metricName: "Showed Up", invalidCount: 1 }),
-    ).toBe("Showed Up has 1 active member with an invalid recorded value.");
+    ).toBe("Showed Up has 1 active member with an invalid recorded value. Review and correct the invalid entry.");
     expect(
       formatFindingText({ kind: "INVALID_VALUES", metricId: "m1", metricName: "Showed Up", invalidCount: 3 }),
-    ).toBe("Showed Up has 3 active members with an invalid recorded value.");
+    ).toBe(
+      "Showed Up has 3 active members with an invalid recorded value. Review and correct the invalid entries.",
+    );
   });
 
-  it("describes incomplete coverage with missing/total counts", () => {
+  it("describes incomplete coverage with missing/total counts, with recovery guidance", () => {
     expect(
       formatFindingText({
         kind: "INCOMPLETE_COVERAGE",
@@ -52,7 +52,9 @@ describe("formatFindingText", () => {
         missingCount: 3,
         currentActiveMemberCount: 10,
       }),
-    ).toBe("Donations: 3 of 10 active members haven't recorded a value.");
+    ).toBe(
+      "Donations: 3 of 10 active members haven't recorded a value. Record results for the remaining members to complete coverage.",
+    );
   });
 
   it("describes an adverse decrease for HIGHER_IS_BETTER with a plain signed change, no redundant direction word", () => {
@@ -67,7 +69,9 @@ describe("formatFindingText", () => {
         absoluteChange: -50,
         percentageChange: -10,
       }),
-    ).toBe("Donations changed -50 pts (-10%) since the comparison period (configured as higher is better).");
+    ).toBe(
+      "Donations changed -50 pts (-10%) since the comparison period (configured as higher is better). Review the drill-down for member-level detail.",
+    );
   });
 
   it("describes an adverse increase for LOWER_IS_BETTER with a plain signed change", () => {
@@ -82,6 +86,13 @@ describe("formatFindingText", () => {
         absoluteChange: 2,
         percentageChange: 20,
       }),
-    ).toBe("Response Time changed +2 hrs (+20%) since the comparison period (configured as lower is better).");
+    ).toBe(
+      "Response Time changed +2 hrs (+20%) since the comparison period (configured as lower is better). Review the drill-down for member-level detail.",
+    );
+  });
+
+  it("fails closed (throws) for an unhandled finding kind instead of silently rendering blank copy", () => {
+    const bogusFinding = { kind: "SOME_FUTURE_KIND" } as unknown as AllianceFinding;
+    expect(() => formatFindingText(bogusFinding)).toThrow("Unhandled finding kind: SOME_FUTURE_KIND");
   });
 });

@@ -46,36 +46,109 @@ describe("computeAllianceFindings", () => {
     expect(computeAllianceFindings([performance({ comparison: compared({ absoluteChange: 0 }) })])).toEqual([]);
   });
 
-  it("produces no findings for an archived metric, regardless of its state", () => {
-    const archived = performance({
-      metric: {
-        id: "metric-archived",
-        name: "Retired Metric",
-        type: Metric_Type.NUMERIC,
-        summaryKind: MetricSummaryKind.SUM,
-        unitLabel: null,
-        active: false,
-        trendDirection: MetricTrendDirection.HIGHER_IS_BETTER,
-      },
-      attachmentStatus: "INACTIVE",
-      dataStatus: "NO_VALUES",
-      coverage: {
-        currentActiveMemberCount: 10,
-        recordedActiveMemberCount: 0,
-        invalidActiveMemberCount: 3,
-        missingActiveMemberCount: 10,
-        complete: false,
-        archivedContributingMemberCount: 0,
-      },
-      comparison: compared({ absoluteChange: -100 }),
-    });
-
-    expect(computeAllianceFindings([archived])).toEqual([]);
-  });
-
   it("produces no findings for a NOT_ATTACHED metric", () => {
     const notAttached = performance({ attachmentStatus: "NOT_ATTACHED", dataStatus: "NO_VALUES" });
     expect(computeAllianceFindings([notAttached])).toEqual([]);
+  });
+
+  describe("archived metrics (metric.active === false)", () => {
+    it("suppresses INACTIVE_ATTACHMENT — an archived metric isn't offered 'reactivate' guidance", () => {
+      const archived = performance({
+        metric: {
+          id: "metric-archived",
+          name: "Retired Metric",
+          type: Metric_Type.NUMERIC,
+          summaryKind: MetricSummaryKind.SUM,
+          unitLabel: null,
+          active: false,
+          trendDirection: MetricTrendDirection.HIGHER_IS_BETTER,
+        },
+        attachmentStatus: "INACTIVE",
+        dataStatus: "NO_VALUES",
+        coverage: {
+          currentActiveMemberCount: 10,
+          recordedActiveMemberCount: 0,
+          invalidActiveMemberCount: 3,
+          missingActiveMemberCount: 10,
+          complete: false,
+          archivedContributingMemberCount: 0,
+        },
+        comparison: compared({ absoluteChange: -100 }),
+      });
+
+      expect(computeAllianceFindings([archived])).toEqual([]);
+    });
+
+    it("produces no findings for an archived, not-attached metric", () => {
+      const archivedNotAttached = performance({
+        metric: {
+          id: "metric-archived-gone",
+          name: "Fully Retired",
+          type: Metric_Type.NUMERIC,
+          summaryKind: MetricSummaryKind.SUM,
+          unitLabel: null,
+          active: false,
+          trendDirection: MetricTrendDirection.NEUTRAL,
+        },
+        attachmentStatus: "NOT_ATTACHED",
+        dataStatus: "NO_VALUES",
+      });
+      expect(computeAllianceFindings([archivedNotAttached])).toEqual([]);
+    });
+
+    it("still fires MISSING_RESULTS for an archived metric whose attachment remains ACTIVE with zero recorded values", () => {
+      const archivedNoData = performance({
+        metric: {
+          id: "metric-archived-empty",
+          name: "Live But Empty",
+          type: Metric_Type.NUMERIC,
+          summaryKind: MetricSummaryKind.SUM,
+          unitLabel: null,
+          active: false,
+          trendDirection: MetricTrendDirection.NEUTRAL,
+        },
+        attachmentStatus: "ACTIVE",
+        dataStatus: "NO_VALUES",
+        coverage: {
+          currentActiveMemberCount: 10,
+          recordedActiveMemberCount: 0,
+          invalidActiveMemberCount: 0,
+          missingActiveMemberCount: 10,
+          complete: false,
+          archivedContributingMemberCount: 0,
+        },
+      });
+      expect(computeAllianceFindings([archivedNoData])).toEqual([
+        { kind: "MISSING_RESULTS", metricId: "metric-archived-empty", metricName: "Live But Empty" },
+      ]);
+    });
+
+    it("still fires data-quality and comparison findings when an archived metric's attachment remains ACTIVE — archiving doesn't retroactively deactivate an already-active attachment", () => {
+      const archivedButLive = performance({
+        metric: {
+          id: "metric-archived-live",
+          name: "Still Live",
+          type: Metric_Type.NUMERIC,
+          summaryKind: MetricSummaryKind.SUM,
+          unitLabel: "pts",
+          active: false,
+          trendDirection: MetricTrendDirection.HIGHER_IS_BETTER,
+        },
+        attachmentStatus: "ACTIVE",
+        coverage: {
+          currentActiveMemberCount: 10,
+          recordedActiveMemberCount: 6,
+          invalidActiveMemberCount: 1,
+          missingActiveMemberCount: 3,
+          complete: false,
+          archivedContributingMemberCount: 0,
+        },
+        comparison: compared({ absoluteChange: -50 }),
+      });
+
+      const findings = computeAllianceFindings([archivedButLive]);
+      expect(findings.map((f) => f.kind)).toEqual(["INVALID_VALUES", "INCOMPLETE_COVERAGE", "ADVERSE_COMPARISON"]);
+    });
   });
 
   describe("INACTIVE_ATTACHMENT", () => {
@@ -323,23 +396,32 @@ describe("computeAllianceFindings", () => {
       expect(findings).toEqual([]);
     });
 
-    it("never fires for a non-COMPARED comparison status (e.g. NOT_ATTACHED in the comparison period)", () => {
-      const findings = computeAllianceFindings([
-        performance({
-          metric: {
-            id: "metric-1",
-            name: "Donations",
-            type: Metric_Type.NUMERIC,
-            summaryKind: MetricSummaryKind.SUM,
-            unitLabel: "pts",
-            active: true,
-            trendDirection: MetricTrendDirection.HIGHER_IS_BETTER,
-          },
-          comparison: { status: "NOT_ATTACHED" },
-        }),
-      ]);
-      expect(findings).toEqual([]);
-    });
+    it.each([
+      ["NO_ROLLUP" as const],
+      ["NOT_ATTACHED" as const],
+      ["INACTIVE_ATTACHMENT" as const],
+      ["NO_DATA_IN_SELECTED_PERIOD" as const],
+      ["NO_DATA_IN_COMPARISON_PERIOD" as const],
+    ])(
+      "never fires for a non-COMPARED comparison status (%s) — that period's state is already visible on the metric's own comparison summary, not duplicated as a finding",
+      (status) => {
+        const findings = computeAllianceFindings([
+          performance({
+            metric: {
+              id: "metric-1",
+              name: "Donations",
+              type: Metric_Type.NUMERIC,
+              summaryKind: MetricSummaryKind.SUM,
+              unitLabel: "pts",
+              active: true,
+              trendDirection: MetricTrendDirection.HIGHER_IS_BETTER,
+            },
+            comparison: { status },
+          }),
+        ]);
+        expect(findings).toEqual([]);
+      },
+    );
 
     it("is never assumed for TRUE_RATE (or any kind) without an explicit trendDirection", () => {
       const findings = computeAllianceFindings([
@@ -365,26 +447,83 @@ describe("computeAllianceFindings", () => {
     });
   });
 
-  it("preserves the input metric order and only flattens per-metric findings, without re-sorting by severity", () => {
-    const healthy = performance({ metric: { ...performance().metric, id: "m1", name: "Healthy" } });
-    const missing = performance({
-      metric: { ...performance().metric, id: "m2", name: "Missing" },
-      dataStatus: "NO_VALUES",
-      coverage: {
+  describe("severity ordering across metrics", () => {
+    it("orders metrics by their single most urgent finding kind, not the report's own metric order, keeping each metric's findings grouped", () => {
+      // Deliberately listed in an order that doesn't match severity, to
+      // prove the output is re-sorted rather than passed through.
+      const adverse = performance({
+        metric: {
+          ...performance().metric,
+          id: "m-adverse",
+          name: "Adverse",
+          trendDirection: MetricTrendDirection.HIGHER_IS_BETTER,
+        },
+        comparison: compared({ absoluteChange: -50 }),
+      });
+      const missing = performance({
+        metric: { ...performance().metric, id: "m-missing", name: "Missing" },
+        dataStatus: "NO_VALUES",
+        coverage: {
+          currentActiveMemberCount: 5,
+          recordedActiveMemberCount: 0,
+          invalidActiveMemberCount: 0,
+          missingActiveMemberCount: 5,
+          complete: false,
+          archivedContributingMemberCount: 0,
+        },
+      });
+      const inactive = performance({
+        metric: { ...performance().metric, id: "m-inactive", name: "Inactive" },
+        attachmentStatus: "INACTIVE",
+      });
+      // Has both INVALID_VALUES (priority 0) and INCOMPLETE_COVERAGE
+      // (priority 2) — its worst (lowest-number) priority is 0, so it
+      // should sort first, with both of its own findings kept adjacent.
+      const dataQuality = performance({
+        metric: { ...performance().metric, id: "m-dataquality", name: "Data Quality" },
+        coverage: {
+          currentActiveMemberCount: 10,
+          recordedActiveMemberCount: 6,
+          invalidActiveMemberCount: 1,
+          missingActiveMemberCount: 3,
+          complete: false,
+          archivedContributingMemberCount: 0,
+        },
+      });
+
+      const findings = computeAllianceFindings([adverse, missing, inactive, dataQuality]);
+
+      expect(findings.map((f) => `${f.metricId}:${f.kind}`)).toEqual([
+        "m-dataquality:INVALID_VALUES",
+        "m-dataquality:INCOMPLETE_COVERAGE",
+        "m-missing:MISSING_RESULTS",
+        "m-inactive:INACTIVE_ATTACHMENT",
+        "m-adverse:ADVERSE_COMPARISON",
+      ]);
+    });
+
+    it("keeps the report's own metric order for metrics tied on the same worst-priority finding kind", () => {
+      const missingCoverage = {
         currentActiveMemberCount: 5,
         recordedActiveMemberCount: 0,
         invalidActiveMemberCount: 0,
         missingActiveMemberCount: 5,
         complete: false,
         archivedContributingMemberCount: 0,
-      },
-    });
-    const inactive = performance({
-      metric: { ...performance().metric, id: "m3", name: "Inactive" },
-      attachmentStatus: "INACTIVE",
-    });
+      };
+      const missingA = performance({
+        metric: { ...performance().metric, id: "m-a", name: "A" },
+        dataStatus: "NO_VALUES",
+        coverage: missingCoverage,
+      });
+      const missingB = performance({
+        metric: { ...performance().metric, id: "m-b", name: "B" },
+        dataStatus: "NO_VALUES",
+        coverage: missingCoverage,
+      });
 
-    const findings = computeAllianceFindings([healthy, missing, inactive]);
-    expect(findings.map((f) => f.metricId)).toEqual(["m2", "m3"]);
+      const findings = computeAllianceFindings([missingB, missingA]);
+      expect(findings.map((f) => f.metricId)).toEqual(["m-b", "m-a"]);
+    });
   });
 });

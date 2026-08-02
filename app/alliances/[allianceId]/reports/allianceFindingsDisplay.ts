@@ -33,15 +33,17 @@ export const FINDING_KIND_BADGE: Record<AllianceFinding["kind"], { label: string
 export function formatFindingText(finding: AllianceFinding): string {
   switch (finding.kind) {
     case "INACTIVE_ATTACHMENT":
-      return `Attachment for ${finding.metricName} is inactive this period — no new results can be recorded until it's reactivated.`;
+      return `Attachment for ${finding.metricName} is inactive this period. Reactivate it to resume recording new results.`;
     case "MISSING_RESULTS":
-      return `${finding.metricName} has no results recorded yet this period.`;
+      return `${finding.metricName} has no results recorded yet this period. Record results for active members to start tracking it.`;
     case "INVALID_VALUES":
       return `${finding.metricName} has ${finding.invalidCount} active member${
         finding.invalidCount === 1 ? "" : "s"
-      } with an invalid recorded value.`;
+      } with an invalid recorded value. Review and correct the invalid ${
+        finding.invalidCount === 1 ? "entry" : "entries"
+      }.`;
     case "INCOMPLETE_COVERAGE":
-      return `${finding.metricName}: ${finding.missingCount} of ${finding.currentActiveMemberCount} active members haven't recorded a value.`;
+      return `${finding.metricName}: ${finding.missingCount} of ${finding.currentActiveMemberCount} active members haven't recorded a value. Record results for the remaining members to complete coverage.`;
     case "ADVERSE_COMPARISON": {
       const change = formatRollupChange(
         finding.summaryKind,
@@ -50,9 +52,17 @@ export function formatFindingText(finding: AllianceFinding): string {
         finding.unitLabel,
       );
       const directionLabel = METRIC_TREND_DIRECTION_LABELS[finding.trendDirection].toLowerCase();
-      return `${finding.metricName} changed ${change ?? "unfavorably"} since the comparison period (configured as ${directionLabel}).`;
+      return `${finding.metricName} changed ${
+        change ?? "unfavorably"
+      } since the comparison period (configured as ${directionLabel}). Review the drill-down for member-level detail.`;
     }
-    default:
-      return "";
+    default: {
+      // Exhaustive, fail-closed: a new AllianceFinding kind added without a
+      // case here is a compile error (the `never` assignment), and if one
+      // somehow still reaches this branch at runtime, throwing beats
+      // silently rendering a blank findings row that hides missing copy.
+      const exhaustiveCheck: never = finding;
+      throw new Error(`Unhandled finding kind: ${(exhaustiveCheck as AllianceFinding).kind}`);
+    }
   }
 }

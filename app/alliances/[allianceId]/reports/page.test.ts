@@ -33,6 +33,10 @@ vi.mock("@/app/src/lib/reports/listAlliancePeriodOptions", () => ({
 vi.mock("@/app/src/lib/reports/getAlliancePerformanceReport", () => ({
   getAlliancePerformanceReport: vi.fn(),
   AlliancePerformanceReportNotFoundError: class AlliancePerformanceReportNotFoundError extends Error {},
+  // Kept in sync with the real constant so `emptyReport()`'s fixture can't
+  // silently drift from the real schema version (#264 PR2 review) — vitest
+  // can't partially-mock a module and re-export a non-mocked binding here.
+  ALLIANCE_PERFORMANCE_REPORT_SCHEMA_VERSION: 2,
 }));
 
 import { notFound } from "next/navigation";
@@ -42,6 +46,7 @@ import { listAlliancePeriodOptions } from "@/app/src/lib/reports/listAlliancePer
 import {
   getAlliancePerformanceReport,
   AlliancePerformanceReportNotFoundError,
+  ALLIANCE_PERFORMANCE_REPORT_SCHEMA_VERSION,
 } from "@/app/src/lib/reports/getAlliancePerformanceReport";
 import ReportsIndexPage from "./page";
 
@@ -51,7 +56,7 @@ const viewerAuth = { permissions: { canConfigurePeriods: false, canConfigureMetr
 
 function emptyReport(overrides: Partial<Awaited<ReturnType<typeof getAlliancePerformanceReport>>> = {}) {
   return {
-    schemaVersion: 1 as const,
+    schemaVersion: ALLIANCE_PERFORMANCE_REPORT_SCHEMA_VERSION,
     generatedAt: new Date(),
     allianceId: "all_1",
     period: { id: "per_1", name: "Week 1", startsAt: null, endsAt: null, active: true },
@@ -220,7 +225,9 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
     // met_1's own coverage gap (7 of 10 recorded) surfaces as a deterministic
     // INCOMPLETE_COVERAGE finding; met_2 is NOT_ATTACHED, which never findings.
     expect(html).toContain("Needs attention (1)");
-    expect(html).toContain("Donations: 3 of 10 active members haven&#x27;t recorded a value.");
+    expect(html).toContain(
+      "Donations: 3 of 10 active members haven&#x27;t recorded a value. Record results for the remaining members to complete coverage.",
+    );
   });
 
   it("renders the healthy empty state when no metric's data triggers a finding", async () => {
@@ -306,7 +313,9 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
     const html = renderToStaticMarkup(page);
 
     expect(html).toContain("Needs attention (1)");
-    expect(html).toContain("Donations has no results recorded yet this period.");
+    expect(html).toContain(
+      "Donations has no results recorded yet this period. Record results for active members to start tracking it.",
+    );
     expect(html).toContain('href="/alliances/all_1/reports/metrics/met_1?periodId=per_1"');
     expect(html).not.toContain("No metrics need attention this period.");
   });
