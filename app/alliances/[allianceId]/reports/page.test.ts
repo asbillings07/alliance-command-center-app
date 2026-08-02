@@ -223,10 +223,16 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
     expect(html).toContain("70%");
     expect(html).toContain('href="/alliances/all_1/reports/metrics/met_1?periodId=per_1"');
     // met_1's own coverage gap (7 of 10 recorded) surfaces as a deterministic
-    // INCOMPLETE_COVERAGE finding; met_2 is NOT_ATTACHED, which never findings.
-    expect(html).toContain("Needs attention (1)");
+    // INCOMPLETE_COVERAGE finding; met_2 is an active metric not attached to
+    // this period, which surfaces its own NOT_ATTACHED finding (#264 PR2
+    // review: "intentional" vs. "accidental" gaps are indistinguishable, so
+    // this is never silently suppressed).
+    expect(html).toContain("Needs attention (2)");
     expect(html).toContain(
       "Donations: 3 of 10 active members haven&#x27;t recorded a value. Record results for the remaining members to complete coverage.",
+    );
+    expect(html).toContain(
+      "Never Attached isn&#x27;t attached to this period, so no results can be recorded for it.",
     );
   });
 
@@ -359,5 +365,52 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
     expect(html).toContain(
       'href="/alliances/all_1/reports/metrics/met_1?periodId=per_1&amp;comparePeriodId=per_prev"',
     );
+    // met_1's comparison-period status (NOT_ATTACHED) also surfaces its own
+    // COMPARISON_UNAVAILABLE finding alongside its INCOMPLETE_COVERAGE one,
+    // since a comparison period is genuinely in effect here.
+    expect(html).toContain("Needs attention (2)");
+  });
+
+  it("flags a metric whose explicitly selected comparison period lacks an attachment, is inactive, or has no data — never when no comparison is selected at all", async () => {
+    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
+    vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
+      emptyReport({
+        comparisonSelection: {
+          status: "RESOLVED",
+          period: { id: "per_prev", name: "Week 0" },
+          eligiblePeriods: [],
+        },
+        metrics: [
+          {
+            metric: { id: "met_1", name: "Donations", type: "NUMERIC", summaryKind: "SUM", unitLabel: "pts", active: true, trendDirection: "NEUTRAL" },
+            attachmentStatus: "ACTIVE",
+            dataStatus: "HAS_VALUES",
+            rollup: { kind: "SUM", total: 500, hasNegativeValues: false },
+            coverage: {
+              currentActiveMemberCount: 10,
+              recordedActiveMemberCount: 10,
+              invalidActiveMemberCount: 0,
+              missingActiveMemberCount: 0,
+              complete: true,
+              archivedContributingMemberCount: 0,
+            },
+            comparison: { status: "NO_DATA_IN_COMPARISON_PERIOD" },
+          },
+        ],
+      }) as unknown as Awaited<ReturnType<typeof getAlliancePerformanceReport>>,
+    );
+
+    const page = await ReportsIndexPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({}),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("Needs attention (1)");
+    expect(html).toContain(
+      "Donations had no recorded results in the comparison period, so no change could be measured.",
+    );
+    expect(html).toContain('data-testid="alliance-finding-met_1-COMPARISON_UNAVAILABLE"');
   });
 });

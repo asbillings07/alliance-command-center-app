@@ -46,9 +46,41 @@ describe("computeAllianceFindings", () => {
     expect(computeAllianceFindings([performance({ comparison: compared({ absoluteChange: 0 }) })])).toEqual([]);
   });
 
-  it("produces no findings for a NOT_ATTACHED metric", () => {
-    const notAttached = performance({ attachmentStatus: "NOT_ATTACHED", dataStatus: "NO_VALUES" });
-    expect(computeAllianceFindings([notAttached])).toEqual([]);
+  describe("NOT_ATTACHED (selected period)", () => {
+    it("fires for an active metric not attached to the selected period — 'intentional' and 'accidental' gaps are indistinguishable, so this surfaces rather than guesses", () => {
+      const findings = computeAllianceFindings([
+        performance({ attachmentStatus: "NOT_ATTACHED", dataStatus: "NO_VALUES" }),
+      ]);
+      expect(findings).toEqual([{ kind: "NOT_ATTACHED", metricId: "metric-1", metricName: "Donations" }]);
+    });
+
+    it("is exclusive — no coverage/invalid/comparison findings, even if present on the underlying object", () => {
+      const findings = computeAllianceFindings([
+        performance({
+          attachmentStatus: "NOT_ATTACHED",
+          dataStatus: "NO_VALUES",
+          coverage: {
+            currentActiveMemberCount: 10,
+            recordedActiveMemberCount: 5,
+            invalidActiveMemberCount: 2,
+            missingActiveMemberCount: 5,
+            complete: false,
+            archivedContributingMemberCount: 0,
+          },
+          comparison: compared({ absoluteChange: -100 }),
+          metric: {
+            id: "metric-1",
+            name: "Donations",
+            type: Metric_Type.NUMERIC,
+            summaryKind: MetricSummaryKind.SUM,
+            unitLabel: "pts",
+            active: true,
+            trendDirection: MetricTrendDirection.HIGHER_IS_BETTER,
+          },
+        }),
+      ]);
+      expect(findings).toEqual([{ kind: "NOT_ATTACHED", metricId: "metric-1", metricName: "Donations" }]);
+    });
   });
 
   describe("archived metrics (metric.active === false)", () => {
@@ -396,14 +428,8 @@ describe("computeAllianceFindings", () => {
       expect(findings).toEqual([]);
     });
 
-    it.each([
-      ["NO_ROLLUP" as const],
-      ["NOT_ATTACHED" as const],
-      ["INACTIVE_ATTACHMENT" as const],
-      ["NO_DATA_IN_SELECTED_PERIOD" as const],
-      ["NO_DATA_IN_COMPARISON_PERIOD" as const],
-    ])(
-      "never fires for a non-COMPARED comparison status (%s) — that period's state is already visible on the metric's own comparison summary, not duplicated as a finding",
+    it.each([["NOT_ATTACHED" as const], ["INACTIVE_ATTACHMENT" as const], ["NO_DATA_IN_COMPARISON_PERIOD" as const]])(
+      "never fires for a non-COMPARED comparison status (%s) — that surfaces as COMPARISON_UNAVAILABLE instead (see that describe block), not ADVERSE_COMPARISON",
       (status) => {
         const findings = computeAllianceFindings([
           performance({
@@ -419,7 +445,7 @@ describe("computeAllianceFindings", () => {
             comparison: { status },
           }),
         ]);
-        expect(findings).toEqual([]);
+        expect(findings.map((f) => f.kind)).not.toContain("ADVERSE_COMPARISON");
       },
     );
 
@@ -447,10 +473,69 @@ describe("computeAllianceFindings", () => {
     });
   });
 
+  describe("COMPARISON_UNAVAILABLE", () => {
+    it.each([["NOT_ATTACHED" as const], ["INACTIVE_ATTACHMENT" as const], ["NO_DATA_IN_COMPARISON_PERIOD" as const]])(
+      "fires with the underlying reason preserved when the comparison period's status is %s, even though a comparison period is in effect",
+      (reason) => {
+        const findings = computeAllianceFindings([
+          performance({
+            metric: {
+              id: "metric-1",
+              name: "Donations",
+              type: Metric_Type.NUMERIC,
+              summaryKind: MetricSummaryKind.SUM,
+              unitLabel: "pts",
+              active: true,
+              trendDirection: MetricTrendDirection.HIGHER_IS_BETTER,
+            },
+            comparison: { status: reason },
+          }),
+        ]);
+        expect(findings).toEqual([
+          { kind: "COMPARISON_UNAVAILABLE", metricId: "metric-1", metricName: "Donations", reason },
+        ]);
+      },
+    );
+
+    it.each([["NO_ROLLUP" as const], ["NO_DATA_IN_SELECTED_PERIOD" as const]])(
+      "never fires for %s — NO_ROLLUP is a metric-config fact independent of the comparison period, and NO_DATA_IN_SELECTED_PERIOD is unreachable here (MISSING_RESULTS already returns first)",
+      (status) => {
+        const findings = computeAllianceFindings([performance({ comparison: { status } })]);
+        expect(findings).toEqual([]);
+      },
+    );
+
+    it("never fires when no comparison period is selected at all", () => {
+      const findings = computeAllianceFindings([performance({ comparison: null })]);
+      expect(findings).toEqual([]);
+    });
+
+    it("can co-occur with INVALID_VALUES and INCOMPLETE_COVERAGE on the same metric (the data-quality/comparison group)", () => {
+      const findings = computeAllianceFindings([
+        performance({
+          coverage: {
+            currentActiveMemberCount: 10,
+            recordedActiveMemberCount: 6,
+            invalidActiveMemberCount: 1,
+            missingActiveMemberCount: 3,
+            complete: false,
+            archivedContributingMemberCount: 0,
+          },
+          comparison: { status: "NOT_ATTACHED" },
+        }),
+      ]);
+      expect(findings.map((f) => f.kind)).toEqual(["INVALID_VALUES", "INCOMPLETE_COVERAGE", "COMPARISON_UNAVAILABLE"]);
+    });
+  });
+
   describe("severity ordering across metrics", () => {
-    it("orders metrics by their single most urgent finding kind, not the report's own metric order, keeping each metric's findings grouped", () => {
+    it("orders metrics by their single most urgent finding kind across all 7 kinds, not the report's own metric order, keeping each metric's findings grouped", () => {
       // Deliberately listed in an order that doesn't match severity, to
       // prove the output is re-sorted rather than passed through.
+      const comparisonUnavailable = performance({
+        metric: { ...performance().metric, id: "m-cmp-unavailable", name: "Cmp Unavailable" },
+        comparison: { status: "NOT_ATTACHED" },
+      });
       const adverse = performance({
         metric: {
           ...performance().metric,
@@ -459,6 +544,11 @@ describe("computeAllianceFindings", () => {
           trendDirection: MetricTrendDirection.HIGHER_IS_BETTER,
         },
         comparison: compared({ absoluteChange: -50 }),
+      });
+      const notAttached = performance({
+        metric: { ...performance().metric, id: "m-not-attached", name: "Not Attached" },
+        attachmentStatus: "NOT_ATTACHED",
+        dataStatus: "NO_VALUES",
       });
       const missing = performance({
         metric: { ...performance().metric, id: "m-missing", name: "Missing" },
@@ -491,14 +581,23 @@ describe("computeAllianceFindings", () => {
         },
       });
 
-      const findings = computeAllianceFindings([adverse, missing, inactive, dataQuality]);
+      const findings = computeAllianceFindings([
+        comparisonUnavailable,
+        adverse,
+        notAttached,
+        missing,
+        inactive,
+        dataQuality,
+      ]);
 
       expect(findings.map((f) => `${f.metricId}:${f.kind}`)).toEqual([
         "m-dataquality:INVALID_VALUES",
         "m-dataquality:INCOMPLETE_COVERAGE",
         "m-missing:MISSING_RESULTS",
+        "m-not-attached:NOT_ATTACHED",
         "m-inactive:INACTIVE_ATTACHMENT",
         "m-adverse:ADVERSE_COMPARISON",
+        "m-cmp-unavailable:COMPARISON_UNAVAILABLE",
       ]);
     });
 

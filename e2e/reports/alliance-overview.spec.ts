@@ -410,6 +410,74 @@ test.describe("Alliance Performance Overview", () => {
     }
   });
 
+  test("the 'Needs attention' section flags an active metric not attached to the selected period, with attach-or-archive guidance (#264 PR2 review)", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const period = await seedPeriod(suffix);
+    // Deliberately never attached to `period` — "not attached intentionally"
+    // and "not attached accidentally" are indistinguishable from stored data
+    // alone, so this must surface rather than be silently suppressed.
+    const neverAttached = await seedMetric(`${suffix}-never-attached`);
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports?periodId=${period.id}`);
+
+      const findings = page.getByTestId("alliance-findings-list");
+      const notAttachedFinding = findings.locator(`[data-testid="alliance-finding-${neverAttached.id}-NOT_ATTACHED"]`);
+      await expect(notAttachedFinding).toBeVisible();
+      await expect(notAttachedFinding).toContainText("isn't attached to this period");
+      await expect(notAttachedFinding).toContainText("Attach it to start tracking, or archive it");
+
+      await notAttachedFinding.getByRole("link").click();
+      await expect(page).toHaveURL(new RegExp(`/reports/metrics/${neverAttached.id}`));
+    } finally {
+      await cleanup({ metricIds: [neverAttached.id], periodIds: [period.id] });
+    }
+  });
+
+  test("the 'Needs attention' section flags a metric whose explicitly selected comparison period lacks an attachment, with the reason preserved, but never when no comparison is selected (#264 PR2 review)", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const priorPeriod = await seedPeriod(`${suffix}-prior`, {
+      startsAt: new Date("2026-06-01T00:00:00Z"),
+      endsAt: new Date("2026-06-07T00:00:00Z"),
+    });
+    const selectedPeriod = await seedPeriod(`${suffix}-selected`, {
+      startsAt: new Date("2026-06-08T00:00:00Z"),
+      endsAt: new Date("2026-06-14T00:00:00Z"),
+    });
+    const alice = await seedMember(`Alice-${suffix}`);
+
+    // Attached and has data in the selected period, but was never attached
+    // in `priorPeriod` — an explicitly requested comparison against it must
+    // still flag the gap, even though the metric's own card already
+    // explains why in its comparison summary text.
+    const metric = await seedMetric(`${suffix}-cmp-unavailable`);
+    await attachMetric(selectedPeriod.id, metric.id);
+    await recordEntry(selectedPeriod.id, metric.id, alice.id, 25);
+
+    try {
+      // Explicitly select the comparison period the metric was never
+      // attached to. (The "no comparison selected at all" case — no
+      // COMPARISON_UNAVAILABLE finding — is covered deterministically at
+      // the unit level in allianceFindings.test.ts; it isn't reliably
+      // constructible here since the alliance-wide selector may still
+      // auto-resolve *some* structurally-eligible period as the default.)
+      await page.goto(
+        `/alliances/${ALLIANCE_ID}/reports?periodId=${selectedPeriod.id}&comparePeriodId=${priorPeriod.id}`,
+      );
+
+      const finding = page.getByTestId(`alliance-finding-${metric.id}-COMPARISON_UNAVAILABLE`);
+      await expect(finding).toBeVisible();
+      await expect(finding).toContainText("wasn't attached in the comparison period");
+      await expect(finding).toContainText("no change could be measured");
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [priorPeriod.id, selectedPeriod.id], memberIds: [alice.id] });
+    }
+  });
+
   test("the period selector round-trips the selected period via the URL", async ({ page }, testInfo) => {
     const suffix = `${Date.now()}-${testInfo.retry}`;
     const periodA = await seedPeriod(`${suffix}-a`);

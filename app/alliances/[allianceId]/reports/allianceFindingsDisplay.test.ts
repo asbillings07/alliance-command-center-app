@@ -6,11 +6,13 @@ import { formatFindingText, FINDING_KIND_BADGE } from "./allianceFindingsDisplay
 describe("FINDING_KIND_BADGE", () => {
   it("provides a label and semantic variant for every finding kind", () => {
     const kinds: AllianceFinding["kind"][] = [
+      "NOT_ATTACHED",
       "INACTIVE_ATTACHMENT",
       "MISSING_RESULTS",
       "INVALID_VALUES",
       "INCOMPLETE_COVERAGE",
       "ADVERSE_COMPARISON",
+      "COMPARISON_UNAVAILABLE",
     ];
     for (const kind of kinds) {
       expect(FINDING_KIND_BADGE[kind].label).toBeTruthy();
@@ -20,6 +22,12 @@ describe("FINDING_KIND_BADGE", () => {
 });
 
 describe("formatFindingText", () => {
+  it("describes a metric not attached to the selected period, with attach-or-archive guidance", () => {
+    expect(formatFindingText({ kind: "NOT_ATTACHED", metricId: "m1", metricName: "Donations" })).toBe(
+      "Donations isn't attached to this period, so no results can be recorded for it. Attach it to start tracking, or archive it if it's no longer relevant.",
+    );
+  });
+
   it("describes an inactive attachment, avoiding a possessive, with reactivation guidance", () => {
     expect(
       formatFindingText({ kind: "INACTIVE_ATTACHMENT", metricId: "m1", metricName: "Donations" }),
@@ -88,6 +96,34 @@ describe("formatFindingText", () => {
       }),
     ).toBe(
       "Response Time changed +2 hrs (+20%) since the comparison period (configured as lower is better). Review the drill-down for member-level detail.",
+    );
+  });
+
+  it("describes a comparison-period gap, preserving the underlying reason for each of the three possible reasons", () => {
+    expect(
+      formatFindingText({ kind: "COMPARISON_UNAVAILABLE", metricId: "m1", metricName: "Donations", reason: "NOT_ATTACHED" }),
+    ).toBe("Donations wasn't attached in the comparison period, so no change could be measured. Review the drill-down for detail.");
+
+    expect(
+      formatFindingText({
+        kind: "COMPARISON_UNAVAILABLE",
+        metricId: "m1",
+        metricName: "Donations",
+        reason: "INACTIVE_ATTACHMENT",
+      }),
+    ).toBe(
+      "Donations had an inactive attachment in the comparison period, so no change could be measured. Review the drill-down for detail.",
+    );
+
+    expect(
+      formatFindingText({
+        kind: "COMPARISON_UNAVAILABLE",
+        metricId: "m1",
+        metricName: "Donations",
+        reason: "NO_DATA_IN_COMPARISON_PERIOD",
+      }),
+    ).toBe(
+      "Donations had no recorded results in the comparison period, so no change could be measured. Review the drill-down for detail.",
     );
   });
 
