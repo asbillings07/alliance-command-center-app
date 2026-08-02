@@ -38,11 +38,13 @@ import {
  * a second, potentially-inconsistent metric query and guarantees "anything
  * on the report can be a matrix column" by construction, not by convention.
  *
- * Two bounded DB round-trips drive the body:
- *   1. A roster query (CTE-joined against only the *selected* columns'
- *      latest values, for the archived-inclusion check and any metric-based
- *      sort) — paginated, filtered, searched, sorted.
- *   2. A cell-value query for exactly this page's members × selected
+ * Three bounded DB round-trips drive the body, all scoped to only the
+ * *selected* columns (never the full metric library):
+ *   1. A count query, for pagination against the filtered/searched roster.
+ *   2. A roster query (CTE-joined against the selected columns' latest
+ *      values, for the archived-inclusion check and any metric-based sort)
+ *      — paginated, filtered, searched, sorted.
+ *   3. A cell-value query for exactly this page's members × selected
  *      columns (≤ pageSize × MATRIX_MAX_COLUMNS rows), grouped in JS into
  *      one cell per (row, column).
  *

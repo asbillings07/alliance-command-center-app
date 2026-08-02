@@ -18,15 +18,24 @@ type Props = {
  */
 export function AllianceMemberMatrixSection({ allianceId, periodId, comparePeriodId, matrix }: Props) {
   const selectedColumnIds = matrix.columns.map((column) => column.id);
-  // The controls keep their own local state for checked columns / sort value
-  // so typing/clicking feels instant, but the server is the source of truth
-  // (it clamps columns to the 6-column max and falls back invalid sorts to
-  // name). Next.js preserves this client component's instance across
-  // same-route navigations, so without a key tied to what the server
-  // actually resolved, the checkboxes/sort dropdown could keep showing a
-  // stale selection after a clamp/fallback. Keying on the resolved values
-  // forces a remount (and fresh local state) whenever they change.
-  const controlsKey = `${selectedColumnIds.join(",")}|${matrix.sort.kind === "name" ? "name" : matrix.sort.metricId}|${matrix.sort.direction}`;
+  // The controls keep their own local/uncontrolled state (checked columns,
+  // sort value, and the search/filter/direction inputs' `defaultValue`) so
+  // typing/clicking feels instant, but the server is the source of truth
+  // (it clamps columns to the 6-column max, falls back invalid sorts to
+  // name, and normalizes filter/search). Next.js preserves this client
+  // component's instance across same-route navigations, so without a key
+  // tied to everything the server actually resolved, the controls could
+  // keep showing a stale value after a clamp/normalization or a
+  // back/forward navigation to a different URL. Keying on every
+  // server-resolved field forces a remount (and fresh local/default state)
+  // whenever any of them change.
+  const controlsKey = [
+    selectedColumnIds.join(","),
+    matrix.sort.kind === "name" ? "name" : matrix.sort.metricId,
+    matrix.sort.direction,
+    matrix.filter,
+    matrix.search,
+  ].join("|");
 
   return (
     <div data-testid="alliance-member-matrix">
