@@ -391,7 +391,11 @@ export function computeRollupChange(
 // Raw SQL orchestration
 // ---------------------------------------------------------------------------
 
-type AggregateRawRow = {
+// Exported so the bulk alliance-wide read model (getAlliancePerformanceReport.ts,
+// #264) can map its own per-metric grouped aggregate rows — same column
+// shape plus a `metric_id` discriminator — through identical logic, rather
+// than re-deriving these Number()/mapping rules a second time.
+export type AggregateRawRow = {
   sum_value: bigint;
   avg_value: number | null;
   true_count: bigint;
@@ -406,7 +410,7 @@ type AggregateRawRow = {
   latest_entry_count: bigint;
 };
 
-function mapAggregateRow(row: AggregateRawRow): AggregateSnapshot {
+export function mapAggregateRow(row: AggregateRawRow): AggregateSnapshot {
   return {
     sumValue: Number(row.sum_value),
     averageValue: row.avg_value,

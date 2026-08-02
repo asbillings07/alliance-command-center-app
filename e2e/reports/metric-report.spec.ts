@@ -586,20 +586,26 @@ test.describe("Metric Summary Report", () => {
   test("the Reports index lists configured metrics and links to their reports", async ({ page }, testInfo) => {
     const suffix = `${Date.now()}-${testInfo.retry}`;
     const metric = await seedMetric(suffix);
+    // Explicit period + periodId so this test doesn't depend on which
+    // period the shared fixture alliance happens to default to (#264's
+    // alliance overview replaced the old flat metric list here — the
+    // per-metric universe is now period-scoped).
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
 
     try {
-      await page.goto(`/alliances/${ALLIANCE_ID}/reports`);
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports?periodId=${period.id}`);
 
       await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
       // Scoped to this test's own seeded metric's card — the shared fixture
       // alliance can have other metrics, so ".first()" on an unscoped "View
       // Report" locator could silently click a different metric's link.
-      const card = page.getByTestId(`reports-index-card-${metric.id}`);
+      const card = page.getByTestId(`alliance-metric-card-${metric.id}`);
       await expect(card).toContainText(metric.name);
       await card.getByRole("link", { name: "View Report" }).click();
       await page.waitForURL(new RegExp(`/reports/metrics/${metric.id}`));
     } finally {
-      await cleanup({ metricIds: [metric.id] });
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id] });
     }
   });
 
