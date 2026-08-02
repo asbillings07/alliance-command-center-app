@@ -480,13 +480,20 @@ test.describe("Metric Summary Report", () => {
       await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
       await page.waitForLoadState("networkidle");
 
-      // Mask the metric/period names (unique per test run) and the member
-      // roster (grows/shrinks independently); keep the stable page chrome
-      // and card structure in the diff.
+      // Mask the metric/period names (unique per test run) and everything
+      // whose count depends on the shared fixture alliance's *current*
+      // active roster (coverage numbers, member table rows) rather than
+      // just this test's own seeded data — keep the stable page chrome and
+      // card structure in the diff.
       await expect(page).toHaveScreenshot("metric-report.png", {
         fullPage: true,
         animations: "disabled",
-        mask: [page.getByRole("heading", { level: 1 }), page.getByTestId("report-period-select")],
+        mask: [
+          page.getByRole("heading", { level: 1 }),
+          page.getByTestId("report-period-select"),
+          page.getByTestId("metric-coverage-card"),
+          page.getByRole("table"),
+        ],
         maxDiffPixelRatio: 0.02,
       });
     } finally {

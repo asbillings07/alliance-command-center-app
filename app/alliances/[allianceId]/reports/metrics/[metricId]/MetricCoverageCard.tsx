@@ -16,6 +16,7 @@ type Props = {
  */
 export function MetricCoverageCard({ coverage, filter }: Props) {
   return (
+    <div data-testid="metric-coverage-card">
     <Card>
       <Card.Header
         action={
@@ -53,5 +54,6 @@ export function MetricCoverageCard({ coverage, filter }: Props) {
         </div>
       </Card.Body>
     </Card>
+    </div>
   );
 }

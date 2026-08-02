@@ -172,13 +172,15 @@ export default async function PeriodPage({ params }: Params) {
                                                         </span>
                                                     )}
                                                 </span>
-                                                <Button
-                                                    href={`/alliances/${allianceId}/reports/metrics/${m.metricId}?periodId=${periodId}`}
-                                                    variant="link"
-                                                    size="sm"
-                                                >
-                                                    View Report
-                                                </Button>
+                                                {permissions.canViewMembers && (
+                                                    <Button
+                                                        href={`/alliances/${allianceId}/reports/metrics/${m.metricId}?periodId=${periodId}`}
+                                                        variant="link"
+                                                        size="sm"
+                                                    >
+                                                        View Report
+                                                    </Button>
+                                                )}
                                             </div>
                                         </li>
                                     ))}
