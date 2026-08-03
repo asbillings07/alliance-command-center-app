@@ -766,8 +766,9 @@ test.describe("Metric Drill-Down Charts (#264 PR5)", () => {
 
       const chart = page.getByTestId("sum-share-chart");
       await expect(chart).toBeVisible();
-      // Sighted-user graphic is decorative — never independently focusable.
-      await expect(page.getByTestId("sum-share-bars")).toHaveAttribute("aria-hidden", "true");
+      // Sighted-user graphic is decorative — its wrapper (not the bars div
+      // itself) carries aria-hidden, and is never independently focusable.
+      await expect(chart.locator("> div[aria-hidden='true']")).toContainText("Alice");
 
       const rows = chart.locator("[data-testid^='sum-share-row-']");
       await expect(rows).toHaveCount(2);
@@ -869,9 +870,13 @@ test.describe("Metric Drill-Down Charts (#264 PR5)", () => {
     try {
       await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
 
-      await expect(page.getByTestId("distribution-all-equal-bar")).toBeVisible();
+      const allEqualBar = page.getByTestId("distribution-all-equal-bar");
+      await expect(allEqualBar).toBeVisible();
       await expect(page.getByTestId("average-histogram")).toHaveCount(0);
-      await expect(page.getByText("All 2 valid results were 5 points.")).toBeVisible();
+      // The same sentence intentionally appears in the visible summary, the
+      // decorative bar's own caption text, and the sr-only table caption —
+      // scope to the decorative bar to assert on just one of them.
+      await expect(allEqualBar).toContainText("All 2 valid results were 5 points.");
     } finally {
       await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id, bob.id] });
     }
