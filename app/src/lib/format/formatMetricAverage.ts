@@ -10,8 +10,12 @@ import { roundToDecimals } from "@/app/src/lib/format/roundToDecimals";
  */
 export function formatMetricAverage(value: number, unitLabel?: string | null): string {
   const rounded = roundToDecimals(value, 2);
+  // Explicit locale ("en-US") rather than the runtime default: an
+  // unspecified locale renders differently across environments, which
+  // would make the deterministic interpretation summary's exact wording
+  // (`metricInterpretationSummary.ts`) nondeterministic across servers.
   const formatted = Number.isInteger(rounded)
-    ? rounded.toLocaleString()
-    : rounded.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+    ? rounded.toLocaleString("en-US")
+    : rounded.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
   return unitLabel ? `${formatted} ${unitLabel}` : formatted;
 }

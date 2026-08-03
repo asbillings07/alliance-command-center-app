@@ -190,6 +190,36 @@ describe("buildMetricVisualModel — SUM", () => {
     expect(model.topContributors.some((c) => c.allianceMemberId === "neg_1")).toBe(false);
   });
 
+  it("breaks a tie exactly at the negative-selection cutoff by playerName ascending — matching sortedByValueDesc's own tie-break, never a reversed order", () => {
+    // 5 positives consume the full positive half (5 of 10 slots), leaving
+    // exactly 5 negative slots. 6 negatives compete for those 5 slots:
+    // -100, -90, -80, -70 clearly qualify, and two members tied at -60
+    // (the weakest of the six) compete for the single remaining slot.
+    // Only a *stable* ascending-value sort (not a reversal of the whole
+    // desc-sorted array) preserves sortedByValueDesc's own ascending
+    // playerName tie-break for that pair, correctly selecting "Amy" over
+    // "Zoe" — a `.reverse()`-based implementation would silently flip
+    // this and select "Zoe" instead.
+    const positiveRows = Array.from({ length: 5 }, (_, i) =>
+      row({ allianceMemberId: `pos${i}`, playerName: `Positive ${i}`, value: (i + 1) * 10 }),
+    );
+    const negativeRows = [
+      row({ allianceMemberId: "amy60", playerName: "Amy", value: -60 }),
+      row({ allianceMemberId: "zoe60", playerName: "Zoe", value: -60 }),
+      row({ allianceMemberId: "n70", playerName: "N70", value: -70 }),
+      row({ allianceMemberId: "n80", playerName: "N80", value: -80 }),
+      row({ allianceMemberId: "n90", playerName: "N90", value: -90 }),
+      row({ allianceMemberId: "n100", playerName: "N100", value: -100 }),
+    ];
+    const rows = [...positiveRows, ...negativeRows];
+    const model = build(rows, zeroAggregate({ sumValue: -260, hasNegativeValues: true }));
+    if (model.kind !== "SUM") throw new Error("expected SUM");
+
+    expect(model.topContributors).toHaveLength(10);
+    expect(model.topContributors.some((c) => c.allianceMemberId === "amy60")).toBe(true);
+    expect(model.topContributors.some((c) => c.allianceMemberId === "zoe60")).toBe(false);
+  });
+
   it("guarantees at least one negative contributor survives the cap when 10+ positive values would otherwise fill every slot", () => {
     // 12 positive values (100..1200) plus a single negative value (-5). A
     // plain top-10-by-value slice would drop the only negative entirely,

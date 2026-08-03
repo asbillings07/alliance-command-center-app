@@ -20,8 +20,12 @@ export function formatPercent(
   const { unit = "%", signed = false } = options;
   const rounded = roundToDecimals(value, 1);
   const sign = signed && rounded > 0 ? "+" : "";
+  // Explicit locale ("en-US") rather than the runtime default: an
+  // unspecified locale renders differently across environments, which
+  // would make the deterministic interpretation summary's exact wording
+  // (`metricInterpretationSummary.ts`) nondeterministic across servers.
   const formatted = Number.isInteger(rounded)
-    ? rounded.toLocaleString()
-    : rounded.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    ? rounded.toLocaleString("en-US")
+    : rounded.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   return `${sign}${formatted}${unit}`;
 }

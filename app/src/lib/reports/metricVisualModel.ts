@@ -215,13 +215,17 @@ function selectTopContributorRows(
 
   const positives = ranked.filter((row) => row.value >= 0);
   // `ranked` is desc, so filtering to negatives alone preserves that same
-  // desc order — i.e. closest-to-zero first, most negative last. Reverse
-  // so slicing from the front selects the *strongest* (most negative)
-  // contributors, not the weakest ones nearest zero.
-  const negatives = ranked
-    .filter((row) => row.value < 0)
-    .slice()
-    .reverse();
+  // desc order — i.e. closest-to-zero first, most negative last. Re-sort
+  // ascending by value (ties broken by that same original relative order,
+  // since `Array.prototype.sort` is spec-guaranteed stable) so slicing
+  // from the front selects the *strongest* (most negative) contributors,
+  // not the weakest ones nearest zero — while equal-valued negatives keep
+  // `sortedByValueDesc`'s own playerName/allianceMemberId tie-break in its
+  // original ascending order. Deliberately not `.reverse()`: reversing the
+  // whole array would also flip that tie-break to descending for any tied
+  // group, silently diverging from the positive side's and the roster's
+  // own tie-break convention.
+  const negatives = ranked.filter((row) => row.value < 0).sort((a, b) => a.value - b.value);
 
   const selectedPositives = positives.slice(0, SUM_TOP_CONTRIBUTOR_HALF);
   const negativeSlots = SUM_TOP_CONTRIBUTOR_LIMIT - selectedPositives.length;
