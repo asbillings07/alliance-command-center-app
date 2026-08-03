@@ -18,6 +18,8 @@ import { MetricReportPeriodSelect, type PeriodSelectOption } from "./MetricRepor
 import { MetricComparisonControl } from "./MetricComparisonControl";
 import { MetricRollupCard } from "./MetricRollupCard";
 import { MetricCoverageCard } from "./MetricCoverageCard";
+import { MetricInterpretationSummaryCard } from "./MetricInterpretationSummaryCard";
+import { MetricVisualSection } from "./MetricVisualSection";
 import { MetricReportFilterControls } from "./MetricReportFilterControls";
 import { MetricReportTable } from "./MetricReportTable";
 
@@ -284,6 +286,10 @@ export default async function MetricReportPage({ params, searchParams }: Params)
             />
 
             <MetricCoverageCard coverage={report.coverage} filter={report.filter} />
+
+            <MetricInterpretationSummaryCard interpretationSummary={report.interpretationSummary} />
+
+            <MetricVisualSection metric={report.metric} visualModel={report.visualModel} coverage={report.coverage} />
 
             <Card>
               <Card.Header>Members</Card.Header>
