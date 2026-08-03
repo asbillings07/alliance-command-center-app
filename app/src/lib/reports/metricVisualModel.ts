@@ -199,7 +199,11 @@ const SUM_TOP_CONTRIBUTOR_HALF = Math.floor(SUM_TOP_CONTRIBUTOR_LIMIT / 2);
  * smaller) — while both signs are guaranteed representation when present.
  * `ranked` is already sorted desc by value (see `sortedByValueDesc`), so the
  * result below preserves that same order (positives high-to-low, then
- * negatives high-to-low) rather than grouping by sign.
+ * negatives high-to-low) rather than grouping by sign. The negative side
+ * is selected by *strength* (most negative / largest magnitude first) —
+ * the same "most extreme" principle as the positive side — never by
+ * closeness to zero, which would surface the least interesting negative
+ * values while hiding a materially larger detractor.
  */
 function selectTopContributorRows(
   ranked: Array<VisualCohortRow & { value: number }>,
@@ -210,7 +214,14 @@ function selectTopContributorRows(
   }
 
   const positives = ranked.filter((row) => row.value >= 0);
-  const negatives = ranked.filter((row) => row.value < 0);
+  // `ranked` is desc, so filtering to negatives alone preserves that same
+  // desc order — i.e. closest-to-zero first, most negative last. Reverse
+  // so slicing from the front selects the *strongest* (most negative)
+  // contributors, not the weakest ones nearest zero.
+  const negatives = ranked
+    .filter((row) => row.value < 0)
+    .slice()
+    .reverse();
 
   const selectedPositives = positives.slice(0, SUM_TOP_CONTRIBUTOR_HALF);
   const negativeSlots = SUM_TOP_CONTRIBUTOR_LIMIT - selectedPositives.length;

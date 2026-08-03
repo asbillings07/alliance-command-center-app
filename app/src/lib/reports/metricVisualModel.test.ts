@@ -160,6 +160,36 @@ describe("buildMetricVisualModel — SUM", () => {
     expect(model.topContributors.map((c) => c.value).sort((a, b) => a - b)).toEqual([-50, 150]);
   });
 
+  it("retains the strongest (most negative) contributor over several weaker ones nearest zero when the negative side is itself capped", () => {
+    // 3 positives (all fit easily) plus 8 negatives ranging from -1 to
+    // -1000. Only 7 of the 8 negative slots are available, so the weakest
+    // (closest-to-zero) negative, -1, must be dropped — never the
+    // materially larger -1000, which is exactly the contributor a
+    // diverging chart most needs to surface.
+    const positiveRows = [
+      row({ allianceMemberId: "pos1", playerName: "Positive 1", value: 10 }),
+      row({ allianceMemberId: "pos2", playerName: "Positive 2", value: 8 }),
+      row({ allianceMemberId: "pos3", playerName: "Positive 3", value: 6 }),
+    ];
+    const negativeRows = [
+      row({ allianceMemberId: "neg_1000", playerName: "Neg 1000", value: -1000 }),
+      row({ allianceMemberId: "neg_7", playerName: "Neg 7", value: -7 }),
+      row({ allianceMemberId: "neg_6", playerName: "Neg 6", value: -6 }),
+      row({ allianceMemberId: "neg_5", playerName: "Neg 5", value: -5 }),
+      row({ allianceMemberId: "neg_4", playerName: "Neg 4", value: -4 }),
+      row({ allianceMemberId: "neg_3", playerName: "Neg 3", value: -3 }),
+      row({ allianceMemberId: "neg_2", playerName: "Neg 2", value: -2 }),
+      row({ allianceMemberId: "neg_1", playerName: "Neg 1", value: -1 }),
+    ];
+    const rows = [...positiveRows, ...negativeRows];
+    const model = build(rows, zeroAggregate({ sumValue: -1004, hasNegativeValues: true }));
+    if (model.kind !== "SUM") throw new Error("expected SUM");
+
+    expect(model.topContributors).toHaveLength(10);
+    expect(model.topContributors.some((c) => c.allianceMemberId === "neg_1000")).toBe(true);
+    expect(model.topContributors.some((c) => c.allianceMemberId === "neg_1")).toBe(false);
+  });
+
   it("guarantees at least one negative contributor survives the cap when 10+ positive values would otherwise fill every slot", () => {
     // 12 positive values (100..1200) plus a single negative value (-5). A
     // plain top-10-by-value slice would drop the only negative entirely,
@@ -188,11 +218,13 @@ describe("buildMetricVisualModel — SUM", () => {
     expect(model.topContributors.map((c) => c.value)).toEqual([120, 110, 100, 90, 80, 70, 60, 50, 40, 30]);
   });
 
-  it("fills every slot from the larger side when one sign has fewer than half the available slots (backfill)", () => {
+  it("fills every slot from the larger side when one sign has fewer than half the available slots (backfill), keeping the strongest (most negative) values — never the weakest ones nearest zero", () => {
     // Only 2 positive values, 20 negative values, negative total, so
     // hasNegativeValues is true. The 2 positives must both survive (there's
-    // room), and the remaining 8 slots backfill with the least-negative
-    // (closest to zero) values rather than leaving slots unused.
+    // room), and the remaining 8 slots backfill with the *most negative*
+    // (largest-magnitude) values, matching the same "most extreme"
+    // selection principle used for the positive side — not the values
+    // closest to zero, which would hide the largest detractors entirely.
     const positiveRows = [
       row({ allianceMemberId: "pos1", playerName: "Positive 1", value: 5 }),
       row({ allianceMemberId: "pos2", playerName: "Positive 2", value: 3 }),
@@ -207,9 +239,9 @@ describe("buildMetricVisualModel — SUM", () => {
     expect(model.topContributors).toHaveLength(10);
     expect(model.topContributors.some((c) => c.allianceMemberId === "pos1")).toBe(true);
     expect(model.topContributors.some((c) => c.allianceMemberId === "pos2")).toBe(true);
-    // 8 negative backfill slots -> the 8 closest to zero: -1..-8.
+    // 8 negative backfill slots -> the 8 strongest (most negative): -13..-20.
     const negativeValues = model.topContributors.map((c) => c.value).filter((v) => v < 0);
-    expect(negativeValues.sort((a, b) => b - a)).toEqual([-1, -2, -3, -4, -5, -6, -7, -8]);
+    expect(negativeValues.sort((a, b) => a - b)).toEqual([-20, -19, -18, -17, -16, -15, -14, -13]);
   });
 
   it("marks share unavailable (NON_POSITIVE_TOTAL) when the total is zero or negative without any individual negative value", () => {
