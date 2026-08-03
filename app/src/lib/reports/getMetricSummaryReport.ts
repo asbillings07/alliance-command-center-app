@@ -674,10 +674,22 @@ export async function getMetricSummaryReport(params: {
     searchPattern,
   };
 
+  // `queryVisualizationRows` backs SUM/AVERAGE/NONE+NUMERIC charts, which need
+  // per-member values (see metricVisualModel.ts's builders). TRUE_RATE and
+  // NONE+BOOLEAN instead read their visual model straight off `aggregate` —
+  // running the extra full-cohort query for them would have no functional
+  // benefit, only cost.
+  const needsVisualizationRows =
+    metric.summaryKind === MetricSummaryKind.SUM ||
+    metric.summaryKind === MetricSummaryKind.AVERAGE ||
+    (metric.summaryKind === MetricSummaryKind.NONE && !isBooleanMetric);
+
   const [aggregate, totalRowCount, visualizationRows] = await Promise.all([
     queryAggregate(allianceId, periodId, metricId, isBooleanMetric),
     countRosterRows(rosterParams),
-    queryVisualizationRows(allianceId, periodId, metricId),
+    needsVisualizationRows
+      ? queryVisualizationRows(allianceId, periodId, metricId)
+      : Promise.resolve<VisualCohortRow[]>([]),
   ]);
 
   const page = resolvePageAgainstTotal(requestedPage, totalRowCount, pageSize);

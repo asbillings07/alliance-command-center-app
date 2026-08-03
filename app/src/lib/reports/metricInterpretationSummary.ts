@@ -75,7 +75,7 @@ export function buildMetricInterpretationSummary(params: {
   // distribution/concentration. At most one wins the second-fact slot.
   const fact2 =
     buildCoverageFact(coverage) ??
-    buildComparisonFact(summaryKind, trendDirection, comparison) ??
+    buildComparisonFact(summaryKind, unitLabel, trendDirection, comparison) ??
     distributionFact;
 
   return fact2 ? `${fact1} ${fact2}` : fact1;
@@ -115,6 +115,7 @@ function buildCoverageFact(coverage: MetricCoverage): string | null {
  */
 function buildComparisonFact(
   summaryKind: MetricSummaryKind,
+  unitLabel: string | null,
   trendDirection: MetricTrendDirection,
   comparison: MetricSummaryComparison | null,
 ): string | null {
@@ -134,7 +135,22 @@ function buildComparisonFact(
   if (percentageChange !== null) {
     return `It ${verb} by ${formatPercent(Math.abs(percentageChange))} since ${period.name}.`;
   }
-  return `It ${verb} since ${period.name}.`;
+
+  // percentageChange is unavailable (the comparison period's total/average
+  // was zero or non-positive, so a "% change" would be undefined or
+  // misleading) — report the absolute magnitude instead of silently
+  // dropping the change, matching formatRollupChange's convention for this
+  // same COMPARED state elsewhere in the drill-down (reportRollupDisplay.ts).
+  const magnitude =
+    summaryKind === MetricSummaryKind.AVERAGE
+      ? formatMetricAverage(Math.abs(absoluteChange), unitLabel)
+      : formatSumMagnitude(Math.abs(absoluteChange), unitLabel);
+  return `It ${verb} by ${magnitude} since ${period.name}.`;
+}
+
+function formatSumMagnitude(value: number, unitLabel: string | null): string {
+  const exact = formatMetricValue(value, null).exact;
+  return unitLabel ? `${exact} ${unitLabel}` : exact;
 }
 
 /**
@@ -274,10 +290,16 @@ function buildBaselineFacts(params: {
         return { fact1: `${metricName} has no valid results this period.`, distributionFact };
       }
       const modalBin = pickModalBin(visualModel.bins);
-      const fact1 = `Values were concentrated between ${formatBoundary(modalBin.rangeStart, unitLabel)} and ${formatBoundary(
-        modalBin.rangeEnd,
-        unitLabel,
-      )}.`;
+      // A zero-width bin only occurs when every valid value is identical
+      // (buildDistributionBins' single-bin case) — "concentrated between X
+      // and X" reads as a typo, not a real range, so state it plainly.
+      const fact1 =
+        modalBin.rangeStart === modalBin.rangeEnd
+          ? `Every recorded value was ${formatBoundary(modalBin.rangeStart, unitLabel)}.`
+          : `Values were concentrated between ${formatBoundary(modalBin.rangeStart, unitLabel)} and ${formatBoundary(
+              modalBin.rangeEnd,
+              unitLabel,
+            )}.`;
       return { fact1, distributionFact };
     }
   }

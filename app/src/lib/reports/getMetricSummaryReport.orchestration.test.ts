@@ -53,19 +53,28 @@ function zeroAggregateRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** Configures the standard call sequence: main aggregate, roster count, visualization rows, roster rows (#264 PR4 added the third). */
+/**
+ * Configures the standard call sequence: main aggregate, roster count,
+ * visualization rows (only for the metric kinds that need them — see
+ * `needsVisualizationRows` in getMetricSummaryReport.ts), roster rows.
+ * Pass `visualizationRows: null` for a TRUE_RATE or NONE+BOOLEAN metric,
+ * where that query is skipped entirely (#264 PR4).
+ */
 function mockCoreQueries(params: {
   aggregateRow?: ReturnType<typeof zeroAggregateRow>;
   totalRowCount?: number;
-  visualizationRows?: unknown[];
+  visualizationRows?: unknown[] | null;
   rosterRows?: unknown[];
 }) {
   const { aggregateRow = zeroAggregateRow(), totalRowCount = 0, visualizationRows = [], rosterRows = [] } = params;
-  vi.mocked(prisma.$queryRaw)
+  const mocked = vi
+    .mocked(prisma.$queryRaw)
     .mockResolvedValueOnce([aggregateRow])
-    .mockResolvedValueOnce([{ total: BigInt(totalRowCount) }])
-    .mockResolvedValueOnce(visualizationRows)
-    .mockResolvedValueOnce(rosterRows);
+    .mockResolvedValueOnce([{ total: BigInt(totalRowCount) }]);
+  if (visualizationRows !== null) {
+    mocked.mockResolvedValueOnce(visualizationRows);
+  }
+  mocked.mockResolvedValueOnce(rosterRows);
 }
 
 describe("getMetricSummaryReport orchestration", () => {
@@ -241,7 +250,7 @@ describe("getMetricSummaryReport orchestration", () => {
       );
     });
 
-    it("passes the raw aggregate — not a filtered rows-derived recomputation — into a TRUE_RATE visual model", async () => {
+    it("passes the raw aggregate — not a filtered rows-derived recomputation — into a TRUE_RATE visual model, and skips the visualization query entirely", async () => {
       vi.mocked(prisma.metric.findFirst).mockResolvedValue({
         ...NUMERIC_METRIC,
         type: "BOOLEAN",
@@ -259,8 +268,10 @@ describe("getMetricSummaryReport orchestration", () => {
           current_active_member_count: BigInt(20),
           latest_entry_count: BigInt(19),
         }),
-        // Deliberately empty — TRUE_RATE must not need visualization rows to be correct.
-        visualizationRows: [],
+        // TRUE_RATE's visual model is sourced entirely from `aggregate` —
+        // the visualization query itself must never run for it (#264 PR4:
+        // running an unused full-cohort query has no functional benefit).
+        visualizationRows: null,
       });
       vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([]);
 
@@ -282,6 +293,61 @@ describe("getMetricSummaryReport orchestration", () => {
       expect(report.interpretationSummary).toBe(
         "14 of 18 valid responses were Yes. 2 active members have no recorded response.",
       );
+      // Exactly 3 calls: aggregate, roster count, roster rows — no
+      // visualization query.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+    });
+
+    it("skips the visualization query for a NONE+BOOLEAN metric too, sourcing its visual model from aggregate", async () => {
+      vi.mocked(prisma.metric.findFirst).mockResolvedValue({
+        ...NUMERIC_METRIC,
+        type: "BOOLEAN",
+        summaryKind: MetricSummaryKind.NONE,
+      } as never);
+      vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
+      vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active: true } as never);
+      mockCoreQueries({
+        aggregateRow: zeroAggregateRow({
+          true_count: BigInt(5),
+          false_count: BigInt(5),
+          latest_entry_count: BigInt(10),
+        }),
+        visualizationRows: null,
+      });
+
+      const report = await getMetricSummaryReport({
+        allianceId: ALLIANCE_ID,
+        metricId: METRIC_ID,
+        periodId: PERIOD_ID,
+      });
+
+      expect(report.visualModel).toMatchObject({ kind: "NONE", valueKind: "BOOLEAN", trueCount: 5, falseCount: 5 });
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+    });
+
+    it("still runs the visualization query for a NONE+NUMERIC metric, which needs per-member values", async () => {
+      vi.mocked(prisma.metric.findFirst).mockResolvedValue({
+        ...NUMERIC_METRIC,
+        summaryKind: MetricSummaryKind.NONE,
+      } as never);
+      vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
+      vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active: true } as never);
+      mockCoreQueries({
+        aggregateRow: zeroAggregateRow({ latest_entry_count: BigInt(2) }),
+        visualizationRows: [
+          { alliance_member_id: "m1", player_name: "Alice", archived: false, value: 10 },
+          { alliance_member_id: "m2", player_name: "Bob", archived: false, value: 20 },
+        ],
+      });
+
+      const report = await getMetricSummaryReport({
+        allianceId: ALLIANCE_ID,
+        metricId: METRIC_ID,
+        periodId: PERIOD_ID,
+      });
+
+      expect(report.visualModel).toMatchObject({ kind: "NONE", valueKind: "NUMERIC", validCount: 2 });
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
     });
   });
 

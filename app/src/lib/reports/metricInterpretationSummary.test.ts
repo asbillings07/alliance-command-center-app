@@ -197,6 +197,26 @@ describe("buildMetricInterpretationSummary — SUM", () => {
     });
     expect(text).toBe("Donations totaled 500.");
   });
+
+  it("reports the absolute change magnitude, not a bare 'increased' with no number, when percentageChange is unavailable (e.g. the comparison period's total was zero)", () => {
+    const text = build({
+      metricName: "Contributions",
+      unitLabel: "pts",
+      summaryKind: MetricSummaryKind.SUM,
+      metricType: Metric_Type.NUMERIC,
+      rollup: { kind: "SUM", total: 200, hasNegativeValues: false },
+      comparison: {
+        status: "COMPARED",
+        period: { id: "p1", name: "Week 3" },
+        eligiblePeriods: [],
+        rollup: { kind: "SUM", total: 0, hasNegativeValues: false },
+        absoluteChange: 200,
+        percentageChange: null,
+      },
+      visualModel: { kind: "SUM", shareAvailability: { available: false, reason: "NON_POSITIVE_TOTAL" }, topContributors: [], consideredCount: 0 },
+    });
+    expect(text).toBe("Contributions totaled 200 pts. It increased by 200 pts since Week 3.");
+  });
 });
 
 describe("buildMetricInterpretationSummary — AVERAGE", () => {
@@ -282,6 +302,26 @@ describe("buildMetricInterpretationSummary — AVERAGE", () => {
       visualModel: { kind: "AVERAGE", average: 12, bins: [], aboveAverageCount: 0, belowAverageCount: 0, atAverageCount: 0, validCount: 5 },
     });
     expect(text).toContain("declined by 20% since Week 2.");
+  });
+
+  it("reports the absolute change magnitude, not a bare verb with no number, when percentageChange is unavailable (e.g. the comparison period's average was zero)", () => {
+    const text = build({
+      metricName: "VS Score",
+      unitLabel: "pts",
+      summaryKind: MetricSummaryKind.AVERAGE,
+      metricType: Metric_Type.NUMERIC,
+      rollup: { kind: "AVERAGE", average: 12 },
+      comparison: {
+        status: "COMPARED",
+        period: { id: "p1", name: "Week 2" },
+        eligiblePeriods: [],
+        rollup: { kind: "AVERAGE", average: 0 },
+        absoluteChange: 12,
+        percentageChange: null,
+      },
+      visualModel: { kind: "AVERAGE", average: 12, bins: [], aboveAverageCount: 0, belowAverageCount: 0, atAverageCount: 0, validCount: 5 },
+    });
+    expect(text).toBe("The average was 12 pts across 5 valid results. It increased by 12 pts since Week 2.");
   });
 
   it("uses neutral 'increased' language for the identical change when trendDirection is NEUTRAL", () => {
@@ -450,6 +490,22 @@ describe("buildMetricInterpretationSummary — NONE", () => {
       visualModel: { kind: "NONE", valueKind: "NUMERIC", bins: [], validCount: 0 },
     });
     expect(text).toBe("Donations has no valid results this period. No alliance-wide rollup is defined for this metric.");
+  });
+
+  it("states 'every recorded value was X' rather than a degenerate 'between X and X' when every valid value is identical", () => {
+    const text = build({
+      summaryKind: MetricSummaryKind.NONE,
+      metricType: Metric_Type.NUMERIC,
+      rollup: { kind: "NONE" },
+      visualModel: {
+        kind: "NONE",
+        valueKind: "NUMERIC",
+        // buildDistributionBins' single-bin, all-equal case: rangeStart === rangeEnd.
+        bins: [{ rangeStart: 5, rangeEnd: 5, count: 4 }],
+        validCount: 4,
+      },
+    });
+    expect(text).toBe("Every recorded value was 5. No alliance-wide rollup is defined for this metric.");
   });
 
   it("uses the same yes/no framing as TRUE_RATE for a BOOLEAN metric, plus the rollup disclaimer", () => {
