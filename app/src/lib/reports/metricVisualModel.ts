@@ -44,6 +44,7 @@ export type DistributionBin = {
 export type SumTopContributor = {
   allianceMemberId: string;
   playerName: string;
+  archived: boolean;
   value: number;
   /** Null exactly when the chart-wide `shareAvailability.available` is false — never computed per-bar independently of the whole. */
   percentageOfTotal: number | null;
@@ -53,7 +54,13 @@ export type SumVisualModel = {
   kind: "SUM";
   /** Whole-chart share availability (see `computeShareAvailability`) — one decision for every bar, not a per-member one. */
   shareAvailability: MetricShareAvailability;
-  /** Ranked desc by value; ties broken by playerName then allianceMemberId (matches the roster's own tiebreak convention). Capped at 10. */
+  /**
+   * Ordered desc by value; ties broken by playerName then allianceMemberId
+   * (matches the roster's own tiebreak convention). Capped at 10. When the
+   * cohort has negative values (see `shareAvailability`/diverging mode),
+   * this is *not* a plain top-10-by-value slice — both signs are
+   * guaranteed representation when present (see `selectTopContributorRows`).
+   */
   topContributors: SumTopContributor[];
   /** How many members had a recorded value at all, for "top 10 of N contributors" framing. */
   consideredCount: number;
@@ -177,6 +184,46 @@ function sortedByValueDesc(rows: VisualCohortRow[]): Array<VisualCohortRow & { v
 }
 
 const SUM_TOP_CONTRIBUTOR_LIMIT = 10;
+const SUM_TOP_CONTRIBUTOR_HALF = Math.floor(SUM_TOP_CONTRIBUTOR_LIMIT / 2);
+
+/**
+ * A plain top-N-by-value slice is correct whenever the chart shows a simple
+ * ranked bar list (`hasNegativeValues` false). But once the chart is in
+ * diverging/raw mode (`hasNegativeValues` true — see `computeShareAvailability`),
+ * a plain top-N would silently drop every negative contributor whenever
+ * `SUM_TOP_CONTRIBUTOR_LIMIT` or more positive values exist, defeating the
+ * point of showing both directions. This reserves half the slots for the
+ * most-positive and half for the most-negative contributors, then backfills
+ * any unused half from whichever side has more, so the total selected is
+ * still exactly `SUM_TOP_CONTRIBUTOR_LIMIT` (or the whole cohort, if
+ * smaller) — while both signs are guaranteed representation when present.
+ * `ranked` is already sorted desc by value (see `sortedByValueDesc`), so the
+ * result below preserves that same order (positives high-to-low, then
+ * negatives high-to-low) rather than grouping by sign.
+ */
+function selectTopContributorRows(
+  ranked: Array<VisualCohortRow & { value: number }>,
+  hasNegativeValues: boolean,
+): Array<VisualCohortRow & { value: number }> {
+  if (!hasNegativeValues) {
+    return ranked.slice(0, SUM_TOP_CONTRIBUTOR_LIMIT);
+  }
+
+  const positives = ranked.filter((row) => row.value >= 0);
+  const negatives = ranked.filter((row) => row.value < 0);
+
+  const selectedPositives = positives.slice(0, SUM_TOP_CONTRIBUTOR_HALF);
+  const negativeSlots = SUM_TOP_CONTRIBUTOR_LIMIT - selectedPositives.length;
+  const selectedNegatives = negatives.slice(0, negativeSlots);
+  const backfillSlots = SUM_TOP_CONTRIBUTOR_LIMIT - selectedPositives.length - selectedNegatives.length;
+  const backfillPositives =
+    backfillSlots > 0 ? positives.slice(selectedPositives.length, selectedPositives.length + backfillSlots) : [];
+
+  const selectedIds = new Set(
+    [...selectedPositives, ...selectedNegatives, ...backfillPositives].map((row) => row.allianceMemberId),
+  );
+  return ranked.filter((row) => selectedIds.has(row.allianceMemberId));
+}
 
 /**
  * Chart-wide share availability is computed once from the rollup itself
@@ -188,16 +235,24 @@ const SUM_TOP_CONTRIBUTOR_LIMIT = 10;
  */
 function buildSumVisualModel(rows: VisualCohortRow[], aggregate: AggregateSnapshot): SumVisualModel {
   const rollup = buildMetricRollup(MetricSummaryKind.SUM, aggregate);
+  if (rollup.kind !== "SUM") {
+    // Unreachable: `buildMetricRollup` always returns a SUM-kind rollup for
+    // a SUM `MetricSummaryKind` argument — this narrows the union type for
+    // TypeScript, matching `buildBaselineFacts`' own narrowing checks.
+    throw new Error("buildSumVisualModel: expected a SUM rollup");
+  }
   // Always non-null: `rollup` was just built as a SUM rollup above, and
   // `computeShareAvailability` only returns null for a non-SUM rollup kind.
   const shareAvailability = computeShareAvailability(aggregate.sumValue, rollup)!;
 
   const ranked = sortedByValueDesc(rows);
-  const topContributors: SumTopContributor[] = ranked.slice(0, SUM_TOP_CONTRIBUTOR_LIMIT).map((row) => {
+  const selected = selectTopContributorRows(ranked, rollup.hasNegativeValues);
+  const topContributors: SumTopContributor[] = selected.map((row) => {
     const share = computeShareAvailability(row.value, rollup);
     return {
       allianceMemberId: row.allianceMemberId,
       playerName: row.playerName,
+      archived: row.archived,
       value: row.value,
       percentageOfTotal: share?.available ? share.percentageOfTotal : null,
     };

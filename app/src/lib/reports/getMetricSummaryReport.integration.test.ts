@@ -755,7 +755,7 @@ describe.skipIf(!runDb)("getMetricSummaryReport [integration]", () => {
         currentActiveMemberCount: 4,
       });
       expect(report.interpretationSummary).toBe(
-        "1 of 2 valid responses were Yes. 1 member is missing and 1 value is invalid.",
+        "1 of 2 valid responses were Yes; 1 member is missing and 1 value is invalid.",
       );
     });
 
@@ -777,7 +777,92 @@ describe.skipIf(!runDb)("getMetricSummaryReport [integration]", () => {
       }
       expect(report.visualModel.validCount).toBe(2);
       expect(report.visualModel.bins.reduce((sum, b) => sum + b.count, 0)).toBe(2);
-      expect(report.interpretationSummary).toContain("No alliance-wide rollup is defined for this metric.");
+      // Lowercased: it's fact2, joined after a semicolon, per the one-sentence contract.
+      expect(report.interpretationSummary).toContain("no alliance-wide rollup is defined for this metric.");
+    });
+
+    it("preserves inactivity without denying retained history: an INACTIVE attachment's interpretation summary still reads the real total, with an inactivity caveat", async () => {
+      const alliance = await makeAlliance();
+      const member = await makeMember(alliance.id, "Alice");
+      const period = await makePeriod(alliance.id, "Week 1");
+      const metric = await makeMetric(alliance.id, "Deactivated Metric", Metric_Type.NUMERIC, MetricSummaryKind.SUM);
+      await attach(period.id, metric.id, false);
+      await addEntry(member.id, period.id, metric.id, 42, new Date("2026-03-01T10:00:00Z"));
+
+      const report = await getMetricSummaryReport({ allianceId: alliance.id, metricId: metric.id, periodId: period.id });
+
+      expect(report.attachmentStatus).toBe("INACTIVE");
+      expect(report.dataStatus).toBe("HAS_VALUES");
+      expect(report.rollup).toEqual({ kind: "SUM", total: 42, hasNegativeValues: false });
+      expect(report.interpretationSummary).toBe(
+        "Deactivated Metric totaled 42; the attachment is now inactive, so this reflects historical data only.",
+      );
+    });
+
+    it("carries an archived top contributor's status through to the visual model, so PR5's chart can badge them", async () => {
+      const alliance = await makeAlliance();
+      const activeContributor = await makeMember(alliance.id, "Active Contributor");
+      const archivedContributor = await makeMember(alliance.id, "Archived Contributor", true);
+      const period = await makePeriod(alliance.id, "Week 1");
+      const metric = await makeMetric(alliance.id, "Donations", Metric_Type.NUMERIC, MetricSummaryKind.SUM);
+      await attach(period.id, metric.id);
+      await addEntry(activeContributor.id, period.id, metric.id, 100, new Date("2026-03-01T10:00:00Z"));
+      await addEntry(archivedContributor.id, period.id, metric.id, 50, new Date("2026-03-01T10:00:00Z"));
+
+      const report = await getMetricSummaryReport({ allianceId: alliance.id, metricId: metric.id, periodId: period.id });
+
+      if (report.visualModel.kind !== "SUM") throw new Error("expected SUM");
+      expect(report.visualModel.topContributors.find((c) => c.allianceMemberId === activeContributor.id)?.archived).toBe(
+        false,
+      );
+      expect(
+        report.visualModel.topContributors.find((c) => c.allianceMemberId === archivedContributor.id)?.archived,
+      ).toBe(true);
+    });
+
+    it("guarantees a negative contributor survives SUM's top-10 cap even with 10+ positive contributors, and describes the cohort as mixed-sign (not all-negative)", async () => {
+      const alliance = await makeAlliance();
+      const period = await makePeriod(alliance.id, "Week 1");
+      const metric = await makeMetric(alliance.id, "Net Score", Metric_Type.NUMERIC, MetricSummaryKind.SUM);
+      await attach(period.id, metric.id);
+
+      const positiveMembers = await Promise.all(
+        Array.from({ length: 11 }, (_, i) => makeMember(alliance.id, `Positive ${String(i).padStart(2, "0")}`)),
+      );
+      const negativeMember = await makeMember(alliance.id, "Sole Negative");
+      await Promise.all(
+        positiveMembers.map((member, i) =>
+          addEntry(member.id, period.id, metric.id, (i + 1) * 10, new Date(`2026-03-01T10:${String(i).padStart(2, "0")}:00Z`)),
+        ),
+      );
+      await addEntry(negativeMember.id, period.id, metric.id, -5, new Date("2026-03-01T10:11:00Z"));
+
+      const report = await getMetricSummaryReport({ allianceId: alliance.id, metricId: metric.id, periodId: period.id });
+
+      if (report.visualModel.kind !== "SUM") throw new Error("expected SUM");
+      expect(report.visualModel.topContributors).toHaveLength(10);
+      expect(report.visualModel.topContributors.some((c) => c.allianceMemberId === negativeMember.id)).toBe(true);
+      expect(report.interpretationSummary).toBe(
+        "Positive and negative contributions offset each other, so member shares are not meaningful.",
+      );
+    });
+
+    it("distinguishes an all-negative SUM cohort from a genuinely mixed-sign one in the interpretation summary", async () => {
+      const alliance = await makeAlliance();
+      const memberA = await makeMember(alliance.id, "Member A");
+      const memberB = await makeMember(alliance.id, "Member B");
+      const period = await makePeriod(alliance.id, "Week 1");
+      const metric = await makeMetric(alliance.id, "Losses", Metric_Type.NUMERIC, MetricSummaryKind.SUM);
+      await attach(period.id, metric.id);
+      await addEntry(memberA.id, period.id, metric.id, -100, new Date("2026-03-01T10:00:00Z"));
+      await addEntry(memberB.id, period.id, metric.id, -200, new Date("2026-03-01T10:01:00Z"));
+
+      const report = await getMetricSummaryReport({ allianceId: alliance.id, metricId: metric.id, periodId: period.id });
+
+      expect(report.rollup).toEqual({ kind: "SUM", total: -300, hasNegativeValues: true });
+      expect(report.interpretationSummary).toBe(
+        "Losses had no positive contributions this period, so no member share is meaningful.",
+      );
     });
   });
 });

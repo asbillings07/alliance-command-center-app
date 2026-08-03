@@ -95,6 +95,86 @@ describe("buildMetricInterpretationSummary — unavailable state (priority 1)", 
     });
     expect(text).toBe("Donations isn't attached to this period, so there's no data to interpret yet.");
   });
+
+  it("still reports HAS_VALUES data — never an unavailable-state denial — for an inactive attachment that retains historical entries", () => {
+    // A real, non-degenerate state (see MetricPeriodAttachmentStatus's
+    // docstring and getMetricSummaryReport.integration.test.ts's "shows
+    // historical values under INACTIVE" case): the attachment was later
+    // deactivated, but a value of 42 recorded while it was active remains.
+    const text = build({
+      metricName: "Deactivated Metric",
+      summaryKind: MetricSummaryKind.SUM,
+      metricType: Metric_Type.NUMERIC,
+      attachmentStatus: "INACTIVE",
+      dataStatus: "HAS_VALUES",
+      rollup: { kind: "SUM", total: 42, hasNegativeValues: false },
+      visualModel: {
+        kind: "SUM",
+        shareAvailability: { available: true, percentageOfTotal: 100 },
+        topContributors: [{ allianceMemberId: "m1", playerName: "Alice", archived: false, value: 42, percentageOfTotal: 100 }],
+        consideredCount: 1,
+      },
+    });
+    expect(text).toBe(
+      "Deactivated Metric totaled 42; the attachment is now inactive, so this reflects historical data only.",
+    );
+  });
+
+  it("ranks the inactive-with-history caveat above a coverage issue — it changes how the whole reading should be understood, not just a detail about it", () => {
+    const text = build({
+      metricName: "Deactivated Metric",
+      summaryKind: MetricSummaryKind.SUM,
+      metricType: Metric_Type.NUMERIC,
+      attachmentStatus: "INACTIVE",
+      dataStatus: "HAS_VALUES",
+      rollup: { kind: "SUM", total: 42, hasNegativeValues: false },
+      coverage: { ...COMPLETE_COVERAGE, missingActiveMemberCount: 5 },
+      visualModel: {
+        kind: "SUM",
+        shareAvailability: { available: true, percentageOfTotal: 100 },
+        topContributors: [{ allianceMemberId: "m1", playerName: "Alice", archived: false, value: 42, percentageOfTotal: 100 }],
+        consideredCount: 1,
+      },
+    });
+    expect(text).toBe(
+      "Deactivated Metric totaled 42; the attachment is now inactive, so this reflects historical data only.",
+    );
+  });
+});
+
+describe("buildMetricInterpretationSummary — one-sentence contract", () => {
+  it("joins two facts into a single grammatical sentence (one period, semicolon-joined, second clause lowercased) — never two sentences", () => {
+    const text = build({
+      metricName: "Contributions",
+      summaryKind: MetricSummaryKind.SUM,
+      metricType: Metric_Type.NUMERIC,
+      rollup: { kind: "SUM", total: 1000, hasNegativeValues: false },
+      visualModel: {
+        kind: "SUM",
+        shareAvailability: { available: true, percentageOfTotal: 100 },
+        topContributors: [
+          { allianceMemberId: "m1", playerName: "A", archived: false, value: 500, percentageOfTotal: 50 },
+          { allianceMemberId: "m2", playerName: "B", archived: false, value: 120, percentageOfTotal: 12 },
+        ],
+        consideredCount: 2,
+      },
+    });
+    expect(text).toBe("Contributions totaled 1,000; the top 2 members accounted for 62% of the total.");
+    // Exactly one sentence: exactly one period, and it's the final character.
+    expect(text.match(/\./g)).toHaveLength(1);
+    expect(text.endsWith(".")).toBe(true);
+  });
+
+  it("returns fact1 unchanged (still period-terminated, no dangling semicolon) when there is no fact2", () => {
+    const text = build({
+      summaryKind: MetricSummaryKind.SUM,
+      metricType: Metric_Type.NUMERIC,
+      rollup: { kind: "SUM", total: 500, hasNegativeValues: false },
+      visualModel: { kind: "SUM", shareAvailability: { available: true, percentageOfTotal: 100 }, topContributors: [], consideredCount: 0 },
+    });
+    expect(text).toBe("Donations totaled 500.");
+    expect(text).not.toContain(";");
+  });
 });
 
 describe("buildMetricInterpretationSummary — SUM", () => {
@@ -108,13 +188,13 @@ describe("buildMetricInterpretationSummary — SUM", () => {
         kind: "SUM",
         shareAvailability: { available: true, percentageOfTotal: 100 },
         topContributors: [
-          { allianceMemberId: "m1", playerName: "A", value: 500, percentageOfTotal: 50 },
-          { allianceMemberId: "m2", playerName: "B", value: 120, percentageOfTotal: 12 },
+          { allianceMemberId: "m1", playerName: "A", archived: false, value: 500, percentageOfTotal: 50 },
+          { allianceMemberId: "m2", playerName: "B", archived: false, value: 120, percentageOfTotal: 12 },
         ],
         consideredCount: 2,
       },
     });
-    expect(text).toBe("Contributions totaled 1,000. The top 2 members accounted for 62% of the total.");
+    expect(text).toBe("Contributions totaled 1,000; the top 2 members accounted for 62% of the total.");
   });
 
   it("substitutes the offset caveat for the raw total when negative values are present, dropping the distribution fact entirely", () => {
@@ -125,11 +205,31 @@ describe("buildMetricInterpretationSummary — SUM", () => {
       visualModel: {
         kind: "SUM",
         shareAvailability: { available: false, reason: "NEGATIVE_VALUES_PRESENT" },
-        topContributors: [{ allianceMemberId: "m1", playerName: "A", value: 150, percentageOfTotal: null }],
+        topContributors: [{ allianceMemberId: "m1", playerName: "A", archived: false, value: 150, percentageOfTotal: null }],
         consideredCount: 2,
       },
     });
     expect(text).toBe("Positive and negative contributions offset each other, so member shares are not meaningful.");
+  });
+
+  it("distinguishes an all-negative (or all-non-positive) cohort from a genuinely mixed-sign one — there's nothing positive to 'offset'", () => {
+    const text = build({
+      metricName: "Losses",
+      summaryKind: MetricSummaryKind.SUM,
+      metricType: Metric_Type.NUMERIC,
+      rollup: { kind: "SUM", total: -300, hasNegativeValues: true },
+      visualModel: {
+        kind: "SUM",
+        shareAvailability: { available: false, reason: "NEGATIVE_VALUES_PRESENT" },
+        // Every contributor is negative (or zero) — no positive value exists anywhere in the cohort.
+        topContributors: [
+          { allianceMemberId: "m1", playerName: "A", archived: false, value: -100, percentageOfTotal: null },
+          { allianceMemberId: "m2", playerName: "B", archived: false, value: -200, percentageOfTotal: null },
+        ],
+        consideredCount: 2,
+      },
+    });
+    expect(text).toBe("Losses had no positive contributions this period, so no member share is meaningful.");
   });
 
   it("explains a non-positive total distinctly from the negative-values case", () => {
@@ -140,7 +240,7 @@ describe("buildMetricInterpretationSummary — SUM", () => {
       visualModel: {
         kind: "SUM",
         shareAvailability: { available: false, reason: "NON_POSITIVE_TOTAL" },
-        topContributors: [{ allianceMemberId: "m1", playerName: "A", value: 0, percentageOfTotal: null }],
+        topContributors: [{ allianceMemberId: "m1", playerName: "A", archived: false, value: 0, percentageOfTotal: null }],
         consideredCount: 1,
       },
     });
@@ -157,11 +257,11 @@ describe("buildMetricInterpretationSummary — SUM", () => {
       visualModel: {
         kind: "SUM",
         shareAvailability: { available: true, percentageOfTotal: 100 },
-        topContributors: [{ allianceMemberId: "m1", playerName: "A", value: 1000, percentageOfTotal: 100 }],
+        topContributors: [{ allianceMemberId: "m1", playerName: "A", archived: false, value: 1000, percentageOfTotal: 100 }],
         consideredCount: 1,
       },
     });
-    expect(text).toBe("Contributions totaled 1,000. 2 active members have no recorded response.");
+    expect(text).toBe("Contributions totaled 1,000; 2 active members have no recorded response.");
   });
 
   it("prefers a comparison-change fact2 over the top-10 concentration fact2 when coverage is clean but a comparison exists", () => {
@@ -181,11 +281,11 @@ describe("buildMetricInterpretationSummary — SUM", () => {
       visualModel: {
         kind: "SUM",
         shareAvailability: { available: true, percentageOfTotal: 100 },
-        topContributors: [{ allianceMemberId: "m1", playerName: "A", value: 1200, percentageOfTotal: 100 }],
+        topContributors: [{ allianceMemberId: "m1", playerName: "A", archived: false, value: 1200, percentageOfTotal: 100 }],
         consideredCount: 1,
       },
     });
-    expect(text).toBe("Contributions totaled 1,200. It increased by 20% since Week 3.");
+    expect(text).toBe("Contributions totaled 1,200; it increased by 20% since Week 3.");
   });
 
   it("never fabricates a distribution fact when there are no top contributors to describe", () => {
@@ -215,7 +315,7 @@ describe("buildMetricInterpretationSummary — SUM", () => {
       },
       visualModel: { kind: "SUM", shareAvailability: { available: false, reason: "NON_POSITIVE_TOTAL" }, topContributors: [], consideredCount: 0 },
     });
-    expect(text).toBe("Contributions totaled 200 pts. It increased by 200 pts since Week 3.");
+    expect(text).toBe("Contributions totaled 200 pts; it increased by 200 pts since Week 3.");
   });
 });
 
@@ -236,7 +336,7 @@ describe("buildMetricInterpretationSummary — AVERAGE", () => {
         validCount: 18,
       },
     });
-    expect(text).toBe("The average was 7.4 across 18 valid results. 2 members are missing and 1 value is invalid.");
+    expect(text).toBe("The average was 7.4 across 18 valid results; 2 members are missing and 1 value is invalid.");
   });
 
   it("falls back to the above/below split as fact2 when coverage is complete and no comparison exists", () => {
@@ -254,7 +354,7 @@ describe("buildMetricInterpretationSummary — AVERAGE", () => {
         validCount: 3,
       },
     });
-    expect(text).toBe("The average was 10 across 3 valid results. 1 member is above average and 1 below.");
+    expect(text).toBe("The average was 10 across 3 valid results; 1 member is above average and 1 below.");
   });
 
   it("omits fact2 entirely in the all-equal case (no above/below spread to describe)", () => {
@@ -321,7 +421,7 @@ describe("buildMetricInterpretationSummary — AVERAGE", () => {
       },
       visualModel: { kind: "AVERAGE", average: 12, bins: [], aboveAverageCount: 0, belowAverageCount: 0, atAverageCount: 0, validCount: 5 },
     });
-    expect(text).toBe("The average was 12 pts across 5 valid results. It increased by 12 pts since Week 2.");
+    expect(text).toBe("The average was 12 pts across 5 valid results; it increased by 12 pts since Week 2.");
   });
 
   it("uses neutral 'increased' language for the identical change when trendDirection is NEUTRAL", () => {
@@ -358,7 +458,8 @@ describe("buildMetricInterpretationSummary — AVERAGE", () => {
       },
       visualModel: { kind: "AVERAGE", average: 10, bins: [], aboveAverageCount: 0, belowAverageCount: 0, atAverageCount: 0, validCount: 5 },
     });
-    expect(text).toContain("It was unchanged since Week 2.");
+    // Lowercased: it's fact2, joined after a semicolon, per the one-sentence contract.
+    expect(text).toContain("it was unchanged since Week 2.");
   });
 });
 
@@ -379,7 +480,7 @@ describe("buildMetricInterpretationSummary — TRUE_RATE", () => {
         currentActiveMemberCount: 20,
       },
     });
-    expect(text).toBe("14 of 18 valid responses were Yes. 2 active members have no recorded response.");
+    expect(text).toBe("14 of 18 valid responses were Yes; 2 active members have no recorded response.");
   });
 
   it("has no separate distribution fact2 candidate — a clean cohort yields a single-fact sentence", () => {
@@ -416,7 +517,7 @@ describe("buildMetricInterpretationSummary — TRUE_RATE", () => {
         currentActiveMemberCount: 3,
       },
     });
-    expect(text).toBe("No valid Yes/No responses have been recorded this period. 3 values are invalid.");
+    expect(text).toBe("No valid Yes/No responses have been recorded this period; 3 values are invalid.");
   });
 
   it("expresses a comparison change as a percentage-point difference, never a percent-of-a-percent", () => {
@@ -442,7 +543,7 @@ describe("buildMetricInterpretationSummary — TRUE_RATE", () => {
         currentActiveMemberCount: 20,
       },
     });
-    expect(text).toBe("16 of 20 valid responses were Yes. The rate increased by 10pp since Week 5.");
+    expect(text).toBe("16 of 20 valid responses were Yes; the rate increased by 10pp since Week 5.");
   });
 });
 
@@ -463,7 +564,7 @@ describe("buildMetricInterpretationSummary — NONE", () => {
         validCount: 12,
       },
     });
-    expect(text).toBe("Values were concentrated between 10 and 20. No alliance-wide rollup is defined for this metric.");
+    expect(text).toBe("Values were concentrated between 10 and 20; no alliance-wide rollup is defined for this metric.");
   });
 
   it("drops the rollup disclaimer in favor of a coverage-issue fact2 when coverage isn't clean", () => {
@@ -479,7 +580,7 @@ describe("buildMetricInterpretationSummary — NONE", () => {
         validCount: 5,
       },
     });
-    expect(text).toBe("Values were concentrated between 0 and 10. 3 active members have no recorded response.");
+    expect(text).toBe("Values were concentrated between 0 and 10; 3 active members have no recorded response.");
   });
 
   it("reports no valid results, still with the rollup disclaimer, when there is truly nothing to bin", () => {
@@ -489,7 +590,7 @@ describe("buildMetricInterpretationSummary — NONE", () => {
       rollup: { kind: "NONE" },
       visualModel: { kind: "NONE", valueKind: "NUMERIC", bins: [], validCount: 0 },
     });
-    expect(text).toBe("Donations has no valid results this period. No alliance-wide rollup is defined for this metric.");
+    expect(text).toBe("Donations has no valid results this period; no alliance-wide rollup is defined for this metric.");
   });
 
   it("states 'every recorded value was X' rather than a degenerate 'between X and X' when every valid value is identical", () => {
@@ -505,7 +606,7 @@ describe("buildMetricInterpretationSummary — NONE", () => {
         validCount: 4,
       },
     });
-    expect(text).toBe("Every recorded value was 5. No alliance-wide rollup is defined for this metric.");
+    expect(text).toBe("Every recorded value was 5; no alliance-wide rollup is defined for this metric.");
   });
 
   it("uses the same yes/no framing as TRUE_RATE for a BOOLEAN metric, plus the rollup disclaimer", () => {
@@ -524,7 +625,7 @@ describe("buildMetricInterpretationSummary — NONE", () => {
         currentActiveMemberCount: 10,
       },
     });
-    expect(text).toBe("6 of 10 valid responses were Yes. No alliance-wide rollup is defined for this metric.");
+    expect(text).toBe("6 of 10 valid responses were Yes; no alliance-wide rollup is defined for this metric.");
   });
 
   it("never produces a comparison fact2 — NONE-kind metrics structurally never have a comparison", () => {
@@ -537,6 +638,91 @@ describe("buildMetricInterpretationSummary — NONE", () => {
       comparison: null,
       visualModel: { kind: "NONE", valueKind: "NUMERIC", bins: [{ rangeStart: 0, rangeEnd: 5, count: 1 }], validCount: 1 },
     });
-    expect(text).toBe("Values were concentrated between 0 and 5. No alliance-wide rollup is defined for this metric.");
+    expect(text).toBe("Values were concentrated between 0 and 5; no alliance-wide rollup is defined for this metric.");
+  });
+
+  it("uses neutral 'ranged from X to Y' wording, not a false 'concentrated' claim, when two bins are tied for the max", () => {
+    const text = build({
+      summaryKind: MetricSummaryKind.NONE,
+      metricType: Metric_Type.NUMERIC,
+      rollup: { kind: "NONE" },
+      visualModel: {
+        kind: "NONE",
+        valueKind: "NUMERIC",
+        bins: [
+          { rangeStart: 0, rangeEnd: 10, count: 5 },
+          { rangeStart: 10, rangeEnd: 20, count: 5 },
+          { rangeStart: 20, rangeEnd: 30, count: 2 },
+        ],
+        validCount: 12,
+      },
+    });
+    expect(text).toBe("Values ranged from 0 to 30, without a clear concentration; no alliance-wide rollup is defined for this metric.");
+  });
+
+  it("uses neutral 'ranged from X to Y' wording for a perfectly uniform distribution (every bin equally populated)", () => {
+    const text = build({
+      summaryKind: MetricSummaryKind.NONE,
+      metricType: Metric_Type.NUMERIC,
+      rollup: { kind: "NONE" },
+      visualModel: {
+        kind: "NONE",
+        valueKind: "NUMERIC",
+        bins: [
+          { rangeStart: 0, rangeEnd: 10, count: 2 },
+          { rangeStart: 10, rangeEnd: 20, count: 2 },
+          { rangeStart: 20, rangeEnd: 30, count: 2 },
+          { rangeStart: 30, rangeEnd: 40, count: 2 },
+          { rangeStart: 40, rangeEnd: 50, count: 2 },
+          { rangeStart: 50, rangeEnd: 60, count: 2 },
+        ],
+        validCount: 12,
+      },
+    });
+    expect(text).toBe("Values ranged from 0 to 60, without a clear concentration; no alliance-wide rollup is defined for this metric.");
+  });
+
+  it("uses neutral 'ranged from X to Y' wording for a sparse distribution with a tied, low-count modal bin", () => {
+    const text = build({
+      summaryKind: MetricSummaryKind.NONE,
+      metricType: Metric_Type.NUMERIC,
+      rollup: { kind: "NONE" },
+      visualModel: {
+        kind: "NONE",
+        valueKind: "NUMERIC",
+        bins: [
+          { rangeStart: 0, rangeEnd: 10, count: 1 },
+          { rangeStart: 10, rangeEnd: 20, count: 0 },
+          { rangeStart: 20, rangeEnd: 30, count: 0 },
+          { rangeStart: 30, rangeEnd: 40, count: 1 },
+          { rangeStart: 40, rangeEnd: 50, count: 0 },
+          { rangeStart: 50, rangeEnd: 60, count: 0 },
+        ],
+        validCount: 2,
+      },
+    });
+    expect(text).toBe("Values ranged from 0 to 60, without a clear concentration; no alliance-wide rollup is defined for this metric.");
+  });
+
+  it("still claims 'concentrated' when one bin uniquely exceeds the uniform baseline, even with several other non-empty bins (control case)", () => {
+    const text = build({
+      summaryKind: MetricSummaryKind.NONE,
+      metricType: Metric_Type.NUMERIC,
+      rollup: { kind: "NONE" },
+      visualModel: {
+        kind: "NONE",
+        valueKind: "NUMERIC",
+        bins: [
+          { rangeStart: 0, rangeEnd: 10, count: 1 },
+          { rangeStart: 10, rangeEnd: 20, count: 8 },
+          { rangeStart: 20, rangeEnd: 30, count: 1 },
+          { rangeStart: 30, rangeEnd: 40, count: 1 },
+          { rangeStart: 40, rangeEnd: 50, count: 1 },
+          { rangeStart: 50, rangeEnd: 60, count: 0 },
+        ],
+        validCount: 12,
+      },
+    });
+    expect(text).toBe("Values were concentrated between 10 and 20; no alliance-wide rollup is defined for this metric.");
   });
 });

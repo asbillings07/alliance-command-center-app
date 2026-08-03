@@ -246,7 +246,7 @@ describe("getMetricSummaryReport orchestration", () => {
         ],
       });
       expect(report.interpretationSummary).toBe(
-        "VS Score totaled 1,000 pts. The top 2 members accounted for 100% of the total.",
+        "VS Score totaled 1,000 pts; the top 2 members accounted for 100% of the total.",
       );
     });
 
@@ -291,7 +291,7 @@ describe("getMetricSummaryReport orchestration", () => {
         currentActiveMemberCount: 20,
       });
       expect(report.interpretationSummary).toBe(
-        "14 of 18 valid responses were Yes. 2 active members have no recorded response.",
+        "14 of 18 valid responses were Yes; 2 active members have no recorded response.",
       );
       // Exactly 3 calls: aggregate, roster count, roster rows — no
       // visualization query.

@@ -98,9 +98,21 @@ describe("buildMetricVisualModel — SUM", () => {
     if (model.kind !== "SUM") throw new Error("expected SUM");
     expect(model.shareAvailability).toEqual({ available: true, percentageOfTotal: 100 });
     expect(model.topContributors).toEqual([
-      { allianceMemberId: "m2", playerName: "Bob", value: 700, percentageOfTotal: 70 },
-      { allianceMemberId: "m1", playerName: "Alice", value: 300, percentageOfTotal: 30 },
+      { allianceMemberId: "m2", playerName: "Bob", archived: false, value: 700, percentageOfTotal: 70 },
+      { allianceMemberId: "m1", playerName: "Alice", archived: false, value: 300, percentageOfTotal: 30 },
     ]);
+  });
+
+  it("carries a contributor's archived status through to the visual model, so PR5's chart can badge an archived top contributor", () => {
+    const rows = [
+      row({ allianceMemberId: "m1", playerName: "Alice", archived: true, value: 300 }),
+      row({ allianceMemberId: "m2", playerName: "Bob", archived: false, value: 700 }),
+    ];
+    const model = build(rows, zeroAggregate({ sumValue: 1000 }));
+    if (model.kind !== "SUM") throw new Error("expected SUM");
+
+    expect(model.topContributors.find((c) => c.allianceMemberId === "m1")?.archived).toBe(true);
+    expect(model.topContributors.find((c) => c.allianceMemberId === "m2")?.archived).toBe(false);
   });
 
   it("caps top contributors at 10 even with a larger cohort, while consideredCount reflects everyone with a value", () => {
@@ -146,6 +158,58 @@ describe("buildMetricVisualModel — SUM", () => {
     expect(model.topContributors.every((c) => c.percentageOfTotal === null)).toBe(true);
     // Raw values are still preserved for a diverging-bar rendering, even though share is unavailable.
     expect(model.topContributors.map((c) => c.value).sort((a, b) => a - b)).toEqual([-50, 150]);
+  });
+
+  it("guarantees at least one negative contributor survives the cap when 10+ positive values would otherwise fill every slot", () => {
+    // 12 positive values (100..1200) plus a single negative value (-5). A
+    // plain top-10-by-value slice would drop the only negative entirely,
+    // even though the chart is explicitly in diverging mode.
+    const positiveRows = Array.from({ length: 12 }, (_, i) =>
+      row({ allianceMemberId: `pos${i}`, playerName: `Positive ${i}`, value: (i + 1) * 100 }),
+    );
+    const rows = [...positiveRows, row({ allianceMemberId: "neg1", playerName: "Negative", value: -5 })];
+    const model = build(rows, zeroAggregate({ sumValue: 7795, hasNegativeValues: true }));
+    if (model.kind !== "SUM") throw new Error("expected SUM");
+
+    expect(model.topContributors).toHaveLength(10);
+    expect(model.topContributors.some((c) => c.allianceMemberId === "neg1")).toBe(true);
+    expect(model.consideredCount).toBe(13);
+  });
+
+  it("keeps a plain top-10-by-value cap (no forced negative slot) when every value is non-negative", () => {
+    const rows = Array.from({ length: 12 }, (_, i) =>
+      row({ allianceMemberId: `m${i}`, playerName: `Player ${i}`, value: (i + 1) * 10 }),
+    );
+    const model = build(rows, zeroAggregate({ sumValue: 780, hasNegativeValues: false }));
+    if (model.kind !== "SUM") throw new Error("expected SUM");
+
+    expect(model.topContributors).toHaveLength(10);
+    // Highest 10 of 12 values: 30..120 in steps of 10, desc.
+    expect(model.topContributors.map((c) => c.value)).toEqual([120, 110, 100, 90, 80, 70, 60, 50, 40, 30]);
+  });
+
+  it("fills every slot from the larger side when one sign has fewer than half the available slots (backfill)", () => {
+    // Only 2 positive values, 20 negative values, negative total, so
+    // hasNegativeValues is true. The 2 positives must both survive (there's
+    // room), and the remaining 8 slots backfill with the least-negative
+    // (closest to zero) values rather than leaving slots unused.
+    const positiveRows = [
+      row({ allianceMemberId: "pos1", playerName: "Positive 1", value: 5 }),
+      row({ allianceMemberId: "pos2", playerName: "Positive 2", value: 3 }),
+    ];
+    const negativeRows = Array.from({ length: 20 }, (_, i) =>
+      row({ allianceMemberId: `neg${i}`, playerName: `Negative ${i}`, value: -(i + 1) }),
+    );
+    const rows = [...positiveRows, ...negativeRows];
+    const model = build(rows, zeroAggregate({ sumValue: -202, hasNegativeValues: true }));
+    if (model.kind !== "SUM") throw new Error("expected SUM");
+
+    expect(model.topContributors).toHaveLength(10);
+    expect(model.topContributors.some((c) => c.allianceMemberId === "pos1")).toBe(true);
+    expect(model.topContributors.some((c) => c.allianceMemberId === "pos2")).toBe(true);
+    // 8 negative backfill slots -> the 8 closest to zero: -1..-8.
+    const negativeValues = model.topContributors.map((c) => c.value).filter((v) => v < 0);
+    expect(negativeValues.sort((a, b) => b - a)).toEqual([-1, -2, -3, -4, -5, -6, -7, -8]);
   });
 
   it("marks share unavailable (NON_POSITIVE_TOTAL) when the total is zero or negative without any individual negative value", () => {

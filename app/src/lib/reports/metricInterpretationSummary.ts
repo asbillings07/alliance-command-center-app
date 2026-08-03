@@ -17,15 +17,18 @@ import type {
  * imports from `getMetricSummaryReport.ts` are erased, never bundled) so
  * it stays reusable the same way `metricVisualModel.ts` is.
  *
- * Exactly one sentence built from up to two facts:
+ * Exactly one sentence (fact1 and, when present, fact2 joined into a single
+ * grammatical sentence by `joinFacts` — never two separate sentences) built
+ * from up to two facts:
  *   - fact1 is always the kind's baseline reading of the data (or, for
  *     SUM, a substituted caveat when a bare total would be misleading).
  *   - fact2 is the single highest-priority applicable fact from, in order:
- *     coverage issue (invalid/missing) -> comparison change -> a
- *     kind-specific distribution/concentration note. Only one of these
- *     ever appears — never more — to keep this a takeaway, not a recap of
- *     the whole drill-down (which already has its own coverage card,
- *     comparison control, and chart).
+ *     an inactive attachment retaining historical data -> coverage issue
+ *     (invalid/missing) -> comparison change -> a kind-specific
+ *     distribution/concentration note. Only one of these ever appears —
+ *     never more — to keep this a takeaway, not a recap of the whole
+ *     drill-down (which already has its own coverage card, comparison
+ *     control, and chart).
  *
  * This never repeats language the deterministic alliance findings engine
  * (`allianceFindings.ts`) already owns (e.g. "attach it or archive it") —
@@ -58,27 +61,66 @@ export function buildMetricInterpretationSummary(params: {
     visualModel,
   } = params;
 
-  // Priority 1: unavailable state — short-circuits, no second fact.
+  // Priority 1: truly unavailable — short-circuits, no second fact. Only
+  // NOT_ATTACHED and a genuinely empty period qualify: an INACTIVE
+  // attachment can still have HAS_VALUES (recorded while it was active,
+  // later deactivated — see MetricPeriodAttachmentStatus's docstring), and
+  // that retained history must never be denied just because the
+  // attachment is inactive *now*.
   if (attachmentStatus === "NOT_ATTACHED") {
     return `${metricName} isn't attached to this period, so there's no data to interpret yet.`;
   }
-  if (attachmentStatus === "INACTIVE") {
-    return `The attachment for ${metricName} is inactive this period, so there's no data to interpret.`;
-  }
   if (dataStatus === "NO_VALUES") {
+    if (attachmentStatus === "INACTIVE") {
+      return `The attachment for ${metricName} is inactive this period, so there's no data to interpret.`;
+    }
     return `${metricName} has no recorded results yet this period.`;
   }
 
   const { fact1, distributionFact } = buildBaselineFacts({ metricName, unitLabel, summaryKind, metricType, rollup, visualModel });
 
-  // Priority 2: coverage issue. Priority 3: comparison change. Priority 4:
-  // distribution/concentration. At most one wins the second-fact slot.
+  // Priority 1.5: an inactive attachment that still has retained history —
+  // ranked above coverage/comparison/distribution because it changes how
+  // the whole reading should be understood (this isn't a currently-tracked
+  // value), not just a detail about it. Priority 2: coverage issue.
+  // Priority 3: comparison change. Priority 4: distribution/concentration.
+  // At most one of these ever wins the second-fact slot.
   const fact2 =
+    (attachmentStatus === "INACTIVE" ? buildInactiveWithHistoryFact() : null) ??
     buildCoverageFact(coverage) ??
     buildComparisonFact(summaryKind, unitLabel, trendDirection, comparison) ??
     distributionFact;
 
-  return fact2 ? `${fact1} ${fact2}` : fact1;
+  return joinFacts(fact1, fact2);
+}
+
+/** Priority 1.5 candidate — see the INACTIVE branch above. Never repeats the metric name; fact1 already names it. */
+function buildInactiveWithHistoryFact(): string {
+  return "The attachment is now inactive, so this reflects historical data only.";
+}
+
+/**
+ * Composes the final, single-sentence takeaway from up to two clauses.
+ * Every builder above returns a capitalized, period-terminated clause (so
+ * it also reads correctly stand-alone, e.g. in a future PR5 tooltip) — this
+ * is the one place that turns two such clauses into one grammatical
+ * sentence, joined by a semicolon with the second clause lowercased,
+ * matching every canonical example (e.g. "Contributions totaled 1,240; the
+ * top 10 members accounted for 62% of the total."), never two sentences.
+ */
+function joinFacts(fact1: string, fact2: string | null): string {
+  if (!fact2) return fact1;
+  const clause1 = stripTrailingPeriod(fact1);
+  const clause2 = lowercaseFirstLetter(stripTrailingPeriod(fact2));
+  return `${clause1}; ${clause2}.`;
+}
+
+function stripTrailingPeriod(text: string): string {
+  return text.endsWith(".") ? text.slice(0, -1) : text;
+}
+
+function lowercaseFirstLetter(text: string): string {
+  return text.length === 0 ? text : text.charAt(0).toLowerCase() + text.slice(1);
 }
 
 function pluralize(count: number, singular: string, plural: string): string {
@@ -174,6 +216,50 @@ function pickModalBin(bins: DistributionBin[]): DistributionBin {
   return bins.reduce((best, bin) => (bin.count > best.count ? bin : best));
 }
 
+/**
+ * True only when exactly one bin holds the max count, *and* that count
+ * exceeds what an even (uniform) spread across all bins would produce. A
+ * tie for the max, or a max that's at or below the uniform baseline, means
+ * there's no real evidence of concentration — just a flat, uniform, or
+ * sparse distribution — so `buildNumericDistributionFact` must not label
+ * it "concentrated."
+ */
+function isGenuineConcentration(bins: DistributionBin[], modalBin: DistributionBin, validCount: number): boolean {
+  const tiedForMax = bins.filter((bin) => bin.count === modalBin.count).length;
+  if (tiedForMax !== 1) return false;
+  const uniformBaseline = validCount / bins.length;
+  return modalBin.count > uniformBaseline;
+}
+
+/**
+ * The NONE+NUMERIC baseline fact1 — states a real concentration only when
+ * `isGenuineConcentration` finds actual evidence for one; otherwise falls
+ * back to a neutral full-range statement rather than mislabeling a flat,
+ * tied, or uniform spread as "concentrated" somewhere it merely happens to
+ * have (at most) the largest bin.
+ */
+function buildNumericDistributionFact(bins: DistributionBin[], validCount: number, unitLabel: string | null): string {
+  const modalBin = pickModalBin(bins);
+  // A zero-width bin only occurs when every valid value is identical
+  // (buildDistributionBins' single-bin case) — "concentrated between X and
+  // X" reads as a typo, not a real range, so state it plainly.
+  if (modalBin.rangeStart === modalBin.rangeEnd) {
+    return `Every recorded value was ${formatBoundary(modalBin.rangeStart, unitLabel)}.`;
+  }
+  if (bins.length > 1 && !isGenuineConcentration(bins, modalBin, validCount)) {
+    const overallMin = bins[0]!.rangeStart;
+    const overallMax = bins[bins.length - 1]!.rangeEnd;
+    return `Values ranged from ${formatBoundary(overallMin, unitLabel)} to ${formatBoundary(
+      overallMax,
+      unitLabel,
+    )}, without a clear concentration.`;
+  }
+  return `Values were concentrated between ${formatBoundary(modalBin.rangeStart, unitLabel)} and ${formatBoundary(
+    modalBin.rangeEnd,
+    unitLabel,
+  )}.`;
+}
+
 function buildYesNoFact(trueCount: number, validCount: number): string {
   if (validCount === 0) return "No valid Yes/No responses have been recorded this period.";
   return `${trueCount} of ${validCount} valid ${pluralize(validCount, "response was", "responses were")} Yes.`;
@@ -201,8 +287,22 @@ function buildBaselineFacts(params: {
       }
       // A caveat replaces the bare total whenever it would otherwise be
       // interpreted as a meaningful per-member share — mirrors
-      // `computeShareAvailability`'s own unavailability reasons.
+      // `computeShareAvailability`'s own unavailability reasons. Negative
+      // values alone don't mean the cohort is genuinely *mixed*-sign: if
+      // every valid value is negative (or zero-and-negative, no positives
+      // at all), "positive and negative contributions offset" would be
+      // false — there's nothing positive to offset against. Distinguish
+      // the two using the visual model's own selected contributors, which
+      // (per `selectTopContributorRows`) are guaranteed to include at
+      // least one positive value whenever one exists in the cohort.
       if (rollup.hasNegativeValues) {
+        const hasPositiveValues = visualModel.topContributors.some((contributor) => contributor.value > 0);
+        if (!hasPositiveValues) {
+          return {
+            fact1: `${metricName} had no positive contributions this period, so no member share is meaningful.`,
+            distributionFact: null,
+          };
+        }
         return {
           fact1: "Positive and negative contributions offset each other, so member shares are not meaningful.",
           distributionFact: null,
@@ -289,17 +389,7 @@ function buildBaselineFacts(params: {
       if (visualModel.validCount === 0 || visualModel.bins.length === 0) {
         return { fact1: `${metricName} has no valid results this period.`, distributionFact };
       }
-      const modalBin = pickModalBin(visualModel.bins);
-      // A zero-width bin only occurs when every valid value is identical
-      // (buildDistributionBins' single-bin case) — "concentrated between X
-      // and X" reads as a typo, not a real range, so state it plainly.
-      const fact1 =
-        modalBin.rangeStart === modalBin.rangeEnd
-          ? `Every recorded value was ${formatBoundary(modalBin.rangeStart, unitLabel)}.`
-          : `Values were concentrated between ${formatBoundary(modalBin.rangeStart, unitLabel)} and ${formatBoundary(
-              modalBin.rangeEnd,
-              unitLabel,
-            )}.`;
+      const fact1 = buildNumericDistributionFact(visualModel.bins, visualModel.validCount, unitLabel);
       return { fact1, distributionFact };
     }
   }
