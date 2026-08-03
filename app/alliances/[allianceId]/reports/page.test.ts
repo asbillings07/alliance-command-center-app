@@ -39,6 +39,11 @@ vi.mock("@/app/src/lib/reports/getAlliancePerformanceReport", () => ({
   ALLIANCE_PERFORMANCE_REPORT_SCHEMA_VERSION: 2,
 }));
 
+vi.mock("@/app/src/lib/reports/getAllianceMemberMetricMatrix", () => ({
+  getAllianceMemberMetricMatrix: vi.fn(),
+  MATRIX_MAX_COLUMNS: 6,
+}));
+
 import { notFound } from "next/navigation";
 import { isFeatureEnabled } from "@/app/src/lib/features";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
@@ -48,6 +53,7 @@ import {
   AlliancePerformanceReportNotFoundError,
   ALLIANCE_PERFORMANCE_REPORT_SCHEMA_VERSION,
 } from "@/app/src/lib/reports/getAlliancePerformanceReport";
+import { getAllianceMemberMetricMatrix } from "@/app/src/lib/reports/getAllianceMemberMetricMatrix";
 import ReportsIndexPage from "./page";
 
 const viewerAuth = { permissions: { canConfigurePeriods: false, canConfigureMetrics: false } } as unknown as Awaited<
@@ -74,10 +80,26 @@ function emptyReport(overrides: Partial<Awaited<ReturnType<typeof getAlliancePer
   };
 }
 
+function emptyMatrix(overrides: Partial<Awaited<ReturnType<typeof getAllianceMemberMetricMatrix>>> = {}) {
+  return {
+    columns: [],
+    availableColumns: [],
+    rows: [],
+    pagination: { page: 1, pageSize: 25, totalRowCount: 0 },
+    sort: { kind: "name" as const, direction: "asc" as const },
+    filter: "active" as const,
+    search: "",
+    ...overrides,
+  };
+}
+
 describe("ReportsIndexPage (Server Page) — alliance performance overview (#264)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(requireAllianceAccess).mockResolvedValue(viewerAuth);
+    vi.mocked(getAllianceMemberMetricMatrix).mockResolvedValue(
+      emptyMatrix() as unknown as Awaited<ReturnType<typeof getAllianceMemberMetricMatrix>>,
+    );
   });
 
   it("fails closed with notFound() when the reports feature flag is off, before any auth/DB work happens", async () => {
@@ -412,5 +434,123 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
       "Donations had no recorded results in the comparison period, so no change could be measured.",
     );
     expect(html).toContain('data-testid="alliance-finding-met_1-COMPARISON_UNAVAILABLE"');
+  });
+
+  it("builds the matrix from the report's own metric universe/order and renders the member matrix section", async () => {
+    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
+    vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
+      emptyReport({
+        metrics: [
+          {
+            metric: { id: "met_1", name: "Donations", type: "NUMERIC", summaryKind: "SUM", unitLabel: "pts", active: true, trendDirection: "NEUTRAL" },
+            attachmentStatus: "ACTIVE",
+            dataStatus: "HAS_VALUES",
+            rollup: { kind: "SUM", total: 500, hasNegativeValues: false },
+            coverage: {
+              currentActiveMemberCount: 10,
+              recordedActiveMemberCount: 10,
+              invalidActiveMemberCount: 0,
+              missingActiveMemberCount: 0,
+              complete: true,
+              archivedContributingMemberCount: 0,
+            },
+            comparison: null,
+          },
+        ],
+      }) as unknown as Awaited<ReturnType<typeof getAlliancePerformanceReport>>,
+    );
+    vi.mocked(getAllianceMemberMetricMatrix).mockResolvedValue(
+      emptyMatrix({
+        columns: [
+          { id: "met_1", name: "Donations", type: "NUMERIC", unitLabel: "pts", attachmentStatus: "ACTIVE", metricActive: true },
+        ],
+        availableColumns: [
+          { id: "met_1", name: "Donations", type: "NUMERIC", unitLabel: "pts", attachmentStatus: "ACTIVE", metricActive: true },
+        ],
+        rows: [
+          {
+            allianceMemberId: "member_1",
+            playerName: "Alice",
+            archived: false,
+            cells: [{ metricId: "met_1", status: "VALUE", value: 500 }],
+          },
+        ],
+        pagination: { page: 1, pageSize: 25, totalRowCount: 1 },
+      }) as unknown as Awaited<ReturnType<typeof getAllianceMemberMetricMatrix>>,
+    );
+
+    const page = await ReportsIndexPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({ matrixColumns: "met_1", matrixSearch: "ali" }),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(getAllianceMemberMetricMatrix).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allianceId: "all_1",
+        periodId: "per_1",
+        candidates: [
+          { id: "met_1", name: "Donations", type: "NUMERIC", unitLabel: "pts", attachmentStatus: "ACTIVE", metricActive: true },
+        ],
+        requestedColumnIds: ["met_1"],
+        search: "ali",
+      }),
+    );
+    expect(html).toContain('data-testid="alliance-member-matrix"');
+    expect(html).toContain("Alice");
+  });
+
+  it("carries the metric's own archived state into the matrix candidates, independent of attachmentStatus", async () => {
+    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
+    vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
+      emptyReport({
+        metrics: [
+          {
+            // Archived at the metric level, but still ACTIVE-attached with
+            // results this period (the report's own inclusion rule keeps
+            // it visible) — the matrix must not collapse this into "active".
+            metric: {
+              id: "met_1",
+              name: "Retired Metric",
+              type: "NUMERIC",
+              summaryKind: "SUM",
+              unitLabel: "pts",
+              active: false,
+              trendDirection: "NEUTRAL",
+            },
+            attachmentStatus: "ACTIVE",
+            dataStatus: "HAS_VALUES",
+            rollup: { kind: "SUM", total: 500, hasNegativeValues: false },
+            coverage: {
+              currentActiveMemberCount: 10,
+              recordedActiveMemberCount: 10,
+              invalidActiveMemberCount: 0,
+              missingActiveMemberCount: 0,
+              complete: true,
+              archivedContributingMemberCount: 0,
+            },
+            comparison: null,
+          },
+        ],
+      }) as unknown as Awaited<ReturnType<typeof getAlliancePerformanceReport>>,
+    );
+    vi.mocked(getAllianceMemberMetricMatrix).mockResolvedValue(
+      emptyMatrix() as unknown as Awaited<ReturnType<typeof getAllianceMemberMetricMatrix>>,
+    );
+
+    await ReportsIndexPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({}),
+    });
+
+    expect(getAllianceMemberMetricMatrix).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidates: [
+          expect.objectContaining({ id: "met_1", attachmentStatus: "ACTIVE", metricActive: false }),
+        ],
+      }),
+    );
   });
 });

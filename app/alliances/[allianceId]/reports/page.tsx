@@ -7,6 +7,10 @@ import {
   AlliancePerformanceReportNotFoundError,
 } from "@/app/src/lib/reports/getAlliancePerformanceReport";
 import { listAlliancePeriodOptions } from "@/app/src/lib/reports/listAlliancePeriodOptions";
+import {
+  getAllianceMemberMetricMatrix,
+  type MatrixColumnCandidate,
+} from "@/app/src/lib/reports/getAllianceMemberMetricMatrix";
 import { PageLayout, EmptyState } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { AlliancePeriodSelect } from "./AlliancePeriodSelect";
@@ -14,11 +18,21 @@ import { AllianceComparisonControl } from "./AllianceComparisonControl";
 import { AllianceAtAGlanceCards } from "./AllianceAtAGlanceCards";
 import { AllianceFindingsList } from "./AllianceFindingsList";
 import { AllianceMetricPerformanceCard } from "./AllianceMetricPerformanceCard";
+import { AllianceMemberMatrixSection } from "./AllianceMemberMatrixSection";
 import { computeAllianceFindings } from "@/app/src/lib/reports/allianceFindings";
 
 type Params = {
   params: Promise<{ allianceId: string }>;
-  searchParams: Promise<{ periodId?: string; comparePeriodId?: string }>;
+  searchParams: Promise<{
+    periodId?: string;
+    comparePeriodId?: string;
+    matrixColumns?: string;
+    matrixFilter?: string;
+    matrixSearch?: string;
+    matrixSort?: string;
+    matrixSortDir?: string;
+    matrixPage?: string;
+  }>;
 };
 
 const breadcrumbFor = (allianceId: string) => [
@@ -134,6 +148,32 @@ export default async function ReportsIndexPage({ params, searchParams }: Params)
 
   const findings = computeAllianceFindings(report.metrics);
 
+  // Reuses the report's own metric universe/order (active first, then name,
+  // then id) as the matrix's candidate columns, rather than re-querying it —
+  // guarantees "anything on the report can be a matrix column" by
+  // construction, and avoids a second, potentially-inconsistent metric query.
+  const matrixCandidates: MatrixColumnCandidate[] = report.metrics.map(({ metric, attachmentStatus }) => ({
+    id: metric.id,
+    name: metric.name,
+    type: metric.type,
+    unitLabel: metric.unitLabel,
+    attachmentStatus,
+    metricActive: metric.active,
+  }));
+
+  const requestedMatrixColumnIds = sp.matrixColumns?.split(",").filter(Boolean);
+  const matrix = await getAllianceMemberMetricMatrix({
+    allianceId,
+    periodId: report.period.id,
+    candidates: matrixCandidates,
+    requestedColumnIds: requestedMatrixColumnIds,
+    filter: sp.matrixFilter,
+    search: sp.matrixSearch,
+    sort: sp.matrixSort,
+    sortDirection: sp.matrixSortDir,
+    page: sp.matrixPage ? Number(sp.matrixPage) : undefined,
+  });
+
   return (
     <PageLayout
       breadcrumb={breadcrumbFor(allianceId)}
@@ -175,6 +215,13 @@ export default async function ReportsIndexPage({ params, searchParams }: Params)
             />
           ))}
         </div>
+
+        <AllianceMemberMatrixSection
+          allianceId={allianceId}
+          periodId={report.period.id}
+          comparePeriodId={resolvedComparePeriodId}
+          matrix={matrix}
+        />
       </div>
     </PageLayout>
   );
