@@ -114,25 +114,39 @@ export function formatAverageMarkerLabel(average: number, unitLabel: string | nu
 
 /**
  * Roughly 1 glyph-width per 5.5 SVG units at the marker label's 10px font
- * size — deliberately approximate rather than a live DOM measurement, so
- * the geometry stays deterministic and server-renderable (matches
- * `HistogramSvg`'s coordinate-math-only contract). Only needs to be "wide
- * enough," not exact: it just has to keep the label from clipping.
+ * size. This is only a *starting estimate* for how wide the label would
+ * render naturally — unitLabel is arbitrary user text up to
+ * `METRIC_UNIT_LABEL_MAX_LENGTH` (24) characters, and a per-character
+ * average can't bound the true rendered width of unknown glyphs (24 wide
+ * characters can render considerably wider than 24 narrow ones). The actual
+ * no-clipping guarantee below does not depend on this number being
+ * accurate — see `clampAverageMarkerLabelPosition`.
  */
 const AVERAGE_MARKER_CHAR_WIDTH = 5.5;
 
 export type AverageMarkerLabelPosition = {
   x: number;
   textAnchor: "start" | "middle" | "end";
+  /**
+   * Forces the *rendered* width of the `<text>` element via SVG's
+   * `textLength` (paired with `lengthAdjust="spacingAndGlyphs"` on the
+   * caller's `<text>`), independent of the label's actual glyph widths.
+   * This is what makes the guarantee hold regardless of font metrics or
+   * unitLabel content — `x`/`textAnchor` are computed against this exact
+   * number, not the estimate that produced it, so even if the estimate
+   * badly undershoots a wide-glyph label's true natural width, the browser
+   * compresses it to fit `textLength` instead of overflowing.
+   */
+  textLength: number;
 };
 
 /**
  * Clamps the average marker's text label to stay within the SVG's
- * horizontal bounds. The marker *line* always sits at the mathematically
- * exact average position — only the *label*, which `textAnchor="middle"`
- * would otherwise center on that same point, shifts anchor near an edge so
- * a skewed cohort (average near the domain's min or max) can't push the
- * label outside the viewBox.
+ * horizontal bounds, *provably* — not just "in the common case." The
+ * marker *line* always sits at the mathematically exact average position;
+ * the *label* gets both a safe anchor/x (below) and a hard `textLength` cap
+ * so the browser never renders it wider than the space actually reserved
+ * for it, however wide its real glyphs turn out to be.
  */
 export function clampAverageMarkerLabelPosition(
   markerX: number,
@@ -140,12 +154,20 @@ export function clampAverageMarkerLabelPosition(
   viewboxWidth: number,
   padding: number,
 ): AverageMarkerLabelPosition {
-  const halfLabelWidth = (label.length * AVERAGE_MARKER_CHAR_WIDTH) / 2;
+  const safeMaxWidth = viewboxWidth - 2 * padding;
+  const estimatedWidth = label.length * AVERAGE_MARKER_CHAR_WIDTH;
+  // Capping to safeMaxWidth here — not just using the estimate — is what
+  // keeps the guarantee independent of the estimate's accuracy: whatever
+  // width the browser is told to render (via textLength below), it is
+  // never more than what's actually available in the viewBox.
+  const textLength = Math.min(estimatedWidth, safeMaxWidth);
+  const halfLabelWidth = textLength / 2;
+
   if (markerX - halfLabelWidth < padding) {
-    return { x: padding, textAnchor: "start" };
+    return { x: padding, textAnchor: "start", textLength };
   }
   if (markerX + halfLabelWidth > viewboxWidth - padding) {
-    return { x: viewboxWidth - padding, textAnchor: "end" };
+    return { x: viewboxWidth - padding, textAnchor: "end", textLength };
   }
-  return { x: markerX, textAnchor: "middle" };
+  return { x: markerX, textAnchor: "middle", textLength };
 }

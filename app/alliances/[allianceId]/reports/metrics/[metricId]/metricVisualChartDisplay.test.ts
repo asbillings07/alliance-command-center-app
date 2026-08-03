@@ -180,10 +180,22 @@ describe("formatBinRangeLabel", () => {
 describe("clampAverageMarkerLabelPosition", () => {
   const VIEWBOX_WIDTH = 320;
   const PADDING = 6;
+  const SAFE_MAX_WIDTH = VIEWBOX_WIDTH - 2 * PADDING;
+
+  /** Every returned position, regardless of branch, must keep [x - textLength/2, x + textLength/2] (or the equivalent start/end box) within [PADDING, VIEWBOX_WIDTH - PADDING]. */
+  function expectNoOverflow(position: ReturnType<typeof clampAverageMarkerLabelPosition>) {
+    const { x, textAnchor, textLength } = position;
+    const left = textAnchor === "start" ? x : textAnchor === "end" ? x - textLength : x - textLength / 2;
+    const right = left + textLength;
+    expect(left).toBeGreaterThanOrEqual(PADDING - 1e-9);
+    expect(right).toBeLessThanOrEqual(VIEWBOX_WIDTH - PADDING + 1e-9);
+  }
 
   it("centers the label on the marker when there's room on both sides", () => {
     const position = clampAverageMarkerLabelPosition(160, "Average: 7.4 pts", VIEWBOX_WIDTH, PADDING);
-    expect(position).toEqual({ x: 160, textAnchor: "middle" });
+    expect(position.x).toBe(160);
+    expect(position.textAnchor).toBe("middle");
+    expectNoOverflow(position);
   });
 
   it("anchors the label to the left edge instead of clipping when the marker sits near the domain minimum", () => {
@@ -192,17 +204,51 @@ describe("clampAverageMarkerLabelPosition", () => {
     const position = clampAverageMarkerLabelPosition(6, "Average: 1,234.5678 pts", VIEWBOX_WIDTH, PADDING);
     expect(position.textAnchor).toBe("start");
     expect(position.x).toBe(PADDING);
+    expectNoOverflow(position);
   });
 
   it("anchors the label to the right edge instead of clipping when the marker sits near the domain maximum", () => {
     const position = clampAverageMarkerLabelPosition(314, "Average: 1,234.5678 pts", VIEWBOX_WIDTH, PADDING);
     expect(position.textAnchor).toBe("end");
     expect(position.x).toBe(VIEWBOX_WIDTH - PADDING);
+    expectNoOverflow(position);
   });
 
   it("keeps a short label centered close to an edge, as long as it genuinely fits without clipping", () => {
     const position = clampAverageMarkerLabelPosition(50, "Average: 5", VIEWBOX_WIDTH, PADDING);
-    expect(position).toEqual({ x: 50, textAnchor: "middle" });
+    expect(position.x).toBe(50);
+    expect(position.textAnchor).toBe("middle");
+    expectNoOverflow(position);
+  });
+
+  it("never overflows for a maximum-length (24-char) unit label, even one the per-character estimate would badly underestimate", () => {
+    // "W" repeated 24 times is exactly METRIC_UNIT_LABEL_MAX_LENGTH, and
+    // renders considerably wider per-glyph than the 5.5px/char estimate in
+    // most fonts. If the guarantee depended on that estimate being
+    // accurate, this case would clip; it doesn't, because textLength caps
+    // the *actual rendered width* independent of the estimate.
+    const wideUnitLabel = "W".repeat(24);
+    const label = `Average: -999,999.99 ${wideUnitLabel}`;
+
+    for (const markerX of [6, 50, 160, 270, 314]) {
+      const position = clampAverageMarkerLabelPosition(markerX, label, VIEWBOX_WIDTH, PADDING);
+      expectNoOverflow(position);
+    }
+  });
+
+  it("caps textLength at the viewBox's full safe width, never exceeding what's actually available", () => {
+    // Estimated width (5.5px/char) comfortably exceeds SAFE_MAX_WIDTH (308)
+    // at this length, so the cap — not the raw estimate — determines
+    // textLength.
+    const veryLongLabel = "Average: " + "X".repeat(60);
+    const position = clampAverageMarkerLabelPosition(160, veryLongLabel, VIEWBOX_WIDTH, PADDING);
+    expect(position.textLength).toBe(SAFE_MAX_WIDTH);
+  });
+
+  it("sets textLength to the label's estimated natural width when it comfortably fits, not an arbitrary cap", () => {
+    const position = clampAverageMarkerLabelPosition(160, "Average: 7.4 pts", VIEWBOX_WIDTH, PADDING);
+    expect(position.textLength).toBeLessThan(SAFE_MAX_WIDTH);
+    expect(position.textLength).toBeGreaterThan(0);
   });
 });
 

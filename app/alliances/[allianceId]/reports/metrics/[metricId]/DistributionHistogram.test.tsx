@@ -104,9 +104,42 @@ describe("AverageDistributionChart", () => {
     // The line still sits at the mathematically exact average position...
     const line = marker.querySelector("line")!;
     expect(Number(line.getAttribute("x1"))).toBeLessThan(10);
-    // ...but the label's own x/anchor keep it from clipping the left edge.
+    // ...but the label's own x/anchor keep it from clipping the left edge,
+    // and textLength forces the *rendered* width to match — the guarantee
+    // that actually prevents clipping, independent of the label's real
+    // glyph widths.
     expect(text.getAttribute("text-anchor")).toBe("start");
     expect(Number(text.getAttribute("x"))).toBeGreaterThanOrEqual(0);
+    expect(text.getAttribute("lengthAdjust")).toBe("spacingAndGlyphs");
+    expect(Number(text.getAttribute("textLength"))).toBeGreaterThan(0);
+  });
+
+  it("never overflows the SVG for a maximum-length unit label made of glyphs wider than the width estimate assumes", async () => {
+    // A 24-char unit label of "W"s (METRIC_UNIT_LABEL_MAX_LENGTH) renders
+    // considerably wider per-glyph than the marker label's per-character
+    // width estimate in most fonts. textLength must still cap the actual
+    // rendered width so this can never clip, regardless.
+    const model = averageModel({
+      average: 1,
+      bins: [
+        { rangeStart: 0, rangeEnd: 166.67, count: 14 },
+        { rangeStart: 166.67, rangeEnd: 333.33, count: 1 },
+        { rangeStart: 333.33, rangeEnd: 500, count: 0 },
+        { rangeStart: 500, rangeEnd: 666.67, count: 0 },
+        { rangeStart: 666.67, rangeEnd: 833.33, count: 0 },
+        { rangeStart: 833.33, rangeEnd: 1000, count: 0 },
+      ],
+      validCount: 15,
+    });
+    const wideUnitLabel = "W".repeat(24);
+    await mount(createElement(AverageDistributionChart, { visualModel: model, unitLabel: wideUnitLabel }));
+
+    const marker = container.querySelector("[data-testid='average-histogram-average-marker']")!;
+    const text = marker.querySelector("text")!;
+    expect(text.getAttribute("text-anchor")).toBe("start");
+    // The enforced width never exceeds the viewBox's full safe area
+    // (VIEWBOX_WIDTH=320, BAR_AREA_X=6 padding on each side => 308).
+    expect(Number(text.getAttribute("textLength"))).toBeLessThanOrEqual(308);
   });
 
   it("clamps the average marker's text label so a skewed cohort can't clip it off the right edge of the SVG", async () => {

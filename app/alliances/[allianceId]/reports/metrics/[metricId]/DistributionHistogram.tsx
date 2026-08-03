@@ -79,7 +79,12 @@ function HistogramSvg({
           // (average close to the domain's min or max) can't clip
           // "Average: X" outside the viewBox.
           const label = formatAverageMarkerLabel(average!, unitLabel);
-          const { x: labelX, textAnchor } = clampAverageMarkerLabelPosition(markerX, label, VIEWBOX_WIDTH, BAR_AREA_X);
+          const { x: labelX, textAnchor, textLength } = clampAverageMarkerLabelPosition(
+            markerX,
+            label,
+            VIEWBOX_WIDTH,
+            BAR_AREA_X,
+          );
           return (
             <g data-testid={`${testId}-average-marker`}>
               <line
@@ -91,7 +96,26 @@ function HistogramSvg({
                 strokeWidth={1.5}
                 strokeDasharray="3,2"
               />
-              <text x={labelX} y={7} textAnchor={textAnchor} fontSize={10} fill="var(--text-primary)" fontWeight={600}>
+              {/*
+               * textLength + lengthAdjust force the browser to render this
+               * text at exactly `textLength` wide, compressing glyph
+               * spacing if the label's natural width would be larger. That
+               * — not the AVERAGE_MARKER_CHAR_WIDTH estimate that produced
+               * `textLength` — is what actually guarantees an arbitrary
+               * unitLabel (any glyphs, up to 24 chars) can't clip outside
+               * the viewBox: the position math above was computed against
+               * this same enforced number.
+               */}
+              <text
+                x={labelX}
+                y={7}
+                textAnchor={textAnchor}
+                textLength={textLength}
+                lengthAdjust="spacingAndGlyphs"
+                fontSize={10}
+                fill="var(--text-primary)"
+                fontWeight={600}
+              >
                 {label}
               </text>
             </g>
