@@ -2,12 +2,47 @@ import "server-only";
 import { Prisma } from "@/app/generated/prisma/client";
 import { Metric_Type, MetricSummaryKind, MetricTrendDirection } from "@/app/generated/prisma/enums";
 import { prisma } from "@/app/src/lib/prisma";
-import { isValidBooleanMetricValue } from "@/app/src/lib/metrics/booleanMetricValue";
 import {
   resolveComparisonPeriodSelection,
   type ComparablePeriodCandidate,
   type EligiblePeriodOption,
 } from "@/app/src/lib/reports/resolveComparablePeriod";
+import {
+  buildMetricReportRow,
+  buildMetricRollup,
+  computeRollupChange,
+  computeShareAvailability,
+  mapAggregateRow,
+  type AggregateRawRow,
+  type AggregateSnapshot,
+  type BooleanRowStatus,
+  type MetricCoverage,
+  type MetricRollup,
+  type MetricShareAvailability,
+} from "@/app/src/lib/reports/metricRollup";
+import { buildMetricVisualModel, type MetricVisualModel, type VisualCohortRow } from "@/app/src/lib/reports/metricVisualModel";
+import { buildMetricInterpretationSummary } from "@/app/src/lib/reports/metricInterpretationSummary";
+
+// Re-exported so every existing importer of these previously-local
+// names (tests, getAlliancePerformanceReport.ts) keeps working unchanged —
+// only their *definition* moved to metricRollup.ts (#264 PR4), to give
+// metricVisualModel.ts's pure builders a server-only-free home for the
+// same rollup math, mirroring the allianceMemberMatrix.ts split (PR3).
+export {
+  buildMetricReportRow,
+  buildMetricRollup,
+  computeRollupChange,
+  computeShareAvailability,
+  mapAggregateRow,
+  type AggregateRawRow,
+  type AggregateSnapshot,
+  type BooleanRowStatus,
+  type MetricCoverage,
+  type MetricRollup,
+  type MetricShareAvailability,
+};
+export { computeDifferenceFromAverage, computeBooleanRowStatus } from "@/app/src/lib/reports/metricRollup";
+export type { MetricVisualModel } from "@/app/src/lib/reports/metricVisualModel";
 
 /**
  * Generic per-metric summary report read model (#190).
@@ -78,24 +113,8 @@ export type PeriodInfo = {
 export type MetricPeriodAttachmentStatus = "NOT_ATTACHED" | "ACTIVE" | "INACTIVE";
 export type MetricPeriodDataStatus = "NO_VALUES" | "HAS_VALUES";
 
-export type MetricShareAvailability =
-  | { available: true; percentageOfTotal: number }
-  | { available: false; reason: "NON_POSITIVE_TOTAL" | "NEGATIVE_VALUES_PRESENT" };
-
-export type MetricRollup =
-  | { kind: "SUM"; total: number; hasNegativeValues: boolean }
-  | { kind: "AVERAGE"; average: number | null }
-  | {
-      kind: "TRUE_RATE";
-      trueCount: number;
-      falseCount: number;
-      invalidCount: number;
-      /** Percentage of valid (0/1) entries that were `1`. Null if none are valid. */
-      trueRate: number | null;
-    }
-  | { kind: "NONE" };
-
-export type BooleanRowStatus = "TRUE" | "FALSE" | "INVALID" | "MISSING";
+// MetricShareAvailability, MetricRollup, BooleanRowStatus now live in
+// metricRollup.ts and are re-exported above.
 
 export type MetricReportRow = {
   allianceMemberId: string;
@@ -112,15 +131,7 @@ export type MetricReportRow = {
   differenceFromAverage: number | null;
 };
 
-export type MetricCoverage = {
-  currentActiveMemberCount: number;
-  recordedActiveMemberCount: number;
-  invalidActiveMemberCount: number;
-  missingActiveMemberCount: number;
-  complete: boolean;
-  /** Archived members who recorded a value this period, whether or not the current filter shows them. */
-  archivedContributingMemberCount: number;
-};
+// MetricCoverage now lives in metricRollup.ts and is re-exported above.
 
 export type MetricSummaryComparison =
   | { status: "NO_ELIGIBLE_PERIOD" }
@@ -169,6 +180,10 @@ export type MetricSummaryReport = {
   coverage: MetricCoverage;
   /** Null only when `metric.summaryKind === "NONE"` — there is no rollup to compare. */
   comparison: MetricSummaryComparison | null;
+  /** #264 PR4 — the bounded, full-cohort chart model. Independent of `rows`'/`pagination`'s roster search/filter/sort/pagination. */
+  visualModel: MetricVisualModel;
+  /** #264 PR4 — the deterministic "what this tells you" one-sentence takeaway. See metricInterpretationSummary.ts for its priority rules. */
+  interpretationSummary: string;
   rows: MetricReportRow[];
   pagination: { page: number; pageSize: number; totalRowCount: number };
   sort: MetricReportSort;
@@ -232,202 +247,14 @@ export function buildSearchPattern(raw: string | undefined | null): string {
   return bounded ? `%${escapeIlikePattern(bounded)}%` : "";
 }
 
-export type AggregateSnapshot = {
-  sumValue: number;
-  averageValue: number | null;
-  trueCount: number;
-  falseCount: number;
-  invalidCount: number;
-  hasNegativeValues: boolean;
-  currentActiveMemberCount: number;
-  recordedActiveMemberCount: number;
-  invalidActiveMemberCount: number;
-  missingActiveMemberCount: number;
-  archivedContributingMemberCount: number;
-  latestEntryCount: number;
-};
-
-/**
- * Builds the metric's configured rollup shape from a raw aggregate snapshot.
- * `summaryKind` alone decides the shape — the metric's `type` never leaks in
- * here, matching the (type, summaryKind) compatibility matrix that already
- * makes `SUM`/`AVERAGE` <-> NUMERIC and `TRUE_RATE` <-> BOOLEAN exclusive.
- */
-export function buildMetricRollup(
-  summaryKind: MetricSummaryKind,
-  aggregate: AggregateSnapshot,
-): MetricRollup {
-  switch (summaryKind) {
-    case MetricSummaryKind.SUM:
-      return { kind: "SUM", total: aggregate.sumValue, hasNegativeValues: aggregate.hasNegativeValues };
-    case MetricSummaryKind.AVERAGE:
-      return { kind: "AVERAGE", average: aggregate.averageValue };
-    case MetricSummaryKind.TRUE_RATE: {
-      const validCount = aggregate.trueCount + aggregate.falseCount;
-      return {
-        kind: "TRUE_RATE",
-        trueCount: aggregate.trueCount,
-        falseCount: aggregate.falseCount,
-        invalidCount: aggregate.invalidCount,
-        trueRate: validCount > 0 ? (aggregate.trueCount / validCount) * 100 : null,
-      };
-    }
-    case MetricSummaryKind.NONE:
-    default:
-      return { kind: "NONE" };
-  }
-}
-
-/**
- * Percentage-of-total is only available when both the total is positive and
- * every valid value in the full cohort is non-negative. A single negative
- * value anywhere (e.g. member A: -10, member B: 110, total: 100) produces
- * mathematically valid but semantically misleading percentages, so it's
- * treated as unavailable rather than computed.
- */
-export function computeShareAvailability(
-  value: number,
-  rollup: MetricRollup,
-): MetricShareAvailability | null {
-  if (rollup.kind !== "SUM") return null;
-  if (rollup.hasNegativeValues) return { available: false, reason: "NEGATIVE_VALUES_PRESENT" };
-  if (rollup.total <= 0) return { available: false, reason: "NON_POSITIVE_TOTAL" };
-  return { available: true, percentageOfTotal: (value / rollup.total) * 100 };
-}
-
-export function computeDifferenceFromAverage(value: number, rollup: MetricRollup): number | null {
-  if (rollup.kind !== "AVERAGE" || rollup.average === null) return null;
-  return value - rollup.average;
-}
-
-export function computeBooleanRowStatus(value: number | null): BooleanRowStatus {
-  if (value === null) return "MISSING";
-  if (!isValidBooleanMetricValue(value)) return "INVALID";
-  return value === 1 ? "TRUE" : "FALSE";
-}
-
-/**
- * Shapes one roster row into its final report form. Ranking is excluded for
- * TRUE_RATE (status only, not a competition) even though the SQL always
- * computes it for every metric with valid numeric values.
- */
-export function buildMetricReportRow(params: {
-  allianceMemberId: string;
-  playerName: string;
-  archived: boolean;
-  value: number | null;
-  rank: number | null;
-  metricType: Metric_Type;
-  summaryKind: MetricSummaryKind;
-  rollup: MetricRollup;
-}): MetricReportRow {
-  const { allianceMemberId, playerName, archived, value, rank, metricType, summaryKind, rollup } = params;
-
-  const booleanStatus = metricType === Metric_Type.BOOLEAN ? computeBooleanRowStatus(value) : null;
-  const effectiveRank = summaryKind === MetricSummaryKind.TRUE_RATE ? null : rank;
-  const share =
-    summaryKind === MetricSummaryKind.SUM && value !== null ? computeShareAvailability(value, rollup) : null;
-  const differenceFromAverage =
-    summaryKind === MetricSummaryKind.AVERAGE && value !== null
-      ? computeDifferenceFromAverage(value, rollup)
-      : null;
-
-  return {
-    allianceMemberId,
-    playerName,
-    archived,
-    value,
-    rank: effectiveRank,
-    booleanStatus,
-    share,
-    differenceFromAverage,
-  };
-}
-
-/**
- * Period-over-period change, always computed from two independently-run
- * rollups (never derived arithmetically from raw per-row deltas). TRUE_RATE
- * expresses its change as a percentage-point difference via `absoluteChange`
- * — `percentageChange` (a "percent change of a percent") isn't meaningful
- * for a rate and is always null.
- */
-export function computeRollupChange(
-  summaryKind: MetricSummaryKind,
-  selected: MetricRollup,
-  comparison: MetricRollup,
-): { absoluteChange: number | null; percentageChange: number | null } {
-  if (summaryKind === MetricSummaryKind.SUM && selected.kind === "SUM" && comparison.kind === "SUM") {
-    const absoluteChange = selected.total - comparison.total;
-    const percentageChange = comparison.total > 0 ? (absoluteChange / comparison.total) * 100 : null;
-    return { absoluteChange, percentageChange };
-  }
-
-  if (
-    summaryKind === MetricSummaryKind.AVERAGE &&
-    selected.kind === "AVERAGE" &&
-    comparison.kind === "AVERAGE"
-  ) {
-    if (selected.average === null || comparison.average === null) {
-      return { absoluteChange: null, percentageChange: null };
-    }
-    const absoluteChange = selected.average - comparison.average;
-    const percentageChange = comparison.average > 0 ? (absoluteChange / comparison.average) * 100 : null;
-    return { absoluteChange, percentageChange };
-  }
-
-  if (
-    summaryKind === MetricSummaryKind.TRUE_RATE &&
-    selected.kind === "TRUE_RATE" &&
-    comparison.kind === "TRUE_RATE"
-  ) {
-    if (selected.trueRate === null || comparison.trueRate === null) {
-      return { absoluteChange: null, percentageChange: null };
-    }
-    return { absoluteChange: selected.trueRate - comparison.trueRate, percentageChange: null };
-  }
-
-  return { absoluteChange: null, percentageChange: null };
-}
+// AggregateSnapshot, buildMetricRollup, computeShareAvailability,
+// computeDifferenceFromAverage, computeBooleanRowStatus,
+// buildMetricReportRow, computeRollupChange, AggregateRawRow, and
+// mapAggregateRow now all live in metricRollup.ts and are re-exported above.
 
 // ---------------------------------------------------------------------------
 // Raw SQL orchestration
 // ---------------------------------------------------------------------------
-
-// Exported so the bulk alliance-wide read model (getAlliancePerformanceReport.ts,
-// #264) can map its own per-metric grouped aggregate rows — same column
-// shape plus a `metric_id` discriminator — through identical logic, rather
-// than re-deriving these Number()/mapping rules a second time.
-export type AggregateRawRow = {
-  sum_value: bigint;
-  avg_value: number | null;
-  true_count: bigint;
-  false_count: bigint;
-  invalid_count: bigint;
-  has_negative_values: boolean;
-  current_active_member_count: bigint;
-  recorded_active_member_count: bigint;
-  invalid_active_member_count: bigint;
-  missing_active_member_count: bigint;
-  archived_contributing_member_count: bigint;
-  latest_entry_count: bigint;
-};
-
-export function mapAggregateRow(row: AggregateRawRow): AggregateSnapshot {
-  return {
-    sumValue: Number(row.sum_value),
-    averageValue: row.avg_value,
-    trueCount: Number(row.true_count),
-    falseCount: Number(row.false_count),
-    invalidCount: Number(row.invalid_count),
-    hasNegativeValues: row.has_negative_values,
-    currentActiveMemberCount: Number(row.current_active_member_count),
-    recordedActiveMemberCount: Number(row.recorded_active_member_count),
-    invalidActiveMemberCount: Number(row.invalid_active_member_count),
-    missingActiveMemberCount: Number(row.missing_active_member_count),
-    archivedContributingMemberCount: Number(row.archived_contributing_member_count),
-    latestEntryCount: Number(row.latest_entry_count),
-  };
-}
 
 /**
  * Rollup + coverage aggregate, computed once against the *entire* cohort
@@ -479,6 +306,66 @@ async function queryAggregate(
     WHERE am."allianceId" = ${allianceId}
   `;
   return mapAggregateRow(rows[0]!);
+}
+
+type VisualizationRawRow = {
+  alliance_member_id: string;
+  player_name: string;
+  archived: boolean;
+  value: number | null;
+};
+
+/**
+ * The bounded, full-cohort row set backing the metric's chart
+ * (`metricVisualModel.ts`'s builders) — #264 PR4. Independent of the
+ * roster's own search/filter/sort/pagination on purpose: a leader
+ * searching the roster for one player must never change what the chart
+ * above it shows for the whole alliance.
+ *
+ * Inclusion mirrors the roster's own "all" filter exactly (every active
+ * member, including a missing value; an archived member only if they
+ * contributed) — see `buildRosterFromWhere` — because that's already the
+ * correct "everyone whose data belongs in an alliance-wide chart this
+ * period" rule; there was no need to invent a second one. Unlike the
+ * roster, this never excludes or nulls out an invalid boolean value (no
+ * `isBooleanMetric` filtering anywhere below): `metricVisualModel.ts`
+ * needs the *raw* value to keep TRUE_RATE/data-quality states honest, and
+ * makes its own decisions about what to do with it.
+ *
+ * Bounded at exactly one row per qualifying member — O(alliance members),
+ * never O(entries) — via the same `latest`-per-member `DISTINCT ON` CTE
+ * used everywhere else in this file, so "latest entry wins" stays defined
+ * in exactly one place.
+ */
+async function queryVisualizationRows(
+  allianceId: string,
+  periodId: string,
+  metricId: string,
+): Promise<VisualCohortRow[]> {
+  const rows = await prisma.$queryRaw<VisualizationRawRow[]>`
+    WITH latest AS (
+      SELECT DISTINCT ON ("allianceMemberId") "allianceMemberId" AS member_id, value
+      FROM "MemberMetricEntry"
+      WHERE "periodId" = ${periodId} AND "metricId" = ${metricId}
+      ORDER BY "allianceMemberId", "recordedAt" DESC, "createdAt" DESC, id DESC
+    )
+    SELECT
+      am.id AS alliance_member_id,
+      am."playerName" AS player_name,
+      (am."archivedAt" IS NOT NULL) AS archived,
+      l.value AS value
+    FROM "AllianceMember" am
+    LEFT JOIN latest l ON l.member_id = am.id
+    WHERE am."allianceId" = ${allianceId}
+      AND (am."archivedAt" IS NULL OR l.value IS NOT NULL)
+    ORDER BY am."playerName" ASC, am.id ASC
+  `;
+  return rows.map((row) => ({
+    allianceMemberId: row.alliance_member_id,
+    playerName: row.player_name,
+    archived: row.archived,
+    value: row.value,
+  }));
 }
 
 type RosterRawRow = {
@@ -787,9 +674,22 @@ export async function getMetricSummaryReport(params: {
     searchPattern,
   };
 
-  const [aggregate, totalRowCount] = await Promise.all([
+  // `queryVisualizationRows` backs SUM/AVERAGE/NONE+NUMERIC charts, which need
+  // per-member values (see metricVisualModel.ts's builders). TRUE_RATE and
+  // NONE+BOOLEAN instead read their visual model straight off `aggregate` —
+  // running the extra full-cohort query for them would have no functional
+  // benefit, only cost.
+  const needsVisualizationRows =
+    metric.summaryKind === MetricSummaryKind.SUM ||
+    metric.summaryKind === MetricSummaryKind.AVERAGE ||
+    (metric.summaryKind === MetricSummaryKind.NONE && !isBooleanMetric);
+
+  const [aggregate, totalRowCount, visualizationRows] = await Promise.all([
     queryAggregate(allianceId, periodId, metricId, isBooleanMetric),
     countRosterRows(rosterParams),
+    needsVisualizationRows
+      ? queryVisualizationRows(allianceId, periodId, metricId)
+      : Promise.resolve<VisualCohortRow[]>([]),
   ]);
 
   const page = resolvePageAgainstTotal(requestedPage, totalRowCount, pageSize);
@@ -842,6 +742,27 @@ export async function getMetricSummaryReport(params: {
     comparePeriodId,
   });
 
+  const visualModel = buildMetricVisualModel({
+    summaryKind: metric.summaryKind,
+    metricType: metric.type,
+    rows: visualizationRows,
+    aggregate,
+  });
+
+  const interpretationSummary = buildMetricInterpretationSummary({
+    metricName: metric.name,
+    unitLabel: metric.unitLabel,
+    summaryKind: metric.summaryKind,
+    metricType: metric.type,
+    trendDirection: metric.trendDirection,
+    attachmentStatus,
+    dataStatus,
+    rollup,
+    coverage,
+    comparison,
+    visualModel,
+  });
+
   return {
     metric: {
       id: metric.id,
@@ -858,6 +779,8 @@ export async function getMetricSummaryReport(params: {
     rollup,
     coverage,
     comparison,
+    visualModel,
+    interpretationSummary,
     rows,
     pagination: { page, pageSize, totalRowCount },
     sort,

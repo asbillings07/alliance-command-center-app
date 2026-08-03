@@ -24,6 +24,11 @@ export function formatMetricValue(value: number, unitLabel?: string | null): For
   const compactNumber = formatPower(value);
   return {
     compact: unitLabel ? `${compactNumber} ${unitLabel}` : compactNumber,
-    exact: value.toLocaleString(),
+    // Explicit locale ("en-US") rather than the runtime default: an
+    // unspecified locale renders differently across environments (e.g. a
+    // decimal comma instead of a thousands comma), which would make the
+    // deterministic interpretation summary's exact wording
+    // (`metricInterpretationSummary.ts`) nondeterministic across servers.
+    exact: value.toLocaleString("en-US"),
   };
 }
