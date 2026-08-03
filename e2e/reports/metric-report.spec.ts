@@ -958,9 +958,18 @@ test.describe("Metric Drill-Down Charts (#264 PR5)", () => {
 
       const chart = page.getByTestId("sum-share-chart");
       await expect(chart).toBeVisible();
-      const box = await chart.boundingBox();
-      expect(box).not.toBeNull();
-      expect(box!.width).toBeLessThanOrEqual(320);
+
+      // A bounding-box check on the chart alone can't detect page- or
+      // descendant-level horizontal overflow: a container's own box stays
+      // at its CSS width even when something inside it (or elsewhere on the
+      // page) pushes wider than the viewport. Comparing the *document's*
+      // scrollWidth to the viewport width is what actually proves nothing
+      // on the page forces horizontal scroll at this width.
+      const { docScrollWidth, viewportWidth } = await page.evaluate(() => ({
+        docScrollWidth: document.documentElement.scrollWidth,
+        viewportWidth: document.documentElement.clientWidth,
+      }));
+      expect(docScrollWidth).toBeLessThanOrEqual(viewportWidth);
     } finally {
       await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id] });
     }
