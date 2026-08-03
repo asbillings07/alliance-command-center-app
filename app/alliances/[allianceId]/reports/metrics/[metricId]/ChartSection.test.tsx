@@ -55,6 +55,26 @@ describe("ChartSection", () => {
     expect(graphicWrapper!.querySelector("[data-testid='decoy-button']")).not.toBeNull();
   });
 
+  it("marks the graphic wrapper inert, as defense-in-depth against an accidental focusable descendant", async () => {
+    await mount();
+
+    // `inert` is belt-and-suspenders on top of aria-hidden: even a genuinely
+    // focusable element placed inside `visual` (the decoy button here) must
+    // never be reachable via Tab. jsdom doesn't implement inert's actual
+    // focus-blocking, so the real-browser behavior is covered by the
+    // "no element inside the chart's decorative graphic is keyboard-
+    // focusable" E2E test — this unit test only guards the attribute itself.
+    const graphicWrapper = container.querySelector("[aria-hidden='true']")!;
+    expect(graphicWrapper.hasAttribute("inert")).toBe(true);
+  });
+
+  it("describes the section via aria-describedby pointing at the visible summary", async () => {
+    await mount();
+
+    const section = container.querySelector("section")!;
+    expect(section.getAttribute("aria-describedby")).toBe("s1");
+  });
+
   it("renders the data table inside an open <details> disclosure by default", async () => {
     await mount();
 

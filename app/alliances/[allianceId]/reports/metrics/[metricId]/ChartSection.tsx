@@ -29,14 +29,23 @@ type Props = {
  */
 export function ChartSection({ titleId, title, summaryId, summary, dataDisclosureLabel, visual, table, testId }: Props) {
   return (
-    <section aria-labelledby={titleId} data-testid={testId}>
+    <section aria-labelledby={titleId} aria-describedby={summaryId} data-testid={testId}>
       <h2 id={titleId} className="text-lg font-semibold text-text-primary mb-2">
         {title}
       </h2>
       <p id={summaryId} className="text-sm text-text-secondary mb-4">
         {summary}
       </p>
-      <div aria-hidden="true">{visual}</div>
+      {/*
+       * `aria-hidden` removes this subtree from the accessibility tree, but
+       * doesn't by itself remove focusable descendants from the tab order in
+       * every browser. `inert` is the defense-in-depth belt-and-suspenders:
+       * none of today's bars/histograms/SVGs contain focusable elements, but
+       * `inert` guarantees that stays true even if one is added later.
+       */}
+      <div aria-hidden="true" inert>
+        {visual}
+      </div>
       <details open className="mt-4">
         <summary className="cursor-pointer text-sm text-text-muted hover:text-text-secondary select-none">
           {dataDisclosureLabel}
