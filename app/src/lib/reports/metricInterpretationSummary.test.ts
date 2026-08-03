@@ -68,7 +68,7 @@ describe("buildMetricInterpretationSummary — unavailable state (priority 1)", 
       rollup: { kind: "SUM", total: 0, hasNegativeValues: false },
       visualModel: { kind: "SUM", shareAvailability: { available: false, reason: "NON_POSITIVE_TOTAL" }, topContributors: [], consideredCount: 0 },
     });
-    expect(text).toBe("Donations's attachment is inactive this period, so there's no data to interpret.");
+    expect(text).toBe("The attachment for Donations is inactive this period, so there's no data to interpret.");
   });
 
   it("reports no results when attached and active but nothing recorded", () => {

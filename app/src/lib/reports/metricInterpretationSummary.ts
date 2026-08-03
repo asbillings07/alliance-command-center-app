@@ -63,7 +63,7 @@ export function buildMetricInterpretationSummary(params: {
     return `${metricName} isn't attached to this period, so there's no data to interpret yet.`;
   }
   if (attachmentStatus === "INACTIVE") {
-    return `${metricName}'s attachment is inactive this period, so there's no data to interpret.`;
+    return `The attachment for ${metricName} is inactive this period, so there's no data to interpret.`;
   }
   if (dataStatus === "NO_VALUES") {
     return `${metricName} has no recorded results yet this period.`;

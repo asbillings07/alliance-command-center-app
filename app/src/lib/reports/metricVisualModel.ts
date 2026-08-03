@@ -129,8 +129,15 @@ export const DISTRIBUTION_BIN_COUNT = 6;
  */
 export function buildDistributionBins(values: number[]): DistributionBin[] {
   if (values.length === 0) return [];
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  // Iterative rather than `Math.min(...values)` / `Math.max(...values)`:
+  // spreading the full cohort into function arguments risks a
+  // call-stack/argument-limit failure at large cohort sizes.
+  let min = values[0]!;
+  let max = values[0]!;
+  for (const value of values) {
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
   if (min === max) {
     return [{ rangeStart: min, rangeEnd: max, count: values.length }];
   }
@@ -160,8 +167,12 @@ function sortedByValueDesc(rows: VisualCohortRow[]): Array<VisualCohortRow & { v
     .filter((row): row is VisualCohortRow & { value: number } => row.value !== null)
     .sort((a, b) => {
       if (b.value !== a.value) return b.value - a.value;
-      if (a.playerName !== b.playerName) return a.playerName.localeCompare(b.playerName);
-      return a.allianceMemberId.localeCompare(b.allianceMemberId);
+      // Explicit locale ("en") rather than the runtime default: an
+      // unspecified locale can collate differently across environments,
+      // which would make this tie-break — and therefore top-10 membership
+      // for exact ties — nondeterministic.
+      if (a.playerName !== b.playerName) return a.playerName.localeCompare(b.playerName, "en");
+      return a.allianceMemberId.localeCompare(b.allianceMemberId, "en");
     });
 }
 
