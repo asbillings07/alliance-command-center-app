@@ -53,16 +53,18 @@ function zeroAggregateRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** Configures the standard call sequence: main aggregate, roster count, roster rows. */
+/** Configures the standard call sequence: main aggregate, roster count, visualization rows, roster rows (#264 PR4 added the third). */
 function mockCoreQueries(params: {
   aggregateRow?: ReturnType<typeof zeroAggregateRow>;
   totalRowCount?: number;
+  visualizationRows?: unknown[];
   rosterRows?: unknown[];
 }) {
-  const { aggregateRow = zeroAggregateRow(), totalRowCount = 0, rosterRows = [] } = params;
+  const { aggregateRow = zeroAggregateRow(), totalRowCount = 0, visualizationRows = [], rosterRows = [] } = params;
   vi.mocked(prisma.$queryRaw)
     .mockResolvedValueOnce([aggregateRow])
     .mockResolvedValueOnce([{ total: BigInt(totalRowCount) }])
+    .mockResolvedValueOnce(visualizationRows)
     .mockResolvedValueOnce(rosterRows);
 }
 
@@ -201,6 +203,88 @@ describe("getMetricSummaryReport orchestration", () => {
     ]);
   });
 
+  describe("visualization (#264 PR4)", () => {
+    it("builds visualModel and interpretationSummary from the dedicated visualization query, independent of the roster's own rows", async () => {
+      vi.mocked(prisma.metric.findFirst).mockResolvedValue(NUMERIC_METRIC as never);
+      vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
+      vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active: true } as never);
+      mockCoreQueries({
+        aggregateRow: zeroAggregateRow({ sum_value: BigInt(1000), latest_entry_count: BigInt(2) }),
+        // The visualization query's cohort deliberately differs from the roster page below it —
+        // this must drive the chart, not the (paginated, possibly filtered) roster rows.
+        visualizationRows: [
+          { alliance_member_id: "m1", player_name: "Alice", archived: false, value: 800 },
+          { alliance_member_id: "m2", player_name: "Bob", archived: false, value: 200 },
+        ],
+        totalRowCount: 1,
+        // Roster page shows only one row (e.g. searched/filtered) — the chart must still see both members.
+        rosterRows: [{ alliance_member_id: "m1", player_name: "Alice", archived: false, value: 800, rank: BigInt(1) }],
+      });
+      vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([]);
+
+      const report = await getMetricSummaryReport({
+        allianceId: ALLIANCE_ID,
+        metricId: METRIC_ID,
+        periodId: PERIOD_ID,
+      });
+
+      expect(report.visualModel).toMatchObject({
+        kind: "SUM",
+        consideredCount: 2,
+        topContributors: [
+          expect.objectContaining({ allianceMemberId: "m1", value: 800 }),
+          expect.objectContaining({ allianceMemberId: "m2", value: 200 }),
+        ],
+      });
+      expect(report.interpretationSummary).toBe(
+        "VS Score totaled 1,000 pts. The top 2 members accounted for 100% of the total.",
+      );
+    });
+
+    it("passes the raw aggregate — not a filtered rows-derived recomputation — into a TRUE_RATE visual model", async () => {
+      vi.mocked(prisma.metric.findFirst).mockResolvedValue({
+        ...NUMERIC_METRIC,
+        type: "BOOLEAN",
+        summaryKind: MetricSummaryKind.TRUE_RATE,
+      } as never);
+      vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
+      vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active: true } as never);
+      mockCoreQueries({
+        aggregateRow: zeroAggregateRow({
+          true_count: BigInt(14),
+          false_count: BigInt(4),
+          invalid_count: BigInt(1),
+          recorded_active_member_count: BigInt(18),
+          missing_active_member_count: BigInt(2),
+          current_active_member_count: BigInt(20),
+          latest_entry_count: BigInt(19),
+        }),
+        // Deliberately empty — TRUE_RATE must not need visualization rows to be correct.
+        visualizationRows: [],
+      });
+      vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([]);
+
+      const report = await getMetricSummaryReport({
+        allianceId: ALLIANCE_ID,
+        metricId: METRIC_ID,
+        periodId: PERIOD_ID,
+      });
+
+      expect(report.visualModel).toEqual({
+        kind: "TRUE_RATE",
+        trueCount: 14,
+        falseCount: 4,
+        invalidCount: 1,
+        recordedActiveMemberCount: 18,
+        missingActiveMemberCount: 2,
+        currentActiveMemberCount: 20,
+      });
+      expect(report.interpretationSummary).toBe(
+        "14 of 18 valid responses were Yes. 2 active members have no recorded response.",
+      );
+    });
+  });
+
   it("clamps an out-of-range requested page down to the last real page before running the row query", async () => {
     vi.mocked(prisma.metric.findFirst).mockResolvedValue({
       ...NUMERIC_METRIC,
@@ -308,7 +392,9 @@ describe("getMetricSummaryReport orchestration", () => {
           periodMetrics: [{ active: true }],
         },
       ] as never);
-      // 4th $queryRaw call = the comparison period's aggregate.
+      // 5th $queryRaw call = the comparison period's aggregate (after the
+      // selected period's aggregate, roster count, visualization rows, and
+      // roster rows).
       vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([zeroAggregateRow()]);
 
       const report = await getMetricSummaryReport({
@@ -347,8 +433,10 @@ describe("getMetricSummaryReport orchestration", () => {
 
       expect(report.dataStatus).toBe("NO_VALUES");
       // Must never reach the comparison-period aggregate query, let alone
-      // compute an absoluteChange/percentageChange against it.
-      expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+      // compute an absoluteChange/percentageChange against it. Exactly 4
+      // calls: selected-period aggregate, roster count, visualization
+      // rows, roster rows.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
       expect(report.comparison).toEqual({
         status: "NO_DATA_IN_SELECTED_PERIOD",
         period: { id: "eligible-period", name: "Week 11" },

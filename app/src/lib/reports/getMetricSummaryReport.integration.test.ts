@@ -596,4 +596,188 @@ describe.skipIf(!runDb)("getMetricSummaryReport [integration]", () => {
       getMetricSummaryReport({ allianceId: allianceB.id, metricId: metric.id, periodId: period.id }),
     ).rejects.toThrow();
   });
+
+  describe("visualization (#264 PR4)", () => {
+    it("includes every active member (missing shown as excluded from ranking) and only a contributing archived member, independent of the roster's own search/filter/sort/pagination", async () => {
+      const alliance = await makeAlliance();
+      const activeContributor = await makeMember(alliance.id, "Zeta Active");
+      const activeMissing = await makeMember(alliance.id, "Yara Missing");
+      const archivedContributor = await makeMember(alliance.id, "Xena Archived Contributor", true);
+      const archivedNonContributor = await makeMember(alliance.id, "Wren Archived Silent", true);
+      const period = await makePeriod(alliance.id, "Week 1");
+      const metric = await makeMetric(alliance.id, "Donations", Metric_Type.NUMERIC, MetricSummaryKind.SUM);
+      await attach(period.id, metric.id);
+
+      await addEntry(activeContributor.id, period.id, metric.id, 100, new Date("2026-03-01T10:00:00Z"));
+      await addEntry(archivedContributor.id, period.id, metric.id, 50, new Date("2026-03-01T10:00:00Z"));
+
+      // A search that matches none of the visualization-relevant members —
+      // the roster page/rows are empty, but the chart must be unaffected.
+      const report = await getMetricSummaryReport({
+        allianceId: alliance.id,
+        metricId: metric.id,
+        periodId: period.id,
+        search: "nobody-matches-this",
+      });
+
+      expect(report.rows).toHaveLength(0);
+      expect(report.pagination.totalRowCount).toBe(0);
+
+      if (report.visualModel.kind !== "SUM") throw new Error("expected SUM");
+      const contributorIds = report.visualModel.topContributors.map((c) => c.allianceMemberId).sort();
+      expect(contributorIds).toEqual([activeContributor.id, archivedContributor.id].sort());
+      expect(report.visualModel.consideredCount).toBe(2);
+      // Total still reconciles across the whole cohort, matching the rollup.
+      expect(report.rollup).toEqual({ kind: "SUM", total: 150, hasNegativeValues: false });
+      // Neither the never-contributed active member nor the silent archived
+      // member appear as a *named* contributor — active-missing legitimately
+      // has no value to rank, and archived-non-contributing is excluded by
+      // the same rule the roster's own "all" filter already uses.
+      expect(contributorIds).not.toContain(activeMissing.id);
+      expect(contributorIds).not.toContain(archivedNonContributor.id);
+    });
+
+    it("caps SUM's top contributors at 10 even with a larger active cohort, and computes each one's percentage of the real total", async () => {
+      const alliance = await makeAlliance();
+      const period = await makePeriod(alliance.id, "Week 1");
+      const metric = await makeMetric(alliance.id, "Kills", Metric_Type.NUMERIC, MetricSummaryKind.SUM);
+      await attach(period.id, metric.id);
+
+      const members = await Promise.all(
+        Array.from({ length: 15 }, (_, i) => makeMember(alliance.id, `Member ${String(i).padStart(2, "0")}`)),
+      );
+      await Promise.all(
+        members.map((member, i) =>
+          addEntry(member.id, period.id, metric.id, (i + 1) * 10, new Date(`2026-03-01T10:${String(i).padStart(2, "0")}:00Z`)),
+        ),
+      );
+
+      const report = await getMetricSummaryReport({ allianceId: alliance.id, metricId: metric.id, periodId: period.id });
+
+      if (report.visualModel.kind !== "SUM") throw new Error("expected SUM");
+      expect(report.visualModel.topContributors).toHaveLength(10);
+      expect(report.visualModel.consideredCount).toBe(15);
+      // Highest value (150) is member index 14 (i+1)*10 = 150.
+      expect(report.visualModel.topContributors[0]).toMatchObject({ value: 150 });
+      const total = members.length * 10 * (members.length + 1) / 2; // sum 10..150
+      expect(report.rollup).toEqual({ kind: "SUM", total, hasNegativeValues: false });
+      expect(report.visualModel.topContributors[0]!.percentageOfTotal).toBeCloseTo((150 / total) * 100);
+    });
+
+    it("marks SUM's chart-wide share unavailable when any valid value is negative, exactly matching the rollup's own hasNegativeValues", async () => {
+      const alliance = await makeAlliance();
+      const positive = await makeMember(alliance.id, "Positive");
+      const negative = await makeMember(alliance.id, "Negative");
+      const period = await makePeriod(alliance.id, "Week 1");
+      const metric = await makeMetric(alliance.id, "Net Score", Metric_Type.NUMERIC, MetricSummaryKind.SUM);
+      await attach(period.id, metric.id);
+      await addEntry(positive.id, period.id, metric.id, 110, new Date("2026-03-01T10:00:00Z"));
+      await addEntry(negative.id, period.id, metric.id, -10, new Date("2026-03-01T10:00:00Z"));
+
+      const report = await getMetricSummaryReport({ allianceId: alliance.id, metricId: metric.id, periodId: period.id });
+
+      if (report.visualModel.kind !== "SUM") throw new Error("expected SUM");
+      expect(report.visualModel.shareAvailability).toEqual({ available: false, reason: "NEGATIVE_VALUES_PRESENT" });
+      expect(report.visualModel.topContributors.every((c) => c.percentageOfTotal === null)).toBe(true);
+      expect(report.interpretationSummary).toBe(
+        "Positive and negative contributions offset each other, so member shares are not meaningful.",
+      );
+    });
+
+    it("builds an AVERAGE distribution across the real cohort, matching the rollup's own average", async () => {
+      const alliance = await makeAlliance();
+      const period = await makePeriod(alliance.id, "Week 1");
+      const metric = await makeMetric(alliance.id, "Avg Power", Metric_Type.NUMERIC, MetricSummaryKind.AVERAGE);
+      await attach(period.id, metric.id);
+
+      const values = [0, 10, 20, 30, 40, 50];
+      const members = await Promise.all(values.map((_, i) => makeMember(alliance.id, `Member ${i}`)));
+      await Promise.all(
+        members.map((member, i) =>
+          addEntry(member.id, period.id, metric.id, values[i]!, new Date(`2026-03-01T10:${String(i).padStart(2, "0")}:00Z`)),
+        ),
+      );
+
+      const report = await getMetricSummaryReport({ allianceId: alliance.id, metricId: metric.id, periodId: period.id });
+
+      expect(report.rollup).toEqual({ kind: "AVERAGE", average: 25 });
+      if (report.visualModel.kind !== "AVERAGE") throw new Error("expected AVERAGE");
+      expect(report.visualModel.average).toBe(25);
+      expect(report.visualModel.validCount).toBe(6);
+      expect(report.visualModel.bins.reduce((sum, b) => sum + b.count, 0)).toBe(6);
+      expect(report.visualModel.aboveAverageCount).toBe(3);
+      expect(report.visualModel.belowAverageCount).toBe(3);
+    });
+
+    it("collapses AVERAGE's distribution to a single bin when every recorded value is identical", async () => {
+      const alliance = await makeAlliance();
+      const period = await makePeriod(alliance.id, "Week 1");
+      const metric = await makeMetric(alliance.id, "Flat Metric", Metric_Type.NUMERIC, MetricSummaryKind.AVERAGE);
+      await attach(period.id, metric.id);
+
+      const members = await Promise.all([makeMember(alliance.id, "A"), makeMember(alliance.id, "B"), makeMember(alliance.id, "C")]);
+      await Promise.all(
+        members.map((member, i) => addEntry(member.id, period.id, metric.id, 7, new Date(`2026-03-01T10:0${i}:00Z`))),
+      );
+
+      const report = await getMetricSummaryReport({ allianceId: alliance.id, metricId: metric.id, periodId: period.id });
+
+      if (report.visualModel.kind !== "AVERAGE") throw new Error("expected AVERAGE");
+      expect(report.visualModel.bins).toEqual([{ rangeStart: 7, rangeEnd: 7, count: 3 }]);
+      expect(report.visualModel.atAverageCount).toBe(3);
+      expect(report.interpretationSummary).toBe("The average was 7 across 3 valid results.");
+    });
+
+    it("sources the TRUE_RATE visual model from the same aggregate as the rollup, including a legacy invalid value's contribution to coverage", async () => {
+      const alliance = await makeAlliance();
+      const trueMember = await makeMember(alliance.id, "True Member");
+      const falseMember = await makeMember(alliance.id, "False Member");
+      const legacyInvalidMember = await makeMember(alliance.id, "Legacy Invalid Member");
+      const missingMember = await makeMember(alliance.id, "Missing Member");
+      const period = await makePeriod(alliance.id, "Week 1");
+      const metric = await makeMetric(alliance.id, "Attended Rally", Metric_Type.BOOLEAN, MetricSummaryKind.TRUE_RATE);
+      await attach(period.id, metric.id);
+
+      await addEntry(trueMember.id, period.id, metric.id, 1, new Date("2026-03-01T10:00:00Z"));
+      await addEntry(falseMember.id, period.id, metric.id, 0, new Date("2026-03-01T10:00:00Z"));
+      await addEntry(legacyInvalidMember.id, period.id, metric.id, 2, new Date("2026-03-01T10:00:00Z"));
+      void missingMember; // never records — exercises missingActiveMemberCount
+
+      const report = await getMetricSummaryReport({ allianceId: alliance.id, metricId: metric.id, periodId: period.id });
+
+      expect(report.visualModel).toEqual({
+        kind: "TRUE_RATE",
+        trueCount: 1,
+        falseCount: 1,
+        invalidCount: 1,
+        recordedActiveMemberCount: 2,
+        missingActiveMemberCount: 1,
+        currentActiveMemberCount: 4,
+      });
+      expect(report.interpretationSummary).toBe(
+        "1 of 2 valid responses were Yes. 1 member is missing and 1 value is invalid.",
+      );
+    });
+
+    it("builds a numeric distribution (never a fabricated rollup) for a NONE-kind NUMERIC metric", async () => {
+      const alliance = await makeAlliance();
+      const period = await makePeriod(alliance.id, "Week 1");
+      const metric = await makeMetric(alliance.id, "Notes Count", Metric_Type.NUMERIC, MetricSummaryKind.NONE);
+      await attach(period.id, metric.id);
+
+      const members = await Promise.all([makeMember(alliance.id, "A"), makeMember(alliance.id, "B")]);
+      await addEntry(members[0]!.id, period.id, metric.id, 12, new Date("2026-03-01T10:00:00Z"));
+      await addEntry(members[1]!.id, period.id, metric.id, 18, new Date("2026-03-01T10:01:00Z"));
+
+      const report = await getMetricSummaryReport({ allianceId: alliance.id, metricId: metric.id, periodId: period.id });
+
+      expect(report.rollup).toEqual({ kind: "NONE" });
+      if (report.visualModel.kind !== "NONE" || report.visualModel.valueKind !== "NUMERIC") {
+        throw new Error("expected NONE/NUMERIC");
+      }
+      expect(report.visualModel.validCount).toBe(2);
+      expect(report.visualModel.bins.reduce((sum, b) => sum + b.count, 0)).toBe(2);
+      expect(report.interpretationSummary).toContain("No alliance-wide rollup is defined for this metric.");
+    });
+  });
 });
