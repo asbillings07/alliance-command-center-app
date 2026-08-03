@@ -8,6 +8,7 @@ import {
   classifySumDivergingMode,
   maxAbsoluteContributorValue,
   formatSignedMetricValue,
+  formatExactMetricValue,
   type SumDivergingMode,
 } from "./metricVisualChartDisplay";
 import { ChartSection } from "./ChartSection";
@@ -69,7 +70,7 @@ function SumShareTable({ topContributors, unitLabel, caption }: { topContributor
                 <ContributorName contributor={contributor} />
               </div>
             </td>
-            <td className="py-2 px-3 text-right text-text-primary">{formatMetricValue(contributor.value, unitLabel).compact}</td>
+            <td className="py-2 px-3 text-right text-text-primary">{formatExactMetricValue(contributor.value, unitLabel)}</td>
             <td className="py-2 px-3 text-right text-text-secondary">{formatPercent(contributor.percentageOfTotal ?? 0)}</td>
           </tr>
         ))}

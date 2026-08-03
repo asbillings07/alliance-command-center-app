@@ -5,10 +5,12 @@ import {
   classifySumDivergingMode,
   maxAbsoluteContributorValue,
   formatSignedMetricValue,
+  formatExactMetricValue,
   pickHistogramBoundaryPrecision,
   formatHistogramBoundary,
   formatBinRangeLabel,
   formatAverageMarkerLabel,
+  clampAverageMarkerLabelPosition,
 } from "./metricVisualChartDisplay";
 
 function contributor(overrides: Partial<SumTopContributor> = {}): SumTopContributor {
@@ -91,6 +93,23 @@ describe("formatSignedMetricValue", () => {
   });
 });
 
+describe("formatExactMetricValue", () => {
+  it("never collapses distinct values the way compact formatting would", () => {
+    // formatMetricValue(...).compact renders both of these as "1M" — the
+    // exact table value must keep them distinguishable.
+    expect(formatExactMetricValue(999_950, null)).toBe("999,950");
+    expect(formatExactMetricValue(1_000_000, null)).toBe("1,000,000");
+  });
+
+  it("includes the unit label when present", () => {
+    expect(formatExactMetricValue(1234, "pts")).toBe("1,234 pts");
+  });
+
+  it("omits the unit entirely when unitLabel is null", () => {
+    expect(formatExactMetricValue(1234, null)).toBe("1,234");
+  });
+});
+
 describe("pickHistogramBoundaryPrecision", () => {
   it("returns 0 for whole-number boundaries", () => {
     const bins: DistributionBin[] = [
@@ -155,6 +174,35 @@ describe("formatBinRangeLabel", () => {
   it("includes the unit label on both boundaries", () => {
     const bin: DistributionBin = { rangeStart: 0, rangeEnd: 10, count: 5 };
     expect(formatBinRangeLabel(bin, false, 0, "pts")).toBe("0 pts ≤ value < 10 pts");
+  });
+});
+
+describe("clampAverageMarkerLabelPosition", () => {
+  const VIEWBOX_WIDTH = 320;
+  const PADDING = 6;
+
+  it("centers the label on the marker when there's room on both sides", () => {
+    const position = clampAverageMarkerLabelPosition(160, "Average: 7.4 pts", VIEWBOX_WIDTH, PADDING);
+    expect(position).toEqual({ x: 160, textAnchor: "middle" });
+  });
+
+  it("anchors the label to the left edge instead of clipping when the marker sits near the domain minimum", () => {
+    // A long label centered this close to x=6 would render partly off the
+    // left edge of the viewBox under textAnchor="middle".
+    const position = clampAverageMarkerLabelPosition(6, "Average: 1,234.5678 pts", VIEWBOX_WIDTH, PADDING);
+    expect(position.textAnchor).toBe("start");
+    expect(position.x).toBe(PADDING);
+  });
+
+  it("anchors the label to the right edge instead of clipping when the marker sits near the domain maximum", () => {
+    const position = clampAverageMarkerLabelPosition(314, "Average: 1,234.5678 pts", VIEWBOX_WIDTH, PADDING);
+    expect(position.textAnchor).toBe("end");
+    expect(position.x).toBe(VIEWBOX_WIDTH - PADDING);
+  });
+
+  it("keeps a short label centered close to an edge, as long as it genuinely fits without clipping", () => {
+    const position = clampAverageMarkerLabelPosition(50, "Average: 5", VIEWBOX_WIDTH, PADDING);
+    expect(position).toEqual({ x: 50, textAnchor: "middle" });
   });
 });
 

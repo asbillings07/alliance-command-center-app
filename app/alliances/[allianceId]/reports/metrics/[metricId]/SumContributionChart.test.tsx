@@ -70,6 +70,27 @@ describe("SumContributionChart — share mode", () => {
     expect(barWidth(bars[1]!)).toBe("25%");
   });
 
+  it("renders the exact, un-abbreviated value in the accessible table, never the compact form that could collapse two distinct values", async () => {
+    // 999,950 and 1,000,000 both render as "1M" via compact formatting —
+    // the visual bar's label may abbreviate (with a title tooltip as its
+    // exact-value fallback), but the table is the accessible
+    // representation itself and must never do so.
+    const model: SumVisualModel = {
+      kind: "SUM",
+      shareAvailability: { available: true, percentageOfTotal: 100 },
+      topContributors: [
+        contributor({ allianceMemberId: "m1", playerName: "Alice", value: 999_950, percentageOfTotal: 50 }),
+        contributor({ allianceMemberId: "m2", playerName: "Bob", value: 1_000_000, percentageOfTotal: 50 }),
+      ],
+      consideredCount: 2,
+    };
+    await mount(model);
+
+    const table = container.querySelector("table")!;
+    const valueCells = Array.from(table.querySelectorAll("tbody td:nth-child(3)")).map((td) => td.textContent);
+    expect(valueCells).toEqual(["999,950 pts", "1,000,000 pts"]);
+  });
+
   it("states the caption as 'Top N of M recorded contributors' plus the displayed total share", async () => {
     const model: SumVisualModel = {
       kind: "SUM",

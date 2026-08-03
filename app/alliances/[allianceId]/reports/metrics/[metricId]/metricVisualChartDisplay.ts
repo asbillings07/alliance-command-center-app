@@ -54,6 +54,20 @@ export function formatSignedMetricValue(value: number, unitLabel: string | null)
 }
 
 /**
+ * "1,234 pts" — the accessible table's authoritative, unrounded value.
+ * `formatMetricValue`'s `.compact` field (e.g. "1.2K") is fine for the
+ * space-constrained visual bars, always paired there with a `title`
+ * tooltip carrying the exact value — but the table *is* the accessible
+ * representation itself, with no tooltip fallback. Rendering `.compact`
+ * there can silently collapse two genuinely different values (999,950 and
+ * 1,000,000 both display "1M"), per `formatMetricValue`'s own doc comment.
+ */
+export function formatExactMetricValue(value: number, unitLabel: string | null): string {
+  const exact = formatMetricValue(value, null).exact;
+  return unitLabel ? `${exact} ${unitLabel}` : exact;
+}
+
+/**
  * Deterministic decimal precision for a set of histogram bin boundaries —
  * the smallest precision (0..4) at which every boundary renders as a
  * distinct string, so two adjacent bins never both display the same
@@ -96,4 +110,42 @@ export function formatBinRangeLabel(
 /** "Average: 7.4 pts" — same rounding/formatting convention as the rollup card's own average display. */
 export function formatAverageMarkerLabel(average: number, unitLabel: string | null): string {
   return `Average: ${formatMetricAverage(average, unitLabel)}`;
+}
+
+/**
+ * Roughly 1 glyph-width per 5.5 SVG units at the marker label's 10px font
+ * size — deliberately approximate rather than a live DOM measurement, so
+ * the geometry stays deterministic and server-renderable (matches
+ * `HistogramSvg`'s coordinate-math-only contract). Only needs to be "wide
+ * enough," not exact: it just has to keep the label from clipping.
+ */
+const AVERAGE_MARKER_CHAR_WIDTH = 5.5;
+
+export type AverageMarkerLabelPosition = {
+  x: number;
+  textAnchor: "start" | "middle" | "end";
+};
+
+/**
+ * Clamps the average marker's text label to stay within the SVG's
+ * horizontal bounds. The marker *line* always sits at the mathematically
+ * exact average position — only the *label*, which `textAnchor="middle"`
+ * would otherwise center on that same point, shifts anchor near an edge so
+ * a skewed cohort (average near the domain's min or max) can't push the
+ * label outside the viewBox.
+ */
+export function clampAverageMarkerLabelPosition(
+  markerX: number,
+  label: string,
+  viewboxWidth: number,
+  padding: number,
+): AverageMarkerLabelPosition {
+  const halfLabelWidth = (label.length * AVERAGE_MARKER_CHAR_WIDTH) / 2;
+  if (markerX - halfLabelWidth < padding) {
+    return { x: padding, textAnchor: "start" };
+  }
+  if (markerX + halfLabelWidth > viewboxWidth - padding) {
+    return { x: viewboxWidth - padding, textAnchor: "end" };
+  }
+  return { x: markerX, textAnchor: "middle" };
 }

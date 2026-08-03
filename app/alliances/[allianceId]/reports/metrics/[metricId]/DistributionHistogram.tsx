@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Card } from "@/app/src/components";
 import type { AverageVisualModel, DistributionBin, NoneVisualModel } from "@/app/src/lib/reports/metricVisualModel";
-import { formatMetricValue } from "@/app/src/lib/format/formatMetricValue";
 import { formatMetricAverage } from "@/app/src/lib/format/formatMetricAverage";
 import { formatPercent } from "@/app/src/lib/format/formatPercent";
 import {
@@ -10,6 +9,8 @@ import {
   formatHistogramBoundary,
   formatBinRangeLabel,
   formatAverageMarkerLabel,
+  formatExactMetricValue,
+  clampAverageMarkerLabelPosition,
 } from "./metricVisualChartDisplay";
 import { ChartSection } from "./ChartSection";
 
@@ -71,22 +72,31 @@ function HistogramSvg({
           </g>
         );
       })}
-      {markerX !== null && (
-        <g data-testid={`${testId}-average-marker`}>
-          <line
-            x1={markerX}
-            y1={8}
-            x2={markerX}
-            y2={BASELINE_Y + 6}
-            stroke="var(--text-primary)"
-            strokeWidth={1.5}
-            strokeDasharray="3,2"
-          />
-          <text x={markerX} y={7} textAnchor="middle" fontSize={10} fill="var(--text-primary)" fontWeight={600}>
-            {formatAverageMarkerLabel(average!, unitLabel)}
-          </text>
-        </g>
-      )}
+      {markerX !== null &&
+        (() => {
+          // The line stays at the mathematically exact average position;
+          // only the label's anchor shifts near an edge so a skewed cohort
+          // (average close to the domain's min or max) can't clip
+          // "Average: X" outside the viewBox.
+          const label = formatAverageMarkerLabel(average!, unitLabel);
+          const { x: labelX, textAnchor } = clampAverageMarkerLabelPosition(markerX, label, VIEWBOX_WIDTH, BAR_AREA_X);
+          return (
+            <g data-testid={`${testId}-average-marker`}>
+              <line
+                x1={markerX}
+                y1={8}
+                x2={markerX}
+                y2={BASELINE_Y + 6}
+                stroke="var(--text-primary)"
+                strokeWidth={1.5}
+                strokeDasharray="3,2"
+              />
+              <text x={labelX} y={7} textAnchor={textAnchor} fontSize={10} fill="var(--text-primary)" fontWeight={600}>
+                {label}
+              </text>
+            </g>
+          );
+        })()}
     </svg>
   );
 }
@@ -167,7 +177,7 @@ function SingleBinTable({ bin, validCount, unitLabel, caption }: { bin: Distribu
       </thead>
       <tbody>
         <tr>
-          <td className="py-2 px-3 text-text-primary">{formatMetricValue(bin.rangeStart, unitLabel).compact}</td>
+          <td className="py-2 px-3 text-text-primary">{formatExactMetricValue(bin.rangeStart, unitLabel)}</td>
           <td className="py-2 px-3 text-right text-text-primary">{validCount}</td>
           <td className="py-2 px-3 text-right text-text-secondary">100%</td>
         </tr>

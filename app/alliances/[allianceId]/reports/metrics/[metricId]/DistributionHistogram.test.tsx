@@ -81,6 +81,57 @@ describe("AverageDistributionChart", () => {
     expect(marker!.textContent).toContain("Average: 30 pts");
   });
 
+  it("clamps the average marker's text label so a skewed cohort can't clip it off the left edge of the SVG", async () => {
+    // Domain [0, 1000] with average 1 — the marker sits right at the left
+    // edge of the plot area. A centered label there would render partly
+    // off the viewBox; the label must instead anchor from the left.
+    const model = averageModel({
+      average: 1,
+      bins: [
+        { rangeStart: 0, rangeEnd: 166.67, count: 14 },
+        { rangeStart: 166.67, rangeEnd: 333.33, count: 1 },
+        { rangeStart: 333.33, rangeEnd: 500, count: 0 },
+        { rangeStart: 500, rangeEnd: 666.67, count: 0 },
+        { rangeStart: 666.67, rangeEnd: 833.33, count: 0 },
+        { rangeStart: 833.33, rangeEnd: 1000, count: 0 },
+      ],
+      validCount: 15,
+    });
+    await mount(createElement(AverageDistributionChart, { visualModel: model, unitLabel: "pts" }));
+
+    const marker = container.querySelector("[data-testid='average-histogram-average-marker']")!;
+    const text = marker.querySelector("text")!;
+    // The line still sits at the mathematically exact average position...
+    const line = marker.querySelector("line")!;
+    expect(Number(line.getAttribute("x1"))).toBeLessThan(10);
+    // ...but the label's own x/anchor keep it from clipping the left edge.
+    expect(text.getAttribute("text-anchor")).toBe("start");
+    expect(Number(text.getAttribute("x"))).toBeGreaterThanOrEqual(0);
+  });
+
+  it("clamps the average marker's text label so a skewed cohort can't clip it off the right edge of the SVG", async () => {
+    const model = averageModel({
+      average: 999,
+      bins: [
+        { rangeStart: 0, rangeEnd: 166.67, count: 0 },
+        { rangeStart: 166.67, rangeEnd: 333.33, count: 0 },
+        { rangeStart: 333.33, rangeEnd: 500, count: 0 },
+        { rangeStart: 500, rangeEnd: 666.67, count: 0 },
+        { rangeStart: 666.67, rangeEnd: 833.33, count: 1 },
+        { rangeStart: 833.33, rangeEnd: 1000, count: 14 },
+      ],
+      validCount: 15,
+    });
+    await mount(createElement(AverageDistributionChart, { visualModel: model, unitLabel: "pts" }));
+
+    const marker = container.querySelector("[data-testid='average-histogram-average-marker']")!;
+    const text = marker.querySelector("text")!;
+    const line = marker.querySelector("line")!;
+    expect(Number(line.getAttribute("x1"))).toBeGreaterThan(310);
+    expect(text.getAttribute("text-anchor")).toBe("end");
+    expect(Number(text.getAttribute("x"))).toBeLessThanOrEqual(320);
+  });
+
   it("positions the marker correctly when the average falls exactly on a bin boundary", async () => {
     // Average === bins[2].rangeEnd === bins[3].rangeStart (20).
     await mount(createElement(AverageDistributionChart, { visualModel: averageModel({ average: 20 }), unitLabel: "pts" }));
@@ -102,6 +153,21 @@ describe("AverageDistributionChart", () => {
     expect(container.querySelector("[data-testid='average-histogram']")).toBeNull();
     expect(container.querySelector("[data-testid='average-histogram-average-marker']")).toBeNull();
     expect(container.textContent).toContain("All 14 valid results were 5 points.");
+  });
+
+  it("renders the exact, un-abbreviated value in the all-equal case's table, never the compact form", async () => {
+    // 1,000,000 would render as "1M" via compact formatting — the table is
+    // the accessible representation itself and must show the full number.
+    const model = averageModel({
+      average: 1_000_000,
+      bins: [{ rangeStart: 1_000_000, rangeEnd: 1_000_000, count: 14 }],
+      validCount: 14,
+    });
+    await mount(createElement(AverageDistributionChart, { visualModel: model, unitLabel: "pts" }));
+
+    const table = container.querySelector("table")!;
+    const rangeCell = table.querySelector("tbody td:first-child")!;
+    expect(rangeCell.textContent).toBe("1,000,000 pts");
   });
 
   it("uses singular grammar for a single valid result in the all-equal case", async () => {
