@@ -384,7 +384,12 @@ describe.skipIf(!runDb)("beta participant backfill gate [integration]", () => {
           id,
           email: `multi-user-${suffix}@example.test`,
           token: `tok-${id}`,
-          code: `M${suffix.slice(0, 5).toUpperCase()}${userId.slice(-1)}`,
+          // Independently random per call (not derived from the shared
+          // `suffix` + a single trailing userId character) — the previous
+          // version collided whenever userA's and userB's ids happened to
+          // share a last character (~1-in-36 runs), tripping the unique
+          // constraint on BetaInvitation.code.
+          code: `M${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
           expiresAt: new Date(now.getTime() + 86400000),
           acceptedAt: now,
           acceptedByUserId: userId,
