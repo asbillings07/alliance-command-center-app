@@ -97,9 +97,18 @@ export function PageLayout({
           </nav>
         )}
 
-        {/* Header: Title + Action */}
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <div>
+        {/*
+          Header: Title + Action. `flex-wrap` lets the action drop to its own
+          line instead of forcing the row wider than the viewport — without
+          it, a title long enough to compete with `action`'s `flex-shrink-0`
+          for space causes real horizontal page overflow at narrow widths
+          (#264 PR5 caught this at 320px; it isn't specific to any one page,
+          since every PageLayout consumer shares this header). `min-w-0`
+          lets the title block itself shrink below its text's natural
+          (unwrapped) width, the same flex default-sizing fix.
+        */}
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold text-text-primary">{title}</h1>
             {description && (
               <p className="mt-1 text-sm text-text-muted">{description}</p>
