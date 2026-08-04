@@ -108,6 +108,65 @@ describe("MembersPage", () => {
     expect(html).toContain("/alliances/all_1/members/import");
   });
 
+  it("renders a subdued Import history link next to Import Members when the roster is non-empty", async () => {
+    vi.mocked(requireAllianceAccess).mockResolvedValue({
+      permissions: {
+        canImportMembers: true,
+        canManageMembers: true,
+      },
+    } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
+
+    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+      id: "all_1",
+      name: "Alliance One",
+    } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+
+    vi.mocked(prisma.allianceMember.findMany).mockResolvedValue([
+      { id: "mem_1", playerName: "Dragon", archivedAt: null },
+    ] as unknown as Awaited<ReturnType<typeof prisma.allianceMember.findMany>>);
+    vi.mocked(prisma.allianceMember.count)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0);
+
+    const page = await MembersPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({}),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain('href="/alliances/all_1/members/imports"');
+    expect(html).toContain("Import history");
+  });
+
+  it("does not render an Import history link for roles without canImportMembers", async () => {
+    vi.mocked(requireAllianceAccess).mockResolvedValue({
+      permissions: {
+        canImportMembers: false,
+        canManageMembers: false,
+      },
+    } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
+
+    vi.mocked(prisma.alliance.findUnique).mockResolvedValue({
+      id: "all_1",
+      name: "Alliance One",
+    } as unknown as Awaited<ReturnType<typeof prisma.alliance.findUnique>>);
+
+    vi.mocked(prisma.allianceMember.findMany).mockResolvedValue([
+      { id: "mem_1", playerName: "Dragon", archivedAt: null },
+    ] as unknown as Awaited<ReturnType<typeof prisma.allianceMember.findMany>>);
+    vi.mocked(prisma.allianceMember.count)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0);
+
+    const page = await MembersPage({
+      params: Promise.resolve({ allianceId: "all_1" }),
+      searchParams: Promise.resolve({}),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).not.toContain('href="/alliances/all_1/members/imports"');
+  });
+
   it("renders informative empty state with Back to Dashboard for non-admins when no active members exist", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
       permissions: {

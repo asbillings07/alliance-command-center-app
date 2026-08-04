@@ -41,6 +41,19 @@ describe("revalidateAllianceData", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/alliances/[allianceId]/members/[memberId]", "page");
   });
 
+  it("revalidating member-imports invalidates the history list and the per-import route pattern", () => {
+    revalidateAllianceData({
+      allianceId: "all_123",
+      domains: ["member-imports"],
+    });
+
+    expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/members/imports");
+    expect(revalidatePath).toHaveBeenCalledWith(
+      "/alliances/[allianceId]/members/imports/[importId]",
+      "page",
+    );
+  });
+
   it("revalidating evaluation-results invalidates period pages", () => {
     revalidateAllianceData({
       allianceId: "all_123",
