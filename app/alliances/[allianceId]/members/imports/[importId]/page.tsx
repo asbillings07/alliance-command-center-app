@@ -89,7 +89,7 @@ export default async function MemberImportDetailPage({ params }: Params) {
         memberImport.skippedEmptyNameCount +
         memberImport.skippedUnselectedCount;
 
-    const detailLabel = memberImport.fileName ?? formatDateTime(memberImport.createdAt);
+    const detailLabel = memberImport.fileName;
 
     return (
         <PageLayout
@@ -99,8 +99,8 @@ export default async function MemberImportDetailPage({ params }: Params) {
                 { label: "Import history", href: `/alliances/${allianceId}/members/imports` },
                 { label: detailLabel },
             ]}
-            title={memberImport.fileName ?? "Roster Import"}
-            description={`Imported by ${memberImport.actorDisplayNameSnapshot ?? memberImport.actorEmailSnapshot} on ${formatDateTime(memberImport.createdAt)}${memberImport.sourceSheetName ? ` · Sheet: ${memberImport.sourceSheetName}` : ""}`}
+            title={memberImport.fileName}
+            description={`Imported by ${memberImport.actorDisplayNameSnapshot ?? memberImport.actorEmailSnapshot} on ${formatDateTime(memberImport.createdAt)} · Sheet: ${memberImport.sourceSheetName}`}
         >
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 <div className="bg-success/10 border border-success/30 rounded-lg p-4 text-center">
@@ -194,11 +194,24 @@ export default async function MemberImportDetailPage({ params }: Params) {
                                     <td className="px-4 py-3 text-right text-text-secondary whitespace-nowrap">
                                         {change.changeType === MemberImportChangeType.RESTORED &&
                                         change.thpBefore !== change.thpAfter ? (
+                                            // Line-through is a visual-only cue; a screen reader
+                                            // (and anyone who can't perceive the strikethrough)
+                                            // still needs explicit "from → to" text. A visually
+                                            // hidden real text node (not aria-label — axe's
+                                            // aria-prohibited-attr rule rejects aria-label on a
+                                            // plain <span>'s implicit "generic" role) carries that
+                                            // for assistive tech, while the visual pair stays
+                                            // aria-hidden to avoid announcing the values twice.
                                             <span>
-                                                <span className="text-text-muted line-through mr-1">
-                                                    {formatThp(change.thpBefore)}
+                                                <span className="sr-only">
+                                                    {`changed from ${formatThp(change.thpBefore)} to ${formatThp(change.thpAfter)}`}
                                                 </span>
-                                                {formatThp(change.thpAfter)}
+                                                <span aria-hidden="true">
+                                                    <span className="text-text-muted line-through mr-1">
+                                                        {formatThp(change.thpBefore)}
+                                                    </span>
+                                                    {formatThp(change.thpAfter)}
+                                                </span>
                                             </span>
                                         ) : (
                                             formatThp(change.thpAfter)
@@ -208,10 +221,15 @@ export default async function MemberImportDetailPage({ params }: Params) {
                                         {change.changeType === MemberImportChangeType.RESTORED &&
                                         change.roleBefore !== change.roleAfter ? (
                                             <span>
-                                                <span className="text-text-muted line-through mr-1">
-                                                    {change.roleBefore ?? "—"}
+                                                <span className="sr-only">
+                                                    {`changed from ${change.roleBefore ?? "none"} to ${change.roleAfter ?? "none"}`}
                                                 </span>
-                                                {change.roleAfter ?? "—"}
+                                                <span aria-hidden="true">
+                                                    <span className="text-text-muted line-through mr-1">
+                                                        {change.roleBefore ?? "—"}
+                                                    </span>
+                                                    {change.roleAfter ?? "—"}
+                                                </span>
                                             </span>
                                         ) : (
                                             change.roleAfter ?? "—"

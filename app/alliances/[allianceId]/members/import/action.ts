@@ -90,7 +90,18 @@ export async function importMembers(
     }
 
     // Provenance metadata is client-supplied display metadata, not
-    // authenticated proof — validate it explicitly before trusting it.
+    // authenticated proof — validate it explicitly before trusting it. The
+    // type check must run before `.trim()`: a caller that bypasses the
+    // ImportProvenance TypeScript type (e.g. calling this server action
+    // directly) could send `null`/`undefined`/non-string values, and
+    // `.trim()` on those throws outside the try/catch below rather than
+    // failing closed with a normal error result.
+    if (typeof provenance.fileName !== "string") {
+        return failResult(["Missing or invalid file name"]);
+    }
+    if (typeof provenance.sourceSheetName !== "string") {
+        return failResult(["Missing or invalid worksheet name"]);
+    }
     const fileName = provenance.fileName.trim();
     const sourceSheetName = provenance.sourceSheetName.trim();
     if (fileName.length === 0 || fileName.length > MAX_NAME_METADATA_LENGTH) {
@@ -288,6 +299,20 @@ export async function importMembers(
                     });
                 }
                 const createdCount = createdRows.length;
+
+                // Fail closed on any short create: if createManyAndReturn
+                // ever returns fewer rows than requested (e.g. an unexpected
+                // skipDuplicates collision), the row-by-row name matching
+                // below can only validate what *was* returned — it can't
+                // detect a silently-missing row. Without this check the
+                // import would commit with incomplete history and
+                // undercounted createdCount. Roll back the whole transaction
+                // instead.
+                if (createdCount !== toCreate.length) {
+                    throw new Error(
+                        `Import provenance mismatch: expected to create ${toCreate.length} member(s) but only ${createdCount} were created`
+                    );
+                }
 
                 // createManyAndReturn's result order is not guaranteed to
                 // match input order — match each returned row back to its

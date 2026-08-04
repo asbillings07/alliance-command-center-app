@@ -1,4 +1,6 @@
 import { test, expect } from "../shared/fixtures";
+import { prisma } from "@/app/src/lib/prisma";
+import { MemberImportChangeType } from "@/app/generated/prisma/enums";
 
 /**
  * Visual Regression E2E Tests
@@ -120,6 +122,85 @@ test.describe("Visual Regression", () => {
       fullPage: true,
       animations: "disabled",
     });
+  });
+
+  // No other suite ever writes a MemberImport for the shared TEST_ALLIANCE_ID
+  // fixture alliance (roster-import E2E tests all use fresh per-test
+  // alliances via adminScenario/leaderScenario), so this empty state is
+  // deterministic — no masking needed, matching the Setup Page precedent.
+  test("@visual Import History (empty) visual snapshot", async ({ page }) => {
+    await page.goto(`/alliances/${testAllianceId}/members/imports`);
+    await page.waitForLoadState("networkidle");
+
+    await expect(page).toHaveScreenshot("import-history-empty.png", {
+      fullPage: true,
+      animations: "disabled",
+    });
+  });
+
+  test("@visual Import History Detail visual snapshot", async ({ page }) => {
+    // Self-seeded and cleaned up within this test (same pattern as
+    // metric-report.spec.ts) so the shared alliance's Import History (empty)
+    // snapshot above stays deterministic for other test runs.
+    const suffix = `${Date.now()}`;
+    const member = await prisma.allianceMember.create({
+      data: {
+        allianceId: testAllianceId!,
+        playerName: `Visual Import Member ${suffix}`,
+        thp: 50000,
+      },
+    });
+    const memberImport = await prisma.memberImport.create({
+      data: {
+        allianceId: testAllianceId!,
+        actorEmailSnapshot: "visual-test@example.test",
+        actorDisplayNameSnapshot: "Visual Test Actor",
+        fileName: "visual-roster.xlsx",
+        sourceSheetName: "Roster",
+        createdCount: 1,
+        restoredCount: 0,
+        skippedExistingCount: 0,
+        skippedDuplicateCount: 0,
+        skippedEmptyNameCount: 0,
+        skippedUnselectedCount: 0,
+        changes: {
+          create: [
+            {
+              allianceMemberId: member.id,
+              playerNameSnapshot: member.playerName,
+              sourceRow: 1,
+              changeType: MemberImportChangeType.CREATED,
+              thpAfter: member.thp,
+              memberUpdatedAtAfter: member.updatedAt,
+            },
+          ],
+        },
+      },
+    });
+
+    try {
+      await page.goto(`/alliances/${testAllianceId}/members/imports/${memberImport.id}`);
+      await page.waitForLoadState("networkidle");
+
+      // Mask everything that varies per run: the title/breadcrumb (file
+      // name), the "Imported by ... on ..." description, and the player
+      // name link — the stable page chrome and card/table structure stay in
+      // the diff.
+      await expect(page).toHaveScreenshot("import-history-detail.png", {
+        fullPage: true,
+        animations: "disabled",
+        mask: [
+          page.getByRole("heading", { level: 1 }),
+          page.locator("p.text-text-muted").first(),
+          page.getByRole("link", { name: member.playerName }),
+        ],
+        maxDiffPixelRatio: 0.02,
+      });
+    } finally {
+      await prisma.memberImportChange.deleteMany({ where: { memberImportId: memberImport.id } });
+      await prisma.memberImport.delete({ where: { id: memberImport.id } });
+      await prisma.allianceMember.delete({ where: { id: member.id } });
+    }
   });
 });
 

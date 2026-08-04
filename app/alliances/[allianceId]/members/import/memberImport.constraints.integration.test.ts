@@ -55,6 +55,8 @@ describeIntegration("MemberImport / MemberImportChange CHECK constraints [integr
             data: {
                 allianceId,
                 actorEmailSnapshot: "actor@example.test",
+                fileName: "roster.xlsx",
+                sourceSheetName: "Sheet1",
                 createdCount: 1,
                 restoredCount: 0,
                 skippedExistingCount: 0,
@@ -84,6 +86,44 @@ describeIntegration("MemberImport / MemberImportChange CHECK constraints [integr
         const alliance = await makeAlliance();
         const memberImport = await makeMemberImport(alliance.id, { createdCount: 0, restoredCount: 1 });
         expect(memberImport.id).toBeDefined();
+    });
+
+    // fileName/sourceSheetName are required (String, not String?) — the
+    // Prisma client's own generated types already reject `null` for these
+    // at compile time, so the only way to exercise the NOT NULL constraint
+    // itself is a raw insert that bypasses the generated client's typing.
+    it("rejects a MemberImport with a null fileName at the database level", async () => {
+        const alliance = await makeAlliance();
+        const id = `test-null-filename-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        await expect(
+            prisma.$executeRaw`
+                INSERT INTO "MemberImport" (
+                    "id", "allianceId", "actorEmailSnapshot", "fileName", "sourceSheetName",
+                    "createdCount", "restoredCount", "skippedExistingCount", "skippedDuplicateCount",
+                    "skippedEmptyNameCount", "skippedUnselectedCount"
+                ) VALUES (
+                    ${id}, ${alliance.id}, 'actor@example.test', NULL, 'Sheet1',
+                    1, 0, 0, 0, 0, 0
+                )
+            `
+        ).rejects.toThrow();
+    });
+
+    it("rejects a MemberImport with a null sourceSheetName at the database level", async () => {
+        const alliance = await makeAlliance();
+        const id = `test-null-sheetname-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        await expect(
+            prisma.$executeRaw`
+                INSERT INTO "MemberImport" (
+                    "id", "allianceId", "actorEmailSnapshot", "fileName", "sourceSheetName",
+                    "createdCount", "restoredCount", "skippedExistingCount", "skippedDuplicateCount",
+                    "skippedEmptyNameCount", "skippedUnselectedCount"
+                ) VALUES (
+                    ${id}, ${alliance.id}, 'actor@example.test', 'roster.xlsx', NULL,
+                    1, 0, 0, 0, 0, 0
+                )
+            `
+        ).rejects.toThrow();
     });
 
     it("rejects a MemberImportChange with sourceRow = 0", async () => {

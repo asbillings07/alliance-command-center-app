@@ -357,6 +357,78 @@ describe("importMembers", () => {
 
             expect(result.errors).toEqual(["Missing or invalid worksheet name"]);
         });
+
+        // A caller that bypasses the ImportProvenance TypeScript type (e.g.
+        // calling this server action directly) could send null/undefined/
+        // non-string values. The action must fail closed with a normal
+        // error result — never throw an uncaught TypeError from calling
+        // `.trim()` on a non-string before validation runs.
+        it("fails closed instead of throwing when fileName is null", async () => {
+            const entries = withSourceRows([{ playerName: "Player One" }]);
+            const result = await importMembers(
+                allianceId,
+                entries,
+                { fileName: null, sourceSheetName: "Sheet1" } as never
+            );
+
+            expect(result.errors).toEqual(["Missing or invalid file name"]);
+            expect(result.memberImportId).toBeNull();
+        });
+
+        it("fails closed instead of throwing when fileName is a non-string", async () => {
+            const entries = withSourceRows([{ playerName: "Player One" }]);
+            const result = await importMembers(
+                allianceId,
+                entries,
+                { fileName: 12345, sourceSheetName: "Sheet1" } as never
+            );
+
+            expect(result.errors).toEqual(["Missing or invalid file name"]);
+        });
+
+        it("fails closed instead of throwing when sourceSheetName is undefined", async () => {
+            const entries = withSourceRows([{ playerName: "Player One" }]);
+            const result = await importMembers(
+                allianceId,
+                entries,
+                { fileName: "roster.xlsx", sourceSheetName: undefined } as never
+            );
+
+            expect(result.errors).toEqual(["Missing or invalid worksheet name"]);
+            expect(result.memberImportId).toBeNull();
+        });
+    });
+
+    describe("create provenance integrity", () => {
+        it("fails the whole import when createManyAndReturn returns fewer rows than requested", async () => {
+            mockAllianceMember.findMany.mockResolvedValue([]);
+            // Simulate an unexpected short create (e.g. a skipDuplicates
+            // collision): two entries requested, only one row returned.
+            mockAllianceMember.createManyAndReturn.mockResolvedValueOnce([
+                {
+                    id: "created-0",
+                    playerName: "Player One",
+                    thp: null,
+                    role: null,
+                    archivedAt: null,
+                    discordName: null,
+                    squadPower: null,
+                    joinedAt: null,
+                    userId: null,
+                    updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+                },
+            ]);
+
+            const entries = withSourceRows([{ playerName: "Player One" }, { playerName: "Player Two" }]);
+            const result = await importMembers(allianceId, entries, provenance);
+
+            expect(result.created).toBe(0);
+            expect(result.restored).toBe(0);
+            expect(result.errors).toEqual(["Failed to create members. Please try again."]);
+            expect(result.memberImportId).toBeNull();
+            // The whole transaction rolled back: no partial history is ever written.
+            expect(mockMemberImport.create).not.toHaveBeenCalled();
+        });
     });
 
     describe("sourceRow validation", () => {

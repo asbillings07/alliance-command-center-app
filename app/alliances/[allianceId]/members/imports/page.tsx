@@ -139,6 +139,17 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
                                             imp.skippedEmptyNameCount +
                                             imp.skippedUnselectedCount;
                                         const detailHref = `/alliances/${allianceId}/members/imports/${imp.id}`;
+                                        // Every row renders one <Link> per
+                                        // column (matches the Members page's
+                                        // pattern), all pointing at the same
+                                        // detail page. Non-name columns get
+                                        // an explicit aria-label so a screen
+                                        // reader announces full context
+                                        // ("august-roster.xlsx created 5")
+                                        // instead of a bare, ambiguous number
+                                        // or date.
+                                        const rowLabel = imp.fileName;
+                                        const actorLabel = imp.actorDisplayNameSnapshot ?? imp.actorEmailSnapshot;
 
                                         return (
                                             <tr
@@ -150,7 +161,7 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
                                                         href={detailHref}
                                                         className="block px-4 py-3 font-medium text-primary-light hover:text-primary"
                                                     >
-                                                        {imp.fileName ?? "Unknown file"}
+                                                        {imp.fileName}
                                                         {imp.sourceSheetName && (
                                                             <span className="block text-xs font-normal text-text-muted">
                                                                 {imp.sourceSheetName}
@@ -162,14 +173,16 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
                                                     <Link
                                                         href={detailHref}
                                                         className="block px-4 py-3 text-text-secondary whitespace-nowrap"
+                                                        aria-label={`${rowLabel} imported by ${actorLabel}`}
                                                     >
-                                                        {imp.actorDisplayNameSnapshot ?? imp.actorEmailSnapshot}
+                                                        {actorLabel}
                                                     </Link>
                                                 </td>
                                                 <td className="p-0">
                                                     <Link
                                                         href={detailHref}
                                                         className="block px-4 py-3 text-text-secondary whitespace-nowrap"
+                                                        aria-label={`${rowLabel} imported on ${formatDateTime(imp.createdAt)}`}
                                                     >
                                                         {formatDateTime(imp.createdAt)}
                                                     </Link>
@@ -178,6 +191,7 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
                                                     <Link
                                                         href={detailHref}
                                                         className="block px-4 py-3 font-medium text-success whitespace-nowrap"
+                                                        aria-label={`${rowLabel} created ${imp.createdCount}`}
                                                     >
                                                         {imp.createdCount}
                                                     </Link>
@@ -186,6 +200,7 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
                                                     <Link
                                                         href={detailHref}
                                                         className="block px-4 py-3 font-medium text-warning whitespace-nowrap"
+                                                        aria-label={`${rowLabel} restored ${imp.restoredCount}`}
                                                     >
                                                         {imp.restoredCount}
                                                     </Link>
@@ -194,6 +209,7 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
                                                     <Link
                                                         href={detailHref}
                                                         className="block px-4 py-3 text-text-muted whitespace-nowrap"
+                                                        aria-label={`${rowLabel} skipped ${skippedTotal}`}
                                                     >
                                                         {skippedTotal}
                                                     </Link>

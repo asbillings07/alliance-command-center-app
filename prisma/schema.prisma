@@ -162,10 +162,13 @@ model MemberImport {
   actorEmailSnapshot       String
   actorDisplayNameSnapshot String?
 
-  fileName        String?
+  // Required: importMembers() validates both as non-empty, length-bounded
+  // strings before ever reaching this create — there is no code path that
+  // writes a MemberImport without them.
+  fileName        String
   // The workbook sheet the import was run from. Matters for multi-sheet
   // workbooks where the wrong sheet could otherwise look identical in history.
-  sourceSheetName String?
+  sourceSheetName String
 
   // Preserve the action's actual skip breakdown (existing skippedExisting/
   // skippedDuplicates/skippedEmptyNames/skippedUnselected) — don't collapse

@@ -75,21 +75,33 @@ export function PageLayout({
         {/* Breadcrumb */}
         {breadcrumb && breadcrumb.length > 0 && (
           <nav className="mb-4" aria-label="Breadcrumb">
-            <ol className="flex items-center gap-2 text-sm text-text-muted">
+            {/*
+              flex-wrap lets the whole trail drop to a second line at narrow
+              widths instead of forcing the row wider than the viewport.
+              min-w-0 on each item is still required on top of that: flex
+              items default to min-width: auto, so a label with no natural
+              break points (e.g. a long hyphenated file name in the Import
+              History breadcrumb) refuses to shrink below its own max content
+              width and overflows even inside a wrapped flex row — the same
+              class of bug the header title/action row above already guards
+              against with min-w-0. break-words lets long labels wrap
+              word-by-word once the item is allowed to shrink.
+            */}
+            <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-muted">
               {breadcrumb.map((item, index) => (
-                <li key={index} className="flex items-center gap-2">
+                <li key={index} className="flex items-center gap-2 min-w-0">
                   {index > 0 && (
                     <span className="text-text-disabled">/</span>
                   )}
                   {item.href ? (
                     <Link
                       href={item.href}
-                      className="hover:text-text-secondary transition-colors"
+                      className="hover:text-text-secondary transition-colors break-words"
                     >
                       {item.label}
                     </Link>
                   ) : (
-                    <span className="text-text-secondary">{item.label}</span>
+                    <span className="text-text-secondary break-words">{item.label}</span>
                   )}
                 </li>
               ))}

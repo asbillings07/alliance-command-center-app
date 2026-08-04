@@ -134,6 +134,14 @@ describe("MemberImportHistoryPage", () => {
         expect(html).toContain(">5<");
         expect(html).toContain(">2<");
         expect(html).toContain(">3<");
+        // Non-name link cells (Created/Restored/Skipped, plus Imported by and
+        // Date) each carry an explicit aria-label so a screen reader
+        // announces full context instead of a bare number or date — every
+        // row otherwise renders six links to the same destination.
+        expect(html).toContain('aria-label="august-roster.xlsx imported by Leader One"');
+        expect(html).toContain('aria-label="august-roster.xlsx created 5"');
+        expect(html).toContain('aria-label="august-roster.xlsx restored 2"');
+        expect(html).toContain('aria-label="august-roster.xlsx skipped 3"');
     });
 
     it("falls back to the actor email when no display name snapshot is present", async () => {

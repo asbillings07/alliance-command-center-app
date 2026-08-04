@@ -157,6 +157,14 @@ describe("MemberImportDetailPage", () => {
         expect(html).toContain("Archived");
         expect(html).toContain("Active");
 
+        // The THP/role diff isn't conveyed through line-through styling
+        // alone — an explicit "from X to Y" screen-reader-only text node is
+        // present too, so the change is perceivable without relying on
+        // strikethrough (not aria-label: axe's aria-prohibited-attr rule
+        // rejects aria-label on a plain <span>'s implicit "generic" role).
+        expect(html).toContain("changed from 10,000 to 20,000");
+        expect(html).toContain("changed from R2 to R3");
+
         // PR 1 must never show any rollback affordance.
         expect(html.toLowerCase()).not.toContain("rollback");
         expect(html.toLowerCase()).not.toContain("undo");
