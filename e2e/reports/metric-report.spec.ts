@@ -700,12 +700,326 @@ test.describe("Metric Summary Report", () => {
           page.getByRole("heading", { level: 1 }),
           page.getByTestId("report-period-select"),
           page.getByTestId("metric-coverage-card"),
+          page.getByTestId("metric-interpretation-summary-card"),
+          page.getByTestId("metric-visual-section"),
           page.getByRole("table"),
         ],
         maxDiffPixelRatio: 0.02,
       });
     } finally {
       await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id] });
+    }
+  });
+});
+
+// #264 PR5 — page hierarchy reorder, accessible visual components, and
+// mobile behavior for the metric drill-down chart. Each test seeds its own
+// data (same pattern as the suite above) so it's independent of the shared
+// fixture alliance's current roster.
+test.describe("Metric Drill-Down Charts (#264 PR5)", () => {
+  test.beforeEach(async ({ page }) => {
+    test.skip(!ALLIANCE_ID, "TEST_ALLIANCE_ID required");
+    test.skip(!process.env.TEST_OWNER_EMAIL || !process.env.TEST_OWNER_PASSWORD, "Owner credentials required");
+
+    await page.goto("/login");
+    await page.getByLabel(/email/i).fill(process.env.TEST_OWNER_EMAIL!);
+    await page.getByLabel(/password/i).fill(process.env.TEST_OWNER_PASSWORD!);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await page.waitForURL(/\/(app|alliances)/);
+  });
+
+  test("the page hierarchy places 'What This Tells You' and the chart between Coverage and Members", async ({ page }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix, { unitLabel: "pts" });
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+    const alice = await seedMember(`Alice-${suffix}`);
+    await recordEntry(period.id, metric.id, alice.id, 42);
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
+
+      const headings = await page.locator("h2").allTextContents();
+      const coverageIndex = headings.indexOf("Coverage");
+      const tellsYouIndex = headings.indexOf("What This Tells You");
+      const membersIndex = headings.indexOf("Members");
+      expect(coverageIndex).toBeGreaterThanOrEqual(0);
+      expect(tellsYouIndex).toBeGreaterThan(coverageIndex);
+      expect(membersIndex).toBeGreaterThan(tellsYouIndex);
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id] });
+    }
+  });
+
+  test("SUM chart: ranked share bars match model order and expose an accessible data table", async ({ page }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix, { unitLabel: "pts" });
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+    const alice = await seedMember(`Alice-${suffix}`);
+    const bob = await seedMember(`Bob-${suffix}`, { archived: true });
+    await recordEntry(period.id, metric.id, alice.id, 300);
+    await recordEntry(period.id, metric.id, bob.id, 100);
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}&filter=all`);
+
+      const chart = page.getByTestId("sum-share-chart");
+      await expect(chart).toBeVisible();
+      // Sighted-user graphic is decorative — its wrapper (not the bars div
+      // itself) carries aria-hidden, and is never independently focusable.
+      await expect(chart.locator("> div[aria-hidden='true']")).toContainText("Alice");
+
+      const rows = chart.locator("[data-testid^='sum-share-row-']");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0)).toHaveAttribute("data-testid", `sum-share-row-${alice.id}`);
+      await expect(rows.nth(0)).toContainText("75%");
+      await expect(rows.nth(1)).toContainText("Archived");
+
+      // The accessible table equivalent carries the same information.
+      const disclosure = chart.locator("details");
+      await expect(disclosure).toHaveAttribute("open", "");
+      const table = disclosure.locator("table");
+      await expect(table).toContainText("75%");
+      await expect(table.getByRole("columnheader", { name: "Share of total" })).toBeVisible();
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id, bob.id] });
+    }
+  });
+
+  test("SUM chart: mixed-sign data renders diverging bars with signed values and never a percentage", async ({ page }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix, { unitLabel: "pts" });
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+    const alice = await seedMember(`Alice-${suffix}`);
+    const bob = await seedMember(`Bob-${suffix}`);
+    await recordEntry(period.id, metric.id, alice.id, 100);
+    await recordEntry(period.id, metric.id, bob.id, -40);
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
+
+      const chart = page.getByTestId("sum-diverging-chart");
+      await expect(chart).toBeVisible();
+      await expect(chart).not.toContainText("%");
+      await expect(chart).toContainText("+100 pts");
+      await expect(chart).toContainText("-40 pts");
+      await expect(chart).toContainText("Adds to total");
+      await expect(chart).toContainText("Subtracts from total");
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id, bob.id] });
+    }
+  });
+
+  test("SUM chart: all-negative data states shares are unavailable, never 'mixed'", async ({ page }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix, { unitLabel: "pts" });
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+    const alice = await seedMember(`Alice-${suffix}`);
+    await recordEntry(period.id, metric.id, alice.id, -25);
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
+
+      const chart = page.getByTestId("sum-diverging-chart");
+      await expect(chart).toContainText("All recorded contributions were non-positive; member shares are unavailable.");
+      await expect(chart).not.toContainText("Adds to total");
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id] });
+    }
+  });
+
+  test("AVERAGE chart: renders a six-bin histogram with an average marker and exact ranges in the table", async ({ page }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix, { summaryKind: MetricSummaryKind.AVERAGE, unitLabel: "pts" });
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+    const members = await Promise.all(
+      [10, 20, 30, 40, 50, 60].map((_, i) => seedMember(`Member-${i}-${suffix}`)),
+    );
+    await Promise.all(members.map((m, i) => recordEntry(period.id, metric.id, m.id, [10, 20, 30, 40, 50, 60][i]!)));
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
+
+      const chart = page.getByTestId("average-distribution-chart");
+      await expect(chart).toBeVisible();
+      await expect(page.getByTestId("average-histogram")).toHaveAttribute("focusable", "false");
+      await expect(page.getByTestId("average-histogram-average-marker")).toBeVisible();
+      await expect(chart).toContainText("Average 35 pts across 6 valid results.");
+      const table = chart.locator("table");
+      await expect(table).toContainText("10 pts ≤ value < 18 pts");
+      await expect(table).toContainText("52 pts ≤ value ≤ 60 pts");
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: members.map((m) => m.id) });
+    }
+  });
+
+  test("AVERAGE chart: an all-equal cohort renders one centered bar and text, not a zero-width plot", async ({ page }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix, { summaryKind: MetricSummaryKind.AVERAGE, unitLabel: "points" });
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+    const alice = await seedMember(`Alice-${suffix}`);
+    const bob = await seedMember(`Bob-${suffix}`);
+    await recordEntry(period.id, metric.id, alice.id, 5);
+    await recordEntry(period.id, metric.id, bob.id, 5);
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
+
+      const allEqualBar = page.getByTestId("distribution-all-equal-bar");
+      await expect(allEqualBar).toBeVisible();
+      await expect(page.getByTestId("average-histogram")).toHaveCount(0);
+      // The same sentence intentionally appears in the visible summary, the
+      // decorative bar's own caption text, and the sr-only table caption —
+      // scope to the decorative bar to assert on just one of them.
+      await expect(allEqualBar).toContainText("All 2 valid results were 5 points.");
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id, bob.id] });
+    }
+  });
+
+  test("TRUE_RATE chart: renders separate recorded-response and active-roster-coverage bars, with an archived note", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix, { type: Metric_Type.BOOLEAN, summaryKind: MetricSummaryKind.TRUE_RATE });
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+    const alice = await seedMember(`Alice-${suffix}`);
+    const bob = await seedMember(`Bob-${suffix}`);
+    const zed = await seedMember(`Zed-${suffix}`, { archived: true });
+    await recordEntry(period.id, metric.id, alice.id, 1);
+    await recordEntry(period.id, metric.id, bob.id, 0);
+    await recordEntry(period.id, metric.id, zed.id, 1);
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
+
+      const chart = page.getByTestId("true-rate-breakdown-chart");
+      await expect(chart).toBeVisible();
+      await expect(page.getByTestId("true-rate-response-bar")).toBeVisible();
+      await expect(page.getByTestId("true-rate-coverage-bar")).toBeVisible();
+      await expect(chart).toContainText("Recorded response totals include 1 archived contributor; active-roster coverage does not.");
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id, bob.id, zed.id] });
+    }
+  });
+
+  test("NONE-kind metric chart explicitly denies an alliance-wide rollup for both numeric and boolean types", async ({
+    page,
+  }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const numericMetric = await seedMetric(`${suffix}-numeric`, { summaryKind: MetricSummaryKind.NONE });
+    const booleanMetric = await seedMetric(`${suffix}-boolean`, {
+      type: Metric_Type.BOOLEAN,
+      summaryKind: MetricSummaryKind.NONE,
+    });
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, numericMetric.id);
+    await attachMetric(period.id, booleanMetric.id);
+    const alice = await seedMember(`Alice-${suffix}`);
+    await recordEntry(period.id, numericMetric.id, alice.id, 55);
+    await recordEntry(period.id, booleanMetric.id, alice.id, 1);
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${numericMetric.id}?periodId=${period.id}`);
+      await expect(page.getByTestId("none-numeric-distribution-chart")).toContainText(
+        "No alliance-wide rollup is defined for this metric.",
+      );
+
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${booleanMetric.id}?periodId=${period.id}`);
+      await expect(page.getByTestId("none-boolean-breakdown-chart")).toContainText(
+        "No alliance-wide rollup is defined for this metric.",
+      );
+    } finally {
+      await cleanup({
+        metricIds: [numericMetric.id, booleanMetric.id],
+        periodIds: [period.id],
+        memberIds: [alice.id],
+      });
+    }
+  });
+
+  test("renders the chart at a 320px mobile viewport without horizontal overflow", async ({ page }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix, { unitLabel: "pts" });
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+    const alice = await seedMember(`A Very Long Alliance Member Display Name-${suffix}`);
+    await recordEntry(period.id, metric.id, alice.id, 42);
+
+    try {
+      await page.setViewportSize({ width: 320, height: 800 });
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
+
+      const chart = page.getByTestId("sum-share-chart");
+      await expect(chart).toBeVisible();
+
+      // A bounding-box check on the chart alone can't detect page- or
+      // descendant-level horizontal overflow: a container's own box stays
+      // at its CSS width even when something inside it (or elsewhere on the
+      // page) pushes wider than the viewport. Comparing the *document's*
+      // scrollWidth to the viewport width is what actually proves nothing
+      // on the page forces horizontal scroll at this width.
+      const { docScrollWidth, viewportWidth } = await page.evaluate(() => ({
+        docScrollWidth: document.documentElement.scrollWidth,
+        viewportWidth: document.documentElement.clientWidth,
+      }));
+      expect(docScrollWidth).toBeLessThanOrEqual(viewportWidth);
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id] });
+    }
+  });
+
+  test("@a11y metric drill-down chart section meets accessibility standards", async ({ page }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix, { unitLabel: "pts" });
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+    const alice = await seedMember(`Alice-${suffix}`);
+    const bob = await seedMember(`Bob-${suffix}`);
+    await recordEntry(period.id, metric.id, alice.id, 300);
+    await recordEntry(period.id, metric.id, bob.id, 100);
+
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
+      await page.waitForLoadState("networkidle");
+
+      await checkA11yWithOptions(page, {
+        runOnly: ["wcag2a", "wcag2aa"],
+        include: ['[data-testid="metric-visual-section"]'],
+      });
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id, bob.id] });
+    }
+  });
+
+  test("no element inside the chart's decorative graphic is keyboard-focusable", async ({ page }, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}`;
+    const metric = await seedMetric(suffix, { summaryKind: MetricSummaryKind.AVERAGE, unitLabel: "pts" });
+    const period = await seedPeriod(suffix);
+    await attachMetric(period.id, metric.id);
+    const alice = await seedMember(`Alice-${suffix}`);
+    const bob = await seedMember(`Bob-${suffix}`);
+    await recordEntry(period.id, metric.id, alice.id, 10);
+    await recordEntry(period.id, metric.id, bob.id, 90);
+
+    try {
+      await page.goto(`/alliances/${ALLIANCE_ID}/reports/metrics/${metric.id}?periodId=${period.id}`);
+
+      const chart = page.getByTestId("average-distribution-chart");
+      const graphicWrapper = chart.locator("> div[aria-hidden='true']").first();
+      const focusableCount = await graphicWrapper
+        .locator("a, button, input, select, textarea, [tabindex]")
+        .count();
+      expect(focusableCount).toBe(0);
+    } finally {
+      await cleanup({ metricIds: [metric.id], periodIds: [period.id], memberIds: [alice.id, bob.id] });
     }
   });
 });
