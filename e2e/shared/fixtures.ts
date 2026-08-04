@@ -181,6 +181,13 @@ export const test = base.extend<TestFixtures>({
       await prisma.metricPeriodMetric.deleteMany({
         where: { period: { allianceId: membership.allianceId } },
       });
+      // MemberImportChange -> MemberImport is onDelete: Restrict (#277 PR 1),
+      // and MemberImport.allianceId has no explicit onDelete (defaults to
+      // Restrict), so both must be cleared before AllianceMember/Alliance.
+      await prisma.memberImportChange.deleteMany({
+        where: { memberImport: { allianceId: membership.allianceId } },
+      });
+      await prisma.memberImport.deleteMany({ where: { allianceId: membership.allianceId } });
       await prisma.allianceMember.deleteMany({ where: { allianceId: membership.allianceId } });
       await prisma.metric.deleteMany({ where: { allianceId: membership.allianceId } });
       await prisma.metricPeriod.deleteMany({ where: { allianceId: membership.allianceId } });
@@ -240,6 +247,13 @@ export const test = base.extend<TestFixtures>({
     });
     await prisma.metric.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.metricPeriod.deleteMany({ where: { allianceId: alliance.id } });
+    // MemberImportChange -> MemberImport is onDelete: Restrict (#277 PR 1),
+    // and MemberImport.allianceId has no explicit onDelete (defaults to
+    // Restrict), so both must be cleared before AllianceMember/Alliance.
+    await prisma.memberImportChange.deleteMany({
+      where: { memberImport: { allianceId: alliance.id } },
+    });
+    await prisma.memberImport.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMember.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.invitation.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMembership.deleteMany({ where: { allianceId: alliance.id } });
@@ -294,6 +308,13 @@ export const test = base.extend<TestFixtures>({
     });
     await prisma.metric.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.metricPeriod.deleteMany({ where: { allianceId: alliance.id } });
+    // MemberImportChange -> MemberImport is onDelete: Restrict (#277 PR 1),
+    // and MemberImport.allianceId has no explicit onDelete (defaults to
+    // Restrict), so both must be cleared before AllianceMember/Alliance.
+    await prisma.memberImportChange.deleteMany({
+      where: { memberImport: { allianceId: alliance.id } },
+    });
+    await prisma.memberImport.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMember.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.invitation.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.allianceMembership.deleteMany({ where: { allianceId: alliance.id } });

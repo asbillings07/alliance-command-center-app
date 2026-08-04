@@ -204,7 +204,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
         ) : null;
 
     const actionButtons = (
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
             {permissions.canImportMembers && (
                 <Button
                     variant="secondary"
@@ -212,6 +212,15 @@ export default async function MembersPage({ params, searchParams }: Params) {
                     href={`/alliances/${allianceId}/members/import`}
                 >
                     Import Members
+                </Button>
+            )}
+            {permissions.canImportMembers && (
+                <Button
+                    variant="link"
+                    size="sm"
+                    href={`/alliances/${allianceId}/members/imports`}
+                >
+                    Import history
                 </Button>
             )}
             {permissions.canManageMembers && (

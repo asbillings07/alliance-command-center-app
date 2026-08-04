@@ -713,4 +713,142 @@ Existing Archived One,60000,R3,Another note,`;
         expect(container.textContent).toContain("New Members Created");
         expect(container.textContent).toContain("Archived Members Restored");
     });
+
+    it("always shows an Import history link on the upload step", async () => {
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        const historyLink = container.querySelector(`a[href="/alliances/${allianceId}/members/imports"]`);
+        expect(historyLink).not.toBeNull();
+        expect(historyLink?.textContent).toContain("Import history");
+    });
+
+    it("submits the file name, worksheet name, and each row's 1-based sourceRow to importMembers", async () => {
+        (importMembers as ReturnType<typeof vi.fn>).mockResolvedValue({
+            created: 2,
+            restored: 0,
+            skippedExisting: 0,
+            skippedDuplicates: 0,
+            skippedEmptyNames: 0,
+            skippedUnselected: 0,
+            errors: [],
+            memberImportId: "import-1",
+        });
+
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        await act(async () => {
+            fireFileUpload(`Player\nCandidate A\nCandidate B`, undefined, "roster-2026-08.csv");
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            importBtn.click();
+        });
+
+        expect(importMembers).toHaveBeenCalledTimes(1);
+        const [, submittedEntries, provenance] = (importMembers as ReturnType<typeof vi.fn>).mock.calls[0];
+
+        expect(provenance).toEqual(
+            expect.objectContaining({ fileName: "roster-2026-08.csv", sourceSheetName: expect.any(String) })
+        );
+        expect(submittedEntries[0]).toMatchObject({ playerName: "Candidate A", sourceRow: 2 });
+        expect(submittedEntries[1]).toMatchObject({ playerName: "Candidate B", sourceRow: 3 });
+    });
+
+    it("links directly to the new import's detail page when memberImportId is returned", async () => {
+        (importMembers as ReturnType<typeof vi.fn>).mockResolvedValue({
+            created: 1,
+            restored: 0,
+            skippedExisting: 0,
+            skippedDuplicates: 0,
+            skippedEmptyNames: 0,
+            skippedUnselected: 0,
+            errors: [],
+            memberImportId: "import-42",
+        });
+
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        await act(async () => {
+            fireFileUpload(`Player\nCandidate A`);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            importBtn.click();
+        });
+
+        const detailLink = container.querySelector(
+            `a[href="/alliances/${allianceId}/members/imports/import-42"]`
+        );
+        expect(detailLink).not.toBeNull();
+        expect(detailLink?.textContent).toContain("View import details");
+    });
+
+    it("does not render a detail link on the completion screen when memberImportId is null", async () => {
+        (importMembers as ReturnType<typeof vi.fn>).mockResolvedValue({
+            created: 1,
+            restored: 0,
+            skippedExisting: 0,
+            skippedDuplicates: 0,
+            skippedEmptyNames: 0,
+            skippedUnselected: 0,
+            errors: [],
+            memberImportId: null,
+        });
+
+        await act(async () => {
+            root.render(
+                createElement(RosterImportForm, {
+                    allianceId,
+                    existingMembers: [],
+                })
+            );
+        });
+
+        await act(async () => {
+            fireFileUpload(`Player\nCandidate A`);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const importBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+            b.textContent?.includes("Import")
+        ) as HTMLButtonElement;
+
+        await act(async () => {
+            importBtn.click();
+        });
+
+        expect(container.textContent).toContain("Committed Alliance Member Translation");
+        expect(container.textContent).not.toContain("View import details");
+    });
 });

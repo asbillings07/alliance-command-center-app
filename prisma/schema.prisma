@@ -65,25 +65,27 @@ enum FeedbackCategory {
 }
 
 model Alliance {
-  id        String   @id @default(cuid())
-  name      String
-  server    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                                String                     @id @default(cuid())
+  name                              String
+  server                            String
+  createdAt                         DateTime                   @default(now())
+  updatedAt                         DateTime                   @updatedAt
   // Monotonic setup-activity clock; bumped via touchAllianceSetupActivity()'s
   // atomic GREATEST() update on every setup-domain write (#174).
-  setupActivityAt DateTime @default(now())
-  allianceMembers  AllianceMember[]
-  metrics          Metric[]
-  memberships      AllianceMembership[]
-  metricPeriods    MetricPeriod[]
-  invitations      Invitation[]
-  betaInvitations  BetaInvitation[]
+  setupActivityAt                   DateTime                   @default(now())
+  allianceMembers                   AllianceMember[]
+  metrics                           Metric[]
+  memberships                       AllianceMembership[]
+  metricPeriods                     MetricPeriod[]
+  invitations                       Invitation[]
+  betaInvitations                   BetaInvitation[]
   // Live "current access evidence" links from #177 conflict snapshots. SetNull
   // on delete: the immutable *IdSnapshot/*Name columns on those rows retain
   // the audit trail independent of whether this alliance still exists.
   accessRequestTriageConflicts      AccessRequestTriage[]
   accessRequestTriageEventConflicts AccessRequestTriageEvent[]
+  memberImports                     MemberImport[]
+
   @@unique([name, server])
 }
 
@@ -91,10 +93,10 @@ model AllianceMembership {
   id String @id @default(cuid())
 
   allianceId String
-  alliance Alliance @relation(fields: [allianceId], references: [id])
+  alliance   Alliance @relation(fields: [allianceId], references: [id])
 
   userId String
-  user User @relation(fields: [userId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
 
   role AllianceRole
 
@@ -115,77 +117,195 @@ model AllianceMember {
   archivedAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  
-  userId      String?
-  user        User?     @relation(fields: [userId], references: [id])
-  
-  alliance    Alliance  @relation(fields: [allianceId], references: [id])
-  metricEntries MemberMetricEntry[]
-  leadershipNotes LeadershipNote[]
-  invitations Invitation[]
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  alliance            Alliance             @relation(fields: [allianceId], references: [id])
+  metricEntries       MemberMetricEntry[]
+  leadershipNotes     LeadershipNote[]
+  invitations         Invitation[]
+  memberImportChanges MemberImportChange[]
 
   @@unique([allianceId, playerName])
   @@index([allianceId, archivedAt])
   @@index([allianceId, userId])
 }
 
+enum MemberImportChangeType {
+  CREATED
+  RESTORED
+}
+
+// One row per completed roster/member-data import (#277 PR 1). Deliberately
+// named "MemberImport" (not "Import") to leave room for a distinct
+// evaluation-result import model later, per #277's own deferred-
+// generalization note.
+//
+// Only written for a successful server-side commit that created or restored
+// at least one member. Never written for: client-only preview state,
+// validation failures, capacity failures, permission denials, or a
+// zero-net-effect commit (e.g. every row skipped as existing/duplicate). This
+// keeps "Import History" a leadership-relevant record, not an attempt log.
+model MemberImport {
+  id         String   @id @default(cuid())
+  allianceId String
+  alliance   Alliance @relation(fields: [allianceId], references: [id])
+
+  // Actor snapshot, resolved from the database inside the same transaction
+  // that writes this row (never trusted from the caller). SetNull so this
+  // history survives operator/user deletion; the snapshot columns are the
+  // durable record — matches Feedback's submitterEmail/submitterDisplayName
+  // and AccessRequestTriageEvent's actorEmail/actorDisplayName precedent.
+  actorUserId              String?
+  actor                    User?   @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmailSnapshot       String
+  actorDisplayNameSnapshot String?
+
+  // Required: importMembers() validates both as non-empty, length-bounded
+  // strings before ever reaching this create — there is no code path that
+  // writes a MemberImport without them.
+  fileName        String
+  // The workbook sheet the import was run from. Matters for multi-sheet
+  // workbooks where the wrong sheet could otherwise look identical in history.
+  sourceSheetName String
+
+  // Preserve the action's actual skip breakdown (existing skippedExisting/
+  // skippedDuplicates/skippedEmptyNames/skippedUnselected) — don't collapse
+  // them into one count. Total is derived for display.
+  createdCount           Int
+  restoredCount          Int
+  skippedExistingCount   Int
+  skippedDuplicateCount  Int
+  skippedEmptyNameCount  Int
+  skippedUnselectedCount Int
+
+  createdAt DateTime @default(now())
+
+  changes MemberImportChange[]
+
+  // Supports the list page's deterministic pagination order (matches the
+  // query's ORDER BY createdAt DESC, id DESC exactly, including sort direction).
+  @@index([allianceId, createdAt(sort: Desc), id(sort: Desc)])
+}
+
+// One row per AllianceMember touched by a MemberImport. Field-level
+// before/after snapshot is what PR 3's rollback will diff against the
+// member's *current* value to detect conflicting later edits.
+model MemberImportChange {
+  id             String       @id @default(cuid())
+  memberImportId String
+  // Restrict, not Cascade: the import is a historical anchor. An accidental
+  // header deletion must never silently erase its evidence; explicit tenant
+  // cleanup can delete rows in FK order if that's ever required.
+  memberImport   MemberImport @relation(fields: [memberImportId], references: [id], onDelete: Restrict)
+
+  // SetNull + snapshot: if a future rollback ever hard-deletes this member,
+  // the import's own history must still be readable (ADR-004) even though
+  // the member row is gone.
+  allianceMemberId   String?
+  allianceMember     AllianceMember? @relation(fields: [allianceMemberId], references: [id], onDelete: SetNull)
+  playerNameSnapshot String
+  // Row position in the source sheet (1-based), already computed client-side
+  // as ParsedMember.sourceRow. Drives the detail page's display order.
+  sourceRow          Int
+
+  changeType MemberImportChangeType
+
+  // Null "before" for CREATED (nothing existed). Non-null "before" for
+  // RESTORED (the member's pre-import state).
+  archivedAtBefore DateTime?
+  archivedAtAfter  DateTime?
+  thpBefore        Int?
+  thpAfter         Int?
+  roleBefore       String?
+  roleAfter        String?
+
+  // Full post-import mutable-scalar snapshot, beyond the thp/role/archivedAt
+  // "after" columns above (which exist for the human-readable before/after
+  // diff). `updatedAt` alone is not sufficient conflict evidence for PR 3 —
+  // it may not reflect raw-SQL writes and isn't a version counter — so these
+  // columns give PR 3 an independent, field-by-field equality check against
+  // the member's current row before it decides "unchanged since import".
+  discordNameAfter     String?
+  squadPowerAfter      Int?
+  joinedAtAfter        DateTime?
+  userIdAfter          String?
+  // AllianceMember.updatedAt immediately after this change, taken from the
+  // authoritative create/update result. Corroborating evidence alongside the
+  // scalar snapshot above — useful for detecting a change-then-revert
+  // sequence that leaves scalars matching but updatedAt bumped.
+  memberUpdatedAtAfter DateTime
+
+  // Explicit identity: a source row can produce at most one change. Also
+  // enforced in code (matching returned member rows back to their source
+  // entry — see action.ts) since createManyAndReturn's result order is not
+  // guaranteed to match input order.
+  @@unique([memberImportId, sourceRow])
+  @@index([allianceMemberId])
+}
+
 model User {
-  id          String @id @default(cuid())
+  id                      String    @id @default(cuid())
   // Reserved for future localization support. Do not expose as an account
   // preference until the app has real i18n behavior (no control without
   // behavior). See the "No speculative preferences" decision on issue #125.
-  preferredLanguage String @default("en")
-  email       String @unique
-  displayName String
+  preferredLanguage       String    @default("en")
+  email                   String    @unique
+  displayName             String
   // Authentication capabilities are modeled as the presence of provider-specific
   // credentials, not a mutually exclusive provider enum. A user may have both,
   // enabling password + Google on the same canonical identity (email). See ADR-013.
-  passwordHash String?
-  googleSubject String? @unique
+  passwordHash            String?
+  googleSubject           String?   @unique
   // Provider metadata, NOT an identity key (ADR-013 #131): the verified email of
   // the connected Google account, captured on connect and refreshed on Google
   // sign-in purely so the UI can show "Connected as <email>". Deliberately not
   // @unique and never copied into `email` — Google authenticates, AllianceHQ
   // owns the profile. Cleared on disconnect.
-  googleEmail String?
+  googleEmail             String?
   // Set when the user explicitly disconnects Google (ADR-013 identity
   // management, #131). Gives `googleSubject == null` durable meaning: null flag
   // = legacy account still eligible for automatic email-match linking; set flag
   // = the owner intentionally disconnected, so normal Google sign-in must NOT
   // silently re-link. Explicit connect clears it.
   googleAutoLinkBlockedAt DateTime?
-  isPlatformAdmin Boolean @default(false)
+  isPlatformAdmin         Boolean   @default(false)
   // Authoritative session-invalidation version. Stamped onto the JWT at sign-in
   // and revalidated against this column on every authenticated request. Bumping
   // it (see revokeSessions) rejects all previously issued tokens. Unlike the
   // isPlatformAdmin hint, this is an invariant, not a snapshot. See issue #132.
-  sessionVersion Int @default(0)
+  sessionVersion          Int       @default(0)
 
-  memberships AllianceMembership[]
-  authoredNotes LeadershipNote[]
-  linkedMembers AllianceMember[]
-  invitationsSent Invitation[] @relation("InvitationsSent")
-  invitationsAccepted Invitation[] @relation("InvitationsAccepted")
-  betaInvitationsAccepted BetaInvitation[] @relation("BetaInvitationsAccepted")
-  betaInvitationsIssued   BetaInvitation[] @relation("BetaInvitationsIssued")
-  betaInvitationsRevoked  BetaInvitation[] @relation("BetaInvitationsRevoked")
-  betaParticipant         BetaParticipant?
-  betaInvitationDeliveryAttempts BetaInvitationDeliveryAttempt[]
-  feedback Feedback[]
-  feedbackTriageEvents FeedbackTriageEvent[]
-  emailChangeRequests EmailChangeRequest[]
-  passwordResetTokens PasswordResetToken[]
+  memberships                       AllianceMembership[]
+  authoredNotes                     LeadershipNote[]
+  linkedMembers                     AllianceMember[]
+  invitationsSent                   Invitation[]                    @relation("InvitationsSent")
+  invitationsAccepted               Invitation[]                    @relation("InvitationsAccepted")
+  betaInvitationsAccepted           BetaInvitation[]                @relation("BetaInvitationsAccepted")
+  betaInvitationsIssued             BetaInvitation[]                @relation("BetaInvitationsIssued")
+  betaInvitationsRevoked            BetaInvitation[]                @relation("BetaInvitationsRevoked")
+  betaParticipant                   BetaParticipant?
+  betaInvitationDeliveryAttempts    BetaInvitationDeliveryAttempt[]
+  feedback                          Feedback[]
+  feedbackTriageEvents              FeedbackTriageEvent[]
+  emailChangeRequests               EmailChangeRequest[]
+  passwordResetTokens               PasswordResetToken[]
   // #177: live "current access evidence" links (SetNull on delete — the
   // immutable conflictUserIdSnapshot/*Email/*DisplayName columns retain the
   // audit trail independent of whether this account still exists) and the
   // triage event actor link (also SetNull; actorEmail/actorDisplayName are
   // snapshotted on every event so attribution survives account deletion).
   accessRequestTriageConflicts      AccessRequestTriage[]
-  accessRequestTriageEventConflicts AccessRequestTriageEvent[] @relation("AccessRequestTriageEventConflictUser")
-  accessRequestTriageEventsActedOn  AccessRequestTriageEvent[] @relation("AccessRequestTriageEventActor")
+  accessRequestTriageEventConflicts AccessRequestTriageEvent[]      @relation("AccessRequestTriageEventConflictUser")
+  accessRequestTriageEventsActedOn  AccessRequestTriageEvent[]      @relation("AccessRequestTriageEventActor")
+  // #277: live actor link (SetNull on delete — actorEmailSnapshot/
+  // actorDisplayNameSnapshot on MemberImport retain attribution independent
+  // of whether this account still exists).
+  memberImportsActedOn              MemberImport[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Single-use, hashed password reset tokens.
@@ -238,13 +358,13 @@ model EmailChangeRequest {
 model Metric {
   id String @id @default(cuid())
 
-  allianceId String
-  alliance   Alliance @relation(fields: [allianceId], references: [id])
+  allianceId  String
+  alliance    Alliance @relation(fields: [allianceId], references: [id])
   name        String
   description String?
 
   type   Metric_Type
-  active Boolean @default(true)
+  active Boolean     @default(true)
 
   // #190: reporting semantics. summaryKind defaults to NONE ("no rollup
   // configured yet") rather than guessing, so every existing metric backfills
@@ -261,6 +381,7 @@ model Metric {
   periodMetrics MetricPeriodMetric[]
 
   createdAt DateTime @default(now())
+
   @@unique([allianceId, name])
 }
 
@@ -268,14 +389,14 @@ model MetricPeriod {
   id String @id @default(cuid())
 
   allianceId String
-  alliance Alliance @relation(fields: [allianceId], references: [id])
+  alliance   Alliance @relation(fields: [allianceId], references: [id])
 
   name String
 
   active Boolean @default(true)
 
   startsAt DateTime?
-  endsAt DateTime?
+  endsAt   DateTime?
 
   periodMetrics MetricPeriodMetric[]
 
@@ -284,14 +405,14 @@ model MetricPeriod {
 
 model MetricPeriodMetric {
   periodId String
-  period MetricPeriod @relation(fields: [periodId], references: [id])
+  period   MetricPeriod @relation(fields: [periodId], references: [id])
 
   metricId String
-  metric Metric @relation(fields: [metricId], references: [id])
+  metric   Metric @relation(fields: [metricId], references: [id])
 
-  weight Int
+  weight   Int
   required Boolean
-  active Boolean @default(true)
+  active   Boolean @default(true)
 
   memberMetricEntries MemberMetricEntry[]
 
@@ -304,8 +425,8 @@ model MemberMetricEntry {
   allianceMemberId String
   allianceMember   AllianceMember @relation(fields: [allianceMemberId], references: [id])
 
-  periodId String
-  metricId String
+  periodId     String
+  metricId     String
   periodMetric MetricPeriodMetric @relation(fields: [periodId, metricId], references: [periodId, metricId])
 
   value Int
@@ -328,15 +449,15 @@ model LeadershipNote {
   id String @id @default(cuid())
 
   allianceMemberId String
-  allianceMember AllianceMember @relation(fields: [allianceMemberId], references: [id])
+  allianceMember   AllianceMember @relation(fields: [allianceMemberId], references: [id])
 
   authorId String
-  author User @relation(fields: [authorId], references: [id])
+  author   User   @relation(fields: [authorId], references: [id])
 
-  noteType LeadershipNoteType
+  noteType   LeadershipNoteType
   visibility LeadershipNoteVisibility
-  title String?
-  content String
+  title      String?
+  content    String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
@@ -344,42 +465,42 @@ model LeadershipNote {
 
 model Invitation {
   id String @id @default(cuid())
-  
+
   allianceId String
   alliance   Alliance @relation(fields: [allianceId], references: [id])
-  
+
   invitedById String
-  invitedBy   User @relation("InvitationsSent", fields: [invitedById], references: [id])
-  
+  invitedBy   User   @relation("InvitationsSent", fields: [invitedById], references: [id])
+
   allianceMemberId   String?
   allianceMember     AllianceMember? @relation(fields: [allianceMemberId], references: [id])
   playerNameSnapshot String
-  
+
   email          String
   membershipRole AllianceRole
-  token          String  @unique
-  code           String? @unique
-  
+  token          String       @unique
+  code           String?      @unique
+
   expiresAt        DateTime
   acceptedAt       DateTime?
   acceptedByUserId String?
-  acceptedByUser   User? @relation("InvitationsAccepted", fields: [acceptedByUserId], references: [id])
+  acceptedByUser   User?     @relation("InvitationsAccepted", fields: [acceptedByUserId], references: [id])
   cancelledAt      DateTime?
-  
+
   createdAt DateTime @default(now())
-  
+
   @@index([allianceId, email])
 }
 
 model BetaParticipant {
-  id                String   @id @default(cuid())
-  createdAt         DateTime @default(now())
+  id                                String                     @id @default(cuid())
+  createdAt                         DateTime                   @default(now())
   // DB-level @unique contract lands in PR 1c (#174); required here for Prisma's
   // one-to-one relation shape.
-  userId            String?  @unique
-  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  identityAmbiguous Boolean  @default(false)
-  invitations       BetaInvitation[]
+  userId                            String?                    @unique
+  user                              User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  identityAmbiguous                 Boolean                    @default(false)
+  invitations                       BetaInvitation[]
   // #177: live link from a CONVERSION_BLOCKED event's participant-identity
   // conflict (EXISTING_PARTICIPANT_REISSUE / IDENTITY_AMBIGUOUS). SetNull on
   // delete — conflictParticipantIdSnapshots retains the immutable audit trail.
@@ -409,9 +530,9 @@ model BetaInvitation {
 
   // DB-level @unique contract lands in PR 1c (#174); required here for Prisma's
   // one-to-one reissue successor relation.
-  reissuedFromInvitationId String?          @unique
-  reissuedFrom             BetaInvitation?  @relation("BetaInvitationReissue", fields: [reissuedFromInvitationId], references: [id])
-  reissuedTo               BetaInvitation?  @relation("BetaInvitationReissue")
+  reissuedFromInvitationId String?         @unique
+  reissuedFrom             BetaInvitation? @relation("BetaInvitationReissue", fields: [reissuedFromInvitationId], references: [id])
+  reissuedTo               BetaInvitation? @relation("BetaInvitationReissue")
 
   resendClaimedAt DateTime?
   resendClaimId   String?
@@ -430,7 +551,7 @@ model BetaInvitation {
   // #177: reverse relations for the AccessRequest triage conversion contract.
   // All Restrict — a BetaInvitation is durable history (ADR-004) and cleanup
   // never hard-deletes it, so these can never block a legitimate cleanup run.
-  accessRequestTriageLink          AccessRequestTriage?      @relation("AccessRequestTriageInvitation")
+  accessRequestTriageLink           AccessRequestTriage?       @relation("AccessRequestTriageInvitation")
   accessRequestTriageEventConflicts AccessRequestTriageEvent[] @relation("AccessRequestTriageEventConflictInvitation")
   accessRequestTriageEventLinks     AccessRequestTriageEvent[] @relation("AccessRequestTriageEventInvitation")
 
@@ -461,7 +582,7 @@ model BetaInvitationDeliveryAttempt {
   // Sanitized, bounded, and only ever set when status = FAILED. Falls back to
   // a generic reason when the transport didn't provide one, so a bare
   // `{ status: "failed" }` result still records (see canonicalization mapping).
-  failureReason String?
+  failureReason     String?
 
   // Nullable + SetNull so history survives operator deletion; email/display
   // name are snapshotted from the database at write time (never trusted from
@@ -575,7 +696,7 @@ model AccessRequestTriage {
   // delete); the *Snapshot/*Email/*Name/*Count columns are the immutable,
   // required-when-populated audit record and are what every CHECK targets.
   conflictUserId             String?
-  conflictUser               User?    @relation(fields: [conflictUserId], references: [id], onDelete: SetNull)
+  conflictUser               User?     @relation(fields: [conflictUserId], references: [id], onDelete: SetNull)
   conflictUserIdSnapshot     String?
   conflictUserEmail          String?
   conflictUserDisplayName    String?
@@ -591,8 +712,8 @@ model AccessRequestTriage {
   // convenience so the queue doesn't need to join the latest event.
   currentReason String?
 
-  stateRevision Int       @default(0)
-  lastEventAt   DateTime?
+  stateRevision                   Int       @default(0)
+  lastEventAt                     DateTime?
   // Actor of the most recent event of ANY kind (including notes), so list
   // rows can show "last touched by" without joining the event log.
   lastEventActorEmail             String?

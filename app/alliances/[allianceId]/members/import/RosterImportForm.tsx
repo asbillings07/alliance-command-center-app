@@ -426,8 +426,14 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
         skippedEmptyNames: 0,
         skippedUnselected: 0,
         errors: [],
+        memberImportId: null,
       });
       setStep("complete");
+      return;
+    }
+
+    if (!parsedWorkbook || !currentSheet) {
+      setError("Missing source file information. Please re-upload your spreadsheet.");
       return;
     }
 
@@ -437,11 +443,15 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
       role: m.role.trim() || undefined,
       restore: m.isArchived,
       selected: m.selected,
+      sourceRow: m.sourceRow,
     }));
 
     startTransition(async () => {
       try {
-        const result = await importMembers(allianceId, entries);
+        const result = await importMembers(allianceId, entries, {
+          fileName: parsedWorkbook.fileName,
+          sourceSheetName: currentSheet.name,
+        });
         setImportResult(result);
         if (result.errors.length > 0 && result.created === 0 && result.restored === 0) {
           setError(result.errors.join("; "));
@@ -479,7 +489,15 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
         <div className="bg-surface border border-border rounded-lg p-6">
           <div className="flex items-start justify-between gap-4 mb-4">
             <h2 className="text-lg font-semibold text-text-primary">Upload Member Spreadsheet</h2>
-            <TourButton tour={importMembersTour} />
+            <div className="flex items-center gap-3">
+              <Link
+                href={`/alliances/${allianceId}/members/imports`}
+                className="text-sm text-text-muted hover:text-text-secondary hover:underline"
+              >
+                Import history
+              </Link>
+              <TourButton tour={importMembersTour} />
+            </div>
           </div>
 
           <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary mb-4">
@@ -973,6 +991,14 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
           >
             Import More Members
           </button>
+          {importResult.memberImportId && (
+            <Link
+              href={`/alliances/${allianceId}/members/imports/${importResult.memberImportId}`}
+              className="px-4 py-2 rounded-md border border-border text-text-primary hover:bg-surface-secondary inline-block text-center font-medium"
+            >
+              View import details
+            </Link>
+          )}
           {returnTo && (
             <Link
               href={returnTo}
