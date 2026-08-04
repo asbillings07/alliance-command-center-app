@@ -139,27 +139,28 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
                                             imp.skippedEmptyNameCount +
                                             imp.skippedUnselectedCount;
                                         const detailHref = `/alliances/${allianceId}/members/imports/${imp.id}`;
-                                        // Every row renders one <Link> per
-                                        // column (matches the Members page's
-                                        // pattern), all pointing at the same
-                                        // detail page. Non-name columns get
-                                        // an explicit aria-label so a screen
-                                        // reader announces full context
-                                        // ("august-roster.xlsx created 5")
-                                        // instead of a bare, ambiguous number
-                                        // or date.
-                                        const rowLabel = imp.fileName;
                                         const actorLabel = imp.actorDisplayNameSnapshot ?? imp.actorEmailSnapshot;
 
                                         return (
                                             <tr
                                                 key={imp.id}
-                                                className="border-b border-border hover:bg-surface-secondary transition-colors cursor-pointer"
+                                                className="relative border-b border-border hover:bg-surface-secondary transition-colors"
                                             >
                                                 <td className="p-0">
+                                                    {/*
+                                                        Exactly one real link per row ("stretched
+                                                        link" pattern): its ::before is absolutely
+                                                        positioned against this <tr> (relative
+                                                        above), covering the whole row so a mouse
+                                                        click anywhere still navigates, while
+                                                        keyboard/screen-reader users only encounter
+                                                        one tab stop instead of six redundant links
+                                                        to the same destination. The other cells
+                                                        below are plain, non-interactive text.
+                                                    */}
                                                     <Link
                                                         href={detailHref}
-                                                        className="block px-4 py-3 font-medium text-primary-light hover:text-primary"
+                                                        className="block px-4 py-3 font-medium text-primary-light hover:text-primary before:absolute before:inset-0 before:content-['']"
                                                     >
                                                         {imp.fileName}
                                                         {imp.sourceSheetName && (
@@ -169,50 +170,20 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
                                                         )}
                                                     </Link>
                                                 </td>
-                                                <td className="p-0">
-                                                    <Link
-                                                        href={detailHref}
-                                                        className="block px-4 py-3 text-text-secondary whitespace-nowrap"
-                                                        aria-label={`${rowLabel} imported by ${actorLabel}`}
-                                                    >
-                                                        {actorLabel}
-                                                    </Link>
+                                                <td className="px-4 py-3 text-text-secondary whitespace-nowrap">
+                                                    {actorLabel}
                                                 </td>
-                                                <td className="p-0">
-                                                    <Link
-                                                        href={detailHref}
-                                                        className="block px-4 py-3 text-text-secondary whitespace-nowrap"
-                                                        aria-label={`${rowLabel} imported on ${formatDateTime(imp.createdAt)}`}
-                                                    >
-                                                        {formatDateTime(imp.createdAt)}
-                                                    </Link>
+                                                <td className="px-4 py-3 text-text-secondary whitespace-nowrap">
+                                                    {formatDateTime(imp.createdAt)}
                                                 </td>
-                                                <td className="p-0 text-right">
-                                                    <Link
-                                                        href={detailHref}
-                                                        className="block px-4 py-3 font-medium text-success whitespace-nowrap"
-                                                        aria-label={`${rowLabel} created ${imp.createdCount}`}
-                                                    >
-                                                        {imp.createdCount}
-                                                    </Link>
+                                                <td className="px-4 py-3 text-right font-medium text-success whitespace-nowrap">
+                                                    {imp.createdCount}
                                                 </td>
-                                                <td className="p-0 text-right">
-                                                    <Link
-                                                        href={detailHref}
-                                                        className="block px-4 py-3 font-medium text-warning whitespace-nowrap"
-                                                        aria-label={`${rowLabel} restored ${imp.restoredCount}`}
-                                                    >
-                                                        {imp.restoredCount}
-                                                    </Link>
+                                                <td className="px-4 py-3 text-right font-medium text-warning whitespace-nowrap">
+                                                    {imp.restoredCount}
                                                 </td>
-                                                <td className="p-0 text-right">
-                                                    <Link
-                                                        href={detailHref}
-                                                        className="block px-4 py-3 text-text-muted whitespace-nowrap"
-                                                        aria-label={`${rowLabel} skipped ${skippedTotal}`}
-                                                    >
-                                                        {skippedTotal}
-                                                    </Link>
+                                                <td className="px-4 py-3 text-right text-text-muted whitespace-nowrap">
+                                                    {skippedTotal}
                                                 </td>
                                             </tr>
                                         );

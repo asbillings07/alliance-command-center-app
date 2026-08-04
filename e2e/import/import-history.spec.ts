@@ -97,15 +97,85 @@ test.describe("Import History", () => {
     await expect(page.getByText("list-page-roster.xlsx")).toBeVisible();
     await expect(page.getByText("Seed Actor")).toBeVisible();
 
-    await page
-      .getByRole("link", { name: `list-page-roster.xlsx created ${memberImport.createdCount}` })
-      .click();
+    await page.getByRole("link", { name: "list-page-roster.xlsx" }).click();
 
     await page.waitForURL(new RegExp(`/members/imports/${memberImport.id}$`));
     await expect(
       page.getByRole("heading", { level: 1, name: "list-page-roster.xlsx" })
     ).toBeVisible();
     await expect(page.getByText("ListPageSeededMember")).toBeVisible();
+  });
+
+  test("import history list page rows expose exactly one keyboard tab stop, and the whole row stays mouse-clickable", async ({
+    page,
+    login,
+    adminScenario,
+  }) => {
+    const { allianceId, email, password } = adminScenario;
+
+    const member = await prisma.allianceMember.create({
+      data: { allianceId, playerName: "KeyboardCheckMember", thp: 1000 },
+    });
+    const memberImport = await prisma.memberImport.create({
+      data: {
+        allianceId,
+        actorEmailSnapshot: "kb-actor@example.test",
+        actorDisplayNameSnapshot: "Keyboard Actor",
+        fileName: "keyboard-roster.xlsx",
+        sourceSheetName: "Roster",
+        createdCount: 1,
+        restoredCount: 0,
+        skippedExistingCount: 0,
+        skippedDuplicateCount: 0,
+        skippedEmptyNameCount: 0,
+        skippedUnselectedCount: 0,
+        changes: {
+          create: [
+            {
+              allianceMemberId: member.id,
+              playerNameSnapshot: member.playerName,
+              sourceRow: 1,
+              changeType: MemberImportChangeType.CREATED,
+              thpAfter: member.thp,
+              memberUpdatedAtAfter: member.updatedAt,
+            },
+          ],
+        },
+      },
+    });
+
+    await login({ email, password, displayName: "Admin User" });
+    await page.goto(`/alliances/${allianceId}/members/imports`);
+
+    const rowLink = page.getByRole("link", { name: "keyboard-roster.xlsx" });
+    await expect(rowLink).toBeVisible();
+
+    // The row previously exposed six links to the same destination (one per
+    // column) — a keyboard user had to tab through five redundant stops to
+    // reach the next row. Focusing the row's one real link and pressing Tab
+    // must move focus somewhere else entirely, not to a second hidden link
+    // for the same row.
+    await rowLink.focus();
+    await expect(rowLink).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(rowLink).not.toBeFocused();
+
+    // The link itself is keyboard-activatable (Enter navigates).
+    await rowLink.focus();
+    await page.keyboard.press("Enter");
+    await page.waitForURL(new RegExp(`/members/imports/${memberImport.id}$`));
+
+    // The "stretched link" overlay keeps the whole row mouse-clickable even
+    // though only one cell renders a real <a> — clicking text in a
+    // non-link cell (e.g. the actor name) still navigates to the detail
+    // page. Playwright's default actionability check refuses this click
+    // because the overlay intercepts pointer events at that point, which is
+    // itself proof the overlay covers the whole row; `force: true` bypasses
+    // that check so the real browser hit-test (which resolves to the
+    // overlay, i.e. the link) drives the click.
+    await page.goto(`/alliances/${allianceId}/members/imports`);
+    await page.getByText("Keyboard Actor", { exact: true }).click({ force: true });
+    await page.waitForURL(new RegExp(`/members/imports/${memberImport.id}$`));
   });
 
   test("@a11y Import History empty state meets accessibility standards", async ({

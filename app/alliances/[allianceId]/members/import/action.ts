@@ -91,11 +91,15 @@ export async function importMembers(
 
     // Provenance metadata is client-supplied display metadata, not
     // authenticated proof — validate it explicitly before trusting it. The
-    // type check must run before `.trim()`: a caller that bypasses the
-    // ImportProvenance TypeScript type (e.g. calling this server action
-    // directly) could send `null`/`undefined`/non-string values, and
-    // `.trim()` on those throws outside the try/catch below rather than
-    // failing closed with a normal error result.
+    // type checks must run before touching any property or calling
+    // `.trim()`: a caller that bypasses the ImportProvenance TypeScript type
+    // (e.g. calling this server action directly) could send an entirely
+    // missing/null/non-object third argument, and `provenance.fileName` on
+    // that throws outside the try/catch below rather than failing closed
+    // with a normal error result.
+    if (provenance === null || typeof provenance !== "object") {
+        return failResult(["Missing or invalid file name"]);
+    }
     if (typeof provenance.fileName !== "string") {
         return failResult(["Missing or invalid file name"]);
     }

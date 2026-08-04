@@ -134,14 +134,47 @@ describe("MemberImportHistoryPage", () => {
         expect(html).toContain(">5<");
         expect(html).toContain(">2<");
         expect(html).toContain(">3<");
-        // Non-name link cells (Created/Restored/Skipped, plus Imported by and
-        // Date) each carry an explicit aria-label so a screen reader
-        // announces full context instead of a bare number or date — every
-        // row otherwise renders six links to the same destination.
-        expect(html).toContain('aria-label="august-roster.xlsx imported by Leader One"');
-        expect(html).toContain('aria-label="august-roster.xlsx created 5"');
-        expect(html).toContain('aria-label="august-roster.xlsx restored 2"');
-        expect(html).toContain('aria-label="august-roster.xlsx skipped 3"');
+    });
+
+    it("renders exactly one focusable link per row (the file name), not one per column", async () => {
+        vi.mocked(prisma.memberImport.count).mockResolvedValue(1);
+        vi.mocked(prisma.memberImport.findMany).mockResolvedValue([
+            {
+                id: "imp_1",
+                fileName: "august-roster.xlsx",
+                sourceSheetName: "Roster",
+                actorEmailSnapshot: "leader@example.com",
+                actorDisplayNameSnapshot: "Leader One",
+                createdAt: new Date("2026-08-01T12:00:00Z"),
+                createdCount: 5,
+                restoredCount: 2,
+                skippedExistingCount: 1,
+                skippedDuplicateCount: 1,
+                skippedEmptyNameCount: 0,
+                skippedUnselectedCount: 1,
+            },
+        ] as unknown as Awaited<ReturnType<typeof prisma.memberImport.findMany>>);
+
+        const page = await MemberImportHistoryPage({
+            params: Promise.resolve({ allianceId: "all_1" }),
+            searchParams: Promise.resolve({}),
+        });
+        const html = renderToStaticMarkup(page);
+
+        // Every row previously rendered six links to the same destination
+        // (one per column) — a keyboard user had to tab through five
+        // redundant stops to reach the next row. Only the file name is a
+        // real <a>; the other cells (Imported by/Date/Created/Restored/
+        // Skipped) are plain text, and the whole row still navigates via
+        // the "stretched link" ::before overlay on that one anchor. Scope
+        // the count to <tbody> so the page's own breadcrumb/action links
+        // don't skew it.
+        const tbodyHtml = html.match(/<tbody>[\s\S]*<\/tbody>/)?.[0];
+        expect(tbodyHtml).toBeDefined();
+        const linkCount = (tbodyHtml!.match(/<a\b/g) ?? []).length;
+        expect(linkCount).toBe(1);
+        expect(html).toContain("Leader One");
+        expect(html).toContain(">3<");
     });
 
     it("falls back to the actor email when no display name snapshot is present", async () => {

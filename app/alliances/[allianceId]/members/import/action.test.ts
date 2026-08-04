@@ -363,6 +363,29 @@ describe("importMembers", () => {
         // non-string values. The action must fail closed with a normal
         // error result — never throw an uncaught TypeError from calling
         // `.trim()` on a non-string before validation runs.
+        it("fails closed instead of throwing when provenance itself is null", async () => {
+            const entries = withSourceRows([{ playerName: "Player One" }]);
+            const result = await importMembers(allianceId, entries, null as never);
+
+            expect(result.errors).toEqual(["Missing or invalid file name"]);
+            expect(result.memberImportId).toBeNull();
+        });
+
+        it("fails closed instead of throwing when provenance is undefined (missing third argument)", async () => {
+            const entries = withSourceRows([{ playerName: "Player One" }]);
+            const result = await importMembers(allianceId, entries, undefined as never);
+
+            expect(result.errors).toEqual(["Missing or invalid file name"]);
+            expect(result.memberImportId).toBeNull();
+        });
+
+        it("fails closed instead of throwing when provenance is a non-object primitive", async () => {
+            const entries = withSourceRows([{ playerName: "Player One" }]);
+            const result = await importMembers(allianceId, entries, "roster.xlsx" as never);
+
+            expect(result.errors).toEqual(["Missing or invalid file name"]);
+        });
+
         it("fails closed instead of throwing when fileName is null", async () => {
             const entries = withSourceRows([{ playerName: "Player One" }]);
             const result = await importMembers(
