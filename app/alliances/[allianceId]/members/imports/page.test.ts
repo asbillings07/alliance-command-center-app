@@ -134,6 +134,13 @@ describe("MemberImportHistoryPage", () => {
         expect(html).toContain(">5<");
         expect(html).toContain(">2<");
         expect(html).toContain(">3<");
+        // The date column is pinned and visibly labeled UTC — this Server
+        // Component's `toLocaleString()` would otherwise render the
+        // server's wall-clock time, not the viewer's, and asserting the
+        // exact rendered string here keeps that pin from silently
+        // regressing (and this test deterministic regardless of the
+        // machine running it).
+        expect(html).toContain("Aug 1, 2026, 12:00 PM UTC");
     });
 
     it("renders exactly one focusable link per row (the file name), not one per column", async () => {

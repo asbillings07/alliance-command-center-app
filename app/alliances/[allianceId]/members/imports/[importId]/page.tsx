@@ -4,6 +4,7 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { MemberImportChangeType } from "@/app/generated/prisma/enums";
 import { PageLayout, Card, Badge } from "@/app/src/components";
+import { formatImportTimestamp } from "@/app/src/lib/format/formatImportTimestamp";
 import Link from "next/link";
 
 type Params = {
@@ -12,16 +13,6 @@ type Params = {
         importId: string;
     }>;
 };
-
-function formatDateTime(date: Date): string {
-    return date.toLocaleString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-    });
-}
 
 function formatThp(thp: number | null): string {
     return thp === null ? "—" : thp.toLocaleString("en-US");
@@ -100,7 +91,7 @@ export default async function MemberImportDetailPage({ params }: Params) {
                 { label: detailLabel },
             ]}
             title={memberImport.fileName}
-            description={`Imported by ${memberImport.actorDisplayNameSnapshot ?? memberImport.actorEmailSnapshot} on ${formatDateTime(memberImport.createdAt)} · Sheet: ${memberImport.sourceSheetName}`}
+            description={`Imported by ${memberImport.actorDisplayNameSnapshot ?? memberImport.actorEmailSnapshot} on ${formatImportTimestamp(memberImport.createdAt)} · Sheet: ${memberImport.sourceSheetName}`}
         >
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 <div className="bg-success/10 border border-success/30 rounded-lg p-4 text-center">

@@ -101,6 +101,13 @@ describe("MemberImportDetailPage", () => {
         expect(html).toContain("august-roster.xlsx");
         expect(html).toContain('href="/alliances/all_1/members/imports"');
         expect(html).toContain("Leader One");
+        // The "Imported by ... on ..." description is pinned and visibly
+        // labeled UTC — this Server Component's `toLocaleString()` would
+        // otherwise render the server's wall-clock time, not the viewer's.
+        // Asserting the exact rendered string keeps that pin from silently
+        // regressing (and this test deterministic regardless of the
+        // machine running it).
+        expect(html).toContain("Aug 1, 2026, 12:00 PM UTC");
     });
 
     it("orders changes by sourceRow ascending and does not render any rollback control", async () => {

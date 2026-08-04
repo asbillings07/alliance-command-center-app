@@ -3,6 +3,7 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { PageLayout, Card, EmptyState } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
+import { formatImportTimestamp } from "@/app/src/lib/format/formatImportTimestamp";
 import Link from "next/link";
 
 type Params = {
@@ -30,16 +31,6 @@ export function resolveImportHistoryPage(rawPage: string | undefined, totalPages
         return 1;
     }
     return Math.min(Math.floor(parsed), Math.max(1, totalPages));
-}
-
-function formatDateTime(date: Date): string {
-    return date.toLocaleString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-    });
 }
 
 export default async function MemberImportHistoryPage({ params, searchParams }: Params) {
@@ -174,7 +165,7 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
                                                     {actorLabel}
                                                 </td>
                                                 <td className="px-4 py-3 text-text-secondary whitespace-nowrap">
-                                                    {formatDateTime(imp.createdAt)}
+                                                    {formatImportTimestamp(imp.createdAt)}
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-medium text-success whitespace-nowrap">
                                                     {imp.createdCount}
