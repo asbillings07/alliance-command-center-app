@@ -139,6 +139,13 @@ describe("ConfirmDialog", () => {
         expect(container.textContent).toContain("They can be restored later.");
     });
 
+    it("gives Cancel and Confirm an explicit type=\"button\" — a native <button> defaults to type=\"submit\", which would trigger an unintended form submission if this dialog is ever rendered inside a <form>", async () => {
+        await mount();
+
+        expect(findButton("Cancel").type).toBe("button");
+        expect(findButton("Archive 3 members").type).toBe("button");
+    });
+
     it("closes and calls onClose when Cancel is clicked, without calling onConfirm", async () => {
         const onConfirm = vi.fn();
         const { onClose } = await mount({ onConfirm });
