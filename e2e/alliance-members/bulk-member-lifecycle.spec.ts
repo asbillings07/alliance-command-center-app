@@ -50,6 +50,60 @@ test.describe("Bulk Member Lifecycle", () => {
     await expect(page.getByText("BulkArchiveBystander")).toBeVisible();
   });
 
+  test("archiving every displayed active member still shows the honest result summary, alongside the now-empty Active view's empty state", async ({
+    page,
+    login,
+    adminScenario,
+  }) => {
+    const { allianceId, email, password } = adminScenario;
+
+    await prisma.allianceMember.createMany({
+      data: [
+        { allianceId, playerName: "LastActiveOne" },
+        { allianceId, playerName: "LastActiveTwo" },
+      ],
+    });
+
+    await login({ email, password, displayName: "Admin User" });
+    await page.goto(`/alliances/${allianceId}/members?filter=active`);
+
+    await page.getByRole("checkbox", { name: "Select all active members" }).check();
+    await page.getByRole("button", { name: "Archive selected" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Archive 2 members" }).click();
+
+    // The result summary must still be visible even though this action
+    // emptied the Active view entirely (router.refresh() re-renders with
+    // zero active members) — the summary is what confirms the archive
+    // actually happened, right when the view has nothing else to show.
+    await expect(page.getByText("Archived 2 members.")).toBeVisible();
+    await expect(page.getByText("No active members yet")).toBeVisible();
+  });
+
+  test("restoring every displayed archived member still shows the honest result summary, alongside the now-empty Archived view's empty state", async ({
+    page,
+    login,
+    adminScenario,
+  }) => {
+    const { allianceId, email, password } = adminScenario;
+
+    await prisma.allianceMember.createMany({
+      data: [
+        { allianceId, playerName: "LastArchivedOne", archivedAt: new Date() },
+        { allianceId, playerName: "LastArchivedTwo", archivedAt: new Date() },
+      ],
+    });
+
+    await login({ email, password, displayName: "Admin User" });
+    await page.goto(`/alliances/${allianceId}/members?filter=archived`);
+
+    await page.getByRole("checkbox", { name: "Select all archived members" }).check();
+    await page.getByRole("button", { name: "Restore selected" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Restore 2 members" }).click();
+
+    await expect(page.getByText("Restored 2 members.")).toBeVisible();
+    await expect(page.getByText("No archived members")).toBeVisible();
+  });
+
   test("selects and bulk-restores archived members, showing the capacity impact and an honest result summary", async ({
     page,
     login,
@@ -194,6 +248,75 @@ test.describe("Bulk Member Lifecycle", () => {
     expect(member?.archivedAt).toBeNull();
   });
 
+  test("keyboard-only: Space selects a row, Enter opens the dialog, Tab stays trapped inside it, and Escape returns focus to the triggering button without archiving", async ({
+    page,
+    login,
+    adminScenario,
+  }) => {
+    const { allianceId, email, password } = adminScenario;
+
+    await prisma.allianceMember.create({
+      data: { allianceId, playerName: "KeyboardOnlyMember" },
+    });
+
+    await login({ email, password, displayName: "Admin User" });
+    await page.goto(`/alliances/${allianceId}/members?filter=active`);
+
+    // Select via keyboard only — no pointer helpers (.check()/.click()).
+    const checkbox = page.getByRole("checkbox", { name: "Select KeyboardOnlyMember" });
+    await checkbox.focus();
+    await page.keyboard.press("Space");
+    await expect(checkbox).toBeChecked();
+
+    const archiveButton = page.getByRole("button", { name: "Archive selected" });
+    await archiveButton.focus();
+    await page.keyboard.press("Enter");
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    // Native <dialog>.showModal() moves the browser's focused area into the
+    // dialog's subtree (its first tabbable descendant, absent an autofocus
+    // attribute).
+    const isFocusContained = () =>
+      page.evaluate(() => {
+        const openDialog = document.querySelector("dialog[open]");
+        const active = document.activeElement;
+        if (!openDialog || !active) return false;
+        // Chromium's native modal-dialog tab cycling can transiently rest
+        // focus on <body> itself between the dialog's last and first
+        // tabbable elements — <body> is an ancestor of the dialog (so it's
+        // never made inert) but isn't a real interactive control, so this
+        // isn't a focus "escape" to background content. What must never
+        // happen is focus landing on an actual background button/link/input.
+        if (active === document.body) return true;
+        return openDialog.contains(active);
+      });
+    expect(await isFocusContained()).toBe(true);
+
+    // Tab all the way around the dialog's two buttons (and then some) —
+    // focus must never land on a real background control while the dialog
+    // is open, proving real focus containment rather than the jsdom
+    // polyfill unit tests rely on.
+    const dialogButtonCount = await dialog.getByRole("button").count();
+    for (let i = 0; i < dialogButtonCount * 2; i++) {
+      await page.keyboard.press("Tab");
+      expect(await isFocusContained()).toBe(true);
+    }
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible();
+
+    // Focus returns to the control that opened the dialog — native <dialog>
+    // return-focus-on-close — not lost to <body>.
+    await expect(archiveButton).toBeFocused();
+
+    const member = await prisma.allianceMember.findFirst({
+      where: { allianceId, playerName: "KeyboardOnlyMember" },
+    });
+    expect(member?.archivedAt).toBeNull();
+  });
+
   test("@a11y bulk archive confirmation dialog meets accessibility standards", async ({
     page,
     login,
@@ -217,22 +340,33 @@ test.describe("Bulk Member Lifecycle", () => {
     await checkA11yLevelAA(page);
   });
 
-  test("the bulk action bar and confirmation dialog add no horizontal overflow of their own at a 320px viewport", async ({
+  test("the bulk action bar and confirmation dialog stay within a 320px viewport, even with a multi-digit selection count", async ({
     page,
     login,
     adminScenario,
   }) => {
-    // Scoped to what PR 2 owns: selecting a row, opening the bulk bar, and
-    // opening the confirmation dialog must not make the page any wider than
-    // it already is. This intentionally does NOT assert a page-wide "no
-    // horizontal scroll" invariant — the Members page header's action-button
-    // row (Import Members / Import history / Add Member) already overflows
-    // at 320px whenever the alliance has members, independent of anything
-    // here; that's a pre-existing bug outside PR 2's scope.
+    // Scoped to what PR 2 owns: selecting rows, the bulk bar, and the
+    // confirmation dialog must all fit inside the viewport on their own
+    // merits. This intentionally does NOT assert a page-wide "no horizontal
+    // scroll" invariant — the Members page header's action-button row
+    // (Import Members / Import history / Add Member) already overflows at
+    // 320px whenever the alliance has members, independent of anything
+    // here; that's a pre-existing bug outside PR 2's scope. Comparing only
+    // against that already-overflowing baseline wouldn't catch the bulk bar
+    // overflowing further, so this asserts the bar's own box directly.
     const { allianceId, email, password } = adminScenario;
 
-    await prisma.allianceMember.create({
-      data: { allianceId, playerName: "MobileBulkMemberWithAVeryLongDisplayName" },
+    // 10 members (double-digit selection count: "10 members selected" is
+    // meaningfully wider than "1 member selected") plus one long name to
+    // exercise the dialog's name-preview wrapping.
+    await prisma.allianceMember.createMany({
+      data: [
+        { allianceId, playerName: "MobileBulkMemberWithAVeryLongDisplayName" },
+        ...Array.from({ length: 9 }, (_, i) => ({
+          allianceId,
+          playerName: `MobileBulkMember${i + 1}`,
+        })),
+      ],
     });
 
     await login({ email, password, displayName: "Admin User" });
@@ -240,20 +374,36 @@ test.describe("Bulk Member Lifecycle", () => {
     await page.goto(`/alliances/${allianceId}/members?filter=active`);
     await page.waitForLoadState("networkidle");
 
-    const scrollWidthBefore = await page.evaluate(() => document.documentElement.scrollWidth);
+    await page.getByRole("checkbox", { name: "Select all active members" }).check();
 
-    await page.getByRole("checkbox", { name: "Select MobileBulkMemberWithAVeryLongDisplayName" }).check();
-    const scrollWidthWithBulkBar = await page.evaluate(() => document.documentElement.scrollWidth);
-    expect(scrollWidthWithBulkBar).toBeLessThanOrEqual(scrollWidthBefore);
+    const bulkBar = page.getByTestId("bulk-action-bar");
+    await expect(bulkBar.getByText("10 members selected")).toBeVisible();
+
+    // The bar itself, and every control inside it, must stay within the
+    // 320px viewport — not merely "no wider than an unrelated, already
+    // -overflowing baseline elsewhere on the page".
+    const viewportWidth = 320;
+    const barBox = await bulkBar.boundingBox();
+    expect(barBox).not.toBeNull();
+    expect(barBox!.x).toBeGreaterThanOrEqual(0);
+    expect(barBox!.x + barBox!.width).toBeLessThanOrEqual(viewportWidth);
+
+    for (const button of await bulkBar.getByRole("button").all()) {
+      const buttonBox = await button.boundingBox();
+      expect(buttonBox).not.toBeNull();
+      expect(buttonBox!.x).toBeGreaterThanOrEqual(0);
+      expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(viewportWidth);
+    }
 
     await page.getByRole("button", { name: "Archive selected" }).click();
-    await expect(page.getByRole("dialog")).toBeVisible();
-    const scrollWidthWithDialog = await page.evaluate(() => document.documentElement.scrollWidth);
-    expect(scrollWidthWithDialog).toBeLessThanOrEqual(scrollWidthBefore);
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
 
     // The dialog itself must fit the viewport and wrap the long name rather
     // than forcing its own box wider than 320px.
-    const dialogBox = await page.getByRole("dialog").boundingBox();
-    expect(dialogBox?.width).toBeLessThanOrEqual(320);
+    const dialogBox = await dialog.boundingBox();
+    expect(dialogBox).not.toBeNull();
+    expect(dialogBox!.x).toBeGreaterThanOrEqual(0);
+    expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(viewportWidth);
   });
 });

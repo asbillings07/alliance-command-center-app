@@ -159,6 +159,15 @@ async function flush() {
     });
 }
 
+/** Re-renders into the *same* root/container (no new mount) — simulates the
+ * parent Server Component re-rendering this same component instance with
+ * new props after router.refresh(), without unmounting it. */
+async function rerender(props: MembersTableProps) {
+    await act(async () => {
+        root.render(createElement(MembersTable, props));
+    });
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
 });
@@ -340,6 +349,47 @@ describe("MembersTable — archive confirmation flow", () => {
 
         expect(container.textContent).toContain("You don't have permission to archive members");
         expect(mockRefresh).not.toHaveBeenCalled();
+    });
+});
+
+describe("MembersTable — result summary survives the view going empty", () => {
+    it("keeps showing the archive result summary after a refresh empties the Active view, rendering the caller's emptyState instead of the table", async () => {
+        mockBulkArchive.mockResolvedValue({ success: true, archivedCount: 1, skippedCount: 0 });
+        const baseProps: MembersTableProps = {
+            allianceId: "all_1",
+            filter: "active",
+            members: [buildMember({ id: "m1", playerName: "LastActiveMember" })],
+            periodMetricColumns: [],
+            metricValues: {},
+            canManageMembers: true,
+            activeCount: 1,
+            emptyState: createElement("div", { "data-testid": "empty-state" }, "No active members yet"),
+        };
+        await mount(baseProps);
+
+        await act(async () => {
+            checkboxes()[1].click();
+        });
+        await act(async () => {
+            findButton("Archive selected")!.click();
+        });
+        await act(async () => {
+            findButton("Archive 1 member")!.click();
+        });
+        await flush();
+
+        expect(container.textContent).toContain("Archived 1 member.");
+        expect(mockRefresh).toHaveBeenCalledTimes(1);
+
+        // Simulate what router.refresh() actually does here: the parent
+        // Server Component re-renders this same MembersTable instance with
+        // the now-empty roster — it must NOT unmount MembersTable (that
+        // would wipe the resultSummary state along with it).
+        await rerender({ ...baseProps, members: [] });
+
+        expect(container.textContent).toContain("Archived 1 member.");
+        expect(container.querySelector('[data-testid="empty-state"]')).not.toBeNull();
+        expect(container.textContent).toContain("No active members yet");
     });
 });
 

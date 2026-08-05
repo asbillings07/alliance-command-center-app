@@ -180,6 +180,29 @@ describe("ConfirmDialog", () => {
         expect(getDialog().open).toBe(true);
     });
 
+    it("keeps the dialog open and shows a safe generic error, without calling onClose, when onConfirm rejects unexpectedly", async () => {
+        // Distinct from the handled `{ error }` result above: this is an
+        // onConfirm that *throws/rejects* (e.g. an unhandled network or
+        // transaction failure the caller never mapped), not one that
+        // resolved a domain-level rejection.
+        const onConfirm = vi.fn().mockRejectedValue(new Error("ECONNRESET: socket hang up"));
+        const { onClose } = await mount({ onConfirm, confirmLabel: "Archive 3 members" });
+
+        await act(async () => {
+            findButton("Archive 3 members").click();
+        });
+        await flush();
+
+        expect(container.textContent).toContain("Something went wrong. Please try again.");
+        // The raw exception message must never reach the user.
+        expect(container.textContent).not.toContain("ECONNRESET");
+        expect(onClose).not.toHaveBeenCalled();
+        expect(getDialog().open).toBe(true);
+        // isPending must be cleared so the user isn't stuck unable to retry or cancel.
+        expect(findButton("Archive 3 members").disabled).toBe(false);
+        expect(findButton("Cancel").disabled).toBe(false);
+    });
+
     it("disables Cancel/Confirm and shows the pending label while onConfirm is in flight", async () => {
         let resolveConfirm!: (result: void) => void;
         const onConfirm = vi.fn().mockReturnValue(

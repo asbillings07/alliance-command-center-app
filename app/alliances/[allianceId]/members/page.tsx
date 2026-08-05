@@ -340,71 +340,78 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 </div>
             )}
 
-            {showingActiveMemberPrerequisite || allianceMembers.length === 0 ? (
-                <EmptyState
-                    title={
-                        filter === "active"
-                            ? "No active members yet"
-                            : filter === "archived"
-                            ? "No archived members"
-                            : "No members yet"
-                    }
-                    description={
-                        filter === "active"
-                            ? permissions.canImportMembers || permissions.canManageMembers
-                                ? "Import members from a spreadsheet or add them manually to get started."
-                                : "An alliance Admin or Owner must import or add members first."
-                            : filter === "archived"
-                            ? "Members that have been archived will appear here."
-                            : undefined
-                    }
-                    action={
-                        filter === "active"
-                            ? permissions.canImportMembers || permissions.canManageMembers
-                                ? (
-                                    <div className="flex gap-3 flex-wrap justify-center">
-                                        {permissions.canImportMembers && (
+            <MembersTable
+                key={filter}
+                allianceId={allianceId}
+                filter={filter}
+                members={allianceMembers}
+                periodMetricColumns={periodMetricColumns}
+                metricValues={metricValues}
+                selectedPeriodId={selectedPeriodId}
+                canManageMembers={permissions.canManageMembers}
+                activeCount={activeCount}
+                // Rendered *by* MembersTable, rather than swapped in for it,
+                // so a bulk archive/restore that empties the current filter
+                // (via router.refresh()) doesn't unmount the component and
+                // lose the honest result summary it's showing — the summary
+                // is exactly what a user needs to see when the view they
+                // were just looking at goes empty.
+                emptyState={
+                    showingActiveMemberPrerequisite || allianceMembers.length === 0 ? (
+                        <EmptyState
+                            title={
+                                filter === "active"
+                                    ? "No active members yet"
+                                    : filter === "archived"
+                                    ? "No archived members"
+                                    : "No members yet"
+                            }
+                            description={
+                                filter === "active"
+                                    ? permissions.canImportMembers || permissions.canManageMembers
+                                        ? "Import members from a spreadsheet or add them manually to get started."
+                                        : "An alliance Admin or Owner must import or add members first."
+                                    : filter === "archived"
+                                    ? "Members that have been archived will appear here."
+                                    : undefined
+                            }
+                            action={
+                                filter === "active"
+                                    ? permissions.canImportMembers || permissions.canManageMembers
+                                        ? (
+                                            <div className="flex gap-3 flex-wrap justify-center">
+                                                {permissions.canImportMembers && (
+                                                    <Button
+                                                        variant="primary"
+                                                        href={`/alliances/${allianceId}/members/import`}
+                                                    >
+                                                        Import Members
+                                                    </Button>
+                                                )}
+                                                {permissions.canManageMembers && (
+                                                    <Button
+                                                        variant={permissions.canImportMembers ? "secondary" : "primary"}
+                                                        href={`/alliances/${allianceId}/members/new`}
+                                                    >
+                                                        Add Member
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        )
+                                        : (
                                             <Button
-                                                variant="primary"
-                                                href={`/alliances/${allianceId}/members/import`}
+                                                variant="secondary"
+                                                href={`/alliances/${allianceId}`}
                                             >
-                                                Import Members
+                                                Back to Dashboard
                                             </Button>
-                                        )}
-                                        {permissions.canManageMembers && (
-                                            <Button
-                                                variant={permissions.canImportMembers ? "secondary" : "primary"}
-                                                href={`/alliances/${allianceId}/members/new`}
-                                            >
-                                                Add Member
-                                            </Button>
-                                        )}
-                                    </div>
-                                )
-                                : (
-                                    <Button
-                                        variant="secondary"
-                                        href={`/alliances/${allianceId}`}
-                                    >
-                                        Back to Dashboard
-                                    </Button>
-                                )
-                            : undefined
-                    }
-                />
-            ) : (
-                <MembersTable
-                    key={filter}
-                    allianceId={allianceId}
-                    filter={filter}
-                    members={allianceMembers}
-                    periodMetricColumns={periodMetricColumns}
-                    metricValues={metricValues}
-                    selectedPeriodId={selectedPeriodId}
-                    canManageMembers={permissions.canManageMembers}
-                    activeCount={activeCount}
-                />
-            )}
+                                        )
+                                    : undefined
+                            }
+                        />
+                    ) : null
+                }
+            />
         </PageLayout>
     );
 }

@@ -93,6 +93,15 @@ export function ConfirmDialog({
                 return;
             }
             dialogRef.current?.close();
+        } catch {
+            // `onConfirm` rejected instead of resolving `{ error }` — an
+            // unexpected failure (network drop, unhandled exception in the
+            // server action) rather than a domain-level rejection the
+            // caller already mapped. Never surface the raw exception (it
+            // could leak internal details); keep the dialog open with a
+            // safe generic message so the user can retry or cancel instead
+            // of the action silently vanishing.
+            setError("Something went wrong. Please try again.");
         } finally {
             setIsPending(false);
         }

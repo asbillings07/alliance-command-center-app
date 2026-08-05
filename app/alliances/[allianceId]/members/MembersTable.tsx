@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, Badge } from "@/app/src/components";
@@ -37,6 +37,16 @@ export type MembersTableProps = {
     canManageMembers: boolean;
     /** Current active-member count, used for the restore dialog's capacity math. */
     activeCount: number;
+    /**
+     * Rendered in place of the table when `members` is empty, instead of
+     * the caller swapping this whole component out for a standalone empty
+     * state. Keeping MembersTable mounted across that transition matters: a
+     * bulk archive/restore that empties the currently-displayed filter
+     * triggers `router.refresh()`, and if the caller unmounted this
+     * component in response, the result summary it just set would vanish
+     * right when it's most needed.
+     */
+    emptyState?: ReactNode;
 };
 
 function pluralize(count: number, noun: string): string {
@@ -62,6 +72,7 @@ export function MembersTable({
     selectedPeriodId,
     canManageMembers,
     activeCount,
+    emptyState,
 }: MembersTableProps) {
     const router = useRouter();
     const selectAllId = useId();
@@ -180,154 +191,163 @@ export function MembersTable({
                 </div>
             )}
 
-            {bulkAction && selectedCount > 0 && (
-                <div className="mb-4 flex items-center justify-between rounded-lg border border-border bg-surface-secondary p-3">
-                    <span className="text-sm font-medium text-text-primary">
-                        {pluralize(selectedCount, "member")} selected
-                    </span>
-                    <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
-                            Clear
-                        </Button>
-                        <Button
-                            variant={bulkAction === "archive" ? "warning" : "primary"}
-                            size="sm"
-                            onClick={() => setPendingAction(bulkAction)}
+            {members.length === 0 ? (
+                emptyState
+            ) : (
+                <>
+                    {bulkAction && selectedCount > 0 && (
+                        <div
+                            data-testid="bulk-action-bar"
+                            className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface-secondary p-3"
                         >
-                            {bulkAction === "archive" ? "Archive selected" : "Restore selected"}
-                        </Button>
-                    </div>
-                </div>
-            )}
+                            <span className="text-sm font-medium text-text-primary">
+                                {pluralize(selectedCount, "member")} selected
+                            </span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                                    Clear
+                                </Button>
+                                <Button
+                                    variant={bulkAction === "archive" ? "warning" : "primary"}
+                                    size="sm"
+                                    onClick={() => setPendingAction(bulkAction)}
+                                >
+                                    {bulkAction === "archive" ? "Archive selected" : "Restore selected"}
+                                </Button>
+                            </div>
+                        </div>
+                    )}
 
-            <Card>
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead className="bg-surface-secondary border-b border-border">
-                            <tr>
-                                {bulkAction && (
-                                    <th className="w-12 px-4 py-3">
-                                        <input
-                                            id={selectAllId}
-                                            type="checkbox"
-                                            checked={allSelected}
-                                            ref={(el) => {
-                                                if (el) el.indeterminate = someSelected;
-                                            }}
-                                            onChange={(e) => toggleSelectAll(e.target.checked)}
-                                            aria-label={
-                                                filter === "active"
-                                                    ? "Select all active members"
-                                                    : "Select all archived members"
-                                            }
-                                            className="w-4 h-4 rounded border-border"
-                                        />
-                                    </th>
-                                )}
-                                <th className="text-left px-4 py-3 text-sm font-medium text-text-secondary">
-                                    Player
-                                </th>
-                                {periodMetricColumns.map((metric) => (
-                                    <th
-                                        key={metric.metricId}
-                                        className="text-right px-4 py-3 text-sm font-medium text-text-secondary whitespace-nowrap"
-                                    >
-                                        {metric.metricName}
-                                    </th>
-                                ))}
-                                <th className="text-right px-4 py-3 text-sm font-medium text-text-secondary">
-                                    THP
-                                </th>
-                                <th className="text-right px-4 py-3 text-sm font-medium text-text-secondary">
-                                    Squad Power
-                                </th>
-                                <th className="text-left px-4 py-3 text-sm font-medium text-text-secondary">
-                                    Role
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {members.map((member) => {
-                                const memberHref = `/alliances/${allianceId}/members/${member.id}${selectedPeriodId ? `?periodId=${encodeURIComponent(selectedPeriodId)}` : ""}`;
-
-                                return (
-                                    <tr
-                                        key={member.id}
-                                        className="border-b border-border hover:bg-surface-secondary transition-colors cursor-pointer"
-                                    >
+                    <Card>
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead className="bg-surface-secondary border-b border-border">
+                                    <tr>
                                         {bulkAction && (
-                                            <td className="px-4 py-3">
+                                            <th className="w-12 px-4 py-3">
                                                 <input
+                                                    id={selectAllId}
                                                     type="checkbox"
-                                                    checked={selectedIds.has(member.id)}
-                                                    onChange={(e) => toggleOne(member.id, e.target.checked)}
-                                                    aria-label={`Select ${member.playerName}`}
+                                                    checked={allSelected}
+                                                    ref={(el) => {
+                                                        if (el) el.indeterminate = someSelected;
+                                                    }}
+                                                    onChange={(e) => toggleSelectAll(e.target.checked)}
+                                                    aria-label={
+                                                        filter === "active"
+                                                            ? "Select all active members"
+                                                            : "Select all archived members"
+                                                    }
                                                     className="w-4 h-4 rounded border-border"
                                                 />
-                                            </td>
+                                            </th>
                                         )}
-                                        <td className="p-0">
-                                            <Link
-                                                href={memberHref}
-                                                className="block px-4 py-3 font-medium text-primary-light hover:text-primary"
+                                        <th className="text-left px-4 py-3 text-sm font-medium text-text-secondary">
+                                            Player
+                                        </th>
+                                        {periodMetricColumns.map((metric) => (
+                                            <th
+                                                key={metric.metricId}
+                                                className="text-right px-4 py-3 text-sm font-medium text-text-secondary whitespace-nowrap"
                                             >
-                                                {member.playerName}
-                                                {member.archivedAt && (
-                                                    <Badge variant="neutral" size="sm" className="ml-2">
-                                                        Archived
-                                                    </Badge>
-                                                )}
-                                            </Link>
-                                        </td>
-                                        {periodMetricColumns.map((metric) => {
-                                            const value = metricValues[`${member.id}:${metric.metricId}`];
+                                                {metric.metricName}
+                                            </th>
+                                        ))}
+                                        <th className="text-right px-4 py-3 text-sm font-medium text-text-secondary">
+                                            THP
+                                        </th>
+                                        <th className="text-right px-4 py-3 text-sm font-medium text-text-secondary">
+                                            Squad Power
+                                        </th>
+                                        <th className="text-left px-4 py-3 text-sm font-medium text-text-secondary">
+                                            Role
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {members.map((member) => {
+                                        const memberHref = `/alliances/${allianceId}/members/${member.id}${selectedPeriodId ? `?periodId=${encodeURIComponent(selectedPeriodId)}` : ""}`;
 
-                                            return (
-                                                <td key={metric.metricId} className="p-0 text-right">
+                                        return (
+                                            <tr
+                                                key={member.id}
+                                                className="border-b border-border hover:bg-surface-secondary transition-colors cursor-pointer"
+                                            >
+                                                {bulkAction && (
+                                                    <td className="px-4 py-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedIds.has(member.id)}
+                                                            onChange={(e) => toggleOne(member.id, e.target.checked)}
+                                                            aria-label={`Select ${member.playerName}`}
+                                                            className="w-4 h-4 rounded border-border"
+                                                        />
+                                                    </td>
+                                                )}
+                                                <td className="p-0">
                                                     <Link
                                                         href={memberHref}
-                                                        className="block px-4 py-3 text-text-primary font-medium whitespace-nowrap"
-                                                        aria-label={`${member.playerName} ${metric.metricName}`}
+                                                        className="block px-4 py-3 font-medium text-primary-light hover:text-primary"
                                                     >
-                                                        {value == null ? "—" : formatPower(value)}
+                                                        {member.playerName}
+                                                        {member.archivedAt && (
+                                                            <Badge variant="neutral" size="sm" className="ml-2">
+                                                                Archived
+                                                            </Badge>
+                                                        )}
                                                     </Link>
                                                 </td>
-                                            );
-                                        })}
-                                        <td className="p-0 text-right">
-                                            <Link
-                                                href={memberHref}
-                                                className="block px-4 py-3 text-text-secondary whitespace-nowrap"
-                                                aria-label={`${member.playerName} THP`}
-                                            >
-                                                {member.thp == null ? "—" : formatPower(member.thp)}
-                                            </Link>
-                                        </td>
-                                        <td className="p-0 text-right">
-                                            <Link
-                                                href={memberHref}
-                                                className="block px-4 py-3 text-text-secondary whitespace-nowrap"
-                                                aria-label={`${member.playerName} Squad Power`}
-                                            >
-                                                {member.squadPower == null ? "—" : formatPower(member.squadPower)}
-                                            </Link>
-                                        </td>
-                                        <td className="p-0">
-                                            <Link
-                                                href={memberHref}
-                                                className="block px-4 py-3 text-text-secondary whitespace-nowrap"
-                                                aria-label={`${member.playerName} Role`}
-                                            >
-                                                {member.role || "—"}
-                                            </Link>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            </Card>
+                                                {periodMetricColumns.map((metric) => {
+                                                    const value = metricValues[`${member.id}:${metric.metricId}`];
+
+                                                    return (
+                                                        <td key={metric.metricId} className="p-0 text-right">
+                                                            <Link
+                                                                href={memberHref}
+                                                                className="block px-4 py-3 text-text-primary font-medium whitespace-nowrap"
+                                                                aria-label={`${member.playerName} ${metric.metricName}`}
+                                                            >
+                                                                {value == null ? "—" : formatPower(value)}
+                                                            </Link>
+                                                        </td>
+                                                    );
+                                                })}
+                                                <td className="p-0 text-right">
+                                                    <Link
+                                                        href={memberHref}
+                                                        className="block px-4 py-3 text-text-secondary whitespace-nowrap"
+                                                        aria-label={`${member.playerName} THP`}
+                                                    >
+                                                        {member.thp == null ? "—" : formatPower(member.thp)}
+                                                    </Link>
+                                                </td>
+                                                <td className="p-0 text-right">
+                                                    <Link
+                                                        href={memberHref}
+                                                        className="block px-4 py-3 text-text-secondary whitespace-nowrap"
+                                                        aria-label={`${member.playerName} Squad Power`}
+                                                    >
+                                                        {member.squadPower == null ? "—" : formatPower(member.squadPower)}
+                                                    </Link>
+                                                </td>
+                                                <td className="p-0">
+                                                    <Link
+                                                        href={memberHref}
+                                                        className="block px-4 py-3 text-text-secondary whitespace-nowrap"
+                                                        aria-label={`${member.playerName} Role`}
+                                                    >
+                                                        {member.role || "—"}
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Card>
+                </>
+            )}
 
             {bulkAction && (
                 <ConfirmDialog
