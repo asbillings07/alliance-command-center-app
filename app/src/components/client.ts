@@ -16,6 +16,7 @@
 
 // Actions
 export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from "./Button";
+export { ConfirmDialog, type ConfirmDialogProps, type ConfirmDialogResult } from "./ConfirmDialog";
 export { GoogleSignInButton } from "./GoogleSignInButton";
 export { SignOutButton } from "./SignOutButton";
 export { AccountNavLink } from "./AccountNavLink";

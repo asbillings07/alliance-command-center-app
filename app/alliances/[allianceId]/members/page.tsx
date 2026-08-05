@@ -5,14 +5,14 @@ import { Permissions } from "@/app/src/lib/auth/permissions";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 import { metricPeriodChronologicalOrderBy } from "@/app/src/lib/metricPeriodOrdering";
 import Link from "next/link";
-import { formatPower } from "@/app/src/lib/formatPower";
 import { MembersFilter } from "./MembersFilter";
 import { MembersPeriodSelector } from "./MembersPeriodSelector";
+import { MembersTable } from "./MembersTable";
 import {
   isActiveMemberPrerequisiteEmptyState,
   resolveMembersContextualBanner,
 } from "./membersPageContextualState";
-import { PageLayout, Card, Badge, EmptyState } from "@/app/src/components";
+import { PageLayout, EmptyState } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 
 type Params = {
@@ -67,6 +67,20 @@ export default async function MembersPage({ params, searchParams }: Params) {
         where: whereClause,
         orderBy: {
             playerName: "asc",
+        },
+        // MembersTable is a Client Component, and only ever reads these six
+        // fields (see MembersTableMember) plus `id` for the metric-value
+        // lookup below — select just those instead of every scalar Prisma
+        // returns by default (discordName, joinedAt, createdAt, updatedAt,
+        // userId, ...) to keep the RSC payload/hydration cost proportional
+        // to what the table actually renders.
+        select: {
+            id: true,
+            playerName: true,
+            archivedAt: true,
+            thp: true,
+            squadPower: true,
+            role: true,
         },
     });
 
@@ -137,6 +151,9 @@ export default async function MembersPage({ params, searchParams }: Params) {
             latestMetricValueByMemberAndMetric.set(key, entry.value);
         }
     }
+    // MembersTable is a Client Component — pass a plain object across the
+    // Server/Client boundary rather than a Map.
+    const metricValues: Record<string, number | undefined> = Object.fromEntries(latestMetricValueByMemberAndMetric);
 
     const [activeCount, archivedCount] = await Promise.all([
         prisma.allianceMember.count({
@@ -337,158 +354,78 @@ export default async function MembersPage({ params, searchParams }: Params) {
                 </div>
             )}
 
-            {showingActiveMemberPrerequisite || allianceMembers.length === 0 ? (
-                <EmptyState
-                    title={
-                        filter === "active"
-                            ? "No active members yet"
-                            : filter === "archived"
-                            ? "No archived members"
-                            : "No members yet"
-                    }
-                    description={
-                        filter === "active"
-                            ? permissions.canImportMembers || permissions.canManageMembers
-                                ? "Import members from a spreadsheet or add them manually to get started."
-                                : "An alliance Admin or Owner must import or add members first."
-                            : filter === "archived"
-                            ? "Members that have been archived will appear here."
-                            : undefined
-                    }
-                    action={
-                        filter === "active"
-                            ? permissions.canImportMembers || permissions.canManageMembers
-                                ? (
-                                    <div className="flex gap-3 flex-wrap justify-center">
-                                        {permissions.canImportMembers && (
+            <MembersTable
+                key={filter}
+                allianceId={allianceId}
+                filter={filter}
+                members={allianceMembers}
+                periodMetricColumns={periodMetricColumns}
+                metricValues={metricValues}
+                selectedPeriodId={selectedPeriodId}
+                canManageMembers={permissions.canManageMembers}
+                activeCount={activeCount}
+                // Rendered *by* MembersTable, rather than swapped in for it,
+                // so a bulk archive/restore that empties the current filter
+                // (via router.refresh()) doesn't unmount the component and
+                // lose the honest result summary it's showing — the summary
+                // is exactly what a user needs to see when the view they
+                // were just looking at goes empty.
+                emptyState={
+                    showingActiveMemberPrerequisite || allianceMembers.length === 0 ? (
+                        <EmptyState
+                            title={
+                                filter === "active"
+                                    ? "No active members yet"
+                                    : filter === "archived"
+                                    ? "No archived members"
+                                    : "No members yet"
+                            }
+                            description={
+                                filter === "active"
+                                    ? permissions.canImportMembers || permissions.canManageMembers
+                                        ? "Import members from a spreadsheet or add them manually to get started."
+                                        : "An alliance Admin or Owner must import or add members first."
+                                    : filter === "archived"
+                                    ? "Members that have been archived will appear here."
+                                    : undefined
+                            }
+                            action={
+                                filter === "active"
+                                    ? permissions.canImportMembers || permissions.canManageMembers
+                                        ? (
+                                            <div className="flex gap-3 flex-wrap justify-center">
+                                                {permissions.canImportMembers && (
+                                                    <Button
+                                                        variant="primary"
+                                                        href={`/alliances/${allianceId}/members/import`}
+                                                    >
+                                                        Import Members
+                                                    </Button>
+                                                )}
+                                                {permissions.canManageMembers && (
+                                                    <Button
+                                                        variant={permissions.canImportMembers ? "secondary" : "primary"}
+                                                        href={`/alliances/${allianceId}/members/new`}
+                                                    >
+                                                        Add Member
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        )
+                                        : (
                                             <Button
-                                                variant="primary"
-                                                href={`/alliances/${allianceId}/members/import`}
+                                                variant="secondary"
+                                                href={`/alliances/${allianceId}`}
                                             >
-                                                Import Members
+                                                Back to Dashboard
                                             </Button>
-                                        )}
-                                        {permissions.canManageMembers && (
-                                            <Button
-                                                variant={permissions.canImportMembers ? "secondary" : "primary"}
-                                                href={`/alliances/${allianceId}/members/new`}
-                                            >
-                                                Add Member
-                                            </Button>
-                                        )}
-                                    </div>
-                                )
-                                : (
-                                    <Button
-                                        variant="secondary"
-                                        href={`/alliances/${allianceId}`}
-                                    >
-                                        Back to Dashboard
-                                    </Button>
-                                )
-                            : undefined
-                    }
-                />
-            ) : (
-                <Card>
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="bg-surface-secondary border-b border-border">
-                                <tr>
-                                    <th className="text-left px-4 py-3 text-sm font-medium text-text-secondary">
-                                        Player
-                                    </th>
-                                    {periodMetricColumns.map((metric) => (
-                                        <th
-                                            key={metric.metricId}
-                                            className="text-right px-4 py-3 text-sm font-medium text-text-secondary whitespace-nowrap"
-                                        >
-                                            {metric.metricName}
-                                        </th>
-                                    ))}
-                                    <th className="text-right px-4 py-3 text-sm font-medium text-text-secondary">
-                                        THP
-                                    </th>
-                                    <th className="text-right px-4 py-3 text-sm font-medium text-text-secondary">
-                                        Squad Power
-                                    </th>
-                                    <th className="text-left px-4 py-3 text-sm font-medium text-text-secondary">
-                                        Role
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {allianceMembers.map((member) => {
-                                    const memberHref = `/alliances/${allianceId}/members/${member.id}${selectedPeriodId ? `?periodId=${encodeURIComponent(selectedPeriodId)}` : ""}`;
-
-                                    return (
-                                        <tr
-                                            key={member.id}
-                                            className="border-b border-border hover:bg-surface-secondary transition-colors cursor-pointer"
-                                        >
-                                            <td className="p-0">
-                                                <Link
-                                                    href={memberHref}
-                                                    className="block px-4 py-3 font-medium text-primary-light hover:text-primary"
-                                                >
-                                                    {member.playerName}
-                                                    {member.archivedAt && (
-                                                        <Badge variant="neutral" size="sm" className="ml-2">
-                                                            Archived
-                                                        </Badge>
-                                                    )}
-                                                </Link>
-                                            </td>
-                                            {periodMetricColumns.map((metric) => {
-                                                const value = latestMetricValueByMemberAndMetric.get(`${member.id}:${metric.metricId}`);
-
-                                                return (
-                                                    <td key={metric.metricId} className="p-0 text-right">
-                                                        <Link
-                                                            href={memberHref}
-                                                            className="block px-4 py-3 text-text-primary font-medium whitespace-nowrap"
-                                                            aria-label={`${member.playerName} ${metric.metricName}`}
-                                                        >
-                                                            {value == null ? "—" : formatPower(value)}
-                                                        </Link>
-                                                    </td>
-                                                );
-                                            })}
-                                            <td className="p-0 text-right">
-                                                <Link
-                                                    href={memberHref}
-                                                    className="block px-4 py-3 text-text-secondary whitespace-nowrap"
-                                                    aria-label={`${member.playerName} THP`}
-                                                >
-                                                    {member.thp == null ? "—" : formatPower(member.thp)}
-                                                </Link>
-                                            </td>
-                                            <td className="p-0 text-right">
-                                                <Link
-                                                    href={memberHref}
-                                                    className="block px-4 py-3 text-text-secondary whitespace-nowrap"
-                                                    aria-label={`${member.playerName} Squad Power`}
-                                                >
-                                                    {member.squadPower == null ? "—" : formatPower(member.squadPower)}
-                                                </Link>
-                                            </td>
-                                            <td className="p-0">
-                                                <Link
-                                                    href={memberHref}
-                                                    className="block px-4 py-3 text-text-secondary whitespace-nowrap"
-                                                    aria-label={`${member.playerName} Role`}
-                                                >
-                                                    {member.role || "—"}
-                                                </Link>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                </Card>
-            )}
+                                        )
+                                    : undefined
+                            }
+                        />
+                    ) : null
+                }
+            />
         </PageLayout>
     );
 }

@@ -11,6 +11,10 @@ vi.mock("next/navigation", () => ({
   redirect: vi.fn((path: string) => {
     throw new Error(`REDIRECT:${path}`);
   }),
+  // MembersTable (a Client Component rendered inline by this Server
+  // Component) calls useRouter() for router.refresh() after a bulk action.
+  // renderToStaticMarkup executes the whole tree, so it needs a stub.
+  useRouter: () => ({ refresh: vi.fn() }),
 }));
 
 vi.mock("@/app/src/lib/auth", () => ({}));

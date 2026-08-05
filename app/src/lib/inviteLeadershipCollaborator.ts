@@ -1,6 +1,7 @@
 import { randomUUID, randomBytes } from "node:crypto";
 import { prisma } from "./prisma";
 import { withAllianceMemberCapacityLock } from "./allianceMemberLock";
+import { getSingleMemberCapacityError } from "./memberCapacity";
 import { getInviteUrl } from "./appUrl";
 import { normalizeEmail } from "./email/normalize";
 import type { AllianceRole, Invitation, AllianceMember } from "@/app/generated/prisma/client";
@@ -167,8 +168,9 @@ export async function inviteLeadershipCollaborator(
     member = await withAllianceMemberCapacityLock(
       allianceId,
       async (tx, activeMembersCount) => {
-        if (activeMembersCount + 1 > 100) {
-          throw new Error("Your alliance has 100 active members, so you can add 0 more.");
+        const capacityError = getSingleMemberCapacityError(activeMembersCount, "add");
+        if (capacityError) {
+          throw new Error(capacityError);
         }
         return await tx.allianceMember.create({
           data: {

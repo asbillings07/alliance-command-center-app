@@ -11,6 +11,7 @@ import {
   detectColumn,
 } from "@/app/src/lib/importConstants";
 import { parseStrictInteger } from "@/app/src/lib/numberParser";
+import { MAX_ACTIVE_ALLIANCE_MEMBERS, getAvailableMemberCapacity } from "@/app/src/lib/memberCapacity";
 import { TourButton } from "@/app/src/components/client";
 import { importMembersTour } from "@/app/src/lib/tours";
 import { importMembers } from "./action";
@@ -302,7 +303,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
   };
 
   const activeRosterCount = existingMembers.filter((m) => !m.archivedAt).length;
-  const capacityRemaining = Math.max(0, 100 - activeRosterCount);
+  const capacityRemaining = getAvailableMemberCapacity(activeRosterCount);
 
   const selectedCandidates = parsedMembers.filter(
     (m) => m.selected && (!m.isExisting || m.isArchived) && m.playerName.trim() !== ""
@@ -318,8 +319,8 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
   );
   const duplicateInFileRows = parsedMembers.filter((m) => m.isDuplicateInFile);
 
-  const isOverCapacity = activeRosterCount + uniqueSelectedCount > 100;
-  const overflowCount = activeRosterCount + uniqueSelectedCount - 100;
+  const isOverCapacity = activeRosterCount + uniqueSelectedCount > MAX_ACTIVE_ALLIANCE_MEMBERS;
+  const overflowCount = activeRosterCount + uniqueSelectedCount - MAX_ACTIVE_ALLIANCE_MEMBERS;
 
   const currentSheet = parsedWorkbook?.sheets[selectedSheetIndex];
   const mappedIndicesSet = new Set(
@@ -690,7 +691,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
           </div>
           <div className="flex-1 bg-primary/10 border border-primary/30 rounded-lg p-4">
             <p className="text-2xl font-bold text-primary-light">{capacityRemaining}</p>
-            <p className="text-sm text-text-secondary">Available member capacity ({activeRosterCount}/100 active)</p>
+            <p className="text-sm text-text-secondary">Available member capacity ({activeRosterCount}/{MAX_ACTIVE_ALLIANCE_MEMBERS} active)</p>
           </div>
           <div className="flex-1 bg-surface-secondary border border-border rounded-lg p-4">
             <p className="text-2xl font-bold text-text-muted">

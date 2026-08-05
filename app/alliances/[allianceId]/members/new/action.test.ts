@@ -67,6 +67,31 @@ describe("addMember", () => {
       "page",
     );
   });
+
+  it("rejects at the cap with a plain, actionable message — no selection/deselect language, since this is a single-item action with no selection UI", async () => {
+    const mockCreate = vi.fn();
+    mockWithLock.mockImplementation(async (_allianceId: string, fn: (tx: unknown, count: number) => unknown) =>
+      fn(
+        {
+          allianceMember: {
+            findFirst: vi.fn().mockResolvedValue(null),
+            create: mockCreate,
+          },
+        },
+        100,
+      ),
+    );
+
+    const result = await addMember(
+      buildFormData({ allianceId, playerName: "New Player" }),
+    );
+
+    expect(result).toEqual({
+      success: false,
+      error: "Your alliance has 100 active members, so you can add 0 more.",
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
 });
 
 describe("restoreMember", () => {
@@ -91,5 +116,28 @@ describe("restoreMember", () => {
       "/alliances/[allianceId]/reports/metrics/[metricId]",
       "page",
     );
+  });
+
+  it("rejects at the cap with a plain, actionable message — no selection/deselect language, since this is a single-item action with no selection UI", async () => {
+    const mockUpdate = vi.fn();
+    mockWithLock.mockImplementation(async (_allianceId: string, fn: (tx: unknown, count: number) => unknown) =>
+      fn(
+        {
+          allianceMember: {
+            findFirst: vi.fn().mockResolvedValue({ id: memberId, archivedAt: new Date() }),
+            update: mockUpdate,
+          },
+        },
+        100,
+      ),
+    );
+
+    const result = await restoreMember(buildFormData({ allianceId, memberId }));
+
+    expect(result).toEqual({
+      success: false,
+      error: "Your alliance has 100 active members, so you can restore 0 more.",
+    });
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

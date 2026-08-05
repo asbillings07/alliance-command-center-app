@@ -91,6 +91,22 @@ describe("restoreMember", () => {
       "page",
     );
   });
+
+  it("rejects at the cap with a plain, actionable message — no selection/deselect language, since this is a single-item action with no selection UI", async () => {
+    mockWithLock.mockImplementation(
+      async (_allianceId: string, fn: (tx: typeof prisma, count: number) => unknown) =>
+        fn(prisma, 100),
+    );
+    mockFindFirst.mockResolvedValue({ id: memberId, archivedAt: new Date() });
+
+    const result = await restoreMember(buildFormData({ allianceId, memberId }));
+
+    expect(result).toEqual({
+      success: false,
+      error: "Your alliance has 100 active members, so you can restore 0 more.",
+    });
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
 });
 
 describe("updateMember", () => {
