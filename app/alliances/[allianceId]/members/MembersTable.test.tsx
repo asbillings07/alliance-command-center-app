@@ -348,6 +348,52 @@ describe("MembersTable — entering and exiting selection mode", () => {
     });
 });
 
+describe("MembersTable — selectedIds is pruned when a selected row disappears", () => {
+    it("a member that disappears from `members` and later reappears in a later render of the *same* instance requires re-selection — it must not silently come back checked", async () => {
+        const baseProps = await mount({
+            filter: "active",
+            members: [
+                buildMember({ id: "m1", playerName: "Dragon" }),
+                buildMember({ id: "m2", playerName: "Phoenix" }),
+            ],
+        });
+
+        await act(async () => {
+            findButton("Archive members…")!.click();
+        });
+        await act(async () => {
+            checkboxes()[0].click(); // select-all: m1 + m2
+        });
+        expect(container.textContent).toContain("2 members selected");
+
+        // m2 disappears from this same component instance's `members` prop
+        // — e.g. a filter/period change or a background revalidation —
+        // while selection mode is still open.
+        await rerender({
+            ...baseProps,
+            members: [buildMember({ id: "m1", playerName: "Dragon" })],
+        });
+        expect(container.textContent).toContain("1 member selected");
+
+        // m2 reappears in a *later* render of the same instance. Its id
+        // must not still be lingering in `selectedIds` from before it
+        // disappeared — reappearing must require a genuine re-selection,
+        // not resurrect a ghost one.
+        await rerender({
+            ...baseProps,
+            members: [
+                buildMember({ id: "m1", playerName: "Dragon" }),
+                buildMember({ id: "m2", playerName: "Phoenix" }),
+            ],
+        });
+
+        expect(container.textContent).toContain("1 member selected");
+        const rowCheckboxes = checkboxes().slice(1); // drop the select-all header checkbox
+        expect(rowCheckboxes[0].checked).toBe(true); // m1 — never left the selection
+        expect(rowCheckboxes[1].checked).toBe(false); // m2 — reappeared unchecked, not ghost-reselected
+    });
+});
+
 describe("MembersTable — archive confirmation flow", () => {
     it("opens the dialog with the archive copy and selected names when Archive selected is clicked", async () => {
         await mount({ filter: "active", members: [buildMember({ playerName: "Dragon" })] });

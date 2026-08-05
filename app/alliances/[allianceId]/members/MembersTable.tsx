@@ -124,6 +124,35 @@ export function MembersTable({
     const allSelected = members.length > 0 && selectedCount === members.length;
     const someSelected = selectedCount > 0 && !allSelected;
 
+    // The derived filtering above protects any single render's counts/math/
+    // submission from a stale id, but it doesn't touch `selectedIds` itself
+    // — so a member that disappears from `members` (a filter/period change,
+    // a background revalidation) and later reappears in a *later* render of
+    // this same component instance would silently come back pre-checked,
+    // since its id never actually left the Set. Pruning it here — during
+    // render, guarded by comparing against the previous `members` reference,
+    // rather than in a useEffect — is React's documented pattern for
+    // adjusting state when a prop changes; it avoids both the extra
+    // commit-then-effect render an effect would cost and this lint rule
+    // (react-hooks/set-state-in-effect): https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+    const [prevMembers, setPrevMembers] = useState(members);
+    if (members !== prevMembers) {
+        setPrevMembers(members);
+        const currentIds = new Set(members.map((m) => m.id));
+        setSelectedIds((prev) => {
+            let changed = false;
+            const next = new Set<string>();
+            for (const id of prev) {
+                if (currentIds.has(id)) {
+                    next.add(id);
+                } else {
+                    changed = true;
+                }
+            }
+            return changed ? next : prev;
+        });
+    }
+
     function enterSelectionMode() {
         setResultSummary(null);
         setIsSelecting(true);
