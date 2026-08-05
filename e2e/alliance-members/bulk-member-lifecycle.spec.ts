@@ -9,8 +9,40 @@ import { checkA11yLevelAA } from "../shared/accessibility";
  * Members page: one intent per view (Active -> Archive, Archived -> Restore,
  * All -> browse-only), the real confirmation dialog, atomic capacity
  * enforcement, and honest result summaries.
+ *
+ * Selection checkboxes are hidden by default — the normal browse state has
+ * no selection affordances at all. An explicit entry point ("Archive
+ * members…" / "Restore members…") opens a temporary selection mode; Cancel
+ * or Escape exits it and returns focus to that entry point.
  */
 test.describe("Bulk Member Lifecycle", () => {
+  test("default browse state has no selection affordances — only an explicit entry point per view", async ({
+    page,
+    login,
+    adminScenario,
+  }) => {
+    const { allianceId, email, password } = adminScenario;
+
+    await prisma.allianceMember.createMany({
+      data: [
+        { allianceId, playerName: "BrowseStateActive" },
+        { allianceId, playerName: "BrowseStateArchived", archivedAt: new Date() },
+      ],
+    });
+
+    await login({ email, password, displayName: "Admin User" });
+
+    await page.goto(`/alliances/${allianceId}/members?filter=active`);
+    await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Archive members…" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Restore members…" })).not.toBeVisible();
+
+    await page.goto(`/alliances/${allianceId}/members?filter=archived`);
+    await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Restore members…" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Archive members…" })).not.toBeVisible();
+  });
+
   test("selects and bulk-archives active members, showing an honest result summary and removing them from the Active view", async ({
     page,
     login,
@@ -29,6 +61,7 @@ test.describe("Bulk Member Lifecycle", () => {
     await login({ email, password, displayName: "Admin User" });
     await page.goto(`/alliances/${allianceId}/members?filter=active`);
 
+    await page.getByRole("button", { name: "Archive members…" }).click();
     await page.getByRole("checkbox", { name: "Select BulkArchiveHero" }).check();
     await page.getByRole("checkbox", { name: "Select BulkArchiveWarrior" }).check();
 
@@ -48,6 +81,70 @@ test.describe("Bulk Member Lifecycle", () => {
     await expect(page.getByText("BulkArchiveHero")).not.toBeVisible();
     await expect(page.getByText("BulkArchiveWarrior")).not.toBeVisible();
     await expect(page.getByText("BulkArchiveBystander")).toBeVisible();
+
+    // Selection mode itself is exited after a successful action — back to
+    // the default browse state, not stuck mid-selection.
+    await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Archive members…" })).toBeVisible();
+  });
+
+  test("Cancel exits selection mode without archiving anyone, and returns focus to the entry point", async ({
+    page,
+    login,
+    adminScenario,
+  }) => {
+    const { allianceId, email, password } = adminScenario;
+
+    await prisma.allianceMember.create({
+      data: { allianceId, playerName: "SelectionCancelMember" },
+    });
+
+    await login({ email, password, displayName: "Admin User" });
+    await page.goto(`/alliances/${allianceId}/members?filter=active`);
+
+    const entryButton = page.getByRole("button", { name: "Archive members…" });
+    await entryButton.click();
+    await page.getByRole("checkbox", { name: "Select SelectionCancelMember" }).check();
+
+    await page.getByRole("button", { name: "Cancel" }).click();
+
+    await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(entryButton).toBeFocused();
+
+    const member = await prisma.allianceMember.findFirst({
+      where: { allianceId, playerName: "SelectionCancelMember" },
+    });
+    expect(member?.archivedAt).toBeNull();
+  });
+
+  test("Escape exits selection mode (when no dialog is open) and returns focus to the entry point, without archiving anyone", async ({
+    page,
+    login,
+    adminScenario,
+  }) => {
+    const { allianceId, email, password } = adminScenario;
+
+    await prisma.allianceMember.create({
+      data: { allianceId, playerName: "SelectionEscapeMember" },
+    });
+
+    await login({ email, password, displayName: "Admin User" });
+    await page.goto(`/alliances/${allianceId}/members?filter=active`);
+
+    const entryButton = page.getByRole("button", { name: "Archive members…" });
+    await entryButton.focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("checkbox", { name: "Select SelectionEscapeMember" }).check();
+
+    await page.keyboard.press("Escape");
+
+    await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(entryButton).toBeFocused();
+
+    const member = await prisma.allianceMember.findFirst({
+      where: { allianceId, playerName: "SelectionEscapeMember" },
+    });
+    expect(member?.archivedAt).toBeNull();
   });
 
   test("archiving every displayed active member still shows the honest result summary, alongside the now-empty Active view's empty state", async ({
@@ -67,6 +164,7 @@ test.describe("Bulk Member Lifecycle", () => {
     await login({ email, password, displayName: "Admin User" });
     await page.goto(`/alliances/${allianceId}/members?filter=active`);
 
+    await page.getByRole("button", { name: "Archive members…" }).click();
     await page.getByRole("checkbox", { name: "Select all active members" }).check();
     await page.getByRole("button", { name: "Archive selected" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Archive 2 members" }).click();
@@ -96,6 +194,7 @@ test.describe("Bulk Member Lifecycle", () => {
     await login({ email, password, displayName: "Admin User" });
     await page.goto(`/alliances/${allianceId}/members?filter=archived`);
 
+    await page.getByRole("button", { name: "Restore members…" }).click();
     await page.getByRole("checkbox", { name: "Select all archived members" }).check();
     await page.getByRole("button", { name: "Restore selected" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Restore 2 members" }).click();
@@ -127,6 +226,7 @@ test.describe("Bulk Member Lifecycle", () => {
     await login({ email, password, displayName: "Admin User" });
     await page.goto(`/alliances/${allianceId}/members?filter=archived`);
 
+    await page.getByRole("button", { name: "Restore members…" }).click();
     await page.getByRole("checkbox", { name: "Select all archived members" }).check();
     await page.getByRole("button", { name: "Restore selected" }).click();
 
@@ -168,6 +268,7 @@ test.describe("Bulk Member Lifecycle", () => {
     await login({ email, password, displayName: "Admin User" });
     await page.goto(`/alliances/${allianceId}/members?filter=archived`);
 
+    await page.getByRole("button", { name: "Restore members…" }).click();
     await page.getByRole("checkbox", { name: "Select all archived members" }).check();
     await page.getByRole("button", { name: "Restore selected" }).click();
 
@@ -185,7 +286,7 @@ test.describe("Bulk Member Lifecycle", () => {
     expect(stillArchivedCount).toBe(5);
   });
 
-  test("the All view is browse-only — no bulk selection UI even for a manager", async ({
+  test("the All view is browse-only — no bulk selection UI or entry point even for a manager", async ({
     page,
     login,
     adminScenario,
@@ -200,9 +301,11 @@ test.describe("Bulk Member Lifecycle", () => {
     await page.goto(`/alliances/${allianceId}/members?filter=all`);
 
     await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Archive members…" })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Restore members…" })).not.toBeVisible();
   });
 
-  test("a Leader (no MANAGE_MEMBERS) never sees bulk selection UI", async ({
+  test("a Leader (no MANAGE_MEMBERS) never sees bulk selection UI or an entry point", async ({
     page,
     login,
     leaderScenario,
@@ -218,9 +321,10 @@ test.describe("Bulk Member Lifecycle", () => {
 
     await expect(page.getByText("LeaderViewMember")).toBeVisible();
     await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Archive members…" })).not.toBeVisible();
   });
 
-  test("Escape closes the confirmation dialog without archiving anyone", async ({
+  test("Escape closes the confirmation dialog without archiving anyone (selection mode and selection remain untouched)", async ({
     page,
     login,
     adminScenario,
@@ -234,6 +338,7 @@ test.describe("Bulk Member Lifecycle", () => {
     await login({ email, password, displayName: "Admin User" });
     await page.goto(`/alliances/${allianceId}/members?filter=active`);
 
+    await page.getByRole("button", { name: "Archive members…" }).click();
     await page.getByRole("checkbox", { name: "Select EscapeCancelMember" }).check();
     await page.getByRole("button", { name: "Archive selected" }).click();
 
@@ -242,13 +347,17 @@ test.describe("Bulk Member Lifecycle", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).not.toBeVisible();
 
+    // The dialog's own Escape only closes itself — selection mode and the
+    // in-progress selection are still intact underneath it.
+    await expect(page.getByRole("checkbox", { name: "Select EscapeCancelMember" })).toBeChecked();
+
     const member = await prisma.allianceMember.findFirst({
       where: { allianceId, playerName: "EscapeCancelMember" },
     });
     expect(member?.archivedAt).toBeNull();
   });
 
-  test("keyboard-only: Space selects a row, Enter opens the dialog, Tab stays trapped inside it, and Escape returns focus to the triggering button without archiving", async ({
+  test("keyboard-only: Enter opens selection mode, Space selects a row, Enter opens the dialog, Tab stays trapped inside it, and Escape returns focus to the triggering button without archiving", async ({
     page,
     login,
     adminScenario,
@@ -262,7 +371,12 @@ test.describe("Bulk Member Lifecycle", () => {
     await login({ email, password, displayName: "Admin User" });
     await page.goto(`/alliances/${allianceId}/members?filter=active`);
 
-    // Select via keyboard only — no pointer helpers (.check()/.click()).
+    // Enter selection mode via keyboard only — no pointer helpers.
+    const entryButton = page.getByRole("button", { name: "Archive members…" });
+    await entryButton.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator('input[type="checkbox"]')).not.toHaveCount(0);
+
     const checkbox = page.getByRole("checkbox", { name: "Select KeyboardOnlyMember" });
     await checkbox.focus();
     await page.keyboard.press("Space");
@@ -317,7 +431,7 @@ test.describe("Bulk Member Lifecycle", () => {
     expect(member?.archivedAt).toBeNull();
   });
 
-  test("@a11y bulk archive confirmation dialog meets accessibility standards", async ({
+  test("@a11y default browse state, selection mode, and the confirmation dialog all meet accessibility standards", async ({
     page,
     login,
     adminScenario,
@@ -333,6 +447,9 @@ test.describe("Bulk Member Lifecycle", () => {
     await page.waitForLoadState("networkidle");
     await checkA11yLevelAA(page);
 
+    await page.getByRole("button", { name: "Archive members…" }).click();
+    await checkA11yLevelAA(page);
+
     await page.getByRole("checkbox", { name: "Select A11yBulkMember" }).check();
     await page.getByRole("button", { name: "Archive selected" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
@@ -345,8 +462,8 @@ test.describe("Bulk Member Lifecycle", () => {
     login,
     adminScenario,
   }) => {
-    // Scoped to what PR 2 owns: selecting rows, the bulk bar, and the
-    // confirmation dialog must all fit inside the viewport on their own
+    // Scoped to what PR 2 owns: entering selection mode, the bulk bar, and
+    // the confirmation dialog must all fit inside the viewport on their own
     // merits. This intentionally does NOT assert a page-wide "no horizontal
     // scroll" invariant — the Members page header's action-button row
     // (Import Members / Import history / Add Member) already overflows at
@@ -374,6 +491,12 @@ test.describe("Bulk Member Lifecycle", () => {
     await page.goto(`/alliances/${allianceId}/members?filter=active`);
     await page.waitForLoadState("networkidle");
 
+    const entryButton = page.getByRole("button", { name: "Archive members…" });
+    const entryButtonBox = await entryButton.boundingBox();
+    expect(entryButtonBox).not.toBeNull();
+    expect(entryButtonBox!.x + entryButtonBox!.width).toBeLessThanOrEqual(320);
+
+    await entryButton.click();
     await page.getByRole("checkbox", { name: "Select all active members" }).check();
 
     const bulkBar = page.getByTestId("bulk-action-bar");

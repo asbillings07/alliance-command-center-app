@@ -187,7 +187,7 @@ describe("bulkRestoreMembers", () => {
 
         expect(result).toEqual({ success: true, restoredCount: 2, skippedCount: 0 });
         expect(mockUpdateMany).toHaveBeenCalledWith({
-            where: { id: { in: ["m1", "m2"] }, archivedAt: { not: null } },
+            where: { id: { in: ["m1", "m2"] }, allianceId, archivedAt: { not: null } },
             data: { archivedAt: null },
         });
         expect(revalidateAllianceData).toHaveBeenCalledWith({
@@ -213,7 +213,7 @@ describe("bulkRestoreMembers", () => {
 
         expect(result).toEqual({ success: true, restoredCount: 1, skippedCount: 1 });
         expect(mockUpdateMany).toHaveBeenCalledWith({
-            where: { id: { in: ["m2"] }, archivedAt: { not: null } },
+            where: { id: { in: ["m2"] }, allianceId, archivedAt: { not: null } },
             data: { archivedAt: null },
         });
     });

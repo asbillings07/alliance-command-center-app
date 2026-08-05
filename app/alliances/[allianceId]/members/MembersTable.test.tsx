@@ -20,18 +20,19 @@ vi.mock("next/link", () => ({
 // prove MembersTable wires the right props and reacts correctly to the
 // onConfirm contract.
 vi.mock("@/app/src/components/client", () => {
-    function Button({
-        children,
-        loading,
-        disabled,
-        ...props
-    }: React.ButtonHTMLAttributes<HTMLButtonElement> & { loading?: boolean }) {
+    // forwardRef (not a plain function component) to match the real Button —
+    // MembersTable's entry-point button needs a real ref for focus-return
+    // after Cancel/Escape exits selection mode.
+    const Button = React.forwardRef<
+        HTMLButtonElement,
+        React.ButtonHTMLAttributes<HTMLButtonElement> & { loading?: boolean }
+    >(function Button({ children, loading, disabled, ...props }, ref) {
         return React.createElement(
             "button",
-            { ...props, disabled: disabled || loading, "aria-busy": loading },
+            { ...props, ref, disabled: disabled || loading, "aria-busy": loading },
             children
         );
-    }
+    });
 
     function ConfirmDialog({
         isOpen,
@@ -179,56 +180,88 @@ afterEach(async () => {
     container.remove();
 });
 
-describe("MembersTable — selection visibility per view", () => {
-    it("renders no checkboxes when the caller cannot manage members", async () => {
+describe("MembersTable — default browse state has no selection affordances", () => {
+    it("renders no checkboxes and no entry-point button when the caller cannot manage members", async () => {
         await mount({ canManageMembers: false });
 
         expect(checkboxes()).toHaveLength(0);
+        expect(findButton("Archive members…")).toBeUndefined();
     });
 
-    it("renders no checkboxes on the All view even for a manager (browse-only)", async () => {
+    it("renders no checkboxes and no entry-point button on the All view even for a manager (browse-only)", async () => {
         await mount({ filter: "all", canManageMembers: true });
 
         expect(checkboxes()).toHaveLength(0);
+        expect(findButton(/members…$/)).toBeUndefined();
     });
 
-    it("renders one checkbox per row plus a select-all checkbox on the Active view for a manager", async () => {
+    it("renders no checkboxes by default on the Active view for a manager — only an 'Archive members…' entry point", async () => {
         await mount({
             filter: "active",
             members: [buildMember({ id: "m1" }), buildMember({ id: "m2", playerName: "Phoenix" })],
         });
 
-        // 2 rows + 1 select-all header checkbox
-        expect(checkboxes()).toHaveLength(3);
+        expect(checkboxes()).toHaveLength(0);
+        expect(findButton("Archive members…")).toBeDefined();
+        expect(findButton("Restore members…")).toBeUndefined();
+    });
+
+    it("renders no checkboxes by default on the Archived view for a manager — only a 'Restore members…' entry point", async () => {
+        await mount({
+            filter: "archived",
+            members: [buildMember({ archivedAt: new Date() })],
+        });
+
+        expect(checkboxes()).toHaveLength(0);
+        expect(findButton("Restore members…")).toBeDefined();
+        expect(findButton("Archive members…")).toBeUndefined();
     });
 });
 
-describe("MembersTable — bulk bar", () => {
-    it("shows no bulk bar until at least one row is selected", async () => {
-        await mount();
+describe("MembersTable — entering and exiting selection mode", () => {
+    it("clicking the entry point reveals checkboxes and the selection bar, without a stale count", async () => {
+        await mount({
+            filter: "active",
+            members: [buildMember({ id: "m1" }), buildMember({ id: "m2", playerName: "Phoenix" })],
+        });
 
-        expect(container.textContent).not.toContain("selected");
+        await act(async () => {
+            findButton("Archive members…")!.click();
+        });
+
+        // 2 rows + 1 select-all header checkbox
+        expect(checkboxes()).toHaveLength(3);
+        expect(container.textContent).toContain("Select members to archive");
+        expect(findButton("Archive members…")).toBeUndefined(); // entry point itself hides while selecting
+        expect(findButton("Cancel")).toBeDefined();
+        expect(findButton("Archive selected")!.disabled).toBe(true); // nothing selected yet
     });
 
-    it("shows Archive selected on the Active view once a row is selected", async () => {
+    it("shows Archive selected (enabled) on the Active view once a row is selected", async () => {
         await mount({ filter: "active" });
 
+        await act(async () => {
+            findButton("Archive members…")!.click();
+        });
         await act(async () => {
             checkboxes()[1].click(); // index 0 is select-all
         });
 
         expect(container.textContent).toContain("1 member selected");
-        expect(findButton("Archive selected")).toBeDefined();
+        expect(findButton("Archive selected")!.disabled).toBe(false);
     });
 
     it("shows Restore selected on the Archived view once a row is selected", async () => {
         await mount({ filter: "archived", members: [buildMember({ archivedAt: new Date() })] });
 
         await act(async () => {
+            findButton("Restore members…")!.click();
+        });
+        await act(async () => {
             checkboxes()[1].click();
         });
 
-        expect(findButton("Restore selected")).toBeDefined();
+        expect(findButton("Restore selected")!.disabled).toBe(false);
     });
 
     it("select-all selects every displayed row and toggling it off clears the selection", async () => {
@@ -238,6 +271,9 @@ describe("MembersTable — bulk bar", () => {
         });
 
         await act(async () => {
+            findButton("Archive members…")!.click();
+        });
+        await act(async () => {
             checkboxes()[0].click(); // select-all
         });
         expect(container.textContent).toContain("2 members selected");
@@ -245,20 +281,70 @@ describe("MembersTable — bulk bar", () => {
         await act(async () => {
             checkboxes()[0].click();
         });
-        expect(container.textContent).not.toContain("selected");
+        expect(container.textContent).toContain("Select members to archive");
     });
 
-    it("Clear resets the selection without opening the dialog", async () => {
-        await mount();
+    it("Cancel exits selection mode entirely — checkboxes disappear, the entry point returns, and focus returns to it", async () => {
+        await mount({ filter: "active" });
 
+        await act(async () => {
+            findButton("Archive members…")!.click();
+        });
         await act(async () => {
             checkboxes()[1].click();
         });
         await act(async () => {
-            findButton("Clear")!.click();
+            findButton("Cancel")!.click();
         });
 
+        expect(checkboxes()).toHaveLength(0);
         expect(container.textContent).not.toContain("selected");
+        const entryButton = findButton("Archive members…");
+        expect(entryButton).toBeDefined();
+        expect(document.activeElement).toBe(entryButton);
+    });
+
+    it("Escape exits selection mode (when the dialog isn't open) and returns focus to the entry point", async () => {
+        await mount({ filter: "active" });
+
+        await act(async () => {
+            findButton("Archive members…")!.click();
+        });
+        await act(async () => {
+            checkboxes()[1].click();
+        });
+        await act(async () => {
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+        });
+
+        expect(checkboxes()).toHaveLength(0);
+        const entryButton = findButton("Archive members…");
+        expect(entryButton).toBeDefined();
+        expect(document.activeElement).toBe(entryButton);
+    });
+
+    it("does not exit selection mode on Escape while the confirmation dialog is open — the dialog owns Escape", async () => {
+        await mount({ filter: "active" });
+
+        await act(async () => {
+            findButton("Archive members…")!.click();
+        });
+        await act(async () => {
+            checkboxes()[1].click();
+        });
+        await act(async () => {
+            findButton("Archive selected")!.click();
+        });
+        expect(container.querySelector('[data-testid="confirm-dialog"]')).not.toBeNull();
+
+        await act(async () => {
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+        });
+
+        // Still in selection mode with the row still selected — our own
+        // listener deferred to the (mocked, here inert) dialog.
+        expect(checkboxes().length).toBeGreaterThan(0);
+        expect(container.textContent).toContain("1 member selected");
     });
 });
 
@@ -266,6 +352,9 @@ describe("MembersTable — archive confirmation flow", () => {
     it("opens the dialog with the archive copy and selected names when Archive selected is clicked", async () => {
         await mount({ filter: "active", members: [buildMember({ playerName: "Dragon" })] });
 
+        await act(async () => {
+            findButton("Archive members…")!.click();
+        });
         await act(async () => {
             checkboxes()[1].click();
         });
@@ -282,13 +371,16 @@ describe("MembersTable — archive confirmation flow", () => {
         expect(container.textContent).toContain("Dragon");
     });
 
-    it("calls bulkArchiveMembers with the selected member ids and shows an honest result summary on success", async () => {
+    it("calls bulkArchiveMembers with the selected member ids, shows an honest result summary, and returns to the default browse state on success", async () => {
         mockBulkArchive.mockResolvedValue({ success: true, archivedCount: 1, skippedCount: 0 });
         await mount({
             filter: "active",
             members: [buildMember({ id: "m1", playerName: "Dragon" })],
         });
 
+        await act(async () => {
+            findButton("Archive members…")!.click();
+        });
         await act(async () => {
             checkboxes()[1].click();
         });
@@ -305,8 +397,10 @@ describe("MembersTable — archive confirmation flow", () => {
         expect(formData.getAll("memberId")).toEqual(["m1"]);
         expect(container.textContent).toContain("Archived 1 member.");
         expect(mockRefresh).toHaveBeenCalledTimes(1);
-        // Selection is cleared after a successful action.
-        expect(container.textContent).not.toContain("1 member selected");
+        // Selection mode itself is exited after a successful action — back
+        // to the default browse state (no checkboxes, entry point returns).
+        expect(checkboxes()).toHaveLength(0);
+        expect(findButton("Archive members…")).toBeDefined();
     });
 
     it("reports skipped members honestly when some were already archived", async () => {
@@ -316,6 +410,9 @@ describe("MembersTable — archive confirmation flow", () => {
             members: [buildMember({ id: "m1" }), buildMember({ id: "m2", playerName: "Phoenix" })],
         });
 
+        await act(async () => {
+            findButton("Archive members…")!.click();
+        });
         await act(async () => {
             checkboxes()[0].click(); // select all
         });
@@ -336,6 +433,9 @@ describe("MembersTable — archive confirmation flow", () => {
         mockBulkArchive.mockResolvedValue({ success: false, error: "You don't have permission to archive members" });
         await mount({ filter: "active" });
 
+        await act(async () => {
+            findButton("Archive members…")!.click();
+        });
         await act(async () => {
             checkboxes()[1].click();
         });
@@ -367,6 +467,9 @@ describe("MembersTable — result summary survives the view going empty", () => 
         };
         await mount(baseProps);
 
+        await act(async () => {
+            findButton("Archive members…")!.click();
+        });
         await act(async () => {
             checkboxes()[1].click();
         });
@@ -402,6 +505,9 @@ describe("MembersTable — restore confirmation flow", () => {
         });
 
         await act(async () => {
+            findButton("Restore members…")!.click();
+        });
+        await act(async () => {
             checkboxes()[1].click();
         });
         await act(async () => {
@@ -419,6 +525,9 @@ describe("MembersTable — restore confirmation flow", () => {
         );
         await mount({ filter: "archived", members, activeCount: 91 });
 
+        await act(async () => {
+            findButton("Restore members…")!.click();
+        });
         await act(async () => {
             checkboxes()[0].click(); // select all 7
         });
@@ -438,6 +547,9 @@ describe("MembersTable — restore confirmation flow", () => {
         await mount({ filter: "archived", members, activeCount: 97 });
 
         await act(async () => {
+            findButton("Restore members…")!.click();
+        });
+        await act(async () => {
             checkboxes()[0].click();
         });
         await act(async () => {
@@ -451,7 +563,7 @@ describe("MembersTable — restore confirmation flow", () => {
         expect(mockBulkRestore).not.toHaveBeenCalled();
     });
 
-    it("calls bulkRestoreMembers and shows the result summary on success", async () => {
+    it("calls bulkRestoreMembers, shows the result summary, and returns to the default browse state on success", async () => {
         mockBulkRestore.mockResolvedValue({ success: true, restoredCount: 1, skippedCount: 0 });
         await mount({
             filter: "archived",
@@ -459,6 +571,9 @@ describe("MembersTable — restore confirmation flow", () => {
             activeCount: 5,
         });
 
+        await act(async () => {
+            findButton("Restore members…")!.click();
+        });
         await act(async () => {
             checkboxes()[1].click();
         });
@@ -474,5 +589,7 @@ describe("MembersTable — restore confirmation flow", () => {
         expect(formData.getAll("memberId")).toEqual(["m1"]);
         expect(container.textContent).toContain("Restored 1 member.");
         expect(mockRefresh).toHaveBeenCalledTimes(1);
+        expect(checkboxes()).toHaveLength(0);
+        expect(findButton("Restore members…")).toBeDefined();
     });
 });

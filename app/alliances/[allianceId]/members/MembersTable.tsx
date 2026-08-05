@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, Badge } from "@/app/src/components";
@@ -79,15 +79,72 @@ export function MembersTable({
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [pendingAction, setPendingAction] = useState<"archive" | "restore" | null>(null);
     const [resultSummary, setResultSummary] = useState<string | null>(null);
+    /**
+     * Selection checkboxes are hidden until the user explicitly opts into a
+     * temporary "selecting" mode via an entry-point button. Rendering them
+     * unconditionally on every load of the Active/Archived view read as a
+     * general multi-select surface and implied more bulk operations than
+     * this PR actually offers — an explicit entry point keeps normal
+     * browsing free of selection affordances.
+     */
+    const [isSelecting, setIsSelecting] = useState(false);
+    const entryButtonRef = useRef<HTMLButtonElement>(null);
+    const wasSelectingRef = useRef(false);
 
     // Decision #277 PR2: one intent per view. Active -> Archive only,
     // Archived -> Restore only, All -> browse-only (no bulk selection at all).
     const bulkAction: "archive" | "restore" | null =
         !canManageMembers || filter === "all" ? null : filter === "active" ? "archive" : "restore";
 
-    const selectedCount = selectedIds.size;
+    // Selection state can outlive the `members` prop that produced it — e.g.
+    // the server re-renders with a different roster (a period change, a
+    // background revalidation) while selection mode is still open. Deriving
+    // everything from the currently-displayed rows, rather than raw
+    // `selectedIds`, keeps the "selection applies only to displayed eligible
+    // rows" contract true even when the two get out of sync, instead of
+    // letting a stale, no-longer-visible id inflate counts or get submitted.
+    const selectedMembers = useMemo(
+        () => members.filter((m) => selectedIds.has(m.id)),
+        [members, selectedIds]
+    );
+    const selectedCount = selectedMembers.length;
     const allSelected = members.length > 0 && selectedCount === members.length;
     const someSelected = selectedCount > 0 && !allSelected;
+
+    function enterSelectionMode() {
+        setResultSummary(null);
+        setIsSelecting(true);
+    }
+
+    function exitSelectionMode() {
+        setIsSelecting(false);
+        setSelectedIds(new Set());
+    }
+
+    // Escape exits the temporary selection mode and returns focus to the
+    // entry-point button — but only while the confirmation dialog isn't the
+    // thing on top; when it's open, the dialog owns Escape (closing itself,
+    // leaving selection mode/selection untouched).
+    useEffect(() => {
+        if (!isSelecting || pendingAction !== null) return;
+        function handleKeyDown(e: KeyboardEvent) {
+            if (e.key === "Escape") {
+                exitSelectionMode();
+            }
+        }
+        document.addEventListener("keydown", handleKeyDown);
+        return () => document.removeEventListener("keydown", handleKeyDown);
+    }, [isSelecting, pendingAction]);
+
+    // Return focus to the entry-point button whenever selection mode ends
+    // (Cancel, Escape, or a completed action) — covers every exit path with
+    // one effect instead of duplicating a .focus() call at each call site.
+    useEffect(() => {
+        if (wasSelectingRef.current && !isSelecting) {
+            entryButtonRef.current?.focus();
+        }
+        wasSelectingRef.current = isSelecting;
+    }, [isSelecting]);
 
     function toggleSelectAll(checked: boolean) {
         setResultSummary(null);
@@ -107,7 +164,6 @@ export function MembersTable({
         });
     }
 
-    const selectedMembers = members.filter((m) => selectedIds.has(m.id));
     const selectedNames = selectedMembers.map((m) => m.playerName);
 
     const restoreCapacityError =
@@ -117,8 +173,11 @@ export function MembersTable({
     async function handleConfirm(): Promise<{ error?: string } | void> {
         const formData = new FormData();
         formData.set("allianceId", allianceId);
-        for (const id of selectedIds) {
-            formData.append("memberId", id);
+        // Only submit ids that are still actually displayed/eligible in this
+        // view — a raw `selectedIds` dump could include a stale id the
+        // server no longer considers part of this filter.
+        for (const member of selectedMembers) {
+            formData.append("memberId", member.id);
         }
 
         if (bulkAction === "archive") {
@@ -145,6 +204,7 @@ export function MembersTable({
             );
         }
 
+        setIsSelecting(false);
         setSelectedIds(new Set());
         router.refresh();
     }
@@ -195,21 +255,32 @@ export function MembersTable({
                 emptyState
             ) : (
                 <>
-                    {bulkAction && selectedCount > 0 && (
+                    {bulkAction && !isSelecting && (
+                        <div className="mb-4 flex justify-end">
+                            <Button ref={entryButtonRef} variant="secondary" size="sm" onClick={enterSelectionMode}>
+                                {bulkAction === "archive" ? "Archive members…" : "Restore members…"}
+                            </Button>
+                        </div>
+                    )}
+
+                    {bulkAction && isSelecting && (
                         <div
                             data-testid="bulk-action-bar"
                             className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface-secondary p-3"
                         >
                             <span className="text-sm font-medium text-text-primary">
-                                {pluralize(selectedCount, "member")} selected
+                                {selectedCount > 0
+                                    ? `${pluralize(selectedCount, "member")} selected`
+                                    : `Select members to ${bulkAction}`}
                             </span>
                             <div className="flex items-center gap-2 flex-wrap">
-                                <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
-                                    Clear
+                                <Button variant="ghost" size="sm" onClick={exitSelectionMode}>
+                                    Cancel
                                 </Button>
                                 <Button
                                     variant={bulkAction === "archive" ? "warning" : "primary"}
                                     size="sm"
+                                    disabled={selectedCount === 0}
                                     onClick={() => setPendingAction(bulkAction)}
                                 >
                                     {bulkAction === "archive" ? "Archive selected" : "Restore selected"}
@@ -223,7 +294,7 @@ export function MembersTable({
                             <table className="w-full">
                                 <thead className="bg-surface-secondary border-b border-border">
                                     <tr>
-                                        {bulkAction && (
+                                        {bulkAction && isSelecting && (
                                             <th className="w-12 px-4 py-3">
                                                 <input
                                                     id={selectAllId}
@@ -273,7 +344,7 @@ export function MembersTable({
                                                 key={member.id}
                                                 className="border-b border-border hover:bg-surface-secondary transition-colors cursor-pointer"
                                             >
-                                                {bulkAction && (
+                                                {bulkAction && isSelecting && (
                                                     <td className="px-4 py-3">
                                                         <input
                                                             type="checkbox"

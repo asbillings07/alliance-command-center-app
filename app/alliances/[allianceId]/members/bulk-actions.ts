@@ -102,9 +102,10 @@ export async function bulkArchiveMembers(formData: FormData): Promise<BulkArchiv
  * same alliance (single restore, bulk restore, add member, invite
  * collaborator all take the same lock), so the read used for the capacity
  * math can't go stale before the write below runs. The write's `WHERE` is
- * still conditioned on `archivedAt: { not: null }` (matching the archive
- * path's defense-in-depth) so `restoredCount` always reflects rows this call
- * actually changed, not just the pre-write read.
+ * still conditioned on `allianceId` + `archivedAt: { not: null }` (matching
+ * the archive path's defense-in-depth, and its tenant-isolation posture) so
+ * `restoredCount` always reflects rows this call actually changed, not just
+ * the pre-write read.
  */
 export async function bulkRestoreMembers(formData: FormData): Promise<BulkRestoreResult> {
     const allianceId = formData.get("allianceId");
@@ -144,7 +145,7 @@ export async function bulkRestoreMembers(formData: FormData): Promise<BulkRestor
                 let restoredCount = 0;
                 if (stillArchivedIds.length > 0) {
                     const result = await tx.allianceMember.updateMany({
-                        where: { id: { in: stillArchivedIds }, archivedAt: { not: null } },
+                        where: { id: { in: stillArchivedIds }, allianceId, archivedAt: { not: null } },
                         data: { archivedAt: null },
                     });
                     restoredCount = result.count;
