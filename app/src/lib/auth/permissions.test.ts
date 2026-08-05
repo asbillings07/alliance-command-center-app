@@ -34,6 +34,7 @@ describe("permissions", () => {
         expect(permissions.canInviteCollaborators).toBe(true);
         expect(permissions.canManageLeadership).toBe(true);
         expect(permissions.canManageAlliance).toBe(true);
+        expect(permissions.canRollbackMemberImports).toBe(true);
       });
     });
 
@@ -58,6 +59,7 @@ describe("permissions", () => {
 
         expect(permissions.canManageLeadership).toBe(false);
         expect(permissions.canManageAlliance).toBe(false);
+        expect(permissions.canRollbackMemberImports).toBe(false);
       });
     });
 
@@ -82,6 +84,7 @@ describe("permissions", () => {
         expect(permissions.canInviteCollaborators).toBe(false);
         expect(permissions.canManageLeadership).toBe(false);
         expect(permissions.canManageAlliance).toBe(false);
+        expect(permissions.canRollbackMemberImports).toBe(false);
       });
     });
 
@@ -106,6 +109,7 @@ describe("permissions", () => {
         expect(permissions.canInviteCollaborators).toBe(false);
         expect(permissions.canManageLeadership).toBe(false);
         expect(permissions.canManageAlliance).toBe(false);
+        expect(permissions.canRollbackMemberImports).toBe(false);
       });
     });
   });
@@ -124,6 +128,7 @@ describe("permissions", () => {
 
       expect(hasPermission(permissions, Permissions.MANAGE_LEADERSHIP)).toBe(false);
       expect(hasPermission(permissions, Permissions.MANAGE_ALLIANCE)).toBe(false);
+      expect(hasPermission(permissions, Permissions.ROLLBACK_MEMBER_IMPORTS)).toBe(false);
     });
 
     it("works correctly for all permission types", () => {
@@ -154,6 +159,7 @@ describe("permissions", () => {
       expect(Permissions.INVITE_COLLABORATORS).toBe("invite:collaborators");
       expect(Permissions.MANAGE_LEADERSHIP).toBe("manage:leadership");
       expect(Permissions.MANAGE_ALLIANCE).toBe("manage:alliance");
+      expect(Permissions.ROLLBACK_MEMBER_IMPORTS).toBe("rollback:member-imports");
     });
   });
 
@@ -184,8 +190,8 @@ describe("permissions", () => {
       const countTrue = (perms: PermissionSet) =>
         Object.values(perms).filter(Boolean).length;
 
-      expect(countTrue(ownerPerms)).toBe(12); // All 12 permissions
-      expect(countTrue(adminPerms)).toBe(10); // All except manage:leadership and manage:alliance
+      expect(countTrue(ownerPerms)).toBe(13); // All 13 permissions
+      expect(countTrue(adminPerms)).toBe(10); // All except manage:leadership, manage:alliance, and rollback:member-imports
       expect(countTrue(leaderPerms)).toBe(7);  // view:* + manage:notes + import:metrics + configure:metrics + configure:periods
       expect(countTrue(viewerPerms)).toBe(3);  // Only view:*
     });

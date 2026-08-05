@@ -42,6 +42,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
                 canInviteCollaborators: false,
                 canManageLeadership: false,
                 canManageAlliance: false,
+                canRollbackMemberImports: false,
             },
             membership: { role: "LEADER" } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["membership"],
         });
