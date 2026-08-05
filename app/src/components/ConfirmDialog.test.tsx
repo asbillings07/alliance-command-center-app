@@ -88,6 +88,15 @@ async function mount(overrides: Partial<ConfirmDialogProps> = {}) {
     return { props, onConfirm, onClose };
 }
 
+/** Re-renders into the *same* root (no new mount) — simulates the parent
+ * driving the same ConfirmDialog instance's `isOpen` prop across a
+ * close/reopen cycle, since the <dialog> node itself stays mounted. */
+async function rerender(props: ConfirmDialogProps) {
+    await act(async () => {
+        root.render(createElement(ConfirmDialog, props));
+    });
+}
+
 function getDialog(): HTMLDialogElement {
     const dialog = container.querySelector("dialog");
     if (!dialog) throw new Error("dialog not rendered");
@@ -144,6 +153,33 @@ describe("ConfirmDialog", () => {
 
         expect(findButton("Cancel").type).toBe("button");
         expect(findButton("Archive 3 members").type).toBe("button");
+    });
+
+    it("resets a stale isPending when the parent forces the dialog closed mid-confirm and later reopens it — a subsequent open must not render with Cancel/Confirm stuck disabled", async () => {
+        // Never resolves — isolates the "still genuinely in flight" case:
+        // handleConfirmClick's own `finally` hasn't run yet, so only the
+        // reopen path itself can be responsible for clearing isPending.
+        const onConfirm = vi.fn(() => new Promise<void>(() => {}));
+        const { props } = await mount({ onConfirm, confirmLabel: "Archive 3 members" });
+
+        await act(async () => {
+            findButton("Archive 3 members").click();
+        });
+        expect(findButton("Cancel").disabled).toBe(true); // in flight
+
+        // The parent forces the dialog closed by some path other than
+        // Cancel/Escape/a completed confirm (e.g. isOpen driven by state
+        // that changed for an unrelated reason) while onConfirm is still
+        // pending — the <dialog> node itself stays mounted, and the
+        // in-flight promise never gets a chance to settle.
+        await rerender({ ...props, isOpen: false });
+
+        // Reopening the same instance must not carry the stale isPending
+        // forward, even though nothing ever resolved it.
+        await rerender({ ...props, isOpen: true });
+
+        expect(findButton("Cancel").disabled).toBe(false);
+        expect(findButton("Archive 3 members").disabled).toBe(false);
     });
 
     it("closes and calls onClose when Cancel is clicked, without calling onConfirm", async () => {

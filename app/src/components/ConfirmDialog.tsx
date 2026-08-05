@@ -72,7 +72,16 @@ export function ConfirmDialog({
         const dialog = dialogRef.current;
         if (!dialog) return;
         if (isOpen && !dialog.open) {
+            // The <dialog> node stays mounted across opens/closes (see the
+            // isOpen doc comment above), so a stale isPending from a prior
+            // confirm attempt — e.g. a caller that closes the dialog by
+            // some path other than Cancel/Escape/a completed confirm, all
+            // three of which already imply isPending is false — could
+            // otherwise persist into this reopen and leave Cancel/Confirm
+            // incorrectly disabled. Reset both per-attempt fields so every
+            // open starts clean.
             setError(null);
+            setIsPending(false);
             dialog.showModal();
         } else if (!isOpen && dialog.open) {
             dialog.close();
