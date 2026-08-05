@@ -7,6 +7,7 @@ import { formatImportTimestamp } from "@/app/src/lib/format/formatImportTimestam
 import { computeImportRollbackPreview, computePreviewFingerprint } from "../rollbackPreview";
 import { RollbackUndoForm } from "./RollbackUndoForm";
 import { ROLLBACK_RESOLUTION_LABELS } from "./resolutionLabels";
+import { describeRollbackEvidence } from "./describeRollbackEvidence";
 
 type Params = {
     params: Promise<{
@@ -37,7 +38,13 @@ async function AlreadyRolledBackSummary({ rollbackId }: { rollbackId: string }) 
             results: {
                 select: {
                     resolution: true,
+                    memberMissing: true,
                     driftedFields: true,
+                    hadLaterImportInvolvement: true,
+                    hadLinkedUser: true,
+                    metricEntryCount: true,
+                    leadershipNoteCount: true,
+                    invitationCount: true,
                     memberImportChange: {
                         select: { playerNameSnapshot: true, sourceRow: true, changeType: true },
                     },
@@ -88,16 +95,35 @@ async function AlreadyRolledBackSummary({ rollbackId }: { rollbackId: string }) 
                             </tr>
                         </thead>
                         <tbody>
-                            {rollback.results.map((r, idx) => (
-                                <tr key={idx} className="border-b border-border last:border-b-0">
-                                    <td className="px-4 py-3 font-medium text-text-primary">
-                                        {r.memberImportChange.playerNameSnapshot}
-                                    </td>
-                                    <td className="px-4 py-3 text-text-secondary">
-                                        {ROLLBACK_RESOLUTION_LABELS[r.resolution] ?? r.resolution}
-                                    </td>
-                                </tr>
-                            ))}
+                            {rollback.results.map((r, idx) => {
+                                // The two clean resolutions never had a
+                                // conflict to explain; every other
+                                // resolution exists *because* of one — see
+                                // computeImportRollbackPreview's own
+                                // requiresResolution/defaultResolution
+                                // branches for why those two are the only
+                                // conflict-free outcomes.
+                                const isClean =
+                                    r.resolution === "DELETED" || r.resolution === "REVERTED_TO_PRE_IMPORT_STATE";
+                                const reasons = isClean ? [] : describeRollbackEvidence(r);
+                                return (
+                                    <tr key={idx} className="border-b border-border last:border-b-0 align-top">
+                                        <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">
+                                            {r.memberImportChange.playerNameSnapshot}
+                                        </td>
+                                        <td className="px-4 py-3 text-text-secondary">
+                                            <span>{ROLLBACK_RESOLUTION_LABELS[r.resolution] ?? r.resolution}</span>
+                                            {reasons.length > 0 && (
+                                                <ul className="mt-1 text-xs text-text-muted list-disc list-inside">
+                                                    {reasons.map((reason, reasonIdx) => (
+                                                        <li key={reasonIdx}>{reason}</li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

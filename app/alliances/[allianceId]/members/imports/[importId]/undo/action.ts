@@ -251,6 +251,7 @@ export async function rollbackImport(formData: FormData): Promise<RollbackImport
                 memberImportChangeId: string;
                 allianceMemberId: string | null;
                 resolution: MemberImportRollbackResultResolution;
+                memberMissing: boolean;
                 driftedFields: string[];
                 hadLaterImportInvolvement: boolean;
                 hadLinkedUser: boolean;
@@ -333,6 +334,11 @@ export async function rollbackImport(formData: FormData): Promise<RollbackImport
                         ? null
                         : item.allianceMemberId,
                     resolution,
+                    // The one evidence field that's true precisely when
+                    // every other evidence field is at its empty default —
+                    // without it, this exact conflict cause would be
+                    // unrecoverable from the persisted row alone.
+                    memberMissing: item.currentlyArchived === null,
                     driftedFields: item.driftedFields,
                     hadLaterImportInvolvement: item.hadLaterImportInvolvement,
                     hadLinkedUser: item.hadLinkedUser,

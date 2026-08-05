@@ -119,6 +119,13 @@ test.describe("Import Rollback", () => {
         const member = await prisma.allianceMember.findUniqueOrThrow({ where: { id: memberId } });
         expect(member.archivedAt).not.toBeNull();
         expect(member.thp).toBe(9999); // preserved, never reverted
+
+        // The durable view (post-reload) must explain *why* this row wasn't
+        // auto-rolled-back, not just report the resolution it got — the
+        // exact evidence MemberImportRollbackResult persisted, not a
+        // generic "conflict" label.
+        await page.reload();
+        await expect(page.getByText("Changed since import: thp")).toBeVisible();
     });
 
     test("revisiting the undo URL after completion shows the durable result instead of the interactive form again", async ({

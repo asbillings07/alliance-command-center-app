@@ -370,7 +370,12 @@ model MemberImportRollbackResult {
   // Structured conflict evidence. Left at defaults (empty/false/zero) for
   // the two non-conflict resolutions (DELETED, REVERTED_TO_PRE_IMPORT_STATE);
   // populated for every conflict resolution so the UI can explain *why* a
-  // given member wasn't touched, not just that it wasn't.
+  // given member wasn't touched, not just that it wasn't. `memberMissing` is
+  // its own field, not inferred from the others being all-empty — a missing
+  // member's evidence *is* all-empty (nothing left to read), and collapsing
+  // that into "no evidence recorded" would make this the one conflict cause
+  // the durable view could never recover after the fact.
+  memberMissing             Boolean  @default(false)
   driftedFields             String[] @default([])
   hadLaterImportInvolvement Boolean  @default(false)
   hadLinkedUser             Boolean  @default(false)

@@ -6,6 +6,7 @@ import { Card, Badge } from "@/app/src/components";
 import { Button, ConfirmDialog } from "@/app/src/components/client";
 import { rollbackImport, type RollbackImportSummary, type RollbackResolutionChoice } from "./action";
 import { ROLLBACK_RESOLUTION_LABELS } from "./resolutionLabels";
+import { describeRollbackEvidence, pluralize } from "./describeRollbackEvidence";
 import type { RollbackPreviewItem } from "../rollbackPreview";
 
 export type RollbackUndoFormProps = {
@@ -18,47 +19,20 @@ export type RollbackUndoFormProps = {
     previewFingerprint: string;
 };
 
-/** Naive but not wrong: handles the consonant-plus-"y" pattern (e.g. "metric
- * entry" -> "metric entries") in addition to the plain "add an s" case,
- * since this is the only irregular plural any current caller needs. */
-function pluralize(count: number, noun: string): string {
-    if (count === 1) return `1 ${noun}`;
-    const lastChar = noun.slice(-1).toLowerCase();
-    const precedingChar = noun.slice(-2, -1).toLowerCase();
-    const plural =
-        lastChar === "y" && precedingChar !== "" && !"aeiou".includes(precedingChar)
-            ? `${noun.slice(0, -1)}ies`
-            : `${noun}s`;
-    return `${count} ${plural}`;
-}
-
-/** Human-readable reasons a row conflicted — the exact evidence
- * MemberImportRollbackResult also persists, so this preview never claims
- * more or less than what gets written to history. */
+/** Adapts a live preview item's shape to describeRollbackEvidence's shared
+ * evidence contract — `currentlyArchived === null` is this preview's own
+ * "member no longer exists" signal (see rollbackPreview.ts), equivalent to
+ * a persisted result row's `memberMissing` column. */
 function describeConflict(item: RollbackPreviewItem): string[] {
-    if (item.currentlyArchived === null) {
-        return ["This member no longer exists."];
-    }
-    const reasons: string[] = [];
-    if (item.driftedFields.length > 0) {
-        reasons.push(`Changed since import: ${item.driftedFields.join(", ")}`);
-    }
-    if (item.hadLaterImportInvolvement) {
-        reasons.push("Touched by a later import");
-    }
-    if (item.hadLinkedUser) {
-        reasons.push("Now linked to a user account");
-    }
-    if (item.metricEntryCount > 0) {
-        reasons.push(`${pluralize(item.metricEntryCount, "metric entry")} recorded since`);
-    }
-    if (item.leadershipNoteCount > 0) {
-        reasons.push(`${pluralize(item.leadershipNoteCount, "leadership note")} recorded since`);
-    }
-    if (item.invitationCount > 0) {
-        reasons.push(`${pluralize(item.invitationCount, "invitation")} issued since`);
-    }
-    return reasons;
+    return describeRollbackEvidence({
+        memberMissing: item.currentlyArchived === null,
+        driftedFields: item.driftedFields,
+        hadLaterImportInvolvement: item.hadLaterImportInvolvement,
+        hadLinkedUser: item.hadLinkedUser,
+        metricEntryCount: item.metricEntryCount,
+        leadershipNoteCount: item.leadershipNoteCount,
+        invitationCount: item.invitationCount,
+    });
 }
 
 export function RollbackUndoForm({ allianceId, importId, items, previewFingerprint }: RollbackUndoFormProps) {

@@ -472,6 +472,64 @@ describe("rollbackImport", () => {
         });
     });
 
+    it("persists memberMissing on the result row when the member no longer exists, distinct from every other conflict cause", async () => {
+        const tx = buildTx({ changes: [buildChange({ changeType: MemberImportChangeType.CREATED })] });
+        mockWithLock.mockImplementation(async (_id: string, fn: (tx: unknown) => unknown) => fn(tx));
+        const items = [
+            buildPreviewItem({
+                currentlyArchived: null,
+                hasConflict: true,
+                liveSnapshot: null,
+                defaultResolution: "SKIPPED_CONFLICT",
+            }),
+        ];
+        const fingerprint = arrangePreview(items);
+
+        await rollbackImport(buildFormData(fingerprint));
+
+        expect(tx.memberImportRollback.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    results: {
+                        create: [
+                            expect.objectContaining({
+                                memberImportChangeId: "change-1",
+                                resolution: "SKIPPED_CONFLICT",
+                                memberMissing: true,
+                            }),
+                        ],
+                    },
+                }),
+            })
+        );
+    });
+
+    it("persists memberMissing: false for every other conflict cause, even with drifted fields present", async () => {
+        const tx = buildTx({ changes: [buildChange()] });
+        mockWithLock.mockImplementation(async (_id: string, fn: (tx: unknown) => unknown) => fn(tx));
+        const items = [
+            buildPreviewItem({
+                hasConflict: true,
+                requiresResolution: true,
+                defaultResolution: null,
+                driftedFields: ["thp"],
+            }),
+        ];
+        const fingerprint = arrangePreview(items);
+
+        await rollbackImport(buildFormData(fingerprint, { "change-1": "RETAIN_ACTIVE" }));
+
+        expect(tx.memberImportRollback.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    results: {
+                        create: [expect.objectContaining({ memberMissing: false, driftedFields: ["thp"] })],
+                    },
+                }),
+            })
+        );
+    });
+
     it("rethrows an unexpected error instead of swallowing it into a generic message", async () => {
         const tx = buildTx({ changes: [buildChange()] });
         tx.user.findUnique.mockResolvedValue(null); // triggers the "Acting user not found" throw

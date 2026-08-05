@@ -303,6 +303,9 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         });
         expect(result2.resolution).toBe("ARCHIVED_PRESERVING_HISTORY");
         expect(result2.driftedFields).toContain("thp");
+        // A real, live member with a scalar conflict is a distinct evidence
+        // shape from a genuinely missing one — never conflate the two.
+        expect(result2.memberMissing).toBe(false);
     });
 
     it("integration: rejects rolling back without a submitted resolution when a real conflict exists — never silently guesses", async () => {
