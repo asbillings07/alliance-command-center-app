@@ -4,6 +4,7 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { normalizeName } from "@/app/src/lib/memberMatcher";
 import { parseStrictInteger } from "@/app/src/lib/numberParser";
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
+import { MAX_ACTIVE_ALLIANCE_MEMBERS, getAvailableMemberCapacity } from "@/app/src/lib/memberCapacity";
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 import { MAX_PHYSICAL_ROWS_PER_SHEET } from "@/app/src/lib/workbookParser";
@@ -270,10 +271,15 @@ export async function importMembers(
 
                 const finalMembersToAdd = toCreate.length + toRestore.length;
 
-                // Domain active roster capacity check (<= 100)
-                if (activeMembersCount + finalMembersToAdd > 100) {
-                    const available = Math.max(0, 100 - activeMembersCount);
-                    const overflow = (activeMembersCount + finalMembersToAdd) - 100;
+                // Domain active roster capacity check. Not delegated to the
+                // shared getMemberCapacityError() message — this commit can
+                // mix new members with restores in one go, and the message
+                // below breaks that down (`toCreate.length` new vs
+                // `toRestore.length` restored), which the generic single-verb
+                // helper doesn't model.
+                if (activeMembersCount + finalMembersToAdd > MAX_ACTIVE_ALLIANCE_MEMBERS) {
+                    const available = getAvailableMemberCapacity(activeMembersCount);
+                    const overflow = (activeMembersCount + finalMembersToAdd) - MAX_ACTIVE_ALLIANCE_MEMBERS;
                     throw new Error(
                         `Your alliance has ${activeMembersCount} active members, so you can add ${available} more. You currently have ${finalMembersToAdd} members selected (${toCreate.length} new, ${toRestore.length} restored). Deselect ${overflow} member${overflow === 1 ? "" : "s"} to continue.`
                     );

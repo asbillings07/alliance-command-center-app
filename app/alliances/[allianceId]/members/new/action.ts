@@ -2,6 +2,7 @@
 
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
+import { getMemberCapacityError } from "@/app/src/lib/memberCapacity";
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/app/generated/prisma/client";
@@ -80,8 +81,9 @@ export async function addMember(formData: FormData): Promise<AddMemberResult> {
                     }
                 }
 
-                if (activeMembersCount + 1 > 100) {
-                    throw new Error("Your alliance has 100 active members, so you can add 0 more.");
+                const capacityError = getMemberCapacityError(activeMembersCount, 1, "add");
+                if (capacityError) {
+                    throw new Error(capacityError);
                 }
 
                 const member = await tx.allianceMember.create({
@@ -160,8 +162,9 @@ export async function restoreMember(formData: FormData): Promise<AddMemberResult
                     throw new Error("Member is not archived");
                 }
 
-                if (activeMembersCount + 1 > 100) {
-                    throw new Error("Your alliance has 100 active members, so you can add 0 more.");
+                const capacityError = getMemberCapacityError(activeMembersCount, 1, "restore");
+                if (capacityError) {
+                    throw new Error(capacityError);
                 }
 
                 const member = await tx.allianceMember.update({

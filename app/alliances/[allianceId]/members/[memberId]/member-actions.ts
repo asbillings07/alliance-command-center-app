@@ -3,6 +3,7 @@
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { prisma } from "@/app/src/lib/prisma";
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
+import { getMemberCapacityError } from "@/app/src/lib/memberCapacity";
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/app/generated/prisma/client";
@@ -110,8 +111,9 @@ export async function restoreMember(
                     throw new Error("Member is not archived");
                 }
 
-                if (activeMembersCount + 1 > 100) {
-                    throw new Error("Your alliance has 100 active members, so you can add 0 more.");
+                const capacityError = getMemberCapacityError(activeMembersCount, 1, "restore");
+                if (capacityError) {
+                    throw new Error(capacityError);
                 }
 
                 await tx.allianceMember.update({
