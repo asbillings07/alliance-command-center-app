@@ -200,6 +200,15 @@ export async function computeImportRollbackPreview(
     // restored by *this* import). Batched across the whole import rather
     // than per-row to keep this an O(1)-query check regardless of import
     // size.
+    //
+    // Scoped by `memberImport: { allianceId }` for the same reason as the
+    // live-member lookup above: `MemberImportChange.allianceMemberId` has
+    // no composite FK tying it to its own import's alliance, so a *foreign*
+    // alliance's import could otherwise reference one of our member ids
+    // (inconsistent provenance) and falsely mark a legitimate member as
+    // later-involved — polluting this alliance's own audit/preview and
+    // incorrectly blocking or reclassifying its rollback over activity that
+    // was never actually this alliance's.
     const laterInvolvementIds =
         memberIds.length === 0
             ? new Set<string>()
@@ -209,6 +218,7 @@ export async function computeImportRollbackPreview(
                           where: {
                               allianceMemberId: { in: memberIds },
                               memberImportId: { not: memberImport.id },
+                              memberImport: { allianceId },
                               OR: [
                                   { memberImport: { createdAt: { gt: memberImport.createdAt } } },
                                   {

@@ -665,6 +665,73 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         expect(resultRow.allianceMemberId).toBe(foreignMember.id);
     });
 
+    it("integration: a foreign alliance's later import falsely referencing our member is ignored, while a genuinely later same-alliance import still conflicts (see the later-import-involvement test above)", async () => {
+        const allianceA = await makeAlliance();
+        const allianceB = await makeAlliance();
+        const owner = await makeOwnerUser();
+        mockAuthAs(owner.id);
+
+        // Alliance A's own, otherwise-clean CREATED import — with nothing
+        // else going on, this would resolve to a clean DELETED.
+        const { memberId, memberImportId } = await seedCreatedImport(allianceA.id);
+
+        // Alliance B's import falsely references allianceA's member —
+        // inconsistent provenance the schema doesn't prevent (no composite
+        // FK ties MemberImportChange.allianceMemberId to its own import's
+        // alliance). Deliberately created *after* allianceA's import, so if
+        // the later-import-involvement check weren't alliance-scoped, this
+        // would incorrectly conflict allianceA's rollback.
+        const bMember = await prisma.allianceMember.create({
+            data: { allianceId: allianceB.id, playerName: `B Member ${Date.now()}-${Math.random()}`, thp: 1, role: "Member" },
+        });
+        await prisma.memberImport.create({
+            data: {
+                allianceId: allianceB.id,
+                actorEmailSnapshot: "actor@example.com",
+                fileName: "roster-b.xlsx",
+                sourceSheetName: "Sheet1",
+                createdCount: 1,
+                restoredCount: 0,
+                skippedExistingCount: 0,
+                skippedDuplicateCount: 0,
+                skippedEmptyNameCount: 0,
+                skippedUnselectedCount: 0,
+                changes: {
+                    create: [
+                        {
+                            // The bogus reference: allianceA's real member id,
+                            // recorded under an allianceB import.
+                            allianceMemberId: memberId,
+                            playerNameSnapshot: bMember.playerName,
+                            sourceRow: 1,
+                            changeType: MemberImportChangeType.CREATED,
+                            archivedAtBefore: null,
+                            archivedAtAfter: null,
+                            thpBefore: null,
+                            thpAfter: 1,
+                            roleBefore: null,
+                            roleAfter: "Member",
+                            discordNameAfter: null,
+                            squadPowerAfter: null,
+                            joinedAtAfter: null,
+                            userIdAfter: null,
+                            memberUpdatedAtAfter: new Date(),
+                        },
+                    ],
+                },
+            },
+        });
+
+        const result = await rollbackImport(await buildFormData(allianceA.id, memberImportId));
+
+        // Alliance B's later, foreign-alliance "involvement" of this member
+        // id must be completely invisible to allianceA's rollback — the
+        // clean DELETED outcome is unaffected by it.
+        expect(result).toMatchObject({ success: true, outcome: "ROLLED_BACK", deletedCount: 1 });
+        const stillExists = await prisma.allianceMember.findUnique({ where: { id: memberId } });
+        expect(stillExists).toBeNull();
+    });
+
     it("integration: two concurrent rollback submissions for the same import serialize cleanly — exactly one succeeds, the other reports already-undone, never a raw constraint crash", async () => {
         const alliance = await makeAlliance();
         const owner = await makeOwnerUser();

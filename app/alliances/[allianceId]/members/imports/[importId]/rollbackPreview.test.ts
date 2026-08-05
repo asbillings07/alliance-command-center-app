@@ -397,6 +397,26 @@ describe("computeImportRollbackPreview", () => {
                 defaultResolution: "SKIPPED_CONFLICT",
             });
         });
+
+        it("scopes the later-import-involvement lookup by allianceId too, not just the live-member lookup", async () => {
+            const change = buildCreatedChange();
+            const client = buildClient({ liveMembers: [buildLiveMember({ id: "member-1" })] });
+
+            await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
+
+            // Without this, a *foreign* alliance's import could reference
+            // this same member id (inconsistent provenance — no composite
+            // FK ties MemberImportChange.allianceMemberId to its own
+            // import's alliance) and falsely mark a legitimate member as
+            // later-involved, blocking or reclassifying this alliance's own
+            // otherwise-clean rollback over activity that was never
+            // actually this alliance's.
+            expect(client.memberImportChange.findMany).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    where: expect.objectContaining({ memberImport: { allianceId: ALLIANCE_ID } }),
+                })
+            );
+        });
     });
 
     describe("member no longer exists", () => {
