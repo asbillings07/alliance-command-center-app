@@ -1,25 +1,6 @@
 import type { Prisma } from "@/app/generated/prisma/client";
 import { MemberImportChangeType } from "@/app/generated/prisma/enums";
 
-// The eight mutable fields whose current value is compared against this
-// change's recorded "after" snapshot. Any drift here means the member's
-// state has moved on since the import — the row-atomic v1 contract (see
-// #277 PR 3 design discussion) is "any drift means touch nothing", so a
-// single drifted field disqualifies the whole row from automatic rollback
-// exactly the same as every field drifting.
-const DRIFT_CHECKED_FIELDS = [
-    "thp",
-    "role",
-    "archivedAt",
-    "discordName",
-    "squadPower",
-    "joinedAt",
-    "userId",
-    "updatedAt",
-] as const;
-
-type DriftCheckedField = (typeof DRIFT_CHECKED_FIELDS)[number];
-
 // The subset of MemberImportChange columns this module reads. Kept as an
 // explicit type (rather than inferring from a `select`) so both the preview
 // page and the rollback action can build this shape from their own queries
@@ -40,6 +21,51 @@ export type ImportChangeForRollbackPreview = {
     userIdAfter: string | null;
     memberUpdatedAtAfter: Date;
 };
+
+type LiveMemberForDriftCheck = {
+    thp: number | null;
+    role: string | null;
+    archivedAt: Date | null;
+    discordName: string | null;
+    squadPower: number | null;
+    joinedAt: Date | null;
+    userId: string | null;
+    updatedAt: Date;
+};
+
+type DriftCheckedField =
+    | "thp"
+    | "role"
+    | "archivedAt"
+    | "discordName"
+    | "squadPower"
+    | "joinedAt"
+    | "userId"
+    | "updatedAt";
+
+// The eight mutable fields whose current (live) value is compared against
+// this change's recorded "after" snapshot. Any drift here means the
+// member's state has moved on since the import — the row-atomic v1
+// contract (see #277 PR 3 design discussion) is "any drift means touch
+// nothing", so a single drifted field disqualifies the whole row from
+// automatic rollback exactly the same as every field drifting. `updatedAt`
+// pairs with `memberUpdatedAtAfter` rather than a same-named "after" column
+// — see MemberImportChange's own doc comment on why that's independent,
+// corroborating evidence rather than a version counter.
+const DRIFT_CHECKED_FIELDS: {
+    label: DriftCheckedField;
+    live: (m: LiveMemberForDriftCheck) => unknown;
+    after: (c: ImportChangeForRollbackPreview) => unknown;
+}[] = [
+    { label: "thp", live: (m) => m.thp, after: (c) => c.thpAfter },
+    { label: "role", live: (m) => m.role, after: (c) => c.roleAfter },
+    { label: "archivedAt", live: (m) => m.archivedAt, after: (c) => c.archivedAtAfter },
+    { label: "discordName", live: (m) => m.discordName, after: (c) => c.discordNameAfter },
+    { label: "squadPower", live: (m) => m.squadPower, after: (c) => c.squadPowerAfter },
+    { label: "joinedAt", live: (m) => m.joinedAt, after: (c) => c.joinedAtAfter },
+    { label: "userId", live: (m) => m.userId, after: (c) => c.userIdAfter },
+    { label: "updatedAt", live: (m) => m.updatedAt, after: (c) => c.memberUpdatedAtAfter },
+];
 
 export type RollbackPreviewItem = {
     changeId: string;
@@ -236,15 +262,9 @@ export async function computeImportRollbackPreview(
             };
         }
 
-        const driftedFields: DriftCheckedField[] = [];
-        if (fieldsDiffer(live.thp, change.thpAfter)) driftedFields.push("thp");
-        if (fieldsDiffer(live.role, change.roleAfter)) driftedFields.push("role");
-        if (fieldsDiffer(live.archivedAt, change.archivedAtAfter)) driftedFields.push("archivedAt");
-        if (fieldsDiffer(live.discordName, change.discordNameAfter)) driftedFields.push("discordName");
-        if (fieldsDiffer(live.squadPower, change.squadPowerAfter)) driftedFields.push("squadPower");
-        if (fieldsDiffer(live.joinedAt, change.joinedAtAfter)) driftedFields.push("joinedAt");
-        if (fieldsDiffer(live.userId, change.userIdAfter)) driftedFields.push("userId");
-        if (fieldsDiffer(live.updatedAt, change.memberUpdatedAtAfter)) driftedFields.push("updatedAt");
+        const driftedFields: DriftCheckedField[] = DRIFT_CHECKED_FIELDS.filter((field) =>
+            fieldsDiffer(field.live(live), field.after(change))
+        ).map((field) => field.label);
 
         const hadLaterImportInvolvement = laterInvolvementIds.has(live.id);
         const hadLinkedUser = live.userId !== null;
