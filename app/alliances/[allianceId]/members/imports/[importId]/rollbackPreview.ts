@@ -192,23 +192,33 @@ export async function computeImportRollbackPreview(
               });
     const liveById = new Map(liveMembers.map((m) => [m.id, m]));
 
-    // "Later-import involvement": any *other* MemberImportChange row for the
-    // same member, from an import that ran strictly after this one
-    // (createdAt, id) — not just "any other import", which would also flag
-    // this member's own unrelated, legitimate earlier history (e.g. the
-    // import that originally created a member later archived and then
-    // restored by *this* import). Batched across the whole import rather
-    // than per-row to keep this an O(1)-query check regardless of import
-    // size.
+    // "Other-import involvement" — any *other* MemberImportChange row for
+    // the same member that this rollback must not silently ignore. Two
+    // distinct cases are OR'd together here, both surfaced identically as
+    // `hadLaterImportInvolvement` (see describeRollbackEvidence's
+    // deliberately non-specific "Involved in another import" copy — neither
+    // case should ever reveal *which* import or alliance to the owner):
     //
-    // Scoped by `memberImport: { allianceId }` for the same reason as the
-    // live-member lookup above: `MemberImportChange.allianceMemberId` has
-    // no composite FK tying it to its own import's alliance, so a *foreign*
-    // alliance's import could otherwise reference one of our member ids
-    // (inconsistent provenance) and falsely mark a legitimate member as
-    // later-involved — polluting this alliance's own audit/preview and
-    // incorrectly blocking or reclassifying its rollback over activity that
-    // was never actually this alliance's.
+    // 1. Same-alliance, genuinely later (createdAt, id) — not just "any
+    //    other import", which would also flag this member's own unrelated,
+    //    legitimate earlier history (e.g. the import that originally
+    //    created a member later archived and then restored by *this* one).
+    // 2. *Any* reference at all from a *different* alliance's import,
+    //    regardless of timing. `MemberImportChange.allianceMemberId` has no
+    //    composite FK tying it to its own import's alliance, so inconsistent
+    //    provenance is possible in principle. That alone would just be a
+    //    read-side classification concern (handled by scoping the live-
+    //    member lookup above) — but a CREATED row's clean rollback *deletes*
+    //    the member, and `MemberImportChange.allianceMemberId` is
+    //    `onDelete: SetNull`: deleting this member would silently null out
+    //    that foreign change row's linkage too, an uncontrolled Postgres
+    //    cascade mutating another tenant's durable audit history. Failing
+    //    closed on *any* foreign reference — never inspecting or exposing
+    //    what it is, only that it exists — is what stops that cascade from
+    //    ever having anything to act on.
+    //
+    // Batched across the whole import rather than per-row to keep this an
+    // O(1)-query check regardless of import size.
     const laterInvolvementIds =
         memberIds.length === 0
             ? new Set<string>()
@@ -218,15 +228,16 @@ export async function computeImportRollbackPreview(
                           where: {
                               allianceMemberId: { in: memberIds },
                               memberImportId: { not: memberImport.id },
-                              memberImport: { allianceId },
                               OR: [
-                                  { memberImport: { createdAt: { gt: memberImport.createdAt } } },
+                                  { memberImport: { allianceId, createdAt: { gt: memberImport.createdAt } } },
                                   {
                                       memberImport: {
+                                          allianceId,
                                           createdAt: memberImport.createdAt,
                                           id: { gt: memberImport.id },
                                       },
                                   },
+                                  { memberImport: { allianceId: { not: allianceId } } },
                               ],
                           },
                           select: { allianceMemberId: true },

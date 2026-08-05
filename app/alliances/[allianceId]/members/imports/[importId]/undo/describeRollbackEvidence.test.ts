@@ -61,7 +61,7 @@ describe("describeRollbackEvidence", () => {
 
     it("reports later-import involvement as its own reason", () => {
         expect(describeRollbackEvidence(buildEvidence({ hadLaterImportInvolvement: true }))).toEqual([
-            "Touched by a later import",
+            "Involved in another import",
         ]);
     });
 
@@ -94,7 +94,7 @@ describe("describeRollbackEvidence", () => {
         );
         expect(reasons).toEqual([
             "Changed since import: thp",
-            "Touched by a later import",
+            "Involved in another import",
             "Now linked to a user account",
             "1 metric entry recorded since",
         ]);

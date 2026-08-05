@@ -665,31 +665,37 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         expect(resultRow.allianceMemberId).toBe(foreignMember.id);
     });
 
-    it("integration: a foreign alliance's later import falsely referencing our member is ignored, while a genuinely later same-alliance import still conflicts (see the later-import-involvement test above)", async () => {
+    it("integration: any reference from a foreign alliance's import — regardless of timing — fails the row closed instead of deleting the member and cascade-nulling the foreign change row's linkage", async () => {
         const allianceA = await makeAlliance();
         const allianceB = await makeAlliance();
         const owner = await makeOwnerUser();
         mockAuthAs(owner.id);
 
         // Alliance A's own, otherwise-clean CREATED import — with nothing
-        // else going on, this would resolve to a clean DELETED.
+        // else going on, this would resolve to a clean DELETED, which
+        // deletes the AllianceMember row outright.
         const { memberId, memberImportId } = await seedCreatedImport(allianceA.id);
 
         // Alliance B's import falsely references allianceA's member —
         // inconsistent provenance the schema doesn't prevent (no composite
         // FK ties MemberImportChange.allianceMemberId to its own import's
-        // alliance). Deliberately created *after* allianceA's import, so if
-        // the later-import-involvement check weren't alliance-scoped, this
-        // would incorrectly conflict allianceA's rollback.
+        // alliance). Deliberately created *before* allianceA's import
+        // (createdAt in the past): this must still conflict — unlike
+        // same-alliance involvement, a foreign reference is dangerous
+        // regardless of timing, because MemberImportChange.allianceMemberId
+        // is `onDelete: SetNull` — deleting allianceA's member would
+        // silently null out this foreign row's linkage too, corrupting
+        // allianceB's own durable audit history as an uncontrolled cascade.
         const bMember = await prisma.allianceMember.create({
             data: { allianceId: allianceB.id, playerName: `B Member ${Date.now()}-${Math.random()}`, thp: 1, role: "Member" },
         });
-        await prisma.memberImport.create({
+        const foreignImport = await prisma.memberImport.create({
             data: {
                 allianceId: allianceB.id,
                 actorEmailSnapshot: "actor@example.com",
                 fileName: "roster-b.xlsx",
                 sourceSheetName: "Sheet1",
+                createdAt: new Date("2020-01-01T00:00:00Z"), // long before allianceA's import
                 createdCount: 1,
                 restoredCount: 0,
                 skippedExistingCount: 0,
@@ -720,16 +726,28 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
                     ],
                 },
             },
+            select: { id: true, changes: { select: { id: true } } },
         });
 
         const result = await rollbackImport(await buildFormData(allianceA.id, memberImportId));
 
-        // Alliance B's later, foreign-alliance "involvement" of this member
-        // id must be completely invisible to allianceA's rollback — the
-        // clean DELETED outcome is unaffected by it.
-        expect(result).toMatchObject({ success: true, outcome: "ROLLED_BACK", deletedCount: 1 });
-        const stillExists = await prisma.allianceMember.findUnique({ where: { id: memberId } });
-        expect(stillExists).toBeNull();
+        // Never silently DELETED — a foreign reference always requires
+        // failing closed, never a default action.
+        expect(result).toMatchObject({ success: false });
+        const stillExists = await prisma.allianceMember.findUniqueOrThrow({ where: { id: memberId } });
+        expect(stillExists.id).toBe(memberId); // untouched — never deleted
+
+        // Alliance B's own change row is completely unaffected — no
+        // cascade-nulling of its linkage, no data corruption at all.
+        const foreignChange = await prisma.memberImportChange.findUniqueOrThrow({
+            where: { id: foreignImport.changes[0].id },
+        });
+        expect(foreignChange.allianceMemberId).toBe(memberId);
+
+        // Nothing committed for allianceA either — the whole rollback
+        // aborted rather than partially applying.
+        const header = await prisma.memberImportRollback.findUnique({ where: { memberImportId } });
+        expect(header).toBeNull();
     });
 
     it("integration: two concurrent rollback submissions for the same import serialize cleanly — exactly one succeeds, the other reports already-undone, never a raw constraint crash", async () => {

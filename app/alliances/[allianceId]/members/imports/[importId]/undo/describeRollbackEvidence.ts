@@ -49,7 +49,12 @@ export function describeRollbackEvidence(evidence: RollbackEvidence): string[] {
         reasons.push(`Changed since import: ${evidence.driftedFields.join(", ")}`);
     }
     if (evidence.hadLaterImportInvolvement) {
-        reasons.push("Touched by a later import");
+        // Deliberately non-specific: this covers both a genuinely later
+        // import in this same alliance and *any* reference at all from a
+        // different alliance's import (see computeImportRollbackPreview's
+        // doc comment) — never reveal which import, or that another
+        // alliance is involved at all.
+        reasons.push("Involved in another import");
     }
     if (evidence.hadLinkedUser) {
         reasons.push("Now linked to a user account");

@@ -398,22 +398,32 @@ describe("computeImportRollbackPreview", () => {
             });
         });
 
-        it("scopes the later-import-involvement lookup by allianceId too, not just the live-member lookup", async () => {
+        it("fails closed (conflicts) on any reference at all from a different alliance's import, regardless of timing — deleting this member would otherwise cascade-null that foreign change row's linkage", async () => {
             const change = buildCreatedChange();
-            const client = buildClient({ liveMembers: [buildLiveMember({ id: "member-1" })] });
+            const client = buildClient({
+                liveMembers: [buildLiveMember({ id: "member-1" })],
+                // Simulates a real query matching this OR branch: a change
+                // row from a different alliance's import, with no timing
+                // relationship to this one at all.
+                laterInvolvementMemberIds: ["member-1"],
+            });
 
-            await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
-            // Without this, a *foreign* alliance's import could reference
-            // this same member id (inconsistent provenance — no composite
-            // FK ties MemberImportChange.allianceMemberId to its own
-            // import's alliance) and falsely mark a legitimate member as
-            // later-involved, blocking or reclassifying this alliance's own
-            // otherwise-clean rollback over activity that was never
-            // actually this alliance's.
+            expect(preview.items[0]).toMatchObject({
+                hasConflict: true,
+                hadLaterImportInvolvement: true,
+                requiresResolution: true,
+            });
+            // The query itself is the enforcement point (see this
+            // function's own doc comment) — assert its shape includes both
+            // the same-alliance-later branch and the foreign-alliance
+            // (any timing) branch, not just one or the other.
             expect(client.memberImportChange.findMany).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    where: expect.objectContaining({ memberImport: { allianceId: ALLIANCE_ID } }),
+                    where: expect.objectContaining({
+                        OR: expect.arrayContaining([{ memberImport: { allianceId: { not: ALLIANCE_ID } } }]),
+                    }),
                 })
             );
         });
