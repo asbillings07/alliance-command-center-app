@@ -139,7 +139,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
     }
     // MembersTable is a Client Component — pass a plain object across the
     // Server/Client boundary rather than a Map.
-    const metricValues: Record<string, number> = Object.fromEntries(latestMetricValueByMemberAndMetric);
+    const metricValues: Record<string, number | undefined> = Object.fromEntries(latestMetricValueByMemberAndMetric);
 
     const [activeCount, archivedCount] = await Promise.all([
         prisma.allianceMember.count({

@@ -31,7 +31,7 @@ export type MembersTableProps = {
     members: MembersTableMember[];
     periodMetricColumns: PeriodMetricColumn[];
     /** Latest metric value per member/metric, keyed by `${memberId}:${metricId}` — a plain object (not a Map) to cross the Server->Client boundary safely. */
-    metricValues: Record<string, number>;
+    metricValues: Record<string, number | undefined>;
     selectedPeriodId?: string;
     /** Selection and bulk archive/restore only render when the caller can manage members — mirrors the server-side gate MemberActions already uses. */
     canManageMembers: boolean;
