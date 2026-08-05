@@ -90,6 +90,19 @@ export function MembersTable({
     const [isSelecting, setIsSelecting] = useState(false);
     const entryButtonRef = useRef<HTMLButtonElement>(null);
     const wasSelectingRef = useRef(false);
+    /**
+     * Set by a successful handleConfirm, read (and cleared) by the dialog's
+     * onClose. Exiting selection mode is deferred to onClose — rather than
+     * happening inline in handleConfirm — so it can't unmount the button the
+     * native <dialog> is about to restore focus to (the "Archive selected" /
+     * "Restore selected" button) before dialog.close() actually runs. Native
+     * <dialog>.close() restores focus synchronously as part of closing,
+     * before the "close" event (and this onClose) fires, so deferring the
+     * teardown this way guarantees that button still exists in the DOM at
+     * that moment — and the existing focus-return effect below then moves
+     * focus on to the entry-point button once selection mode itself exits.
+     */
+    const succeededRef = useRef(false);
 
     // Decision #277 PR2: one intent per view. Active -> Archive only,
     // Archived -> Restore only, All -> browse-only (no bulk selection at all).
@@ -187,8 +200,13 @@ export function MembersTable({
             }
             setResultSummary(
                 `Archived ${pluralize(result.archivedCount, "member")}.` +
+                    // Neutral wording: skippedCount covers any id the server
+                    // no longer considered eligible (already archived, no
+                    // longer part of this alliance, a stale/duplicate
+                    // selection, etc.) — "already archived" would overclaim
+                    // a single cause the server doesn't actually report.
                     (result.skippedCount > 0
-                        ? ` ${pluralize(result.skippedCount, "member")} ${result.skippedCount === 1 ? "was" : "were"} already archived and skipped.`
+                        ? ` ${pluralize(result.skippedCount, "member")} no longer eligible and ${result.skippedCount === 1 ? "was" : "were"} skipped.`
                         : "")
             );
         } else if (bulkAction === "restore") {
@@ -198,14 +216,18 @@ export function MembersTable({
             }
             setResultSummary(
                 `Restored ${pluralize(result.restoredCount, "member")}.` +
+                    // Same neutral-wording reasoning as the archive summary
+                    // above — skippedCount here can also cover a member no
+                    // longer part of this alliance, not just "already active".
                     (result.skippedCount > 0
-                        ? ` ${pluralize(result.skippedCount, "member")} ${result.skippedCount === 1 ? "was" : "were"} already active and skipped.`
+                        ? ` ${pluralize(result.skippedCount, "member")} no longer eligible and ${result.skippedCount === 1 ? "was" : "were"} skipped.`
                         : "")
             );
         }
 
-        setIsSelecting(false);
-        setSelectedIds(new Set());
+        // Selection mode itself is torn down in the dialog's onClose, not
+        // here — see succeededRef's doc comment above.
+        succeededRef.current = true;
         router.refresh();
     }
 
@@ -430,7 +452,13 @@ export function MembersTable({
                     confirmVariant={bulkAction === "archive" ? "warning" : "primary"}
                     confirmDisabled={bulkAction === "restore" && restoreCapacityError !== null}
                     onConfirm={handleConfirm}
-                    onClose={() => setPendingAction(null)}
+                    onClose={() => {
+                        setPendingAction(null);
+                        if (succeededRef.current) {
+                            succeededRef.current = false;
+                            exitSelectionMode();
+                        }
+                    }}
                 />
             )}
         </>

@@ -85,7 +85,15 @@ test.describe("Bulk Member Lifecycle", () => {
     // Selection mode itself is exited after a successful action — back to
     // the default browse state, not stuck mid-selection.
     await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Archive members…" })).toBeVisible();
+    const entryButton = page.getByRole("button", { name: "Archive members…" });
+    await expect(entryButton).toBeVisible();
+    // Selection-mode teardown is deferred until after the dialog's own
+    // close() finishes (see MembersTable's succeededRef) specifically so a
+    // successful confirm — not just Cancel/Escape — still lands focus
+    // somewhere real instead of the browser falling back to <body> because
+    // the previously-focused "Archive selected" button was unmounted out
+    // from under native <dialog>'s focus-restoration step.
+    await expect(entryButton).toBeFocused();
   });
 
   test("Cancel exits selection mode without archiving anyone, and returns focus to the entry point", async ({

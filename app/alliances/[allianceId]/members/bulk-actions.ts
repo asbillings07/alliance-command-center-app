@@ -16,6 +16,17 @@ export type BulkRestoreResult =
     | { success: false; error: string };
 
 /**
+ * Tags the one intentional, safe-to-surface rejection inside
+ * `bulkRestoreMembers`'s transaction (a known capacity shortfall) so the
+ * outer catch can convert *only* that into a `{ success: false, error }`
+ * result. Any other thrown error (a Prisma failure, a bug, anything
+ * unexpected) rethrows instead of being stringified for the client — that
+ * keeps this action honoring the same "never surface raw internal errors"
+ * contract ConfirmDialog's own rejected-promise handling relies on.
+ */
+class CapacityLimitError extends Error {}
+
+/**
  * De-duplicated so a tampered request (or a future client bug) can't inflate
  * `skippedCount` or produce a confusing "N members selected" count when the
  * same id was submitted more than once.
@@ -139,7 +150,7 @@ export async function bulkRestoreMembers(formData: FormData): Promise<BulkRestor
                     "restore"
                 );
                 if (capacityError) {
-                    throw new Error(capacityError);
+                    throw new CapacityLimitError(capacityError);
                 }
 
                 let restoredCount = 0;
@@ -164,7 +175,7 @@ export async function bulkRestoreMembers(formData: FormData): Promise<BulkRestor
         revalidateAllianceData({ allianceId, domains: ["members", "reports"] });
         return { success: true, restoredCount, skippedCount };
     } catch (error) {
-        if (error instanceof Error) {
+        if (error instanceof CapacityLimitError) {
             return { success: false, error: error.message };
         }
         throw error;

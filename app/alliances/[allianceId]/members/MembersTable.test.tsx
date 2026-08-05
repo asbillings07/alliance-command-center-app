@@ -403,7 +403,7 @@ describe("MembersTable — archive confirmation flow", () => {
         expect(findButton("Archive members…")).toBeDefined();
     });
 
-    it("reports skipped members honestly when some were already archived", async () => {
+    it("reports skipped members honestly, with neutral wording that doesn't overclaim a specific skip reason", async () => {
         mockBulkArchive.mockResolvedValue({ success: true, archivedCount: 1, skippedCount: 1 });
         await mount({
             filter: "active",
@@ -425,7 +425,7 @@ describe("MembersTable — archive confirmation flow", () => {
         await flush();
 
         expect(container.textContent).toContain(
-            "Archived 1 member. 1 member was already archived and skipped."
+            "Archived 1 member. 1 member no longer eligible and was skipped."
         );
     });
 

@@ -257,4 +257,20 @@ describe("bulkRestoreMembers", () => {
         expect(mockUpdateMany).not.toHaveBeenCalled();
         expect(revalidateAllianceData).not.toHaveBeenCalled();
     });
+
+    it("rethrows an unexpected error instead of returning it as a client-facing message, so a raw internal failure can't leak into the UI", async () => {
+        // Only the known, intentional capacity rejection gets converted into
+        // a `{ success: false, error }` result. Anything else (a Prisma
+        // failure, a bug — simulated here as findMany throwing) must reject
+        // the caller's promise so ConfirmDialog's own catch shows its safe
+        // generic message instead of this action's raw error text.
+        mockWithLock.mockImplementation(
+            async (_allianceId: string, fn: (tx: typeof prisma, count: number) => unknown) => fn(prisma, 90)
+        );
+        mockFindMany.mockRejectedValue(new Error("Can't reach database server at db.internal:5432"));
+
+        await expect(bulkRestoreMembers(buildFormData(allianceId, ["m1"]))).rejects.toThrow(
+            "Can't reach database server at db.internal:5432"
+        );
+    });
 });
