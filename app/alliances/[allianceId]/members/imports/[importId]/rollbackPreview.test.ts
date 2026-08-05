@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { MemberImportChangeType } from "@/app/generated/prisma/enums";
-import { computeImportRollbackPreview, type ImportChangeForRollbackPreview } from "./rollbackPreview";
+import {
+    computeImportRollbackPreview,
+    computePreviewFingerprint,
+    type ImportChangeForRollbackPreview,
+    type RollbackPreviewItem,
+} from "./rollbackPreview";
 
 const MEMBER_IMPORT = { id: "import-1", createdAt: new Date("2026-01-01T00:00:00Z") };
 
@@ -112,7 +117,8 @@ describe("computeImportRollbackPreview", () => {
     describe("CREATED rows", () => {
         it("resolves to DELETED when the live row exactly matches the recorded snapshot", async () => {
             const change = buildCreatedChange();
-            const client = buildClient({ liveMembers: [buildLiveMember({ id: "member-1" })] });
+            const liveMember = buildLiveMember({ id: "member-1" });
+            const client = buildClient({ liveMembers: [liveMember] });
 
             const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
 
@@ -123,6 +129,25 @@ describe("computeImportRollbackPreview", () => {
                 defaultResolution: "DELETED",
                 driftedFields: [],
             });
+            // rollbackImport's write-guard is built directly from this —
+            // it must be the exact row this classification was computed
+            // from, not a copy of the recorded "after" snapshot.
+            expect(preview.items[0].liveSnapshot).toMatchObject({
+                thp: liveMember.thp,
+                role: liveMember.role,
+                archivedAt: liveMember.archivedAt,
+                updatedAt: liveMember.updatedAt,
+            });
+        });
+
+        it("populates liveSnapshot from the current row even while conflicted, not from the recorded after-snapshot", async () => {
+            const change = buildCreatedChange();
+            const liveMember = buildLiveMember({ id: "member-1", thp: 5000 });
+            const client = buildClient({ liveMembers: [liveMember] });
+
+            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+
+            expect(preview.items[0].liveSnapshot).toMatchObject({ thp: 5000 });
         });
 
         it("flags a conflict when a scalar has drifted since import, and requires an explicit resolution while the member is active", async () => {
@@ -350,6 +375,7 @@ describe("computeImportRollbackPreview", () => {
                 requiresResolution: false,
                 defaultResolution: "SKIPPED_CONFLICT",
             });
+            expect(preview.items[0].liveSnapshot).toBeNull();
         });
 
         it("treats a missing live row as an unconditional conflict for a RESTORED change", async () => {
@@ -414,5 +440,64 @@ describe("computeImportRollbackPreview", () => {
                 expect.objectContaining({ where: { allianceMemberId: { in: ["m1", "m2"] } } })
             );
         });
+    });
+});
+
+describe("computePreviewFingerprint", () => {
+    function buildPreviewItem(overrides: Partial<RollbackPreviewItem> = {}): RollbackPreviewItem {
+        return {
+            changeId: "change-1",
+            playerNameSnapshot: "Alice",
+            sourceRow: 1,
+            changeType: MemberImportChangeType.CREATED,
+            allianceMemberId: "member-1",
+            currentlyArchived: false,
+            hasConflict: false,
+            driftedFields: [],
+            hadLaterImportInvolvement: false,
+            hadLinkedUser: false,
+            metricEntryCount: 0,
+            leadershipNoteCount: 0,
+            invitationCount: 0,
+            liveSnapshot: buildLiveMember({ id: "member-1" }),
+            requiresResolution: false,
+            defaultResolution: "DELETED",
+            ...overrides,
+        };
+    }
+
+    it("is identical for the same classification regardless of item order", () => {
+        const a = buildPreviewItem({ changeId: "change-1" });
+        const b = buildPreviewItem({ changeId: "change-2", playerNameSnapshot: "Bob" });
+
+        expect(computePreviewFingerprint([a, b])).toBe(computePreviewFingerprint([b, a]));
+    });
+
+    it("changes when a row's requiresResolution flips, even with everything else equal", () => {
+        const before = computePreviewFingerprint([buildPreviewItem({ requiresResolution: false })]);
+        const after = computePreviewFingerprint([
+            buildPreviewItem({ requiresResolution: true, defaultResolution: null, hasConflict: true }),
+        ]);
+
+        expect(before).not.toBe(after);
+    });
+
+    it("changes when a still-requiresResolution row's underlying evidence changes (e.g. a new dependency appears)", () => {
+        const shared = { requiresResolution: true, defaultResolution: null, hasConflict: true } as const;
+        const before = computePreviewFingerprint([buildPreviewItem({ ...shared, metricEntryCount: 0 })]);
+        const after = computePreviewFingerprint([buildPreviewItem({ ...shared, metricEntryCount: 1 })]);
+
+        expect(before).not.toBe(after);
+    });
+
+    it("is unaffected by liveSnapshot's raw field values — only the derived classification/evidence matters", () => {
+        const a = computePreviewFingerprint([
+            buildPreviewItem({ liveSnapshot: buildLiveMember({ id: "member-1", thp: 1000 }) }),
+        ]);
+        const b = computePreviewFingerprint([
+            buildPreviewItem({ liveSnapshot: buildLiveMember({ id: "member-1", thp: 9999 }) }),
+        ]);
+
+        expect(a).toBe(b);
     });
 });

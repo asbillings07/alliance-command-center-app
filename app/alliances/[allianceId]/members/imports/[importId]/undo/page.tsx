@@ -4,7 +4,7 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { PageLayout, Card } from "@/app/src/components";
 import { formatImportTimestamp } from "@/app/src/lib/format/formatImportTimestamp";
-import { computeImportRollbackPreview } from "../rollbackPreview";
+import { computeImportRollbackPreview, computePreviewFingerprint } from "../rollbackPreview";
 import { RollbackUndoForm } from "./RollbackUndoForm";
 import { ROLLBACK_RESOLUTION_LABELS } from "./resolutionLabels";
 
@@ -183,6 +183,11 @@ export default async function UndoImportPage({ params }: Params) {
     // transaction immediately before committing (see computeImportRollbackPreview's
     // doc comment) — this render is only ever a suggestion to the owner.
     const preview = await computeImportRollbackPreview(prisma, memberImport, memberImport.changes);
+    // Bound to *this* rendered preview, not to the resolutions the owner
+    // picks — see computePreviewFingerprint's doc comment. rollbackImport
+    // rejects the submission outright if its own fresh recomputation
+    // doesn't produce this exact same fingerprint.
+    const previewFingerprint = computePreviewFingerprint(preview.items);
 
     return (
         <PageLayout
@@ -199,7 +204,12 @@ export default async function UndoImportPage({ params }: Params) {
                 </p>
             </div>
 
-            <RollbackUndoForm allianceId={allianceId} importId={importId} items={preview.items} />
+            <RollbackUndoForm
+                allianceId={allianceId}
+                importId={importId}
+                items={preview.items}
+                previewFingerprint={previewFingerprint}
+            />
         </PageLayout>
     );
 }

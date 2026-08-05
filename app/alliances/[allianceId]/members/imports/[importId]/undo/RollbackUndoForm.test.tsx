@@ -100,7 +100,12 @@ beforeEach(() => {
 });
 
 async function mount(items: RollbackPreviewItem[]) {
-    const props: RollbackUndoFormProps = { allianceId: "alliance-1", importId: "import-1", items };
+    const props: RollbackUndoFormProps = {
+        allianceId: "alliance-1",
+        importId: "import-1",
+        items,
+        previewFingerprint: "fingerprint-1",
+    };
     await act(async () => {
         root.render(createElement(RollbackUndoForm, props));
     });
@@ -153,6 +158,20 @@ describe("RollbackUndoForm", () => {
         expect(container.textContent).toContain("Delete (undo creation)");
         expect(findAllRadios()).toHaveLength(0);
         expect(findButton("Undo this import").disabled).toBe(false);
+    });
+
+    it("pluralizes an irregular noun correctly in the conflict reasons list ('entries', not 'entrys')", async () => {
+        await mount([
+            buildItem({
+                requiresResolution: true,
+                defaultResolution: null,
+                hasConflict: true,
+                metricEntryCount: 2,
+            }),
+        ]);
+
+        expect(container.textContent).toContain("2 metric entries recorded since");
+        expect(container.textContent).not.toContain("entrys");
     });
 
     it("shows no preselection for an actionable conflict, and disables confirm until it's explicitly resolved", async () => {
@@ -230,6 +249,7 @@ describe("RollbackUndoForm", () => {
         const submittedFormData = mockRollbackImport.mock.calls[0][0] as FormData;
         expect(submittedFormData.get("allianceId")).toBe("alliance-1");
         expect(submittedFormData.get("importId")).toBe("import-1");
+        expect(submittedFormData.get("previewFingerprint")).toBe("fingerprint-1");
         expect(submittedFormData.get("resolution:change-1")).toBe("ARCHIVE_PRESERVING_HISTORY");
 
         expect(container.textContent).toContain("undone, but some members were retained");

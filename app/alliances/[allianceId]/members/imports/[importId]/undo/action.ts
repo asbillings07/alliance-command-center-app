@@ -8,7 +8,11 @@ import {
     MemberImportRollbackOutcome,
     MemberImportRollbackResultResolution,
 } from "@/app/generated/prisma/enums";
-import { computeImportRollbackPreview } from "../rollbackPreview";
+import {
+    computeImportRollbackPreview,
+    computePreviewFingerprint,
+    type LiveMemberForDriftCheck,
+} from "../rollbackPreview";
 
 export type RollbackResolutionChoice = "RETAIN_ACTIVE" | "ARCHIVE_PRESERVING_HISTORY";
 
@@ -49,26 +53,77 @@ function parseResolutions(formData: FormData): Map<string, RollbackResolutionCho
 }
 
 /**
+ * The `where` clause for this item's mutation, pinned to the exact live
+ * values `computeImportRollbackPreview` read moments ago inside this same
+ * transaction. `withAllianceMemberLock`'s row lock is on `Alliance`, not on
+ * this specific `AllianceMember` — it serializes against other
+ * capacity-checked mutations (bulk/single restore, add member, ...), not
+ * against an ordinary `updateMember`/`archiveMember` call on this row, and
+ * even a second read inside the *same* transaction isn't guaranteed to
+ * still see what the first one saw under Postgres's default READ COMMITTED
+ * isolation. Guarding the write itself — rather than trusting the earlier
+ * read — is what makes a concurrent edit to this exact member fail the
+ * match (0 rows) instead of being silently overwritten. Never called for a
+ * `liveSnapshot: null` item (the member-missing case never reaches a
+ * mutation branch).
+ */
+function buildLiveGuardWhere(allianceMemberId: string, liveSnapshot: LiveMemberForDriftCheck) {
+    return {
+        id: allianceMemberId,
+        thp: liveSnapshot.thp,
+        role: liveSnapshot.role,
+        archivedAt: liveSnapshot.archivedAt,
+        discordName: liveSnapshot.discordName,
+        squadPower: liveSnapshot.squadPower,
+        joinedAt: liveSnapshot.joinedAt,
+        userId: liveSnapshot.userId,
+        updatedAt: liveSnapshot.updatedAt,
+    };
+}
+
+const STALE_PREVIEW_MESSAGE =
+    "This import's state changed since you loaded this page. Review the updated preview and try again.";
+
+/** Throws unless exactly one row matched a guarded `updateMany`/`deleteMany`
+ * (see `buildLiveGuardWhere`) — anything else means this member changed out
+ * from under this rollback and the whole transaction must abort rather than
+ * commit a mutation against evidence that's no longer current. */
+function assertGuardedMutationMatched(count: number): void {
+    if (count !== 1) {
+        throw new RollbackValidationError(STALE_PREVIEW_MESSAGE);
+    }
+}
+
+/**
  * Commits the undo of a single completed roster import (#277 PR 3).
  *
  * Everything — re-deriving the preview, cross-checking the caller's
  * resolutions against it, and executing the resulting mutations — happens
  * inside one `withAllianceMemberLock` transaction. The page's earlier
  * preview is only ever a suggestion to the user; this action never trusts
- * it. It recomputes `computeImportRollbackPreview` fresh here and aborts the
- * whole transaction if that fresh preview now requires a choice the
- * submission doesn't have (an in-between edit introduced a new conflict) —
- * see that module's own doc comment for why one shared implementation
- * matters here.
+ * it. It recomputes `computeImportRollbackPreview` fresh here and requires
+ * the fresh result to fingerprint-match exactly what the owner reviewed —
+ * see `computePreviewFingerprint`'s doc comment for why a looser, per-row
+ * check (e.g. only "does this row still require a choice") isn't enough:
+ * evidence can change in ways that leave `requiresResolution` unchanged, or
+ * change in ways that make it *stop* requiring one, and either would
+ * otherwise let a submission the owner never actually saw get committed.
+ * Every mutation below is additionally guarded against the exact live
+ * values this same preview read (see `buildLiveGuardWhere`), so a
+ * concurrent edit to that one member inside this same transaction also
+ * aborts the whole rollback rather than being silently overwritten.
  */
 export async function rollbackImport(formData: FormData): Promise<RollbackImportResult> {
     const allianceId = formData.get("allianceId");
     const importId = formData.get("importId");
+    const previewFingerprint = formData.get("previewFingerprint");
     if (
         typeof allianceId !== "string" ||
         allianceId.trim() === "" ||
         typeof importId !== "string" ||
-        importId.trim() === ""
+        importId.trim() === "" ||
+        typeof previewFingerprint !== "string" ||
+        previewFingerprint.trim() === ""
     ) {
         return { success: false, error: "Invalid request" };
     }
@@ -128,11 +183,23 @@ export async function rollbackImport(formData: FormData): Promise<RollbackImport
 
             const preview = await computeImportRollbackPreview(tx, memberImport, memberImport.changes);
 
+            // The primary staleness guard: any difference at all between
+            // what was rendered and what's true right now — not just "a row
+            // that now needs a choice" — means this submission wasn't made
+            // against current evidence. See computePreviewFingerprint.
+            if (computePreviewFingerprint(preview.items) !== previewFingerprint) {
+                throw new RollbackValidationError(STALE_PREVIEW_MESSAGE);
+            }
+
+            // Defense in depth: the fingerprint match above already proves
+            // every `requiresResolution` row is identical to what was
+            // rendered, so this should be unreachable via the real UI (it
+            // disables confirming until every one has a selection) — but a
+            // tampered submission could still match the fingerprint while
+            // omitting a choice.
             for (const item of preview.items) {
                 if (item.requiresResolution && !resolutions.has(item.changeId)) {
-                    throw new RollbackValidationError(
-                        "This import's state changed since you loaded this page. Review the updated preview and try again."
-                    );
+                    throw new RollbackValidationError(STALE_PREVIEW_MESSAGE);
                 }
             }
 
@@ -172,33 +239,40 @@ export async function rollbackImport(formData: FormData): Promise<RollbackImport
                     } else {
                         resolution = MemberImportRollbackResultResolution.ARCHIVED_PRESERVING_HISTORY;
                         archivedPreservingHistoryCount++;
-                        await tx.allianceMember.update({
-                            where: { id: change.allianceMemberId! },
+                        const { count } = await tx.allianceMember.updateMany({
+                            where: buildLiveGuardWhere(change.allianceMemberId!, item.liveSnapshot!),
                             data: { archivedAt: new Date() },
                         });
+                        assertGuardedMutationMatched(count);
                         anyMemberMutated = true;
                     }
                 } else {
                     switch (item.defaultResolution) {
-                        case "DELETED":
+                        case "DELETED": {
                             resolution = MemberImportRollbackResultResolution.DELETED;
                             deletedCount++;
-                            await tx.allianceMember.delete({ where: { id: change.allianceMemberId! } });
+                            const { count } = await tx.allianceMember.deleteMany({
+                                where: buildLiveGuardWhere(change.allianceMemberId!, item.liveSnapshot!),
+                            });
+                            assertGuardedMutationMatched(count);
                             anyMemberMutated = true;
                             break;
-                        case "REVERTED_TO_PRE_IMPORT_STATE":
+                        }
+                        case "REVERTED_TO_PRE_IMPORT_STATE": {
                             resolution = MemberImportRollbackResultResolution.REVERTED_TO_PRE_IMPORT_STATE;
                             revertedCount++;
-                            await tx.allianceMember.update({
-                                where: { id: change.allianceMemberId! },
+                            const { count } = await tx.allianceMember.updateMany({
+                                where: buildLiveGuardWhere(change.allianceMemberId!, item.liveSnapshot!),
                                 data: {
                                     archivedAt: change.archivedAtBefore,
                                     thp: change.thpBefore,
                                     role: change.roleBefore,
                                 },
                             });
+                            assertGuardedMutationMatched(count);
                             anyMemberMutated = true;
                             break;
+                        }
                         case "RETAINED_ARCHIVED":
                             resolution = MemberImportRollbackResultResolution.RETAINED_ARCHIVED;
                             retainedArchivedCount++;

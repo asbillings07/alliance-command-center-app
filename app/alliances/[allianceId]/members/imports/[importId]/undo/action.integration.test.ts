@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
 import { MemberImportChangeType } from "@/app/generated/prisma/enums";
 import type * as Action from "./action";
+import { computeImportRollbackPreview, computePreviewFingerprint } from "../rollbackPreview";
 
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 
@@ -71,10 +72,53 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
     }
 
-    function buildFormData(allianceId: string, importId: string, resolutions: Record<string, string> = {}) {
+    /** Computes the same fingerprint a freshly-rendered undo page would embed
+     * right now, against real current DB state — used so these tests can
+     * simulate "the owner loaded the page, then submitted" without a second
+     * HTTP round trip. Any DB state change the test makes *before* calling
+     * this (an edit, an archive, a later import, ...) is exactly what the
+     * page would have rendered, and is legitimately reflected in what gets
+     * submitted; a change made *after* is what production's staleness gate
+     * exists to catch. */
+    async function computeFingerprintForImport(importId: string): Promise<string> {
+        const memberImport = await prisma.memberImport.findUniqueOrThrow({
+            where: { id: importId },
+            select: {
+                id: true,
+                createdAt: true,
+                changes: {
+                    select: {
+                        id: true,
+                        memberImportId: true,
+                        allianceMemberId: true,
+                        playerNameSnapshot: true,
+                        sourceRow: true,
+                        changeType: true,
+                        archivedAtAfter: true,
+                        thpAfter: true,
+                        roleAfter: true,
+                        discordNameAfter: true,
+                        squadPowerAfter: true,
+                        joinedAtAfter: true,
+                        userIdAfter: true,
+                        memberUpdatedAtAfter: true,
+                    },
+                },
+            },
+        });
+        const preview = await computeImportRollbackPreview(prisma, memberImport, memberImport.changes);
+        return computePreviewFingerprint(preview.items);
+    }
+
+    async function buildFormData(
+        allianceId: string,
+        importId: string,
+        resolutions: Record<string, string> = {}
+    ): Promise<FormData> {
         const formData = new FormData();
         formData.set("allianceId", allianceId);
         formData.set("importId", importId);
+        formData.set("previewFingerprint", await computeFingerprintForImport(importId));
         for (const [changeId, choice] of Object.entries(resolutions)) {
             formData.set(`resolution:${changeId}`, choice);
         }
@@ -195,7 +239,7 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         mockAuthAs(owner.id);
         const { memberId, memberImportId } = await seedCreatedImport(alliance.id);
 
-        const result = await rollbackImport(buildFormData(alliance.id, memberImportId));
+        const result = await rollbackImport(await buildFormData(alliance.id, memberImportId));
 
         expect(result).toMatchObject({ success: true, outcome: "ROLLED_BACK", deletedCount: 1 });
 
@@ -218,7 +262,7 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         const { memberId, memberImportId, preImportArchivedAt, preImportThp, preImportRole } =
             await seedRestoredImport(alliance.id);
 
-        const result = await rollbackImport(buildFormData(alliance.id, memberImportId));
+        const result = await rollbackImport(await buildFormData(alliance.id, memberImportId));
 
         expect(result).toMatchObject({ success: true, outcome: "ROLLED_BACK", revertedCount: 1 });
 
@@ -238,7 +282,7 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         await prisma.allianceMember.update({ where: { id: memberId }, data: { thp: 9999 } });
 
         const result = await rollbackImport(
-            buildFormData(alliance.id, memberImportId, { [changeId]: "ARCHIVE_PRESERVING_HISTORY" })
+            await buildFormData(alliance.id, memberImportId, { [changeId]: "ARCHIVE_PRESERVING_HISTORY" })
         );
 
         expect(result).toMatchObject({
@@ -265,13 +309,46 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         const { memberId, memberImportId } = await seedCreatedImport(alliance.id);
         await prisma.allianceMember.update({ where: { id: memberId }, data: { thp: 9999 } });
 
-        const result = await rollbackImport(buildFormData(alliance.id, memberImportId));
+        const result = await rollbackImport(await buildFormData(alliance.id, memberImportId));
 
         expect(result).toMatchObject({ success: false });
         const stillExists = await prisma.allianceMember.findUniqueOrThrow({ where: { id: memberId } });
         expect(stillExists.thp).toBe(9999); // completely untouched
         const header = await prisma.memberImportRollback.findUnique({ where: { memberImportId } });
         expect(header).toBeNull(); // nothing committed
+    });
+
+    it("integration: a fingerprint computed before a conflicting edit is rejected as stale, never deleting or reverting the now-edited member", async () => {
+        const alliance = await makeAlliance();
+        const owner = await makeOwnerUser();
+        mockAuthAs(owner.id);
+        const { memberId, memberImportId } = await seedCreatedImport(alliance.id);
+
+        // Simulates "the owner loaded the undo page" — a fingerprint
+        // computed against the clean, pre-edit state (the same one that
+        // would have rendered "Delete (undo creation)" with no resolution
+        // needed).
+        const staleFingerprint = await computeFingerprintForImport(memberImportId);
+
+        // Then, before the owner submits, a real edit lands.
+        await prisma.allianceMember.update({ where: { id: memberId }, data: { thp: 9999 } });
+
+        const formData = new FormData();
+        formData.set("allianceId", alliance.id);
+        formData.set("importId", memberImportId);
+        formData.set("previewFingerprint", staleFingerprint);
+
+        const result = await rollbackImport(formData);
+
+        expect(result).toEqual({
+            success: false,
+            error:
+                "This import's state changed since you loaded this page. Review the updated preview and try again.",
+        });
+        const stillExists = await prisma.allianceMember.findUniqueOrThrow({ where: { id: memberId } });
+        expect(stillExists.thp).toBe(9999); // untouched, not deleted against stale evidence
+        const header = await prisma.memberImportRollback.findUnique({ where: { memberImportId } });
+        expect(header).toBeNull();
     });
 
     it("integration: a genuinely later import touching the same member blocks rollback via later-import involvement, independent of scalar drift", async () => {
@@ -336,7 +413,7 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         // meaningful assertion is that later-import involvement is recorded
         // as *its own*, independent conflict reason, not that it's the only
         // one present.)
-        const result = await rollbackImport(buildFormData(alliance.id, importAId));
+        const result = await rollbackImport(await buildFormData(alliance.id, importAId));
 
         expect(result).toMatchObject({ success: true, outcome: "ROLLED_BACK_WITH_RETAINED_MEMBERS" });
         const resultRow = await prisma.memberImportRollbackResult.findUniqueOrThrow({
@@ -407,7 +484,7 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
             },
         });
 
-        const result = await rollbackImport(buildFormData(alliance.id, importB.id));
+        const result = await rollbackImport(await buildFormData(alliance.id, importB.id));
 
         expect(result).toMatchObject({ success: true, outcome: "ROLLED_BACK", revertedCount: 1 });
         const final = await prisma.allianceMember.findUniqueOrThrow({ where: { id: memberId } });
@@ -421,8 +498,8 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         const { memberImportId } = await seedCreatedImport(alliance.id);
 
         const [resA, resB] = await Promise.all([
-            rollbackImport(buildFormData(alliance.id, memberImportId)),
-            rollbackImport(buildFormData(alliance.id, memberImportId)),
+            rollbackImport(await buildFormData(alliance.id, memberImportId)),
+            rollbackImport(await buildFormData(alliance.id, memberImportId)),
         ]);
 
         const successCount = [resA, resB].filter((r) => r.success).length;

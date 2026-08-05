@@ -12,10 +12,24 @@ export type RollbackUndoFormProps = {
     allianceId: string;
     importId: string;
     items: RollbackPreviewItem[];
+    /** Opaque fingerprint of exactly this rendered preview (see
+     * computePreviewFingerprint). Submitted as-is; rollbackImport rejects
+     * the request if its own fresh recomputation doesn't match it exactly. */
+    previewFingerprint: string;
 };
 
+/** Naive but not wrong: handles the consonant-plus-"y" pattern (e.g. "metric
+ * entry" -> "metric entries") in addition to the plain "add an s" case,
+ * since this is the only irregular plural any current caller needs. */
 function pluralize(count: number, noun: string): string {
-    return `${count} ${noun}${count === 1 ? "" : "s"}`;
+    if (count === 1) return `1 ${noun}`;
+    const lastChar = noun.slice(-1).toLowerCase();
+    const precedingChar = noun.slice(-2, -1).toLowerCase();
+    const plural =
+        lastChar === "y" && precedingChar !== "" && !"aeiou".includes(precedingChar)
+            ? `${noun.slice(0, -1)}ies`
+            : `${noun}s`;
+    return `${count} ${plural}`;
 }
 
 /** Human-readable reasons a row conflicted — the exact evidence
@@ -47,7 +61,7 @@ function describeConflict(item: RollbackPreviewItem): string[] {
     return reasons;
 }
 
-export function RollbackUndoForm({ allianceId, importId, items }: RollbackUndoFormProps) {
+export function RollbackUndoForm({ allianceId, importId, items, previewFingerprint }: RollbackUndoFormProps) {
     const router = useRouter();
     const [resolutions, setResolutions] = useState<Record<string, RollbackResolutionChoice>>({});
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -95,6 +109,7 @@ export function RollbackUndoForm({ allianceId, importId, items }: RollbackUndoFo
         const formData = new FormData();
         formData.set("allianceId", allianceId);
         formData.set("importId", importId);
+        formData.set("previewFingerprint", previewFingerprint);
         for (const [changeId, choice] of Object.entries(resolutions)) {
             formData.set(`resolution:${changeId}`, choice);
         }

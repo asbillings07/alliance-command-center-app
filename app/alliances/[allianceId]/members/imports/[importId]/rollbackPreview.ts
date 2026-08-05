@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { MemberImportChangeType } from "@/app/generated/prisma/enums";
 
@@ -22,7 +23,10 @@ export type ImportChangeForRollbackPreview = {
     memberUpdatedAtAfter: Date;
 };
 
-type LiveMemberForDriftCheck = {
+// Exported so `rollbackImport` can type the live-value guard it builds from
+// `RollbackPreviewItem.liveSnapshot` (see that field's doc comment) without
+// redeclaring this shape.
+export type LiveMemberForDriftCheck = {
     thp: number | null;
     role: string | null;
     archivedAt: Date | null;
@@ -83,6 +87,19 @@ export type RollbackPreviewItem = {
     metricEntryCount: number;
     leadershipNoteCount: number;
     invitationCount: number;
+    /**
+     * The exact live AllianceMember values this item's classification was
+     * computed from — null only alongside `currentlyArchived: null` (the
+     * member no longer exists). `rollbackImport` uses this as an
+     * equality-guarded `where` clause on the mutation it performs for this
+     * row, so a concurrent edit landing on this specific member between
+     * this read and that write (which the alliance-row lock in
+     * `withAllianceMemberLock` does not block — it serializes against
+     * *other* capacity-checked mutations, not an arbitrary single-member
+     * update) makes the write affect zero rows instead of silently
+     * clobbering it. See rollbackImport's own doc comment.
+     */
+    liveSnapshot: LiveMemberForDriftCheck | null;
     /**
      * True only for a CREATED conflict on a currently-active member — the
      * one case with a genuine, safe two-way choice (Keep active / Archive
@@ -257,6 +274,7 @@ export async function computeImportRollbackPreview(
                 metricEntryCount: 0,
                 leadershipNoteCount: 0,
                 invitationCount: 0,
+                liveSnapshot: null,
                 requiresResolution: false,
                 defaultResolution: "SKIPPED_CONFLICT",
             };
@@ -298,6 +316,7 @@ export async function computeImportRollbackPreview(
                     metricEntryCount,
                     leadershipNoteCount,
                     invitationCount,
+                    liveSnapshot: live,
                     requiresResolution: false,
                     defaultResolution: "DELETED",
                 };
@@ -321,6 +340,7 @@ export async function computeImportRollbackPreview(
                     metricEntryCount,
                     leadershipNoteCount,
                     invitationCount,
+                    liveSnapshot: live,
                     requiresResolution: false,
                     defaultResolution: "RETAINED_ARCHIVED",
                 };
@@ -343,6 +363,7 @@ export async function computeImportRollbackPreview(
                 metricEntryCount,
                 leadershipNoteCount,
                 invitationCount,
+                liveSnapshot: live,
                 requiresResolution: true,
                 defaultResolution: null,
             };
@@ -366,10 +387,47 @@ export async function computeImportRollbackPreview(
             metricEntryCount: 0,
             leadershipNoteCount: 0,
             invitationCount: 0,
+            liveSnapshot: live,
             requiresResolution: false,
             defaultResolution: hasConflict ? "SKIPPED_CONFLICT" : "REVERTED_TO_PRE_IMPORT_STATE",
         };
     });
 
     return { memberImportId: memberImport.id, items };
+}
+
+/**
+ * A canonical fingerprint of exactly the classification/evidence an owner
+ * reviewed on the undo page — never the resolution they chose, and never
+ * `liveSnapshot`'s raw field values (those only matter for the mutation
+ * guard in `rollbackImport`, not for what the owner was shown).
+ *
+ * The undo page embeds this fingerprint in the form it renders; `rollbackImport`
+ * recomputes it from a *fresh* `computeImportRollbackPreview` call inside its
+ * transaction and rejects the submission outright on any mismatch — rather
+ * than trying to reconcile old resolutions against new evidence item-by-item.
+ * That's deliberately all-or-nothing: a change that stopped requiring a
+ * choice (so the owner's explicit pick would otherwise be silently replaced
+ * by a fresh, possibly more destructive default) and a change that still
+ * requires one but for newly-different reasons (new dependencies, a newly
+ * linked user, ...) both need the owner to see the new preview before
+ * anything commits, not just the rows whose `requiresResolution` flag
+ * happens to have flipped.
+ */
+export function computePreviewFingerprint(items: RollbackPreviewItem[]): string {
+    const canonical = [...items]
+        .sort((a, b) => (a.changeId < b.changeId ? -1 : a.changeId > b.changeId ? 1 : 0))
+        .map((item) => ({
+            changeId: item.changeId,
+            currentlyArchived: item.currentlyArchived,
+            requiresResolution: item.requiresResolution,
+            defaultResolution: item.defaultResolution,
+            driftedFields: [...item.driftedFields].sort(),
+            hadLaterImportInvolvement: item.hadLaterImportInvolvement,
+            hadLinkedUser: item.hadLinkedUser,
+            metricEntryCount: item.metricEntryCount,
+            leadershipNoteCount: item.leadershipNoteCount,
+            invitationCount: item.invitationCount,
+        }));
+    return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
