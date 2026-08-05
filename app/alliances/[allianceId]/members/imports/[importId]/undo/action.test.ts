@@ -76,6 +76,7 @@ function buildTx(overrides: { changes?: unknown[]; rollback?: { id: string } | n
             updateMany: vi.fn().mockResolvedValue({ count: 1 }),
             deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
+        $executeRaw: vi.fn().mockResolvedValue(1),
         user: {
             findUnique: vi.fn().mockResolvedValue({ email: "owner@example.com", displayName: "Owner Name" }),
         },
@@ -237,6 +238,39 @@ describe("rollbackImport", () => {
             error: "This import's state changed since you loaded this page. Review the updated preview and try again.",
         });
         expect(tx.memberImportRollback.create).not.toHaveBeenCalled();
+    });
+
+    it("row-locks every distinct, non-null affected member before computing the fresh preview — closes the window a plain read can't", async () => {
+        const changeA = buildChange({ id: "change-1", allianceMemberId: "member-1" });
+        const changeB = buildChange({ id: "change-2", allianceMemberId: "member-1" }); // dup id, e.g. a re-restore
+        const changeC = buildChange({ id: "change-3", allianceMemberId: null }); // member already SetNull'd
+        const tx = buildTx({ changes: [changeA, changeB, changeC] });
+        mockWithLock.mockImplementation(async (_id: string, fn: (tx: unknown) => unknown) => fn(tx));
+        const items = [
+            buildPreviewItem({ changeId: "change-1", allianceMemberId: "member-1", defaultResolution: "DELETED" }),
+            buildPreviewItem({ changeId: "change-2", allianceMemberId: "member-1", defaultResolution: "DELETED" }),
+            buildPreviewItem({
+                changeId: "change-3",
+                allianceMemberId: null,
+                currentlyArchived: null,
+                liveSnapshot: null,
+                defaultResolution: "SKIPPED_CONFLICT",
+            }),
+        ];
+        const fingerprint = arrangePreview(items);
+
+        await rollbackImport(buildFormData(fingerprint));
+
+        expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+        const sqlArg = tx.$executeRaw.mock.calls[0][0];
+        // A Prisma.Sql tagged-template value — assert on its interpolated
+        // values rather than its exact stringified form.
+        expect(sqlArg.values).toEqual(["member-1"]);
+        // Locking must happen before the fresh preview is computed, not after
+        // — vitest mocks record a global call order for exactly this.
+        expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+            mockComputePreview.mock.invocationCallOrder[0]
+        );
     });
 
     it("deletes a clean CREATED row via a live-snapshot-guarded deleteMany and records a fully-clean ROLLED_BACK outcome", async () => {

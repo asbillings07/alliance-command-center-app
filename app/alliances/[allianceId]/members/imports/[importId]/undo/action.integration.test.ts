@@ -37,6 +37,9 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
                 where: { memberImport: { allianceId: { in: createdAllianceIds } } },
             });
             await prisma.memberImport.deleteMany({ where: { allianceId: { in: createdAllianceIds } } });
+            // Only the invitation-overlap test creates one of these; safe as
+            // a no-op for every other test in this file.
+            await prisma.invitation.deleteMany({ where: { allianceId: { in: createdAllianceIds } } });
             await prisma.allianceMember.deleteMany({ where: { allianceId: { in: createdAllianceIds } } });
             await prisma.alliance.deleteMany({ where: { id: { in: createdAllianceIds } } });
             createdAllianceIds.length = 0;
@@ -316,6 +319,77 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         expect(stillExists.thp).toBe(9999); // completely untouched
         const header = await prisma.memberImportRollback.findUnique({ where: { memberImportId } });
         expect(header).toBeNull(); // nothing committed
+    });
+
+    it("integration: an invitation created concurrently with a clean CREATED delete never leaves an orphaned invitation or a wrongly-deleted member — real PostgreSQL overlap", async () => {
+        const alliance = await makeAlliance();
+        const owner = await makeOwnerUser();
+        mockAuthAs(owner.id);
+        const { memberId, memberImportId } = await seedCreatedImport(alliance.id);
+
+        // Fingerprint computed while the member still has zero dependencies
+        // — the same thing the undo page would have rendered a moment ago.
+        const formData = await buildFormData(alliance.id, memberImportId);
+
+        // Genuinely concurrent: an invitation for this same member is
+        // created via a separate connection/transaction at essentially the
+        // same wall-clock time as the rollback's own row lock + preview +
+        // delete. Whichever side's implicit row lock on AllianceMember wins
+        // the race, the other must wait for it — see rollbackImport's own
+        // doc comment for why that's true regardless of ordering. Both
+        // possible orderings are asserted below; only an orphaned
+        // invitation (member gone, invitation still pointing at it as if
+        // nothing happened) or a corrupted rollback header would be a bug.
+        const [rollbackResult, invitationResult] = await Promise.allSettled([
+            rollbackImport(formData),
+            prisma.invitation.create({
+                data: {
+                    allianceId: alliance.id,
+                    invitedById: owner.id,
+                    allianceMemberId: memberId,
+                    playerNameSnapshot: "Concurrent Invitee",
+                    email: `concurrent-${Date.now()}@example.com`,
+                    membershipRole: "VIEWER",
+                    token: `token-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                },
+            }),
+        ]);
+
+        const member = await prisma.allianceMember.findUnique({ where: { id: memberId } });
+        const invitationSucceeded = invitationResult.status === "fulfilled";
+
+        if (invitationSucceeded) {
+            // The invitation committed (before or after being correctly
+            // counted) — the member must never have been silently deleted
+            // out from under it.
+            expect(member).not.toBeNull();
+        } else {
+            // The invitation lost the race entirely (foreign key violation
+            // against an already-deleted member) — the rollback must have
+            // actually completed, not left things half-done.
+            expect(rollbackResult.status).toBe("fulfilled");
+            if (rollbackResult.status === "fulfilled") {
+                expect(rollbackResult.value).toMatchObject({ success: true, outcome: "ROLLED_BACK" });
+            }
+            expect(member).toBeNull();
+        }
+
+        // Never both: an orphaned invitation pointing at a deleted member
+        // would mean the dependency check and the delete disagreed about
+        // reality.
+        expect(invitationSucceeded && member === null).toBe(false);
+
+        // Whatever the rollback itself reported, the audit trail is
+        // internally consistent — a header never exists without its result
+        // rows, or vice versa.
+        const header = await prisma.memberImportRollback.findUnique({
+            where: { memberImportId },
+            include: { results: true },
+        });
+        if (header) {
+            expect(header.results.length).toBeGreaterThan(0);
+        }
     });
 
     it("integration: a fingerprint computed before a conflicting edit is rejected as stale, never deleting or reverting the now-edited member", async () => {

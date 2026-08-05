@@ -4,6 +4,7 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
+import { Prisma } from "@/app/generated/prisma/client";
 import {
     MemberImportRollbackOutcome,
     MemberImportRollbackResultResolution,
@@ -108,10 +109,25 @@ function assertGuardedMutationMatched(count: number): void {
  * evidence can change in ways that leave `requiresResolution` unchanged, or
  * change in ways that make it *stop* requiring one, and either would
  * otherwise let a submission the owner never actually saw get committed.
- * Every mutation below is additionally guarded against the exact live
- * values this same preview read (see `buildLiveGuardWhere`), so a
- * concurrent edit to that one member inside this same transaction also
- * aborts the whole rollback rather than being silently overwritten.
+ *
+ * Before that recomputation runs, every affected member is row-locked
+ * (`SELECT ... FOR UPDATE`, batched) — `withAllianceMemberLock`'s own lock
+ * is on `Alliance`, not on these specific rows. Locking them upfront closes
+ * two distinct races: an ordinary `archiveMember`/`updateMember` edit
+ * landing on one of them mid-transaction (an ordinary `UPDATE` needs the
+ * same row lock we're already holding, so it simply waits), and a *new*
+ * protected dependency (an invitation, metric entry, or leadership note)
+ * being created for one of them — Postgres itself takes an implicit
+ * `FOR KEY SHARE` lock on the referenced member row to validate that
+ * foreign key, which conflicts with our `FOR UPDATE` the same way. Either
+ * kind of concurrent write is therefore forced to wait until this
+ * transaction fully commits or rolls back, so `computeImportRollbackPreview`
+ * reads a value for every locked member that cannot change again before
+ * this transaction's mutations run. Every mutation is additionally guarded
+ * against those exact live scalar values (see `buildLiveGuardWhere`) as
+ * defense in depth — by construction it can never actually miss once the
+ * lock above holds, but it keeps the guarantee explicit and independently
+ * testable rather than implicit in lock ordering alone.
  */
 export async function rollbackImport(formData: FormData): Promise<RollbackImportResult> {
     const allianceId = formData.get("allianceId");
@@ -179,6 +195,24 @@ export async function rollbackImport(formData: FormData): Promise<RollbackImport
             // safety net against a genuine race between two submissions.
             if (memberImport.rollback) {
                 throw new RollbackValidationError("This import has already been undone.");
+            }
+
+            // Row-lock every affected member *before* reading anything about
+            // them — see this function's own doc comment for exactly which
+            // races this closes. A plain `id IN (...)` (no FOR UPDATE) here
+            // would still let a concurrent write land between this read and
+            // the mutations below; FOR UPDATE makes that write wait instead.
+            const memberIdsToLock = [
+                ...new Set(
+                    memberImport.changes
+                        .map((c) => c.allianceMemberId)
+                        .filter((id): id is string => id !== null)
+                ),
+            ];
+            if (memberIdsToLock.length > 0) {
+                await tx.$executeRaw(
+                    Prisma.sql`SELECT id FROM "AllianceMember" WHERE id IN (${Prisma.join(memberIdsToLock)}) FOR UPDATE`
+                );
             }
 
             const preview = await computeImportRollbackPreview(tx, memberImport, memberImport.changes);
