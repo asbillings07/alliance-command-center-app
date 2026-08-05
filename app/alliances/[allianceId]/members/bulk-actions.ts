@@ -44,8 +44,10 @@ function parseMemberIds(formData: FormData): string[] {
  * Selection can go stale between page load and submit (someone else already
  * archived a member in the meantime). That's treated as a no-op for that
  * member, not an error — it's reported back as `skippedCount` so the caller
- * can show an honest summary ("Archived 8 members. 2 were already archived
- * and were skipped.").
+ * can show an honest summary. `skippedCount` doesn't distinguish *why* an id
+ * didn't match (already archived, no longer in this alliance, a stale
+ * selection, ...), so the caller's wording should stay neutral too
+ * ("Archived 8 members. 2 no longer eligible and were skipped.").
  *
  * The `archivedAt: null` condition lives in the `updateMany` `WHERE` clause
  * itself, not in an earlier read — a plain "read active ids, then write
