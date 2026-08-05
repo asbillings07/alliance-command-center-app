@@ -30,6 +30,13 @@ export type AdminScenarioFixture = {
   userId: string;
 };
 
+export type OwnerScenarioFixture = {
+  email: string;
+  password: string;
+  allianceId: string;
+  userId: string;
+};
+
 export type LeaderScenarioFixture = {
   email: string;
   password: string;
@@ -45,6 +52,7 @@ export type TestFixtures = {
   betaUser: BetaUserFixture;
   adminScenario: AdminScenarioFixture;
   leaderScenario: LeaderScenarioFixture;
+  ownerScenario: OwnerScenarioFixture;
 };
 
 function generateTestEmail(): string {
@@ -311,6 +319,68 @@ export const test = base.extend<TestFixtures>({
     // MemberImportChange -> MemberImport is onDelete: Restrict (#277 PR 1),
     // and MemberImport.allianceId has no explicit onDelete (defaults to
     // Restrict), so both must be cleared before AllianceMember/Alliance.
+    await prisma.memberImportChange.deleteMany({
+      where: { memberImport: { allianceId: alliance.id } },
+    });
+    await prisma.memberImport.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.allianceMember.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.invitation.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.allianceMembership.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.alliance.delete({ where: { id: alliance.id } });
+    await prisma.user.delete({ where: { id: user.id } });
+  },
+
+  /**
+   * Database-backed fixture: Creates an alliance with an OWNER membership.
+   * Used for Owner-only surfaces (e.g. #277 PR 3's ROLLBACK_MEMBER_IMPORTS)
+   * that ADMIN's own scenario fixture can't exercise.
+   */
+  ownerScenario: async ({}, use, testInfo) => {
+    const suffix = `${Date.now()}-${testInfo.retry}-${Math.random().toString(36).slice(2, 8)}`;
+    const email = `owner-${suffix}@test.local`;
+    const password = "Test1234";
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        displayName: `Owner ${suffix}`,
+      },
+    });
+
+    const alliance = await prisma.alliance.create({
+      data: {
+        name: `Owner Test Alliance ${suffix}`,
+        server: "9999",
+      },
+    });
+
+    await prisma.allianceMembership.create({
+      data: {
+        allianceId: alliance.id,
+        userId: user.id,
+        role: "OWNER",
+      },
+    });
+
+    await use({ email, password, allianceId: alliance.id, userId: user.id });
+
+    // Cleanup: FK-ordered deletion, including #277 PR 3's rollback audit
+    // tables (MemberImportRollbackResult -> MemberImportRollback are both
+    // onDelete: Restrict against MemberImportChange/MemberImport).
+    await prisma.memberMetricEntry.deleteMany({
+      where: { allianceMember: { allianceId: alliance.id } },
+    });
+    await prisma.metricPeriodMetric.deleteMany({
+      where: { period: { allianceId: alliance.id } },
+    });
+    await prisma.metric.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.metricPeriod.deleteMany({ where: { allianceId: alliance.id } });
+    await prisma.memberImportRollbackResult.deleteMany({
+      where: { memberImportRollback: { allianceId: alliance.id } },
+    });
+    await prisma.memberImportRollback.deleteMany({ where: { allianceId: alliance.id } });
     await prisma.memberImportChange.deleteMany({
       where: { memberImport: { allianceId: alliance.id } },
     });
