@@ -67,10 +67,18 @@ function parseResolutions(formData: FormData): Map<string, RollbackResolutionCho
  * match (0 rows) instead of being silently overwritten. Never called for a
  * `liveSnapshot: null` item (the member-missing case never reaches a
  * mutation branch).
+ *
+ * `allianceId` is included defensively, matching `bulkArchiveMembers`'s
+ * `where: { id: { in }, allianceId, ... }` — `memberImport.changes` is
+ * already scoped to this alliance via the `findFirst({ id, allianceId })`
+ * lookup above, so this can't currently cross a tenant boundary, but every
+ * other member mutation in this codebase pins `allianceId` explicitly
+ * rather than relying on that invariant holding forever.
  */
-function buildLiveGuardWhere(allianceMemberId: string, liveSnapshot: LiveMemberForDriftCheck) {
+function buildLiveGuardWhere(allianceId: string, allianceMemberId: string, liveSnapshot: LiveMemberForDriftCheck) {
     return {
         id: allianceMemberId,
+        allianceId,
         thp: liveSnapshot.thp,
         role: liveSnapshot.role,
         archivedAt: liveSnapshot.archivedAt,
@@ -275,7 +283,7 @@ export async function rollbackImport(formData: FormData): Promise<RollbackImport
                         resolution = MemberImportRollbackResultResolution.ARCHIVED_PRESERVING_HISTORY;
                         archivedPreservingHistoryCount++;
                         const { count } = await tx.allianceMember.updateMany({
-                            where: buildLiveGuardWhere(change.allianceMemberId!, item.liveSnapshot!),
+                            where: buildLiveGuardWhere(allianceId, change.allianceMemberId!, item.liveSnapshot!),
                             data: { archivedAt: new Date() },
                         });
                         assertGuardedMutationMatched(count);
@@ -287,7 +295,7 @@ export async function rollbackImport(formData: FormData): Promise<RollbackImport
                             resolution = MemberImportRollbackResultResolution.DELETED;
                             deletedCount++;
                             const { count } = await tx.allianceMember.deleteMany({
-                                where: buildLiveGuardWhere(change.allianceMemberId!, item.liveSnapshot!),
+                                where: buildLiveGuardWhere(allianceId, change.allianceMemberId!, item.liveSnapshot!),
                             });
                             assertGuardedMutationMatched(count);
                             anyMemberMutated = true;
@@ -297,7 +305,7 @@ export async function rollbackImport(formData: FormData): Promise<RollbackImport
                             resolution = MemberImportRollbackResultResolution.REVERTED_TO_PRE_IMPORT_STATE;
                             revertedCount++;
                             const { count } = await tx.allianceMember.updateMany({
-                                where: buildLiveGuardWhere(change.allianceMemberId!, item.liveSnapshot!),
+                                where: buildLiveGuardWhere(allianceId, change.allianceMemberId!, item.liveSnapshot!),
                                 data: {
                                     archivedAt: change.archivedAtBefore,
                                     thp: change.thpBefore,

@@ -284,6 +284,7 @@ describe("rollbackImport", () => {
         expect(tx.allianceMember.deleteMany).toHaveBeenCalledWith({
             where: {
                 id: "member-1",
+                allianceId,
                 thp: 1000,
                 role: "Member",
                 archivedAt: null,
@@ -362,7 +363,7 @@ describe("rollbackImport", () => {
         const result = await rollbackImport(buildFormData(fingerprint));
 
         expect(tx.allianceMember.updateMany).toHaveBeenCalledWith({
-            where: { id: "member-1", ...DEFAULT_LIVE_SNAPSHOT },
+            where: { id: "member-1", allianceId, ...DEFAULT_LIVE_SNAPSHOT },
             data: {
                 archivedAt: change.archivedAtBefore,
                 thp: change.thpBefore,
@@ -424,7 +425,7 @@ describe("rollbackImport", () => {
 
         expect(tx.allianceMember.updateMany).toHaveBeenCalledTimes(1);
         const call = tx.allianceMember.updateMany.mock.calls[0][0];
-        expect(call.where).toEqual({ id: "member-1", ...DEFAULT_LIVE_SNAPSHOT });
+        expect(call.where).toEqual({ id: "member-1", allianceId, ...DEFAULT_LIVE_SNAPSHOT });
         expect(call.data.archivedAt).toBeInstanceOf(Date);
         expect((call.data.archivedAt as Date).getTime()).toBeGreaterThanOrEqual(before);
         expect((call.data.archivedAt as Date).getTime()).toBeLessThanOrEqual(after);
