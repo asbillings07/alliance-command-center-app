@@ -143,6 +143,17 @@ enum MemberImportChangeType {
   RESTORED
 }
 
+// #277 PR 4 (#282): distinguishes a current-roster import (the default,
+// existing behavior) from a purpose-built historical-roster import, whose
+// rows can land Active *or* Archived and whose restores preserve — rather
+// than overwrite — the existing member's current thp/role. Default CURRENT
+// so every pre-existing MemberImport row backfills truthfully: every one of
+// them really was a current-roster import.
+enum MemberImportMode {
+  CURRENT
+  HISTORICAL
+}
+
 // One row per completed roster/member-data import (#277 PR 1). Deliberately
 // named "MemberImport" (not "Import") to leave room for a distinct
 // evaluation-result import model later, per #277's own deferred-
@@ -185,6 +196,25 @@ model MemberImport {
   skippedDuplicateCount  Int
   skippedEmptyNameCount  Int
   skippedUnselectedCount Int
+
+  // #277 PR 4 (#282): CURRENT for every import before this shipped and for
+  // every current-roster import after it — HISTORICAL only for a completed
+  // historical-roster import.
+  mode MemberImportMode @default(CURRENT)
+  // Subset of createdCount: how many of the created members were created
+  // directly archived (changeType stays CREATED — see
+  // MemberImportChange_created_before_state_check — only archivedAtAfter
+  // differs). createdCount - createdArchivedCount derives active creations.
+  // Always 0 for a CURRENT-mode import, which never creates an archived
+  // member.
+  createdArchivedCount Int @default(0)
+  // Historical-mode only: an existing *active* member whose row requested
+  // Archived. Never auto-applied (see #282's field policy) — reported so
+  // the leader knows to use the separate bulk-archive workflow instead.
+  // No existing counter fits: skippedExistingCount's own copy specifically
+  // means "already matched the requested state", which for an active
+  // member requesting Archived is false, not true.
+  skippedLifecycleConflictCount Int @default(0)
 
   createdAt DateTime @default(now())
 

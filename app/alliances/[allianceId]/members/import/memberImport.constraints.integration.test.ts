@@ -43,11 +43,14 @@ describeIntegration("MemberImport / MemberImportChange CHECK constraints [integr
 
     type MemberImportOverrides = Partial<{
         createdCount: number;
+        createdArchivedCount: number;
         restoredCount: number;
         skippedExistingCount: number;
         skippedDuplicateCount: number;
         skippedEmptyNameCount: number;
         skippedUnselectedCount: number;
+        skippedLifecycleConflictCount: number;
+        mode: "CURRENT" | "HISTORICAL";
     }>;
 
     async function makeMemberImport(allianceId: string, overrides: MemberImportOverrides = {}) {
@@ -86,6 +89,47 @@ describeIntegration("MemberImport / MemberImportChange CHECK constraints [integr
         const alliance = await makeAlliance();
         const memberImport = await makeMemberImport(alliance.id, { createdCount: 0, restoredCount: 1 });
         expect(memberImport.id).toBeDefined();
+    });
+
+    // #277 PR 4 (#282)
+    it("defaults mode to CURRENT and createdArchivedCount/skippedLifecycleConflictCount to 0 when omitted", async () => {
+        const alliance = await makeAlliance();
+        const memberImport = await makeMemberImport(alliance.id);
+        expect(memberImport.mode).toBe("CURRENT");
+        expect(memberImport.createdArchivedCount).toBe(0);
+        expect(memberImport.skippedLifecycleConflictCount).toBe(0);
+    });
+
+    it("accepts an explicit HISTORICAL mode with a createdArchivedCount equal to createdCount", async () => {
+        const alliance = await makeAlliance();
+        const memberImport = await makeMemberImport(alliance.id, {
+            mode: "HISTORICAL",
+            createdCount: 3,
+            createdArchivedCount: 3,
+        });
+        expect(memberImport.mode).toBe("HISTORICAL");
+        expect(memberImport.createdArchivedCount).toBe(3);
+    });
+
+    it("rejects a createdArchivedCount greater than createdCount", async () => {
+        const alliance = await makeAlliance();
+        await expect(
+            makeMemberImport(alliance.id, { createdCount: 2, createdArchivedCount: 3 })
+        ).rejects.toThrow();
+    });
+
+    it("rejects a negative createdArchivedCount", async () => {
+        const alliance = await makeAlliance();
+        await expect(
+            makeMemberImport(alliance.id, { createdCount: 1, createdArchivedCount: -1 })
+        ).rejects.toThrow();
+    });
+
+    it("rejects a negative skippedLifecycleConflictCount", async () => {
+        const alliance = await makeAlliance();
+        await expect(
+            makeMemberImport(alliance.id, { skippedLifecycleConflictCount: -1 })
+        ).rejects.toThrow();
     });
 
     // fileName/sourceSheetName are required (String, not String?) — the
@@ -159,7 +203,29 @@ describeIntegration("MemberImport / MemberImportChange CHECK constraints [integr
         ).rejects.toThrow();
     });
 
-    it("rejects a CREATED change carrying a non-null archivedAtAfter", async () => {
+    // #277 PR 4 (#282): relaxed from the original PR 1 constraint. A
+    // historical-mode "create as archived" row is still a CREATED change —
+    // the member didn't exist before this import (thpBefore/roleBefore/
+    // archivedAtBefore are still all null) — it just directly records the
+    // archived timestamp as its after-state instead of null.
+    it("accepts a CREATED change carrying a non-null archivedAtAfter (historical direct-archived creation)", async () => {
+        const alliance = await makeAlliance();
+        const memberImport = await makeMemberImport(alliance.id);
+        const change = await prisma.memberImportChange.create({
+            data: {
+                memberImportId: memberImport.id,
+                playerNameSnapshot: "Player One",
+                sourceRow: 1,
+                changeType: "CREATED",
+                archivedAtAfter: new Date(),
+                memberUpdatedAtAfter: new Date(),
+            },
+        });
+        expect(change.id).toBeDefined();
+        expect(change.archivedAtAfter).not.toBeNull();
+    });
+
+    it("still rejects a CREATED change carrying a non-null archivedAtBefore, even with a non-null archivedAtAfter", async () => {
         const alliance = await makeAlliance();
         const memberImport = await makeMemberImport(alliance.id);
         await expect(
@@ -169,6 +235,7 @@ describeIntegration("MemberImport / MemberImportChange CHECK constraints [integr
                     playerNameSnapshot: "Player One",
                     sourceRow: 1,
                     changeType: "CREATED",
+                    archivedAtBefore: new Date(),
                     archivedAtAfter: new Date(),
                     memberUpdatedAtAfter: new Date(),
                 },
