@@ -23,7 +23,7 @@ export type RevalidateAllianceDataParams = {
   *
   * Domain Mappings:
   * - "members": Exact list page (/alliances/[id]/members) + member detail route pattern (/alliances/[allianceId]/members/[memberId])
-  * - "member-imports": Import History list (/alliances/[id]/members/imports) + detail route pattern (/alliances/[allianceId]/members/imports/[importId])
+  * - "member-imports": Import History list (/alliances/[id]/members/imports) + detail route pattern (/alliances/[allianceId]/members/imports/[importId]) + undo route pattern (/alliances/[allianceId]/members/imports/[importId]/undo)
   * - "evaluation-results": Period detail (/alliances/[id]/periods/[periodId]), record page, and import page
   * - "setup": Alliance onboarding setup checklist (/alliances/[id]/setup) and guided import (/alliances/[id]/setup/import)
   * - "dashboard": Alliance overview dashboard (/alliances/[id])
@@ -50,6 +50,7 @@ export function revalidateAllianceData(params: RevalidateAllianceDataParams): vo
   if (domainsSet.has("member-imports")) {
     revalidatePath(`/alliances/${allianceId}/members/imports`);
     revalidatePath("/alliances/[allianceId]/members/imports/[importId]", "page");
+    revalidatePath("/alliances/[allianceId]/members/imports/[importId]/undo", "page");
   }
 
   if (domainsSet.has("evaluation-results") && periodId) {
