@@ -28,6 +28,7 @@ vi.mock("@/app/src/lib/prisma", () => ({
 
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
+import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { prisma } from "@/app/src/lib/prisma";
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
 import { bulkArchiveMembers, bulkRestoreMembers } from "./bulk-actions";
@@ -36,6 +37,7 @@ const mockFindMany = prisma.allianceMember.findMany as ReturnType<typeof vi.fn>;
 const mockUpdateMany = prisma.allianceMember.updateMany as ReturnType<typeof vi.fn>;
 const mockTransaction = prisma.$transaction as ReturnType<typeof vi.fn>;
 const mockWithLock = withAllianceMemberLock as ReturnType<typeof vi.fn>;
+const mockTouchSetupActivity = touchAllianceSetupActivity as ReturnType<typeof vi.fn>;
 
 const allianceId = "alliance-1";
 
@@ -78,17 +80,29 @@ describe("bulkArchiveMembers", () => {
         expect(mockUpdateMany).not.toHaveBeenCalled();
     });
 
-    it("archives every still-active selected member and revalidates members/reports", async () => {
-        mockFindMany.mockResolvedValue([
-            { id: "m1", archivedAt: null },
-            { id: "m2", archivedAt: null },
-        ]);
+    it("de-duplicates repeated memberId entries before querying, so a duplicated id can't inflate counts", async () => {
+        mockUpdateMany.mockResolvedValue({ count: 1 });
+
+        const result = await bulkArchiveMembers(buildFormData(allianceId, ["m1", "m1", "m1"]));
+
+        expect(result).toEqual({ success: true, archivedCount: 1, skippedCount: 0 });
+        expect(mockUpdateMany).toHaveBeenCalledWith({
+            where: { id: { in: ["m1"] }, allianceId, archivedAt: null },
+            data: { archivedAt: expect.any(Date) },
+        });
+    });
+
+    it("archives every still-active selected member via a single conditional updateMany, and revalidates members/reports", async () => {
+        // The WHERE clause's `archivedAt: null` is the authoritative filter —
+        // there is no separate read step to go stale between check and write.
+        mockUpdateMany.mockResolvedValue({ count: 2 });
 
         const result = await bulkArchiveMembers(buildFormData(allianceId, ["m1", "m2"]));
 
         expect(result).toEqual({ success: true, archivedCount: 2, skippedCount: 0 });
+        expect(mockFindMany).not.toHaveBeenCalled();
         expect(mockUpdateMany).toHaveBeenCalledWith({
-            where: { id: { in: ["m1", "m2"] } },
+            where: { id: { in: ["m1", "m2"] }, allianceId, archivedAt: null },
             data: { archivedAt: expect.any(Date) },
         });
         expect(revalidateAllianceData).toHaveBeenCalledWith({
@@ -97,37 +111,28 @@ describe("bulkArchiveMembers", () => {
         });
     });
 
-    it("skips members that are already archived (stale selection) without failing the request", async () => {
-        mockFindMany.mockResolvedValue([
-            { id: "m1", archivedAt: null },
-            { id: "m2", archivedAt: new Date() },
-        ]);
+    it("reports members the conditional update didn't match (already archived, cross-tenant, or stale) as skipped", async () => {
+        // Only 1 of the 2 requested ids actually matched allianceId +
+        // archivedAt: null in the DB — the DB's count is the source of
+        // truth, not an earlier read.
+        mockUpdateMany.mockResolvedValue({ count: 1 });
 
         const result = await bulkArchiveMembers(buildFormData(allianceId, ["m1", "m2"]));
 
         expect(result).toEqual({ success: true, archivedCount: 1, skippedCount: 1 });
-        expect(mockUpdateMany).toHaveBeenCalledWith({
-            where: { id: { in: ["m1"] } },
-            data: { archivedAt: expect.any(Date) },
-        });
     });
 
-    it("silently excludes ids that don't resolve under this alliance (cross-tenant or stale) as skipped, without writing", async () => {
-        // Only one of the two requested ids actually matched the tenant-scoped query.
-        mockFindMany.mockResolvedValue([{ id: "m1", archivedAt: null }]);
-
-        const result = await bulkArchiveMembers(buildFormData(allianceId, ["m1", "not-in-this-alliance"]));
-
-        expect(result).toEqual({ success: true, archivedCount: 1, skippedCount: 1 });
-    });
-
-    it("performs no write at all when every selected member is already archived", async () => {
-        mockFindMany.mockResolvedValue([{ id: "m1", archivedAt: new Date() }]);
+    it("still issues the conditional updateMany but skips touching setup activity when nothing actually matched", async () => {
+        mockUpdateMany.mockResolvedValue({ count: 0 });
 
         const result = await bulkArchiveMembers(buildFormData(allianceId, ["m1"]));
 
         expect(result).toEqual({ success: true, archivedCount: 0, skippedCount: 1 });
-        expect(mockUpdateMany).not.toHaveBeenCalled();
+        expect(mockUpdateMany).toHaveBeenCalledWith({
+            where: { id: { in: ["m1"] }, allianceId, archivedAt: null },
+            data: { archivedAt: expect.any(Date) },
+        });
+        expect(mockTouchSetupActivity).not.toHaveBeenCalled();
     });
 });
 
@@ -153,6 +158,21 @@ describe("bulkRestoreMembers", () => {
         expect(mockUpdateMany).not.toHaveBeenCalled();
     });
 
+    it("de-duplicates repeated memberId entries before computing the capacity request", async () => {
+        mockWithLock.mockImplementation(
+            async (_allianceId: string, fn: (tx: typeof prisma, count: number) => unknown) => fn(prisma, 90)
+        );
+        mockFindMany.mockResolvedValue([{ id: "m1", archivedAt: new Date() }]);
+        mockUpdateMany.mockResolvedValue({ count: 1 });
+
+        const result = await bulkRestoreMembers(buildFormData(allianceId, ["m1", "m1"]));
+
+        expect(result).toEqual({ success: true, restoredCount: 1, skippedCount: 0 });
+        expect(mockFindMany).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { id: { in: ["m1"] }, allianceId } })
+        );
+    });
+
     it("restores every still-archived selected member when capacity allows, and revalidates members/reports", async () => {
         mockWithLock.mockImplementation(
             async (_allianceId: string, fn: (tx: typeof prisma, count: number) => unknown) => fn(prisma, 90)
@@ -161,13 +181,18 @@ describe("bulkRestoreMembers", () => {
             { id: "m1", archivedAt: new Date() },
             { id: "m2", archivedAt: new Date() },
         ]);
+        mockUpdateMany.mockResolvedValue({ count: 2 });
 
         const result = await bulkRestoreMembers(buildFormData(allianceId, ["m1", "m2"]));
 
         expect(result).toEqual({ success: true, restoredCount: 2, skippedCount: 0 });
         expect(mockUpdateMany).toHaveBeenCalledWith({
-            where: { id: { in: ["m1", "m2"] } },
+            where: { id: { in: ["m1", "m2"] }, archivedAt: { not: null } },
             data: { archivedAt: null },
+        });
+        expect(revalidateAllianceData).toHaveBeenCalledWith({
+            allianceId,
+            domains: ["members", "reports"],
         });
     });
 
@@ -182,14 +207,33 @@ describe("bulkRestoreMembers", () => {
             { id: "m1", archivedAt: null }, // already restored by someone else
             { id: "m2", archivedAt: new Date() },
         ]);
+        mockUpdateMany.mockResolvedValue({ count: 1 });
 
         const result = await bulkRestoreMembers(buildFormData(allianceId, ["m1", "m2"]));
 
         expect(result).toEqual({ success: true, restoredCount: 1, skippedCount: 1 });
         expect(mockUpdateMany).toHaveBeenCalledWith({
-            where: { id: { in: ["m2"] } },
+            where: { id: { in: ["m2"] }, archivedAt: { not: null } },
             data: { archivedAt: null },
         });
+    });
+
+    it("reports restoredCount from the conditional update's actual count, not the pre-write read, if a row changed between them", async () => {
+        // Defense-in-depth: even though findMany saw m2 as archived, the
+        // write's own `archivedAt: { not: null }` condition is what's
+        // authoritative — simulate the DB matching fewer rows than the read
+        // implied and confirm the reported count follows the write, not the
+        // read.
+        mockWithLock.mockImplementation(
+            async (_allianceId: string, fn: (tx: typeof prisma, count: number) => unknown) => fn(prisma, 90)
+        );
+        mockFindMany.mockResolvedValue([{ id: "m1", archivedAt: new Date() }]);
+        mockUpdateMany.mockResolvedValue({ count: 0 });
+
+        const result = await bulkRestoreMembers(buildFormData(allianceId, ["m1"]));
+
+        expect(result).toEqual({ success: true, restoredCount: 0, skippedCount: 1 });
+        expect(mockTouchSetupActivity).not.toHaveBeenCalled();
     });
 
     it("rejects the entire restore atomically when the still-archived selection exceeds capacity, restoring nobody", async () => {

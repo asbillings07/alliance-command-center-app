@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
     MAX_ACTIVE_ALLIANCE_MEMBERS,
     getAvailableMemberCapacity,
-    getMemberCapacityError,
+    getBulkMemberCapacityError,
+    getSingleMemberCapacityError,
 } from "./memberCapacity";
 
 describe("getAvailableMemberCapacity", () => {
@@ -19,17 +20,17 @@ describe("getAvailableMemberCapacity", () => {
     });
 });
 
-describe("getMemberCapacityError", () => {
+describe("getBulkMemberCapacityError", () => {
     it("returns null when the requested count fits within available capacity", () => {
-        expect(getMemberCapacityError(82, 18, "add")).toBeNull();
+        expect(getBulkMemberCapacityError(82, 18, "add")).toBeNull();
     });
 
     it("returns null when requesting exactly the remaining headroom", () => {
-        expect(getMemberCapacityError(90, 10, "restore")).toBeNull();
+        expect(getBulkMemberCapacityError(90, 10, "restore")).toBeNull();
     });
 
     it("returns an actionable error when the request exceeds available capacity", () => {
-        const error = getMemberCapacityError(82, 24, "add");
+        const error = getBulkMemberCapacityError(82, 24, "add");
 
         expect(error).toBe(
             "Your alliance has 82 active members, so you can add 18 more. " +
@@ -39,7 +40,7 @@ describe("getMemberCapacityError", () => {
     });
 
     it("uses the 'restore' verb and singular phrasing for a single-member restore over capacity", () => {
-        const error = getMemberCapacityError(100, 1, "restore");
+        const error = getBulkMemberCapacityError(100, 1, "restore");
 
         expect(error).toBe(
             "Your alliance has 100 active members, so you can restore 0 more. " +
@@ -49,12 +50,40 @@ describe("getMemberCapacityError", () => {
     });
 
     it("matches the exact scenario from the PR 2 contract: 5 selected, only 3 spaces remain", () => {
-        const error = getMemberCapacityError(97, 5, "restore");
+        const error = getBulkMemberCapacityError(97, 5, "restore");
 
         expect(error).toBe(
             "Your alliance has 97 active members, so you can restore 3 more. " +
                 "You currently have 5 members selected. " +
                 "Deselect 2 members to continue."
         );
+    });
+});
+
+describe("getSingleMemberCapacityError", () => {
+    it("returns null when there is room for one more member", () => {
+        expect(getSingleMemberCapacityError(99, "add")).toBeNull();
+    });
+
+    it("returns null when exactly at the last available slot", () => {
+        expect(getSingleMemberCapacityError(MAX_ACTIVE_ALLIANCE_MEMBERS - 1, "restore")).toBeNull();
+    });
+
+    it("returns a plain, actionable error at the cap for 'add' — no selection/deselect language", () => {
+        const error = getSingleMemberCapacityError(MAX_ACTIVE_ALLIANCE_MEMBERS, "add");
+
+        expect(error).toBe(
+            `Your alliance has ${MAX_ACTIVE_ALLIANCE_MEMBERS} active members, so you can add 0 more.`
+        );
+        expect(error).not.toMatch(/selected|deselect/i);
+    });
+
+    it("returns a plain, actionable error at the cap for 'restore' — no selection/deselect language", () => {
+        const error = getSingleMemberCapacityError(MAX_ACTIVE_ALLIANCE_MEMBERS, "restore");
+
+        expect(error).toBe(
+            `Your alliance has ${MAX_ACTIVE_ALLIANCE_MEMBERS} active members, so you can restore 0 more.`
+        );
+        expect(error).not.toMatch(/selected|deselect/i);
     });
 });

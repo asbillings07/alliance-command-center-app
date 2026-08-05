@@ -272,7 +272,7 @@ export async function importMembers(
                 const finalMembersToAdd = toCreate.length + toRestore.length;
 
                 // Domain active roster capacity check. Not delegated to the
-                // shared getMemberCapacityError() message — this commit can
+                // shared getBulkMemberCapacityError() message — this commit can
                 // mix new members with restores in one go, and the message
                 // below breaks that down (`toCreate.length` new vs
                 // `toRestore.length` restored), which the generic single-verb

@@ -3,7 +3,7 @@
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { prisma } from "@/app/src/lib/prisma";
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
-import { getMemberCapacityError } from "@/app/src/lib/memberCapacity";
+import { getBulkMemberCapacityError } from "@/app/src/lib/memberCapacity";
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 
@@ -15,10 +15,16 @@ export type BulkRestoreResult =
     | { success: true; restoredCount: number; skippedCount: number }
     | { success: false; error: string };
 
+/**
+ * De-duplicated so a tampered request (or a future client bug) can't inflate
+ * `skippedCount` or produce a confusing "N members selected" count when the
+ * same id was submitted more than once.
+ */
 function parseMemberIds(formData: FormData): string[] {
-    return formData
+    const ids = formData
         .getAll("memberId")
         .filter((value): value is string => typeof value === "string" && value.trim() !== "");
+    return Array.from(new Set(ids));
 }
 
 /**
@@ -29,6 +35,17 @@ function parseMemberIds(formData: FormData): string[] {
  * member, not an error — it's reported back as `skippedCount` so the caller
  * can show an honest summary ("Archived 8 members. 2 were already archived
  * and were skipped.").
+ *
+ * The `archivedAt: null` condition lives in the `updateMany` `WHERE` clause
+ * itself, not in an earlier read — a plain "read active ids, then write
+ * those ids" would race: two concurrent bulk archives can both read the same
+ * member as still-active before either commits, so the second would
+ * overwrite `archivedAt`/`updatedAt` again and *also* misreport that member
+ * as newly archived instead of skipped. Conditioning the update's `WHERE` on
+ * `archivedAt: null` makes Postgres itself the source of truth for which
+ * rows actually transitioned — the second transaction's `updateMany` simply
+ * won't match a row the first one already archived, and `.count` reports
+ * the real number of rows this call archived.
  */
 export async function bulkArchiveMembers(formData: FormData): Promise<BulkArchiveResult> {
     const allianceId = formData.get("allianceId");
@@ -47,26 +64,22 @@ export async function bulkArchiveMembers(formData: FormData): Promise<BulkArchiv
     }
 
     const { archivedCount, skippedCount } = await prisma.$transaction(async (tx) => {
-        // Scoped by both id and allianceId — a stale or tampered id from
-        // another alliance simply won't match and is silently excluded,
-        // same tenant-isolation posture as the single-member action.
-        const members = await tx.allianceMember.findMany({
-            where: { id: { in: memberIds }, allianceId },
-            select: { id: true, archivedAt: true },
+        // Scoped by id, allianceId, AND archivedAt: null — a stale/tampered
+        // id from another alliance, an already-archived member, or a
+        // duplicate id all simply fail to match and are excluded, same
+        // tenant-isolation posture as the single-member action.
+        const result = await tx.allianceMember.updateMany({
+            where: { id: { in: memberIds }, allianceId, archivedAt: null },
+            data: { archivedAt: new Date() },
         });
-        const stillActiveIds = members.filter((m) => !m.archivedAt).map((m) => m.id);
 
-        if (stillActiveIds.length > 0) {
-            await tx.allianceMember.updateMany({
-                where: { id: { in: stillActiveIds } },
-                data: { archivedAt: new Date() },
-            });
+        if (result.count > 0) {
             await touchAllianceSetupActivity(tx, allianceId);
         }
 
         return {
-            archivedCount: stillActiveIds.length,
-            skippedCount: memberIds.length - stillActiveIds.length,
+            archivedCount: result.count,
+            skippedCount: memberIds.length - result.count,
         };
     });
 
@@ -83,6 +96,15 @@ export async function bulkArchiveMembers(formData: FormData): Promise<BulkArchiv
  * else already restored needs no new capacity and shouldn't count against
  * it). If that subset would exceed the cap, the whole restore is rejected
  * atomically — zero members are restored, never an arbitrary partial subset.
+ *
+ * `withAllianceMemberLock`'s exclusive `Alliance` row lock already
+ * serializes this against every other capacity-checked mutation for the
+ * same alliance (single restore, bulk restore, add member, invite
+ * collaborator all take the same lock), so the read used for the capacity
+ * math can't go stale before the write below runs. The write's `WHERE` is
+ * still conditioned on `archivedAt: { not: null }` (matching the archive
+ * path's defense-in-depth) so `restoredCount` always reflects rows this call
+ * actually changed, not just the pre-write read.
  */
 export async function bulkRestoreMembers(formData: FormData): Promise<BulkRestoreResult> {
     const allianceId = formData.get("allianceId");
@@ -110,7 +132,7 @@ export async function bulkRestoreMembers(formData: FormData): Promise<BulkRestor
                 });
                 const stillArchivedIds = members.filter((m) => m.archivedAt).map((m) => m.id);
 
-                const capacityError = getMemberCapacityError(
+                const capacityError = getBulkMemberCapacityError(
                     activeMembersCount,
                     stillArchivedIds.length,
                     "restore"
@@ -119,17 +141,21 @@ export async function bulkRestoreMembers(formData: FormData): Promise<BulkRestor
                     throw new Error(capacityError);
                 }
 
+                let restoredCount = 0;
                 if (stillArchivedIds.length > 0) {
-                    await tx.allianceMember.updateMany({
-                        where: { id: { in: stillArchivedIds } },
+                    const result = await tx.allianceMember.updateMany({
+                        where: { id: { in: stillArchivedIds }, archivedAt: { not: null } },
                         data: { archivedAt: null },
                     });
-                    await touchAllianceSetupActivity(tx, allianceId);
+                    restoredCount = result.count;
+                    if (restoredCount > 0) {
+                        await touchAllianceSetupActivity(tx, allianceId);
+                    }
                 }
 
                 return {
-                    restoredCount: stillArchivedIds.length,
-                    skippedCount: memberIds.length - stillArchivedIds.length,
+                    restoredCount,
+                    skippedCount: memberIds.length - restoredCount,
                 };
             }
         );

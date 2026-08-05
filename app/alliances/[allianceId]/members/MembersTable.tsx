@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Card, Badge } from "@/app/src/components";
 import { Button, ConfirmDialog } from "@/app/src/components/client";
 import { formatPower } from "@/app/src/lib/formatPower";
-import { getAvailableMemberCapacity, getMemberCapacityError } from "@/app/src/lib/memberCapacity";
+import { getAvailableMemberCapacity, getBulkMemberCapacityError } from "@/app/src/lib/memberCapacity";
 import { bulkArchiveMembers, bulkRestoreMembers } from "./bulk-actions";
 
 type FilterType = "active" | "archived" | "all";
@@ -100,7 +100,7 @@ export function MembersTable({
     const selectedNames = selectedMembers.map((m) => m.playerName);
 
     const restoreCapacityError =
-        bulkAction === "restore" ? getMemberCapacityError(activeCount, selectedCount, "restore") : null;
+        bulkAction === "restore" ? getBulkMemberCapacityError(activeCount, selectedCount, "restore") : null;
     const availableCapacity = getAvailableMemberCapacity(activeCount);
 
     async function handleConfirm(): Promise<{ error?: string } | void> {

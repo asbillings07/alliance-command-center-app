@@ -2,7 +2,7 @@
 
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
-import { getMemberCapacityError } from "@/app/src/lib/memberCapacity";
+import { getSingleMemberCapacityError } from "@/app/src/lib/memberCapacity";
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/app/generated/prisma/client";
@@ -81,7 +81,7 @@ export async function addMember(formData: FormData): Promise<AddMemberResult> {
                     }
                 }
 
-                const capacityError = getMemberCapacityError(activeMembersCount, 1, "add");
+                const capacityError = getSingleMemberCapacityError(activeMembersCount, "add");
                 if (capacityError) {
                     throw new Error(capacityError);
                 }
@@ -162,7 +162,7 @@ export async function restoreMember(formData: FormData): Promise<AddMemberResult
                     throw new Error("Member is not archived");
                 }
 
-                const capacityError = getMemberCapacityError(activeMembersCount, 1, "restore");
+                const capacityError = getSingleMemberCapacityError(activeMembersCount, "restore");
                 if (capacityError) {
                     throw new Error(capacityError);
                 }

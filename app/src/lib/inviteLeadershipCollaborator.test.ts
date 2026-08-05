@@ -248,6 +248,17 @@ describe("inviteLeadershipCollaborator", () => {
       expect(result.memberCreated).toBe(false);
       expect(prisma.allianceMember.create).not.toHaveBeenCalled();
     });
+
+    it("rejects at the cap with a plain, actionable message — no selection/deselect language, since this is a single-item action with no selection UI", async () => {
+      vi.mocked(prisma.invitation.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.allianceMembership.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.allianceMember.count).mockResolvedValue(100);
+
+      await expect(inviteLeadershipCollaborator(baseInput)).rejects.toThrow(
+        "Your alliance has 100 active members, so you can add 0 more."
+      );
+      expect(prisma.allianceMember.create).not.toHaveBeenCalled();
+    });
   });
 
   describe("cancelInvitation", () => {

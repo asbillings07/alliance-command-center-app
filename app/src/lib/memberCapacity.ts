@@ -29,9 +29,15 @@ export function getAvailableMemberCapacity(activeCount: number): number {
 export type MemberCapacityAction = "add" | "restore";
 
 /**
- * Returns a user-facing error message if adding/restoring `requestedCount`
- * members would push the alliance over its active-member cap, or `null` if
- * there's enough room.
+ * Returns a user-facing error message if bulk-adding/restoring
+ * `requestedCount` *selected* members would push the alliance over its
+ * active-member cap, or `null` if there's enough room.
+ *
+ * This is for flows with an actual selection UI (checkboxes) — the message
+ * tells the user how many of their selections to deselect. Single-item
+ * flows (add one member, restore one member, invite one collaborator) have
+ * no selection to change; use `getSingleMemberCapacityError` for those so
+ * the copy doesn't ask the user to do something the UI doesn't offer.
  *
  * `requestedCount` should be the count of members that would *actually*
  * transition into the active set — for a bulk restore, that means only the
@@ -39,7 +45,7 @@ export type MemberCapacityAction = "add" | "restore";
  * already restored moments ago needs no new capacity and shouldn't count
  * against this check).
  */
-export function getMemberCapacityError(
+export function getBulkMemberCapacityError(
     activeCount: number,
     requestedCount: number,
     action: MemberCapacityAction
@@ -56,4 +62,28 @@ export function getMemberCapacityError(
         `You currently have ${requestedCount} member${requestedCount === 1 ? "" : "s"} selected. ` +
         `Deselect ${deselectCount} member${deselectCount === 1 ? "" : "s"} to continue.`
     );
+}
+
+/**
+ * Returns a user-facing error message if adding/restoring a single member
+ * would push the alliance over its active-member cap, or `null` if there's
+ * room for one more.
+ *
+ * For single-item flows with no selection UI: adding a member, restoring a
+ * member from a detail page, or inviting a leadership collaborator (which
+ * also occupies an active-member slot). Deliberately omits
+ * `getBulkMemberCapacityError`'s "selected"/"deselect" language, which would
+ * describe a UI action the user can't actually take here.
+ */
+export function getSingleMemberCapacityError(
+    activeCount: number,
+    action: MemberCapacityAction
+): string | null {
+    const available = getAvailableMemberCapacity(activeCount);
+    if (available >= 1) {
+        return null;
+    }
+
+    const verb = action === "add" ? "add" : "restore";
+    return `Your alliance has ${activeCount} active members, so you can ${verb} ${available} more.`;
 }

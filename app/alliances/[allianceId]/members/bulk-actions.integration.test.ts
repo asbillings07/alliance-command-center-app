@@ -113,6 +113,36 @@ describe.skipIf(!runDb)("bulkArchiveMembers / bulkRestoreMembers [integration]",
         expect(afterRestore).toBe(3);
     });
 
+    it("integration: two concurrent bulk archives racing for the same member count it as archived exactly once, never twice", async () => {
+        // bulkArchiveMembers holds no alliance-level lock (archive doesn't
+        // need one — it never checks capacity), so this exercises the
+        // updateMany's own `archivedAt: null` WHERE condition as the actual
+        // concurrency guard: whichever transaction's UPDATE commits first
+        // wins the row; the loser's UPDATE re-evaluates its WHERE against
+        // the now-committed row and simply doesn't match it.
+        const alliance = await makeAlliance();
+        const [contested] = await Promise.all([
+            prisma.allianceMember.create({
+                data: { allianceId: alliance.id, playerName: "Contested Member" },
+            }),
+        ]);
+
+        const [resA, resB] = await Promise.all([
+            bulkArchiveMembers(buildFormData(alliance.id, [contested.id])),
+            bulkArchiveMembers(buildFormData(alliance.id, [contested.id])),
+        ]);
+
+        if (!resA.success || !resB.success) throw new Error("expected both calls to succeed (as no-ops or real archives)");
+
+        // The row was archived exactly once in aggregate — never double-counted
+        // and never left un-archived.
+        expect(resA.archivedCount + resB.archivedCount).toBe(1);
+        expect(resA.skippedCount + resB.skippedCount).toBe(1);
+
+        const final = await prisma.allianceMember.findUniqueOrThrow({ where: { id: contested.id } });
+        expect(final.archivedAt).not.toBeNull();
+    });
+
     it("integration: rejects a bulk restore atomically when capacity is insufficient, leaving the database completely untouched", async () => {
         // 97 active + 5 archived -> only 3 spaces remain for a 5-member restore.
         const alliance = await makeAlliance();
