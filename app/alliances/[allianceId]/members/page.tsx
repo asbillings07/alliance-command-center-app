@@ -68,6 +68,20 @@ export default async function MembersPage({ params, searchParams }: Params) {
         orderBy: {
             playerName: "asc",
         },
+        // MembersTable is a Client Component, and only ever reads these six
+        // fields (see MembersTableMember) plus `id` for the metric-value
+        // lookup below — select just those instead of every scalar Prisma
+        // returns by default (discordName, joinedAt, createdAt, updatedAt,
+        // userId, ...) to keep the RSC payload/hydration cost proportional
+        // to what the table actually renders.
+        select: {
+            id: true,
+            playerName: true,
+            archivedAt: true,
+            thp: true,
+            squadPower: true,
+            role: true,
+        },
     });
 
     const selectedPeriod = periodId
