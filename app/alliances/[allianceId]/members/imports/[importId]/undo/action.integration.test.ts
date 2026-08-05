@@ -236,6 +236,54 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         };
     }
 
+    it("integration: MemberImportRollbackResult.driftedFields is NOT NULL at the database level, matching the Prisma schema's non-optional String[]", async () => {
+        // Regression coverage for the migrated column shape itself (not
+        // just application behavior): Prisma's migration diffing doesn't
+        // add NOT NULL to scalar-list columns on its own, so this must be
+        // asserted against the real schema rather than assumed from the
+        // Prisma model. A nullable column here would let a raw/future write
+        // create an audit row Prisma Client cannot safely represent.
+        const alliance = await makeAlliance();
+        const { memberImportId, changeId } = await seedCreatedImport(alliance.id);
+        const header = await prisma.memberImportRollback.create({
+            data: {
+                memberImportId,
+                allianceId: alliance.id,
+                actorEmailSnapshot: "actor@example.com",
+                outcome: "ROLLED_BACK_WITH_RETAINED_MEMBERS",
+                deletedCount: 0,
+                revertedCount: 0,
+                retainedActiveCount: 1,
+                archivedPreservingHistoryCount: 0,
+                retainedArchivedCount: 0,
+                skippedConflictCount: 0,
+            },
+        });
+
+        await expect(
+            prisma.$executeRaw`
+                INSERT INTO "MemberImportRollbackResult"
+                    ("id", "memberImportRollbackId", "memberImportChangeId", "resolution", "driftedFields")
+                VALUES
+                    (gen_random_uuid()::text, ${header.id}, ${changeId}, 'RETAINED_ACTIVE'::"MemberImportRollbackResultResolution", NULL)
+            `
+        ).rejects.toThrow(/null value in column "driftedFields"/);
+
+        // The column's default still fires correctly when omitted entirely
+        // (the NOT NULL constraint doesn't require every caller to spell it
+        // out — just forbids explicit NULL).
+        await prisma.$executeRaw`
+            INSERT INTO "MemberImportRollbackResult"
+                ("id", "memberImportRollbackId", "memberImportChangeId", "resolution")
+            VALUES
+                (gen_random_uuid()::text, ${header.id}, ${changeId}, 'RETAINED_ACTIVE'::"MemberImportRollbackResultResolution")
+        `;
+        const row = await prisma.memberImportRollbackResult.findUniqueOrThrow({
+            where: { memberImportChangeId: changeId },
+        });
+        expect(row.driftedFields).toEqual([]);
+    });
+
     it("integration: cleanly deletes a CREATED member and records a fully-clean ROLLED_BACK header matching its one result row", async () => {
         const alliance = await makeAlliance();
         const owner = await makeOwnerUser();
