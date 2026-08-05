@@ -259,6 +259,7 @@ describe("getAllianceSetupStatus", () => {
       canInviteCollaborators: false,
       canManageLeadership: false,
       canManageAlliance: false,
+      canRollbackMemberImports: false,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
@@ -296,6 +297,7 @@ describe("getAllianceSetupStatus", () => {
       canInviteCollaborators: true,
       canManageLeadership: true,
       canManageAlliance: true,
+      canRollbackMemberImports: false,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", adminPermissions);
@@ -365,6 +367,7 @@ describe("getAllianceSetupStatus", () => {
       canInviteCollaborators: false,
       canManageLeadership: false,
       canManageAlliance: false,
+      canRollbackMemberImports: false,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
@@ -446,6 +449,7 @@ describe("getAllianceSetupStatus", () => {
       canInviteCollaborators: false,
       canManageLeadership: false,
       canManageAlliance: false,
+      canRollbackMemberImports: false,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
@@ -474,6 +478,7 @@ describe("getAllianceSetupStatus", () => {
       canInviteCollaborators: false,
       canManageLeadership: false,
       canManageAlliance: false,
+      canRollbackMemberImports: false,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", viewerPermissions);
@@ -497,6 +502,7 @@ describe("getAllianceSetupStatus", () => {
       canInviteCollaborators: false,
       canManageLeadership: false,
       canManageAlliance: false,
+      canRollbackMemberImports: false,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", viewerPermissions);
@@ -571,6 +577,7 @@ describe("getAllianceSetupStatus", () => {
       canInviteCollaborators: false,
       canManageLeadership: false,
       canManageAlliance: false,
+      canRollbackMemberImports: false,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
@@ -677,6 +684,7 @@ describe("getAllianceSetupStatus", () => {
       canInviteCollaborators: false,
       canManageLeadership: false,
       canManageAlliance: false,
+      canRollbackMemberImports: false,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", viewerPermissions);

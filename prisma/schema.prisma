@@ -85,6 +85,7 @@ model Alliance {
   accessRequestTriageConflicts      AccessRequestTriage[]
   accessRequestTriageEventConflicts AccessRequestTriageEvent[]
   memberImports                     MemberImport[]
+  memberImportRollbacks             MemberImportRollback[]
 
   @@unique([name, server])
 }
@@ -121,11 +122,16 @@ model AllianceMember {
   userId String?
   user   User?   @relation(fields: [userId], references: [id])
 
-  alliance            Alliance             @relation(fields: [allianceId], references: [id])
-  metricEntries       MemberMetricEntry[]
-  leadershipNotes     LeadershipNote[]
-  invitations         Invitation[]
-  memberImportChanges MemberImportChange[]
+  alliance                    Alliance                     @relation(fields: [allianceId], references: [id])
+  metricEntries               MemberMetricEntry[]
+  leadershipNotes             LeadershipNote[]
+  invitations                 Invitation[]
+  memberImportChanges         MemberImportChange[]
+  // #277 PR 3: live "still exists" link for a rollback result whose
+  // resolution didn't hard-delete the member (SetNull on delete — the
+  // MemberImportChange this result points back to, via a Restrict'd FK,
+  // retains playerNameSnapshot independent of whether this row survives).
+  memberImportRollbackResults MemberImportRollbackResult[]
 
   @@unique([allianceId, playerName])
   @@index([allianceId, archivedAt])
@@ -182,7 +188,11 @@ model MemberImport {
 
   createdAt DateTime @default(now())
 
-  changes MemberImportChange[]
+  changes  MemberImportChange[]
+  // #277 PR 3: at most one committed rollback, ever — enforced by
+  // MemberImportRollback.memberImportId being @unique, not just by this
+  // being an optional-to-one relation.
+  rollback MemberImportRollback?
 
   // Supports the list page's deterministic pagination order (matches the
   // query's ORDER BY createdAt DESC, id DESC exactly, including sort direction).
@@ -237,12 +247,143 @@ model MemberImportChange {
   // sequence that leaves scalars matching but updatedAt bumped.
   memberUpdatedAtAfter DateTime
 
+  // #277 PR 3: at most one rollback result, ever, per source change —
+  // enforced by MemberImportRollbackResult.memberImportChangeId being
+  // @unique, not just by this being an optional-to-one relation.
+  rollbackResult MemberImportRollbackResult?
+
   // Explicit identity: a source row can produce at most one change. Also
   // enforced in code (matching returned member rows back to their source
   // entry — see action.ts) since createManyAndReturn's result order is not
   // guaranteed to match input order.
   @@unique([memberImportId, sourceRow])
   @@index([allianceMemberId])
+}
+
+// #277 PR 3: what actually happened to a single MemberImportChange when its
+// parent import was rolled back. Deliberately not columns bolted onto
+// MemberImportChange itself: that row is the original import's evidence, and
+// mixing a second historical event (the rollback) into it would weaken the
+// append-only "one row records one thing" audit model the rest of this
+// domain follows.
+enum MemberImportRollbackResultResolution {
+  // CREATED row, hard-deleted: matched its recorded post-import snapshot
+  // exactly, had zero protected dependencies, no linked user, and no
+  // later-import involvement.
+  DELETED
+  // RESTORED row, reverted: matched its recorded post-import snapshot
+  // exactly (including archivedAt) — archivedAt, thp, and role are put back
+  // to their pre-import values as one unit.
+  REVERTED_TO_PRE_IMPORT_STATE
+  // CREATED row, protected conflict, member currently active: owner
+  // explicitly chose to keep it active.
+  RETAINED_ACTIVE
+  // CREATED row, protected conflict, member currently active: owner
+  // explicitly chose to archive it, preserving its history.
+  ARCHIVED_PRESERVING_HISTORY
+  // CREATED row, protected conflict, member was *already* archived when the
+  // rollback ran — left archived. No owner choice is offered here: nothing
+  // about a rollback should reactivate an already-archived member as a side
+  // effect, so this is the only safe outcome, not a decision.
+  RETAINED_ARCHIVED
+  // RESTORED row, conflict: current state no longer matches the recorded
+  // post-import snapshot, so nothing is touched. Never actionable — there's
+  // no safe partial revert once any tracked field has drifted.
+  SKIPPED_CONFLICT
+}
+
+enum MemberImportRollbackOutcome {
+  // Every change in the import resolved to DELETED or
+  // REVERTED_TO_PRE_IMPORT_STATE — a complete, clean undo.
+  ROLLED_BACK
+  // At least one change resolved to a RETAINED_*/SKIPPED_CONFLICT
+  // resolution — an imported member record, or an unretracted restore,
+  // remains. Recorded honestly rather than claiming a complete undo.
+  ROLLED_BACK_WITH_RETAINED_MEMBERS
+}
+
+// One row per committed rollback of a MemberImport (#277 PR 3). At most one
+// per import, ever (memberImportId is @unique) — a rollback is a single
+// terminal operation, not a retryable/repeatable action. Only written for an
+// actual committed transaction; a preview, a permission/validation failure,
+// or a stale-preview abort never reaches this table (mirrors MemberImport's
+// own "only successful commits enter history" rule).
+model MemberImportRollback {
+  id String @id @default(cuid())
+
+  memberImportId String       @unique
+  memberImport   MemberImport @relation(fields: [memberImportId], references: [id])
+
+  allianceId String
+  alliance   Alliance @relation(fields: [allianceId], references: [id])
+
+  // Actor snapshot, resolved from the database inside the same transaction
+  // that writes this row — matches MemberImport's own actor-snapshot
+  // precedent and rationale.
+  actorUserId              String?
+  actor                    User?   @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmailSnapshot       String
+  actorDisplayNameSnapshot String?
+
+  outcome MemberImportRollbackOutcome
+
+  // Materialized aggregate counts, one per MemberImportRollbackResultResolution
+  // value — stored rather than derived, matching MemberImport's own
+  // createdCount/restoredCount/skipped*Count precedent. Tested to equal the
+  // grouped count of this rollback's own `results`.
+  deletedCount                   Int
+  revertedCount                  Int
+  retainedActiveCount            Int
+  archivedPreservingHistoryCount Int
+  retainedArchivedCount          Int
+  skippedConflictCount           Int
+
+  createdAt DateTime @default(now())
+
+  results MemberImportRollbackResult[]
+}
+
+// One row per MemberImportChange covered by a rollback, recording exactly
+// what happened to that member and — for conflicts — exactly why automatic
+// rollback wasn't safe. Separate from MemberImportChange itself (see that
+// model's rollbackResult doc comment) so the original import's evidence stays
+// immutable and this rollback's own evidence is equally durable.
+model MemberImportRollbackResult {
+  id String @id @default(cuid())
+
+  memberImportRollbackId String
+  // Restrict, not Cascade: same historical-anchor rationale as
+  // MemberImportChange.memberImportId.
+  memberImportRollback   MemberImportRollback @relation(fields: [memberImportRollbackId], references: [id], onDelete: Restrict)
+
+  memberImportChangeId String             @unique
+  memberImportChange   MemberImportChange @relation(fields: [memberImportChangeId], references: [id], onDelete: Restrict)
+
+  // SetNull: a DELETED resolution removes this member entirely. The Restrict
+  // on memberImportChangeId above keeps playerNameSnapshot reachable
+  // regardless, so this staying null on deletion loses no evidence.
+  allianceMemberId String?
+  allianceMember   AllianceMember? @relation(fields: [allianceMemberId], references: [id], onDelete: SetNull)
+
+  resolution MemberImportRollbackResultResolution
+
+  // Structured conflict evidence. Left at defaults (empty/false/zero) for
+  // the two non-conflict resolutions (DELETED, REVERTED_TO_PRE_IMPORT_STATE);
+  // populated for every conflict resolution so the UI can explain *why* a
+  // given member wasn't touched, not just that it wasn't. `memberMissing` is
+  // its own field, not inferred from the others being all-empty — a missing
+  // member's evidence *is* all-empty (nothing left to read), and collapsing
+  // that into "no evidence recorded" would make this the one conflict cause
+  // the durable view could never recover after the fact.
+  memberMissing             Boolean  @default(false)
+  driftedFields             String[] @default([])
+  hadLaterImportInvolvement Boolean  @default(false)
+  hadLinkedUser             Boolean  @default(false)
+  metricEntryCount          Int      @default(0)
+  leadershipNoteCount       Int      @default(0)
+  invitationCount           Int      @default(0)
+
+  @@index([memberImportRollbackId])
 }
 
 model User {
@@ -303,6 +444,8 @@ model User {
   // actorDisplayNameSnapshot on MemberImport retain attribution independent
   // of whether this account still exists).
   memberImportsActedOn              MemberImport[]
+  // #277 PR 3: same actor-snapshot precedent, for rollbacks.
+  memberImportRollbacksActedOn      MemberImportRollback[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

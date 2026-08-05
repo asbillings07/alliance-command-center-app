@@ -88,6 +88,15 @@ async function mount(overrides: Partial<ConfirmDialogProps> = {}) {
     return { props, onConfirm, onClose };
 }
 
+/** Re-renders into the *same* root (no new mount) — simulates the parent
+ * driving the same ConfirmDialog instance's `isOpen` prop across a
+ * close/reopen cycle, since the <dialog> node itself stays mounted. */
+async function rerender(props: ConfirmDialogProps) {
+    await act(async () => {
+        root.render(createElement(ConfirmDialog, props));
+    });
+}
+
 function getDialog(): HTMLDialogElement {
     const dialog = container.querySelector("dialog");
     if (!dialog) throw new Error("dialog not rendered");
@@ -144,6 +153,156 @@ describe("ConfirmDialog", () => {
 
         expect(findButton("Cancel").type).toBe("button");
         expect(findButton("Archive 3 members").type).toBe("button");
+    });
+
+    it("resets a stale isPending when the parent forces the dialog closed mid-confirm and later reopens it — a subsequent open must not render with Cancel/Confirm stuck disabled", async () => {
+        // Never resolves — isolates the "still genuinely in flight" case:
+        // handleConfirmClick's own `finally` hasn't run yet, so only the
+        // reopen path itself can be responsible for clearing isPending.
+        const onConfirm = vi.fn(() => new Promise<void>(() => {}));
+        const { props } = await mount({ onConfirm, confirmLabel: "Archive 3 members" });
+
+        await act(async () => {
+            findButton("Archive 3 members").click();
+        });
+        expect(findButton("Cancel").disabled).toBe(true); // in flight
+
+        // The parent forces the dialog closed by some path other than
+        // Cancel/Escape/a completed confirm (e.g. isOpen driven by state
+        // that changed for an unrelated reason) while onConfirm is still
+        // pending — the <dialog> node itself stays mounted, and the
+        // in-flight promise never gets a chance to settle.
+        await rerender({ ...props, isOpen: false });
+
+        // Reopening the same instance must not carry the stale isPending
+        // forward, even though nothing ever resolved it.
+        await rerender({ ...props, isOpen: true });
+
+        expect(findButton("Cancel").disabled).toBe(false);
+        expect(findButton("Archive 3 members").disabled).toBe(false);
+    });
+
+    it("ignores a late SUCCESS from a force-closed attempt after reopen — it must not close the new attempt's dialog", async () => {
+        // The force-close/reopen path (previous test) is explicitly
+        // supported even while onConfirm is genuinely still in flight.
+        // If that stale promise later resolves, it must not act on behalf
+        // of whatever the dialog is doing *now*.
+        let resolveFirst!: (result: void) => void;
+        const onConfirm = vi
+            .fn()
+            .mockReturnValueOnce(
+                new Promise<void>((resolve) => {
+                    resolveFirst = resolve;
+                })
+            )
+            .mockReturnValue(new Promise<void>(() => {})); // second attempt: never resolves
+        const onClose = vi.fn();
+        const { props } = await mount({ onConfirm, onClose, confirmLabel: "Archive 3 members" });
+
+        // Attempt 1 starts and is left in flight.
+        await act(async () => {
+            findButton("Archive 3 members").click();
+        });
+
+        // Force-close and reopen (retires attempt 1) — mirrors the prior test.
+        await rerender({ ...props, isOpen: false });
+        await rerender({ ...props, isOpen: true });
+
+        // Attempt 2 starts on the reopened dialog and is also left in flight.
+        await act(async () => {
+            findButton("Archive 3 members").click();
+        });
+        expect(findButton("Cancel").disabled).toBe(true); // attempt 2 genuinely pending
+
+        // The forced close/reopen itself fires a native "close" event
+        // (unrelated to the race under test) — clear that call so the
+        // assertion below isolates whether the *stale success* causes an
+        // extra, unwanted close.
+        onClose.mockClear();
+
+        // Attempt 1's stale promise now resolves successfully.
+        await act(async () => {
+            resolveFirst();
+        });
+        await flush();
+
+        // Must not close the dialog or clear attempt 2's pending state —
+        // that result belongs to a dialog instance the user already left.
+        expect(onClose).not.toHaveBeenCalled();
+        expect(getDialog().open).toBe(true);
+        expect(findButton("Cancel").disabled).toBe(true);
+    });
+
+    it("ignores a late ERROR from a force-closed attempt after reopen — it must not paint the new attempt's dialog with a stale error", async () => {
+        let rejectFirst!: (error: unknown) => void;
+        const onConfirm = vi
+            .fn()
+            .mockReturnValueOnce(
+                new Promise<void>((_resolve, reject) => {
+                    rejectFirst = reject;
+                })
+            )
+            .mockReturnValue(new Promise<void>(() => {})); // second attempt: never resolves
+        const { props } = await mount({ onConfirm, confirmLabel: "Archive 3 members" });
+
+        await act(async () => {
+            findButton("Archive 3 members").click();
+        });
+
+        await rerender({ ...props, isOpen: false });
+        await rerender({ ...props, isOpen: true });
+
+        await act(async () => {
+            findButton("Archive 3 members").click();
+        });
+
+        // Attempt 1's stale promise now rejects.
+        await act(async () => {
+            rejectFirst(new Error("stale network failure"));
+        });
+        await flush();
+
+        // The reopened dialog must stay clean — no borrowed error text —
+        // and attempt 2 must remain genuinely pending, not force-cleared.
+        expect(container.textContent).not.toContain("Something went wrong");
+        expect(findButton("Cancel").disabled).toBe(true);
+    });
+
+    it("orders a second confirm correctly: a stale attempt settling after a newer confirm has started must not clear the newer attempt's pending state", async () => {
+        // Same race as above but without an intervening close/reopen —
+        // covers attemptIdRef being bumped by handleConfirmClick itself,
+        // not only by the reopen effect.
+        let resolveFirst!: (result: void) => void;
+        const onConfirm = vi
+            .fn()
+            .mockReturnValueOnce(
+                new Promise<void>((resolve) => {
+                    resolveFirst = resolve;
+                })
+            )
+            .mockReturnValue(new Promise<void>(() => {}));
+        const { props } = await mount({ onConfirm, confirmLabel: "Archive 3 members" });
+
+        await act(async () => {
+            findButton("Archive 3 members").click();
+        });
+
+        // Force the same instance to accept a second confirm attempt
+        // (e.g. after a force-close/reopen cycle bumps isPending back to
+        // false) without waiting for attempt 1 to settle first.
+        await rerender({ ...props, isOpen: false });
+        await rerender({ ...props, isOpen: true });
+        await act(async () => {
+            findButton("Archive 3 members").click();
+        });
+
+        await act(async () => {
+            resolveFirst();
+        });
+        await flush();
+
+        expect(onConfirm).toHaveBeenCalledTimes(2);
+        expect(findButton("Cancel").disabled).toBe(true); // attempt 2 still pending, untouched
     });
 
     it("closes and calls onClose when Cancel is clicked, without calling onConfirm", async () => {

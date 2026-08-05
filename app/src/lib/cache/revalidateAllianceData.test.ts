@@ -41,7 +41,7 @@ describe("revalidateAllianceData", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/alliances/[allianceId]/members/[memberId]", "page");
   });
 
-  it("revalidating member-imports invalidates the history list and the per-import route pattern", () => {
+  it("revalidating member-imports invalidates the history list, the per-import route pattern, and the undo route pattern", () => {
     revalidateAllianceData({
       allianceId: "all_123",
       domains: ["member-imports"],
@@ -50,6 +50,10 @@ describe("revalidateAllianceData", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/alliances/all_123/members/imports");
     expect(revalidatePath).toHaveBeenCalledWith(
       "/alliances/[allianceId]/members/imports/[importId]",
+      "page",
+    );
+    expect(revalidatePath).toHaveBeenCalledWith(
+      "/alliances/[allianceId]/members/imports/[importId]/undo",
       "page",
     );
   });

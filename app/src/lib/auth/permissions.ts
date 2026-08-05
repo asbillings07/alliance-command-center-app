@@ -18,6 +18,16 @@ export const Permissions = {
   INVITE_COLLABORATORS: "invite:collaborators",
   MANAGE_LEADERSHIP: "manage:leadership",
   MANAGE_ALLIANCE: "manage:alliance",
+  /**
+   * #277 PR 3: undoing a completed roster import — deleting members it
+   * created and re-archiving members it restored. Deliberately its own
+   * capability rather than reusing MANAGE_MEMBERS or IMPORT_MEMBERS: Admins
+   * already hold both of those for their normal day-to-day duties, and
+   * combining either with this more destructive, harder-to-reverse action
+   * would unintentionally authorize it for a role the product never
+   * intended to have it. Owner-only at launch (see issue #277).
+   */
+  ROLLBACK_MEMBER_IMPORTS: "rollback:member-imports",
 } as const;
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions];
@@ -69,6 +79,7 @@ const ROLE_PERMISSIONS: Record<AllianceRole, Permission[]> = {
     Permissions.INVITE_COLLABORATORS,
     Permissions.MANAGE_LEADERSHIP,
     Permissions.MANAGE_ALLIANCE,
+    Permissions.ROLLBACK_MEMBER_IMPORTS,
   ],
 };
 
@@ -89,6 +100,7 @@ export type PermissionSet = {
   canInviteCollaborators: boolean;
   canManageLeadership: boolean;
   canManageAlliance: boolean;
+  canRollbackMemberImports: boolean;
 };
 
 /**
@@ -123,6 +135,7 @@ export function buildPermissionSet(role: AllianceRole): PermissionSet {
     canInviteCollaborators: rolePerms.includes(Permissions.INVITE_COLLABORATORS),
     canManageLeadership: rolePerms.includes(Permissions.MANAGE_LEADERSHIP),
     canManageAlliance: rolePerms.includes(Permissions.MANAGE_ALLIANCE),
+    canRollbackMemberImports: rolePerms.includes(Permissions.ROLLBACK_MEMBER_IMPORTS),
   };
 }
 
@@ -143,6 +156,7 @@ const PERMISSION_TO_KEY: Record<Permission, keyof PermissionSet> = {
   [Permissions.INVITE_COLLABORATORS]: "canInviteCollaborators",
   [Permissions.MANAGE_LEADERSHIP]: "canManageLeadership",
   [Permissions.MANAGE_ALLIANCE]: "canManageAlliance",
+  [Permissions.ROLLBACK_MEMBER_IMPORTS]: "canRollbackMemberImports",
 };
 
 /**

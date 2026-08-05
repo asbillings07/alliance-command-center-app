@@ -67,12 +67,38 @@ export function ConfirmDialog({
     const [error, setError] = useState<string | null>(null);
     const titleId = useId();
     const descriptionId = useId();
+    /**
+     * Identity of the confirm attempt currently "owned" by this open dialog.
+     * The <dialog> node stays mounted across opens/closes (see the isOpen
+     * doc comment above), and the explicitly supported force-close/reopen
+     * path can leave a previous onConfirm() promise genuinely still in
+     * flight when the dialog reopens. Every reopen and every new confirm
+     * click bumps this ref; handleConfirmClick captures its value up front
+     * and re-checks it after every await, so a late result/finalizer from a
+     * superseded attempt is a no-op instead of overwriting or closing the
+     * *new* attempt (old-success, old-error, and second-confirm races).
+     */
+    const attemptIdRef = useRef(0);
 
     useEffect(() => {
         const dialog = dialogRef.current;
         if (!dialog) return;
         if (isOpen && !dialog.open) {
+            // Retire any confirm attempt from a previous open — see
+            // attemptIdRef's doc comment. Without this, a still-in-flight
+            // onConfirm() from a force-closed dialog could settle after
+            // reopen and stomp the new attempt's state or close the dialog
+            // out from under it.
+            attemptIdRef.current += 1;
+            // A stale isPending from that prior attempt — e.g. a caller
+            // that closes the dialog by some path other than
+            // Cancel/Escape/a completed confirm, all three of which
+            // already imply isPending is false — could otherwise persist
+            // into this reopen and leave Cancel/Confirm incorrectly
+            // disabled. Reset both per-attempt fields so every open starts
+            // clean.
             setError(null);
+            setIsPending(false);
             dialog.showModal();
         } else if (!isOpen && dialog.open) {
             dialog.close();
@@ -84,10 +110,18 @@ export function ConfirmDialog({
     };
 
     const handleConfirmClick = async () => {
+        const attemptId = ++attemptIdRef.current;
         setError(null);
         setIsPending(true);
         try {
             const result = await onConfirm();
+            if (attemptIdRef.current !== attemptId) {
+                // Superseded by a reopen (or a newer confirm click) while
+                // this attempt was in flight. Its result no longer belongs
+                // to the dialog the user is looking at — never close on
+                // its behalf or otherwise touch state.
+                return;
+            }
             if (result && "error" in result && result.error) {
                 setError(result.error);
                 return;
@@ -101,9 +135,12 @@ export function ConfirmDialog({
             // could leak internal details); keep the dialog open with a
             // safe generic message so the user can retry or cancel instead
             // of the action silently vanishing.
+            if (attemptIdRef.current !== attemptId) return;
             setError("Something went wrong. Please try again.");
         } finally {
-            setIsPending(false);
+            if (attemptIdRef.current === attemptId) {
+                setIsPending(false);
+            }
         }
     };
 

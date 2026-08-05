@@ -4,6 +4,7 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { MemberImportChangeType } from "@/app/generated/prisma/enums";
 import { PageLayout, Card, Badge } from "@/app/src/components";
+import { Button } from "@/app/src/components/client";
 import { formatImportTimestamp } from "@/app/src/lib/format/formatImportTimestamp";
 import Link from "next/link";
 
@@ -28,7 +29,7 @@ export default async function MemberImportDetailPage({ params }: Params) {
     // Read-only provenance is operational evidence, not destructive
     // authority: the same IMPORT_MEMBERS permission that gates running an
     // import also gates viewing its history (Admins and Owners).
-    await requireAllianceAccess({
+    const auth = await requireAllianceAccess({
         allianceId,
         requiredPermission: Permissions.IMPORT_MEMBERS,
     });
@@ -51,6 +52,7 @@ export default async function MemberImportDetailPage({ params }: Params) {
             skippedDuplicateCount: true,
             skippedEmptyNameCount: true,
             skippedUnselectedCount: true,
+            rollback: { select: { id: true } },
             changes: {
                 orderBy: [{ sourceRow: "asc" }, { id: "asc" }],
                 select: {
@@ -92,6 +94,24 @@ export default async function MemberImportDetailPage({ params }: Params) {
             ]}
             title={memberImport.fileName}
             description={`Imported by ${memberImport.actorDisplayNameSnapshot ?? memberImport.actorEmailSnapshot} on ${formatImportTimestamp(memberImport.createdAt)} · Sheet: ${memberImport.sourceSheetName}`}
+            action={
+                // Owner-only (ROLLBACK_MEMBER_IMPORTS, #277 PR 3) — undoing an
+                // import is a more destructive, harder-to-reverse action than
+                // running one, so it isn't gated by the same IMPORT_MEMBERS
+                // permission the rest of this page uses. The link always goes
+                // to /undo, whether or not this import has already been
+                // rolled back — that route owns both the interactive preview
+                // and the durable "already undone" result.
+                auth.permissions.canRollbackMemberImports && (
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        href={`/alliances/${allianceId}/members/imports/${importId}/undo`}
+                    >
+                        {memberImport.rollback ? "View undo result" : "Undo import"}
+                    </Button>
+                )
+            }
         >
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 <div className="bg-success/10 border border-success/30 rounded-lg p-4 text-center">
