@@ -213,7 +213,17 @@ export async function rollbackImport(formData: FormData): Promise<RollbackImport
 
                 resultRows.push({
                     memberImportChangeId: item.changeId,
-                    allianceMemberId: item.allianceMemberId,
+                    // A DELETED resolution just removed this row from
+                    // AllianceMember in this same transaction — referencing
+                    // it here would violate the FK immediately (Postgres
+                    // checks it per-statement, not deferred). null is also
+                    // the semantically correct value: the member is gone,
+                    // and MemberImportChange.playerNameSnapshot (reachable
+                    // via the Restrict'd FK on memberImportChangeId) is what
+                    // keeps this row readable regardless.
+                    allianceMemberId: resolution === MemberImportRollbackResultResolution.DELETED
+                        ? null
+                        : item.allianceMemberId,
                     resolution,
                     driftedFields: item.driftedFields,
                     hadLaterImportInvolvement: item.hadLaterImportInvolvement,
