@@ -208,7 +208,7 @@ export default async function UndoImportPage({ params }: Params) {
     // recomputes this exact same classification fresh inside its own
     // transaction immediately before committing (see computeImportRollbackPreview's
     // doc comment) — this render is only ever a suggestion to the owner.
-    const preview = await computeImportRollbackPreview(prisma, memberImport, memberImport.changes);
+    const preview = await computeImportRollbackPreview(prisma, allianceId, memberImport, memberImport.changes);
     // Bound to *this* rendered preview, not to the resolutions the owner
     // picks — see computePreviewFingerprint's doc comment. rollbackImport
     // rejects the submission outright if its own fresh recomputation

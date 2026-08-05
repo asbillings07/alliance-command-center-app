@@ -83,7 +83,7 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
      * page would have rendered, and is legitimately reflected in what gets
      * submitted; a change made *after* is what production's staleness gate
      * exists to catch. */
-    async function computeFingerprintForImport(importId: string): Promise<string> {
+    async function computeFingerprintForImport(allianceId: string, importId: string): Promise<string> {
         const memberImport = await prisma.memberImport.findUniqueOrThrow({
             where: { id: importId },
             select: {
@@ -109,7 +109,7 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
                 },
             },
         });
-        const preview = await computeImportRollbackPreview(prisma, memberImport, memberImport.changes);
+        const preview = await computeImportRollbackPreview(prisma, allianceId, memberImport, memberImport.changes);
         return computePreviewFingerprint(preview.items);
     }
 
@@ -121,7 +121,7 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         const formData = new FormData();
         formData.set("allianceId", allianceId);
         formData.set("importId", importId);
-        formData.set("previewFingerprint", await computeFingerprintForImport(importId));
+        formData.set("previewFingerprint", await computeFingerprintForImport(allianceId, importId));
         for (const [changeId, choice] of Object.entries(resolutions)) {
             formData.set(`resolution:${changeId}`, choice);
         }
@@ -405,7 +405,7 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         // computed against the clean, pre-edit state (the same one that
         // would have rendered "Delete (undo creation)" with no resolution
         // needed).
-        const staleFingerprint = await computeFingerprintForImport(memberImportId);
+        const staleFingerprint = await computeFingerprintForImport(alliance.id, memberImportId);
 
         // Then, before the owner submits, a real edit lands.
         await prisma.allianceMember.update({ where: { id: memberId }, data: { thp: 9999 } });
@@ -566,6 +566,103 @@ describe.skipIf(!runDb)("rollbackImport [integration]", () => {
         expect(result).toMatchObject({ success: true, outcome: "ROLLED_BACK", revertedCount: 1 });
         const final = await prisma.allianceMember.findUniqueOrThrow({ where: { id: memberId } });
         expect(final.archivedAt).not.toBeNull(); // reverted to (its recorded) pre-import archived state
+    });
+
+    it("integration: cross-alliance change provenance cannot lock or mutate the foreign member — it's scoped out and left completely untouched", async () => {
+        const allianceA = await makeAlliance();
+        const allianceB = await makeAlliance();
+        const owner = await makeOwnerUser();
+        mockAuthAs(owner.id);
+
+        // A real member that genuinely belongs to a *different* alliance.
+        const foreignMember = await prisma.allianceMember.create({
+            data: {
+                allianceId: allianceB.id,
+                playerName: `Foreign Member ${Date.now()}-${Math.random()}`,
+                thp: 4242,
+                role: "Elder",
+            },
+        });
+
+        // Alliance A's import claims to have created that member —
+        // inconsistent provenance the schema itself doesn't prevent (no
+        // composite FK ties MemberImportChange.allianceMemberId to its own
+        // import's alliance). This is exactly the scenario buildLiveGuardWhere
+        // and the row-lock's allianceId predicate exist to defend against.
+        const memberImport = await prisma.memberImport.create({
+            data: {
+                allianceId: allianceA.id,
+                actorEmailSnapshot: "actor@example.com",
+                fileName: "roster.xlsx",
+                sourceSheetName: "Sheet1",
+                createdCount: 1,
+                restoredCount: 0,
+                skippedExistingCount: 0,
+                skippedDuplicateCount: 0,
+                skippedEmptyNameCount: 0,
+                skippedUnselectedCount: 0,
+                changes: {
+                    create: [
+                        {
+                            allianceMemberId: foreignMember.id,
+                            playerNameSnapshot: foreignMember.playerName,
+                            sourceRow: 1,
+                            changeType: MemberImportChangeType.CREATED,
+                            archivedAtBefore: null,
+                            archivedAtAfter: null,
+                            thpBefore: null,
+                            thpAfter: foreignMember.thp,
+                            roleBefore: null,
+                            roleAfter: foreignMember.role,
+                            discordNameAfter: foreignMember.discordName,
+                            squadPowerAfter: foreignMember.squadPower,
+                            joinedAtAfter: foreignMember.joinedAt,
+                            userIdAfter: foreignMember.userId,
+                            memberUpdatedAtAfter: foreignMember.updatedAt,
+                        },
+                    ],
+                },
+            },
+            select: { id: true, changes: { select: { id: true } } },
+        });
+
+        // A concurrent, unrelated write to the foreign member races the
+        // rollback. If the row-lock or the mutation guard ever included
+        // this row despite it belonging to allianceB, this update would
+        // either block until the rollback's transaction finished (masking
+        // the bug behind "it eventually succeeded anyway") or lose to a
+        // delete/overwrite outright. Scoped correctly, it's fully
+        // independent of allianceA's rollback and always just succeeds.
+        const [result, concurrentForeignUpdate] = await Promise.all([
+            rollbackImport(await buildFormData(allianceA.id, memberImport.id)),
+            prisma.allianceMember.update({
+                where: { id: foreignMember.id },
+                data: { thp: 4243 },
+            }),
+        ]);
+
+        // The action completes successfully for allianceA — a bogus
+        // cross-alliance change never fails or throws, it's just never
+        // actionable (same as a genuinely missing member).
+        expect(result).toMatchObject({ success: true, outcome: "ROLLED_BACK_WITH_RETAINED_MEMBERS", skippedConflictCount: 1 });
+        expect(concurrentForeignUpdate.thp).toBe(4243);
+
+        // The foreign member is exactly what the concurrent update made it
+        // — never deleted, never archived, never touched by the rollback
+        // in any other way.
+        const stillForeign = await prisma.allianceMember.findUniqueOrThrow({ where: { id: foreignMember.id } });
+        expect(stillForeign).toEqual(concurrentForeignUpdate);
+        expect(stillForeign.allianceId).toBe(allianceB.id);
+
+        // Recorded exactly like a genuinely missing member for allianceA's
+        // own audit trail — honest that nothing was known or touched,
+        // never silently reclassified as "reverted" or dropped entirely.
+        const resultRow = await prisma.memberImportRollbackResult.findUniqueOrThrow({
+            where: { memberImportChangeId: memberImport.changes[0].id },
+        });
+        expect(resultRow.resolution).toBe("SKIPPED_CONFLICT");
+        expect(resultRow.memberMissing).toBe(true);
+        expect(resultRow.allianceMemberId).toBe(foreignMember.id);
     });
 
     it("integration: two concurrent rollback submissions for the same import serialize cleanly — exactly one succeeds, the other reports already-undone, never a raw constraint crash", async () => {

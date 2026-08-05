@@ -210,6 +210,12 @@ export async function rollbackImport(formData: FormData): Promise<RollbackImport
             // races this closes. A plain `id IN (...)` (no FOR UPDATE) here
             // would still let a concurrent write land between this read and
             // the mutations below; FOR UPDATE makes that write wait instead.
+            // Scoped by `allianceId` too: MemberImportChange has no FK tying
+            // its allianceMemberId to this alliance, so without this filter
+            // inconsistent provenance could take a lock on (and block
+            // concurrent writes to) another tenant's member row even though
+            // computeImportRollbackPreview's own allianceId-scoped read
+            // below would never surface or mutate it.
             const memberIdsToLock = [
                 ...new Set(
                     memberImport.changes
@@ -219,11 +225,11 @@ export async function rollbackImport(formData: FormData): Promise<RollbackImport
             ];
             if (memberIdsToLock.length > 0) {
                 await tx.$executeRaw(
-                    Prisma.sql`SELECT id FROM "AllianceMember" WHERE id IN (${Prisma.join(memberIdsToLock)}) FOR UPDATE`
+                    Prisma.sql`SELECT id FROM "AllianceMember" WHERE id IN (${Prisma.join(memberIdsToLock)}) AND "allianceId" = ${allianceId} FOR UPDATE`
                 );
             }
 
-            const preview = await computeImportRollbackPreview(tx, memberImport, memberImport.changes);
+            const preview = await computeImportRollbackPreview(tx, allianceId, memberImport, memberImport.changes);
 
             // The primary staleness guard: any difference at all between
             // what was rendered and what's true right now — not just "a row

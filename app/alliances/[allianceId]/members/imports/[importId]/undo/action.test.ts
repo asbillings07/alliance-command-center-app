@@ -264,8 +264,12 @@ describe("rollbackImport", () => {
         expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
         const sqlArg = tx.$executeRaw.mock.calls[0][0];
         // A Prisma.Sql tagged-template value — assert on its interpolated
-        // values rather than its exact stringified form.
-        expect(sqlArg.values).toEqual(["member-1"]);
+        // values rather than its exact stringified form. allianceId is the
+        // second interpolated value: the lock predicate is `id IN (...) AND
+        // "allianceId" = ...`, scoping the lock to this tenant so
+        // inconsistent change provenance can't take a lock on (and block
+        // concurrent writes to) another alliance's member row.
+        expect(sqlArg.values).toEqual(["member-1", allianceId]);
         // Locking must happen before the fresh preview is computed, not after
         // — vitest mocks record a global call order for exactly this.
         expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(

@@ -8,6 +8,7 @@ import {
 } from "./rollbackPreview";
 
 const MEMBER_IMPORT = { id: "import-1", createdAt: new Date("2026-01-01T00:00:00Z") };
+const ALLIANCE_ID = "alliance-1";
 
 type LiveMember = {
     id: string;
@@ -120,7 +121,7 @@ describe("computeImportRollbackPreview", () => {
             const liveMember = buildLiveMember({ id: "member-1" });
             const client = buildClient({ liveMembers: [liveMember] });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items).toHaveLength(1);
             expect(preview.items[0]).toMatchObject({
@@ -145,7 +146,7 @@ describe("computeImportRollbackPreview", () => {
             const liveMember = buildLiveMember({ id: "member-1", thp: 5000 });
             const client = buildClient({ liveMembers: [liveMember] });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0].liveSnapshot).toMatchObject({ thp: 5000 });
         });
@@ -156,7 +157,7 @@ describe("computeImportRollbackPreview", () => {
                 liveMembers: [buildLiveMember({ id: "member-1", thp: 5000 })],
             });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0]).toMatchObject({
                 hasConflict: true,
@@ -175,7 +176,7 @@ describe("computeImportRollbackPreview", () => {
                 ],
             });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0]).toMatchObject({
                 hasConflict: true,
@@ -204,7 +205,7 @@ describe("computeImportRollbackPreview", () => {
                 ],
             });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0].driftedFields.sort()).toEqual(
                 [
@@ -226,7 +227,7 @@ describe("computeImportRollbackPreview", () => {
                 liveMembers: [buildLiveMember({ id: "member-1", userId: "user-1" })],
             });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0]).toMatchObject({
                 hasConflict: true,
@@ -241,7 +242,7 @@ describe("computeImportRollbackPreview", () => {
                 metricCounts: { "member-1": 2 },
             });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [buildCreatedChange()]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [buildCreatedChange()]);
 
             expect(preview.items[0]).toMatchObject({ hasConflict: true, metricEntryCount: 2 });
         });
@@ -253,7 +254,7 @@ describe("computeImportRollbackPreview", () => {
                 laterInvolvementMemberIds: ["member-1"],
             });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0]).toMatchObject({
                 hasConflict: true,
@@ -280,7 +281,7 @@ describe("computeImportRollbackPreview", () => {
                 ],
             });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0]).toMatchObject({
                 hasConflict: false,
@@ -303,7 +304,7 @@ describe("computeImportRollbackPreview", () => {
                 ],
             });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0]).toMatchObject({
                 hasConflict: true,
@@ -329,7 +330,7 @@ describe("computeImportRollbackPreview", () => {
                 laterInvolvementMemberIds: ["member-2"],
             });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0]).toMatchObject({
                 hasConflict: true,
@@ -355,10 +356,46 @@ describe("computeImportRollbackPreview", () => {
                 metricCounts: { "member-2": 5 },
             });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0]).toMatchObject({ hasConflict: false, metricEntryCount: 0 });
             expect(client.memberMetricEntry.groupBy).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("tenant scoping", () => {
+        it("scopes the live-member lookup by the caller-supplied allianceId, not just the change's own claimed allianceMemberId", async () => {
+            const change = buildCreatedChange();
+            const client = buildClient({ liveMembers: [buildLiveMember({ id: "member-1" })] });
+
+            await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
+
+            // MemberImportChange has no FK tying allianceMemberId to this
+            // alliance (see this function's own doc comment) — the query
+            // itself must be the enforcement point, not an assumption that
+            // every change row's provenance is trustworthy.
+            expect(client.allianceMember.findMany).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    where: expect.objectContaining({ allianceId: ALLIANCE_ID }),
+                })
+            );
+        });
+
+        it("treats a member the mocked query didn't return (as a real allianceId-scoped query would for a foreign-tenant id) exactly like a missing member — no live data, no lock-eligible snapshot", async () => {
+            const change = buildCreatedChange();
+            // Simulates a real DB honoring the allianceId filter: this
+            // member exists, but not in ALLIANCE_ID, so an allianceId-scoped
+            // findMany would never return it.
+            const client = buildClient({ liveMembers: [] });
+
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
+
+            expect(preview.items[0]).toMatchObject({
+                currentlyArchived: null,
+                liveSnapshot: null,
+                requiresResolution: false,
+                defaultResolution: "SKIPPED_CONFLICT",
+            });
         });
     });
 
@@ -367,7 +404,7 @@ describe("computeImportRollbackPreview", () => {
             const change = buildCreatedChange();
             const client = buildClient({ liveMembers: [] });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0]).toMatchObject({
                 hasConflict: true,
@@ -382,7 +419,7 @@ describe("computeImportRollbackPreview", () => {
             const change = buildRestoredChange();
             const client = buildClient({ liveMembers: [] });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0]).toMatchObject({
                 hasConflict: true,
@@ -395,7 +432,7 @@ describe("computeImportRollbackPreview", () => {
             const change = buildCreatedChange({ allianceMemberId: null });
             const client = buildClient({ liveMembers: [] });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, [change]);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, [change]);
 
             expect(preview.items[0]).toMatchObject({ hasConflict: true, defaultResolution: "SKIPPED_CONFLICT" });
             // No live member id to look up at all — short-circuits before
@@ -427,7 +464,7 @@ describe("computeImportRollbackPreview", () => {
                 ],
             });
 
-            const preview = await computeImportRollbackPreview(client, MEMBER_IMPORT, changes);
+            const preview = await computeImportRollbackPreview(client, ALLIANCE_ID, MEMBER_IMPORT, changes);
 
             expect(preview.items).toHaveLength(3);
             expect(client.allianceMember.findMany).toHaveBeenCalledTimes(1);

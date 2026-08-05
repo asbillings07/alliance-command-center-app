@@ -151,9 +151,21 @@ function fieldsDiffer(a: unknown, b: unknown): boolean {
  * `client` accepts a `Prisma.TransactionClient` structurally: the plain
  * `prisma` singleton also satisfies that shape (it's a strict superset),
  * so the same function runs identically inside or outside a transaction.
+ *
+ * `allianceId` scopes the live-member lookup below. The schema doesn't have
+ * a composite FK tying `MemberImportChange.allianceMemberId` to its own
+ * import's alliance, so inconsistent provenance (a bug elsewhere writing a
+ * change row that references a member in a *different* alliance) is
+ * possible in principle. Filtering `allianceMember.findMany` by this
+ * caller-supplied, tenant-scoped `allianceId` — rather than trusting the
+ * `MemberImport`/`MemberImportChange` rows' own claims — means such a
+ * change is indistinguishable from "this member no longer exists": the
+ * `!live` branch below treats it as `SKIPPED_CONFLICT` with a null
+ * `liveSnapshot`, so it can never be locked, read for real, or mutated.
  */
 export async function computeImportRollbackPreview(
     client: Prisma.TransactionClient,
+    allianceId: string,
     memberImport: { id: string; createdAt: Date },
     changes: ImportChangeForRollbackPreview[]
 ): Promise<RollbackPreview> {
@@ -165,7 +177,7 @@ export async function computeImportRollbackPreview(
         memberIds.length === 0
             ? []
             : await client.allianceMember.findMany({
-                  where: { id: { in: memberIds } },
+                  where: { id: { in: memberIds }, allianceId },
                   select: {
                       id: true,
                       thp: true,
