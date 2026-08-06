@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import * as XLSX from "xlsx";
 import { HistoricalRosterImportForm } from "./HistoricalRosterImportForm";
 
 const mockRefresh = vi.fn();
@@ -67,6 +68,51 @@ function fireFileUpload(fileContent: string, fileName = "roster.csv") {
 
     const file = new File([fileContent], fileName, { type: "text/csv" });
     Object.defineProperty(file, "size", { value: fileContent.length });
+    Object.defineProperty(fileInput, "files", { value: [file], writable: true, configurable: true });
+
+    const event = new Event("change", { bubbles: true });
+    fileInput.dispatchEvent(event);
+}
+
+/** Mirrors workbookParser.test.ts's helper — builds a real .xlsx buffer so a
+ * genuine cell-error/formula issue can be exercised end to end. */
+function createXlsxBuffer(
+    sheetsData: Array<{ name: string; data: (string | number | boolean | null)[][] }>,
+    customizer?: (ws: XLSX.WorkSheet) => void
+): Uint8Array {
+    const wb = XLSX.utils.book_new();
+    for (const s of sheetsData) {
+        const ws = XLSX.utils.aoa_to_sheet(s.data);
+        if (customizer) customizer(ws);
+        XLSX.utils.book_append_sheet(wb, ws, s.name);
+    }
+    return new Uint8Array(XLSX.write(wb, { bookType: "xlsx", type: "array" }));
+}
+
+function fireXlsxFileUpload(bytes: Uint8Array, fileName = "roster.xlsx") {
+    class MockFileReader {
+        result: string | ArrayBuffer | null = null;
+        onload: ((e: { target: { result: string | ArrayBuffer } }) => void) | null = null;
+        readAsArrayBuffer() {
+            setTimeout(() => {
+                const buf = new Uint8Array(bytes).buffer;
+                this.result = buf;
+                if (this.onload) this.onload({ target: { result: buf } });
+            }, 0);
+        }
+        readAsText() {
+            // Never called for a binary .xlsx upload path.
+        }
+    }
+    window.FileReader = MockFileReader as unknown as typeof FileReader;
+
+    const fileInput = container.querySelector("#historical-roster-file") as HTMLInputElement;
+    expect(fileInput).not.toBeNull();
+
+    const file = new File([new Uint8Array(bytes)], fileName, {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    Object.defineProperty(file, "size", { value: bytes.length });
     Object.defineProperty(fileInput, "files", { value: [file], writable: true, configurable: true });
 
     const event = new Event("change", { bubbles: true });
@@ -316,5 +362,114 @@ describe("HistoricalRosterImportForm [component]", () => {
         });
 
         expect(container.textContent).toContain("Nothing was imported.");
+    });
+
+    it("blocks a row whose name matches two existing members ambiguously, and never lets it be selected", async () => {
+        const existingMembers = [
+            { id: "m1", playerName: "Team Player", archivedAt: null },
+            { id: "m2", playerName: "TEAM  PLAYER", archivedAt: null }, // same normalized name
+        ];
+
+        await act(async () => {
+            root.render(createElement(HistoricalRosterImportForm, { allianceId, existingMembers }));
+        });
+
+        await act(async () => {
+            fireFileUpload(`Player\nTeam Player`);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect(container.textContent).toContain("Ambiguous Match");
+        expect(container.textContent).toContain("Blocked");
+
+        // No rows left to review in the main table — the only row in the
+        // file is entirely excluded, not merely unselected.
+        expect(container.textContent).toContain("No rows to review.");
+
+        // "Nothing to import" isn't a client-side dead end either — since
+        // there's nothing selectable, Import should reflect zero selected
+        // rows rather than silently offering to submit the ambiguous row.
+        const importBtn = findButtonByText("Import");
+        expect(importBtn.disabled).toBe(true);
+    });
+
+    it("scopes blocking workbook diagnostics to applied fields — a cell error in an ignored (preserved) THP column never disables Import for a matched row", async () => {
+        const existingMembers = [{ id: "m1", playerName: "Matched Veteran", archivedAt: null }];
+
+        await act(async () => {
+            root.render(createElement(HistoricalRosterImportForm, { allianceId, existingMembers }));
+        });
+
+        const bytes = createXlsxBuffer(
+            [
+                {
+                    name: "Sheet1",
+                    data: [
+                        ["Player", "THP"],
+                        ["Matched Veteran", 0], // placeholder; overwritten below with a real cell error
+                        ["Brand New Hero", 5000],
+                    ],
+                },
+            ],
+            (ws) => {
+                // A genuine cell error in the *matched* row's THP cell —
+                // this row's THP is preserved (ALREADY_MATCHES), never
+                // applied from the file.
+                ws["B2"] = { t: "e", v: 0x17, w: "#REF!" };
+            }
+        );
+
+        await act(async () => {
+            fireXlsxFileUpload(bytes);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // The new row still needs an explicit outcome before Import is
+        // otherwise enabled — resolve it so the diagnostics scoping is the
+        // only thing left under test.
+        const activeButtons = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent === "Active");
+        await act(async () => {
+            (activeButtons[activeButtons.length - 1] as HTMLButtonElement).click();
+        });
+
+        expect(container.textContent).not.toContain("Workbook Cell Issues Detected");
+        const importBtn = findButtonByText("Import");
+        expect(importBtn.disabled).toBe(false);
+    });
+
+    it("still blocks Import when a cell error lands in an applied THP column for a brand-new row", async () => {
+        await act(async () => {
+            root.render(createElement(HistoricalRosterImportForm, { allianceId, existingMembers: [] }));
+        });
+
+        const bytes = createXlsxBuffer([
+            {
+                name: "Sheet1",
+                data: [
+                    ["Player", "THP"],
+                    ["Brand New Hero", 0],
+                ],
+            },
+        ]);
+        // Reopen the sheet to inject the error cell (aoa_to_sheet already
+        // wrote B2, so overwrite it directly).
+        const wb = XLSX.read(bytes, { type: "array" });
+        const ws = wb.Sheets["Sheet1"];
+        ws["B2"] = { t: "e", v: 0x17, w: "#REF!" };
+        const bytesWithError = new Uint8Array(XLSX.write(wb, { bookType: "xlsx", type: "array" }));
+
+        await act(async () => {
+            fireXlsxFileUpload(bytesWithError);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        const activeButtons = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent === "Active");
+        await act(async () => {
+            (activeButtons[0] as HTMLButtonElement).click();
+        });
+
+        expect(container.textContent).toContain("Workbook Cell Issues Detected");
+        const importBtn = findButtonByText("Import");
+        expect(importBtn.disabled).toBe(true);
     });
 });

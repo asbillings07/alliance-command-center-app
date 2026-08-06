@@ -443,6 +443,85 @@ describe.skipIf(!runDb)("importHistoricalRoster [integration]", () => {
         expect(stillInB.thp).toBe(999);
     });
 
+    it("integration: two existing members that normalize to the same name make a matching row ambiguous — the whole import aborts instead of picking one", async () => {
+        const alliance = await makeAllianceWithActiveMembers(0);
+        const memberA = await prisma.allianceMember.create({
+            data: { allianceId: alliance.id, playerName: "Team Player", thp: 1000, role: "R1", archivedAt: new Date("2024-01-01T00:00:00Z") },
+        });
+        const memberB = await prisma.allianceMember.create({
+            data: { allianceId: alliance.id, playerName: "TEAM  PLAYER", thp: 2000, role: "R2" }, // same normalized name, still active
+        });
+
+        const entries = withSourceRows([
+            { playerName: "Team Player", finalStatus: "active" },
+        ]);
+        // The client can't tell them apart either — its own live fingerprint
+        // computation hits the exact same ambiguity, so this stays realistic
+        // rather than relying on a fabricated fingerprint.
+        const fingerprint = await computeLiveFingerprint(alliance.id, entries);
+
+        const result = await importHistoricalRoster(alliance.id, entries, provenance, fingerprint);
+
+        expect(result.errors).toHaveLength(1);
+        expect(result.errors[0]).toContain("matches more than one existing member");
+        expect(result.restored).toBe(0);
+        expect(result.createdActive).toBe(0);
+        expect(result.memberImportId).toBeNull();
+
+        // Neither ambiguous member was touched.
+        const untouchedA = await prisma.allianceMember.findUniqueOrThrow({ where: { id: memberA.id } });
+        const untouchedB = await prisma.allianceMember.findUniqueOrThrow({ where: { id: memberB.id } });
+        expect(untouchedA.archivedAt).not.toBeNull();
+        expect(untouchedB.archivedAt).toBeNull();
+
+        const importCount = await prisma.memberImport.count({ where: { allianceId: alliance.id } });
+        expect(importCount).toBe(0);
+    });
+
+    it("integration: a plain concurrent update to an untouched, matched (ALREADY_MATCHES) member never gets lost or silently overridden by the import's own commit — real PostgreSQL overlap", async () => {
+        const alliance = await makeAllianceWithActiveMembers(0);
+        const bystander = await prisma.allianceMember.create({
+            data: { allianceId: alliance.id, playerName: "Untouched Bystander", thp: 1000, role: "R1" },
+        });
+
+        // The bystander is ALREADY_MATCHES (active, requesting active —
+        // untouched by this action). The second row gives the transaction
+        // real write work so it isn't instantaneous relative to the
+        // concurrent update below.
+        const entries = withSourceRows([
+            { playerName: "Untouched Bystander", thp: "1000", finalStatus: "active" },
+            { playerName: "Freshly Created Member", thp: "2000", finalStatus: "active" },
+        ]);
+        const fingerprint = await computeLiveFingerprint(alliance.id, entries);
+
+        // Genuinely concurrent (Promise.all, not sequenced): a plain update
+        // to the bystander — completely unrelated to this action's own
+        // lock/fingerprint machinery — races the import. Before locking
+        // every existing member row up front (#282 follow-up), nothing in
+        // this transaction took any lock on a row it never writes to, so
+        // this update could interleave freely; now it must wait for this
+        // transaction to commit or roll back.
+        const [importResult, concurrentUpdate] = await Promise.all([
+            importHistoricalRoster(alliance.id, entries, provenance, fingerprint),
+            prisma.allianceMember.update({ where: { id: bystander.id }, data: { thp: 9999 } }),
+        ]);
+
+        expect(importResult.errors).toHaveLength(0);
+        expect(importResult.skippedExisting).toBe(1);
+        expect(importResult.createdActive).toBe(1);
+        expect(concurrentUpdate.thp).toBe(9999);
+
+        // The concurrent write's value always wins in the end — it's never
+        // silently lost — and the import's own audit trail never mentions
+        // this untouched row at all.
+        const finalBystander = await prisma.allianceMember.findUniqueOrThrow({ where: { id: bystander.id } });
+        expect(finalBystander.thp).toBe(9999);
+        const bystanderChange = await prisma.memberImportChange.findFirst({
+            where: { memberImportId: importResult.memberImportId!, allianceMemberId: bystander.id },
+        });
+        expect(bystanderChange).toBeNull();
+    });
+
     it("integration: rejects the whole import and creates zero members when the actor lacks canManageMembers", async () => {
         const alliance = await makeAllianceWithActiveMembers(0);
         vi.mocked(requireAllianceAccess).mockResolvedValue({

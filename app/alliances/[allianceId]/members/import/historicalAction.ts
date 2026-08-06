@@ -7,6 +7,7 @@ import { MAX_ACTIVE_ALLIANCE_MEMBERS, getAvailableMemberCapacity } from "@/app/s
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 import { MemberImportChangeType, MemberImportMode } from "@/app/generated/prisma/enums";
+import { Prisma } from "@/app/generated/prisma/client";
 import { validateImportProvenance, validateStructuralEntries, validateThpValue } from "./importValidation";
 import type { ImportProvenance } from "./importValidation";
 import { classifyHistoricalRosterRow } from "./historicalClassification";
@@ -142,6 +143,25 @@ export async function importHistoricalRoster(
 
     try {
         const result = await withAllianceMemberLock(allianceId, async (tx, activeMembersCount) => {
+            // Row-lock every member currently in this alliance *before*
+            // reading any of them for classification. A selected historical
+            // row can end up matching (and mutating) any existing member by
+            // normalized name, so every one of them — not only the rows this
+            // transaction ultimately writes to — must be locked before the
+            // fingerprint/classification read runs. An ordinary
+            // (non-locked) `archiveMember`/`updateMember` write targeting
+            // any of these rows needs the same row lock we're about to
+            // hold, so it simply waits until this transaction commits or
+            // rolls back — closing the mid-transaction lifecycle-drift
+            // window for every outcome, not only RESTORE's already-guarded
+            // write below. See #277 PR 3's undo flow for the same "lock
+            // everything this transaction's reads and fingerprint depend
+            // on" precedent. Bounded by realistic alliance member counts
+            // (active capped at 100; archived history grows slowly), so
+            // locking the whole set for this rare, leader-initiated import
+            // is an acceptable trade-off.
+            await tx.$executeRaw(Prisma.sql`SELECT id FROM "AllianceMember" WHERE "allianceId" = ${allianceId} FOR UPDATE`);
+
             // Fresh read inside the lock — the single source of truth this
             // entire commit (classification, fingerprint, and the actual
             // mutations) is derived from.
@@ -149,9 +169,23 @@ export async function importHistoricalRoster(
                 where: { allianceId },
                 select: { id: true, playerName: true, archivedAt: true, thp: true, role: true },
             });
-            const existingByNormalizedName = new Map<string, ExistingMemberSnapshot>();
+
+            // Group by normalized name instead of overwriting on collision.
+            // Raw `(allianceId, playerName)` uniqueness doesn't prevent two
+            // live members from normalizing to the same key (case or
+            // collapsed-whitespace variants), so a Map keyed by that name
+            // would otherwise silently keep whichever row `findMany`
+            // returned last. See the ambiguous-match check inside the loop
+            // below, which fails the whole import instead of guessing.
+            const existingByNormalizedName = new Map<string, ExistingMemberSnapshot[]>();
             for (const m of existingInTx) {
-                existingByNormalizedName.set(normalizeName(m.playerName), m);
+                const key = normalizeName(m.playerName);
+                const group = existingByNormalizedName.get(key);
+                if (group) {
+                    group.push(m);
+                } else {
+                    existingByNormalizedName.set(key, [m]);
+                }
             }
 
             const toCreate: { entry: ValidatedHistoricalEntry; wantArchived: boolean }[] = [];
@@ -181,7 +215,35 @@ export async function importHistoricalRoster(
                     continue;
                 }
 
-                const existing = existingByNormalizedName.get(normalized);
+                // `HistoricalFinalStatus` is only a TypeScript union, not a
+                // runtime guarantee — a direct action caller (bypassing the
+                // client entirely) could submit an arbitrary string.
+                // Without this check, classifyHistoricalRosterRow's `===`
+                // comparisons would silently treat anything that isn't
+                // exactly "active" as archived-for-a-new-member or
+                // active-for-an-archived-match, creating or restoring data
+                // from an unrecognized status instead of failing closed.
+                if (
+                    entry.finalStatus !== "active" &&
+                    entry.finalStatus !== "archived" &&
+                    entry.finalStatus !== "unassigned"
+                ) {
+                    throw new Error(
+                        `Row for player "${entry.playerName}" has an invalid status and can't be imported. Refresh and try again.`
+                    );
+                }
+
+                const matches = existingByNormalizedName.get(normalized);
+                if (matches && matches.length > 1) {
+                    // Ambiguous: two or more live members normalize to the
+                    // same name. Arbitrarily picking whichever this read
+                    // returned last could restore or overwrite the wrong
+                    // record — fail the whole import instead of guessing.
+                    throw new Error(
+                        `Player "${entry.playerName}" matches more than one existing member in your alliance and can't be imported until that name conflict is resolved.`
+                    );
+                }
+                const existing = matches?.[0];
                 const classification = classifyHistoricalRosterRow(
                     { matched: !!existing, currentlyArchived: existing ? existing.archivedAt !== null : false },
                     entry.finalStatus
@@ -480,6 +542,8 @@ export async function importHistoricalRoster(
                 error.message.includes("active members") ||
                 error.message === STALE_PREVIEW_ERROR ||
                 error.message.includes("must have an Active or Archived outcome") ||
+                error.message.includes("has an invalid status") ||
+                error.message.includes("matches more than one existing member") ||
                 error.message.includes("THP value") ||
                 error.message.includes("Total Hero Power"))
                 ? error.message

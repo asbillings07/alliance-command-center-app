@@ -52,11 +52,17 @@ vi.mock("@/app/src/lib/prisma", () => {
         create: vi.fn().mockResolvedValue({ id: "import-1" }),
     };
 
+    // Shared reference: the code under test only ever calls `tx.$executeRaw`
+    // (from inside the transaction callback), never `prisma.$executeRaw`
+    // directly — using one mock instance for both keeps the reference
+    // reachable from the test file regardless of which object it's read off.
+    const sharedExecuteRaw = vi.fn().mockResolvedValue(1);
+
     const mockTx = {
         allianceMember: mockAllianceMember,
         user: mockUser,
         memberImport: mockMemberImport,
-        $executeRaw: vi.fn().mockResolvedValue(1),
+        $executeRaw: sharedExecuteRaw,
     };
 
     return {
@@ -64,7 +70,7 @@ vi.mock("@/app/src/lib/prisma", () => {
             allianceMember: mockAllianceMember,
             user: mockUser,
             memberImport: mockMemberImport,
-            $executeRaw: vi.fn().mockResolvedValue(1),
+            $executeRaw: sharedExecuteRaw,
             $transaction: vi.fn((callback) => callback(mockTx)),
         },
     };
@@ -508,6 +514,74 @@ describe("importHistoricalRoster", () => {
                 }),
             })
         );
+    });
+
+    it("rejects the whole import when a selected row carries a runtime-invalid status, even though TypeScript's union type would normally prevent it", async () => {
+        mockAllianceMember.findMany.mockResolvedValue([]);
+        mockAllianceMember.count.mockResolvedValue(0);
+
+        // Bypasses the TypeScript union on purpose — a direct action caller
+        // (not the client component) could submit any string over the wire.
+        const entries = withSourceRows([
+            { playerName: "Tampered Row", finalStatus: "bogus-status" as never, selected: true },
+        ]);
+
+        const result = await importHistoricalRoster(allianceId, entries, provenance, "[]");
+
+        expect(result.errors.length).toBe(1);
+        expect(result.errors[0]).toContain("has an invalid status");
+        expect(mockAllianceMember.createManyAndReturn).not.toHaveBeenCalled();
+        expect(mockMemberImport.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects the whole import when two existing members normalize to the same name, instead of silently matching one", async () => {
+        const memberA: ExistingMember = {
+            id: "member-a",
+            playerName: "Team Player",
+            archivedAt: new Date("2023-01-01T00:00:00.000Z"),
+            thp: null,
+            role: null,
+        };
+        const memberB: ExistingMember = {
+            id: "member-b",
+            playerName: "TEAM  PLAYER", // normalizes to the same key as memberA
+            archivedAt: null,
+            thp: 1000,
+            role: "R1",
+        };
+        mockAllianceMember.findMany.mockResolvedValue([memberA, memberB]);
+        mockAllianceMember.count.mockResolvedValue(1);
+
+        const entries = withSourceRows([
+            { playerName: "Team Player", finalStatus: "active" },
+        ]);
+        // Fingerprint value is irrelevant — the ambiguous-match check runs
+        // before the fingerprint comparison would even matter here.
+        const result = await importHistoricalRoster(allianceId, entries, provenance, "[]");
+
+        expect(result.errors.length).toBe(1);
+        expect(result.errors[0]).toContain("matches more than one existing member");
+        expect(mockAllianceMember.updateMany).not.toHaveBeenCalled();
+        expect(mockAllianceMember.createManyAndReturn).not.toHaveBeenCalled();
+        expect(mockMemberImport.create).not.toHaveBeenCalled();
+    });
+
+    it("locks every existing member row in the alliance (SELECT ... FOR UPDATE) before reading them for classification", async () => {
+        mockAllianceMember.findMany.mockResolvedValue([]);
+        mockAllianceMember.count.mockResolvedValue(0);
+
+        const entries = withSourceRows([{ playerName: "New Person", finalStatus: "active" }]);
+        const fingerprint = buildValidFingerprint([], entries);
+
+        const { prisma } = await import("@/app/src/lib/prisma");
+        const executeRawMock = prisma.$executeRaw as unknown as ReturnType<typeof vi.fn>;
+
+        await importHistoricalRoster(allianceId, entries, provenance, fingerprint);
+
+        expect(executeRawMock).toHaveBeenCalled();
+        const lockCallOrder = executeRawMock.mock.invocationCallOrder[0];
+        const readCallOrder = mockAllianceMember.findMany.mock.invocationCallOrder[0];
+        expect(readCallOrder).toBeGreaterThan(lockCallOrder);
     });
 
     it("skips unselected rows and never includes them in the fingerprint contract", async () => {

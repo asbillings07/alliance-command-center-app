@@ -132,6 +132,32 @@ describeIntegration("MemberImport / MemberImportChange CHECK constraints [integr
         ).rejects.toThrow();
     });
 
+    it("rejects a CURRENT-mode import carrying a non-zero createdArchivedCount", async () => {
+        const alliance = await makeAlliance();
+        await expect(
+            makeMemberImport(alliance.id, { mode: "CURRENT", createdCount: 1, createdArchivedCount: 1 })
+        ).rejects.toThrow();
+    });
+
+    it("rejects a CURRENT-mode import carrying a non-zero skippedLifecycleConflictCount", async () => {
+        const alliance = await makeAlliance();
+        await expect(
+            makeMemberImport(alliance.id, { mode: "CURRENT", skippedLifecycleConflictCount: 1 })
+        ).rejects.toThrow();
+    });
+
+    it("accepts a HISTORICAL-mode import carrying non-zero historical-only counts", async () => {
+        const alliance = await makeAlliance();
+        const memberImport = await makeMemberImport(alliance.id, {
+            mode: "HISTORICAL",
+            createdCount: 1,
+            createdArchivedCount: 1,
+            skippedLifecycleConflictCount: 2,
+        });
+        expect(memberImport.createdArchivedCount).toBe(1);
+        expect(memberImport.skippedLifecycleConflictCount).toBe(2);
+    });
+
     // fileName/sourceSheetName are required (String, not String?) — the
     // Prisma client's own generated types already reject `null` for these
     // at compile time, so the only way to exercise the NOT NULL constraint

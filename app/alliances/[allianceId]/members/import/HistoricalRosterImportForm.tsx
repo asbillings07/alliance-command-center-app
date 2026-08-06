@@ -48,6 +48,13 @@ type HistoricalParsedMember = {
     thpError?: string;
     role: string;
     isDuplicateInFile: boolean;
+    /**
+     * True when this row's normalized name matches two or more *existing*
+     * alliance members (a case/whitespace-variant duplicate already in the
+     * roster). Never auto-selected — see the server's identical check in
+     * historicalAction.ts for why picking one match arbitrarily is unsafe.
+     */
+    isAmbiguousMatch: boolean;
     selected: boolean;
     matchedMemberId: string | null;
     /** Null only when matchedMemberId is null. */
@@ -121,6 +128,23 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
         existingMembers.map((m) => [normalizeName(m.playerName), { id: m.id, isArchived: !!m.archivedAt }])
     );
 
+    // Names that appear on two or more *existing* alliance members once
+    // normalized (case/whitespace variants — raw DB uniqueness doesn't
+    // prevent this). A file row targeting one of these names can't be
+    // safely matched to either record, so it's blocked here the same way
+    // the server independently blocks it in historicalAction.ts.
+    const ambiguousExistingNames = new Set<string>();
+    {
+        const counts = new Map<string, number>();
+        for (const m of existingMembers) {
+            const key = normalizeName(m.playerName);
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+        for (const [key, count] of counts) {
+            if (count > 1) ambiguousExistingNames.add(key);
+        }
+    }
+
     const reclassifyMembers = (members: HistoricalParsedMember[], editedId?: string): HistoricalParsedMember[] => {
         const seenNamesInFile = new Set<string>();
         return members.map((m) => {
@@ -129,6 +153,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                 return {
                     ...m,
                     isDuplicateInFile: false,
+                    isAmbiguousMatch: false,
                     matchedMemberId: null,
                     currentlyArchived: null,
                     selected: false,
@@ -138,6 +163,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
 
             const normalized = normalizeName(playerName);
             let isDuplicateInFile = false;
+            let isAmbiguousMatch = false;
             let matchedMemberId: string | null = null;
             let currentlyArchived: boolean | null = null;
 
@@ -145,10 +171,14 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                 isDuplicateInFile = true;
             } else {
                 seenNamesInFile.add(normalized);
-                const info = existingMembersMap.get(normalized);
-                if (info) {
-                    matchedMemberId = info.id;
-                    currentlyArchived = info.isArchived;
+                if (ambiguousExistingNames.has(normalized)) {
+                    isAmbiguousMatch = true;
+                } else {
+                    const info = existingMembersMap.get(normalized);
+                    if (info) {
+                        matchedMemberId = info.id;
+                        currentlyArchived = info.isArchived;
+                    }
                 }
             }
 
@@ -169,15 +199,16 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
             }
 
             let newSelected = m.selected;
-            if (isDuplicateInFile) {
+            if (isDuplicateInFile || isAmbiguousMatch) {
                 newSelected = false;
-            } else if (m.isDuplicateInFile || m.id === editedId) {
+            } else if (m.isDuplicateInFile || m.isAmbiguousMatch || m.id === editedId) {
                 newSelected = true;
             }
 
             return {
                 ...m,
                 isDuplicateInFile,
+                isAmbiguousMatch,
                 matchedMemberId,
                 currentlyArchived,
                 selected: newSelected,
@@ -273,6 +304,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                 thpError: thpValidation.thpError,
                 role: roleValue,
                 isDuplicateInFile: false,
+                isAmbiguousMatch: false,
                 selected: true,
                 matchedMemberId: null,
                 currentlyArchived: null,
@@ -335,8 +367,11 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
     const activeRosterCount = existingMembers.filter((m) => !m.archivedAt).length;
     const capacityRemaining = getAvailableMemberCapacity(activeRosterCount);
 
-    const selectableMembers = parsedMembers.filter((m) => !m.isDuplicateInFile && m.playerName.trim() !== "");
+    const selectableMembers = parsedMembers.filter(
+        (m) => !m.isDuplicateInFile && !m.isAmbiguousMatch && m.playerName.trim() !== ""
+    );
     const duplicateInFileRows = parsedMembers.filter((m) => m.isDuplicateInFile);
+    const ambiguousMatchRows = parsedMembers.filter((m) => m.isAmbiguousMatch);
 
     const classifiedRows = selectableMembers.map((member) => ({ member, classification: classificationFor(member) }));
     const selectedClassified = classifiedRows.filter((r) => r.member.selected);
@@ -371,6 +406,17 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
 
             const memberInRow = parsedMembers.find((m) => m.sourceRow === issue.rowIndex + 1);
             if (memberInRow && memberInRow.selected) {
+                // Player identity always applies — it's used for matching
+                // regardless of classification. THP/Role diagnostics only
+                // matter when this row's classification will actually
+                // write the file's THP/Role (a new member); a matched row
+                // preserves its current THP/role untouched, so a bad cached
+                // formula or cell error in an *ignored* historical THP/role
+                // must never permanently disable Import.
+                const isPlayerColumn = issue.columnIndex === mappedColumnIndices.playerColIndex;
+                const appliesFileFields = classificationFor(memberInRow).appliedFieldPolicy === "APPLY_FILE_FIELDS";
+                if (!isPlayerColumn && !appliesFileFields) continue;
+
                 if (issue.severity === "blocking" || issue.code === "formula_missing_cached_value" || issue.code === "cell_error") {
                     blockingCellIssues.push(issue);
                 } else if (issue.severity === "warning") {
@@ -672,6 +718,21 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                     </div>
                 )}
 
+                {ambiguousMatchRows.length > 0 && (
+                    <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger flex flex-col gap-1">
+                        <p className="font-semibold text-danger">
+                            {ambiguousMatchRows.length} Row{ambiguousMatchRows.length === 1 ? "" : "s"} Blocked — Ambiguous
+                            Match in Your Roster
+                        </p>
+                        <p className="text-sm text-text-secondary">
+                            {ambiguousMatchRows.length} row{ambiguousMatchRows.length === 1 ? "" : "s"} match a player
+                            name shared by two or more existing members in your alliance (a spacing or capitalization
+                            variant). Rename the duplicate members in your roster to resolve this before these rows
+                            can be imported — they can&apos;t be selected until then.
+                        </p>
+                    </div>
+                )}
+
                 {hasBlockingThpError && (
                     <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger flex flex-col gap-1">
                         <p className="font-semibold text-danger">Invalid THP Values Detected</p>
@@ -930,6 +991,26 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                                     <li key={member.id} className="px-4 py-2 text-sm text-text-secondary flex items-center gap-2">
                                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-primary/20 text-primary-light">
                                             Duplicate in File
+                                        </span>
+                                        {member.playerName}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </details>
+                )}
+
+                {ambiguousMatchRows.length > 0 && (
+                    <details className="bg-surface border border-border rounded-lg overflow-hidden">
+                        <summary className="px-4 py-3 bg-surface-secondary cursor-pointer text-text-primary font-medium select-none">
+                            {ambiguousMatchRows.length} ambiguous-match row{ambiguousMatchRows.length === 1 ? "" : "s"} (blocked)
+                        </summary>
+                        <div className="max-h-48 overflow-y-auto">
+                            <ul className="divide-y divide-border">
+                                {ambiguousMatchRows.map((member) => (
+                                    <li key={member.id} className="px-4 py-2 text-sm text-text-secondary flex items-center gap-2">
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-danger/20 text-danger">
+                                            Ambiguous Match
                                         </span>
                                         {member.playerName}
                                     </li>
