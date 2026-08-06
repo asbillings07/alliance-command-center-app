@@ -4,6 +4,7 @@ import {
   assignPseudonymousAllianceLabels,
   assignPseudonymousMetricLabels,
   formatSuppressibleStatistic,
+  suppressCorrelatedCounts,
   suppressSmallCell,
 } from "./apsAuditPrivacy";
 
@@ -54,6 +55,42 @@ describe("suppressSmallCell", () => {
   it("supports a custom minimum threshold", () => {
     expect(suppressSmallCell(2, "x", 3)).toEqual({ suppressed: true, cellSize: 2, minCellSize: 3 });
     expect(suppressSmallCell(3, "x", 3)).toEqual({ suppressed: false, value: "x" });
+  });
+});
+
+describe("suppressCorrelatedCounts", () => {
+  it("does not suppress when every count is either 0 or at/above the minimum", () => {
+    const result = suppressCorrelatedCounts([0, 5, 20, 0], "value");
+    expect(result).toEqual({ suppressed: false, value: "value" });
+  });
+
+  it("suppresses the whole bundle when any single count is a small positive number", () => {
+    // This is the case a naive per-field suppression misses: 5 and 20 are
+    // each individually "safe," but the correlated total is 25 = 5+20 --
+    // if a bundle mate is small (1), showing the other two lets the small
+    // one be reconstructed by subtraction, so the WHOLE bundle suppresses.
+    const result = suppressCorrelatedCounts([1, 5, 20], "value");
+    expect(result).toEqual({ suppressed: true, cellSize: 1, minCellSize: MIN_CELL_SIZE });
+  });
+
+  it("does not treat an exact 0 as risky on its own", () => {
+    // 0 missing / 0 invalid (perfect coverage) must not suppress an
+    // otherwise-healthy, large-cohort row.
+    const result = suppressCorrelatedCounts([0, 0, 50], "value");
+    expect(result).toEqual({ suppressed: false, value: "value" });
+  });
+
+  it("reports the smallest risky count as the cell size when multiple are risky", () => {
+    const result = suppressCorrelatedCounts([3, 1, 20], "value");
+    expect(result.suppressed).toBe(true);
+    if (result.suppressed) {
+      expect(result.cellSize).toBe(1);
+    }
+  });
+
+  it("supports a custom minimum threshold", () => {
+    expect(suppressCorrelatedCounts([2], "x", 3)).toEqual({ suppressed: true, cellSize: 2, minCellSize: 3 });
+    expect(suppressCorrelatedCounts([3], "x", 3)).toEqual({ suppressed: false, value: "x" });
   });
 });
 

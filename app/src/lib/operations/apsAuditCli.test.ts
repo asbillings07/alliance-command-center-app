@@ -44,6 +44,27 @@ describe("assertAuditTargetIdentity", () => {
     ).toThrow(/Refusing to audit a non-local database/);
   });
 
+  it("never discloses the hostname or production classification in the thrown message, only the identity needed to confirm", () => {
+    try {
+      assertAuditTargetIdentity(null, {
+        identity: "ep-prod-123",
+        isProduction: true,
+        hostname: "prod-super-secret-host.example.com",
+      });
+      throw new Error("expected assertAuditTargetIdentity to throw");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).not.toContain("prod-super-secret-host.example.com");
+      // The env-var name itself is generic operator guidance, not a
+      // disclosure of THIS target's classification -- but the message must
+      // never state that this specific target was flagged as production.
+      expect(message).not.toMatch(/flagged.*production/i);
+      // The identity itself IS expected -- the operator needs it to construct
+      // the confirmation flag.
+      expect(message).toContain("ep-prod-123");
+    }
+  });
+
   it("fails CLOSED: refuses a non-local target even when isProduction is false (unset/incomplete PRODUCTION_DB_HOSTS)", () => {
     // This is the regression case: a real remote database that PRODUCTION_DB_HOSTS
     // doesn't (yet) know about must still require confirmation -- it must

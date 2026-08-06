@@ -76,6 +76,32 @@ export function suppressSmallCell<T>(
 }
 
 /**
+ * Suppresses a *bundle* of correlated counts together, rather than each one
+ * independently. Independent suppression is unsafe whenever the counts are
+ * linked by an exact relationship (e.g. `total = activeCount +
+ * archivedCount`): if one of the three is hidden while the other two are
+ * shown, the hidden one is trivially recoverable by subtraction, defeating
+ * the suppression entirely.
+ *
+ * A count of exactly `0` is never itself treated as risky here -- "nobody"
+ * (or, by extension via the other counts in the bundle, "everybody") isn't
+ * a small identifiable group the way "1 to `minCellSize - 1`" is. Only a
+ * *positive* count below `minCellSize` triggers suppression of the whole
+ * bundle.
+ */
+export function suppressCorrelatedCounts<T>(
+  counts: readonly number[],
+  value: T,
+  minCellSize: number = MIN_CELL_SIZE,
+): SuppressibleStatistic<T> {
+  const riskyCounts = counts.filter((count) => count > 0 && count < minCellSize);
+  if (riskyCounts.length > 0) {
+    return { suppressed: true, cellSize: Math.min(...riskyCounts), minCellSize };
+  }
+  return { suppressed: false, value };
+}
+
+/**
  * Renders a suppressed statistic without disclosing the exact suppressed
  * cell size -- "cell size < 5" only, never "cell size 2 < 5". The exact
  * count is itself information about a small, potentially identifiable

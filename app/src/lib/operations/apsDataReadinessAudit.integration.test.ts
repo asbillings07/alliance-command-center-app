@@ -9,7 +9,9 @@ import {
   createAllianceWithChangedMetricBetweenPeriods,
   createAllianceWithMissingValues,
   createAllianceWithNegativeValues,
+  createAllianceWithSmallArchivedCohort,
   createAllianceWithSparsePeriod,
+  createCrossTenantDogfoodAttachment,
 } from "./apsAuditFixtures";
 
 const runDb = process.env.INTEGRATION_DB === "true";
@@ -118,11 +120,11 @@ describe.skipIf(!runDb)("APS data-readiness audit [integration]", () => {
     const row = report.alliances[0]!.metricDistributions[0]!;
 
     // Only 1 of 3 active members recorded -- below MIN_CELL_SIZE, so the
-    // coverage bundle itself is suppressed rather than shown exactly.
-    expect(row.coverage.suppressed).toBe(true);
+    // entire row is suppressed rather than shown exactly.
+    expect(row.stats.suppressed).toBe(true);
   });
 
-  it("reports coverage counts exactly once the active roster is large enough to not be a small cell", async () => {
+  it("reports every count exactly once every correlated population is large enough to not be a small cell", async () => {
     const fixture = await createAllianceWithBooleanValues(prisma);
     createdAllianceIds.push(fixture.allianceId);
 
@@ -131,35 +133,36 @@ describe.skipIf(!runDb)("APS data-readiness audit [integration]", () => {
     );
     const row = report.alliances[0]!.metricDistributions[0]!;
 
-    expect(row.coverage).toEqual({
-      suppressed: false,
-      value: {
-        currentActiveMemberCount: 6,
-        recordedActiveMemberCount: 5,
-        invalidActiveMemberCount: 1,
-        missingActiveMemberCount: 0,
-      },
-    });
-  });
-
-  it("computes boolean true/false counts across active and archived members, and never duplicates the invalid count into the boolean section", async () => {
-    const fixture = await createAllianceWithBooleanValues(prisma);
-    createdAllianceIds.push(fixture.allianceId);
-
-    const report = await runInReadOnlyAuditTransaction(prisma, (tx) =>
-      runApsDataReadinessAudit(tx, [fixture.allianceId]),
-    );
-    const row = report.alliances[0]!.metricDistributions[0]!;
-
-    expect(row.section.kind).toBe("BOOLEAN");
-    if (row.section.kind === "BOOLEAN") {
-      // 3 active true + 1 archived true = 4; 2 active false. Total valid (6) >= MIN_CELL_SIZE.
-      expect(row.section.counts).toEqual({ suppressed: false, value: { trueCount: 4, falseCount: 2 } });
-      expect(JSON.stringify(row.section)).not.toMatch(/invalid/i);
+    expect(row.stats.suppressed).toBe(false);
+    if (!row.stats.suppressed) {
+      expect(row.stats.value.coverage).toEqual({
+        currentActiveMemberCount: 20,
+        recordedActiveMemberCount: 15,
+        invalidActiveMemberCount: 0,
+        missingActiveMemberCount: 5,
+      });
+      // 10 active true + 3 archived true = 13; 5 active false + 2 archived false = 7.
+      expect(row.stats.value.section).toEqual({ kind: "BOOLEAN", counts: { trueCount: 13, falseCount: 7 } });
+      expect(JSON.stringify(row.stats.value.section)).not.toMatch(/invalid/i);
+      expect(row.stats.value.archivedContributingMemberCount).toBe(5);
     }
-    // Exactly 1 archived contributor -- below MIN_CELL_SIZE, suppressed even
-    // though the boolean counts above (a larger population) are not.
-    expect(row.archivedContributingMemberCount.suppressed).toBe(true);
+  });
+
+  it("suppresses the whole row (not just archivedContributingMemberCount) when only the archived cohort is small, preventing a subtraction leak, against real PostgreSQL", async () => {
+    const fixture = await createAllianceWithSmallArchivedCohort(prisma);
+    createdAllianceIds.push(fixture.allianceId);
+
+    const report = await runInReadOnlyAuditTransaction(prisma, (tx) =>
+      runApsDataReadinessAudit(tx, [fixture.allianceId]),
+    );
+    const row = report.alliances[0]!.metricDistributions[0]!;
+
+    // Coverage (20/20 active, all valid) and the boolean total (21) would
+    // each individually clear MIN_CELL_SIZE, but the single archived
+    // contributor is a small positive cell shared by the same bundle --
+    // the report must not show enough of the bundle to let a reader derive
+    // that "1" by subtracting the visible active count from the visible total.
+    expect(row.stats.suppressed).toBe(true);
   });
 
   it("detects an added metric and a changed weight between two comparable periods", async () => {
@@ -184,11 +187,13 @@ describe.skipIf(!runDb)("APS data-readiness audit [integration]", () => {
       runApsDataReadinessAudit(tx, [fixture.allianceId]),
     );
     const row = report.alliances[0]!.metricDistributions[0]!;
-    expect(row.section.kind).toBe("NUMERIC");
-    expect(row.section.kind === "NUMERIC" && row.section.distribution.suppressed).toBe(false);
-    if (row.section.kind === "NUMERIC" && !row.section.distribution.suppressed) {
+    expect(row.stats.suppressed).toBe(false);
+    if (!row.stats.suppressed) {
+      const section = row.stats.value.section;
+      expect(section.kind).toBe("NUMERIC");
+      if (section.kind !== "NUMERIC" || section.distribution === null) throw new Error("expected a numeric distribution");
       // Fixture values: [-50, -10, 0, 20, 80].
-      const dist = row.section.distribution.value;
+      const dist = section.distribution;
       expect(dist.count).toBe(5);
       expect(dist.min).toBe(-50);
       expect(dist.max).toBe(80);
@@ -232,10 +237,10 @@ describe.skipIf(!runDb)("APS data-readiness audit [integration]", () => {
       runApsDataReadinessAudit(tx, [fixture.allianceId]),
     );
     const row = report.alliances[0]!.metricDistributions[0]!;
-    expect(row.coverage.suppressed).toBe(true); // still only 1 of 3 active members recorded.
+    expect(row.stats.suppressed).toBe(true); // still only 1 of 3 active members recorded.
   });
 
-  it("suppresses a sparse period's distribution rather than showing an exact value from a near-empty cohort", async () => {
+  it("suppresses a sparse period's entire row rather than showing an exact value from a near-empty cohort", async () => {
     const fixture = await createAllianceWithSparsePeriod(prisma);
     createdAllianceIds.push(fixture.allianceId);
 
@@ -243,17 +248,10 @@ describe.skipIf(!runDb)("APS data-readiness audit [integration]", () => {
       runApsDataReadinessAudit(tx, [fixture.allianceId]),
     );
     const row = report.alliances[0]!.metricDistributions[0]!;
-    // The active roster itself (10) is large, but only 1 recorded -- the
-    // shared coverage bundle is still gated on the roster size (not small
-    // here), while the numeric distribution's own cell (1 valid value) is.
-    expect(row.coverage).toEqual({
-      suppressed: false,
-      value: { currentActiveMemberCount: 10, recordedActiveMemberCount: 1, invalidActiveMemberCount: 0, missingActiveMemberCount: 9 },
-    });
-    expect(row.section.kind).toBe("NUMERIC");
-    if (row.section.kind === "NUMERIC") {
-      expect(row.section.distribution.suppressed).toBe(true);
-    }
+    // The active roster itself (10) is large, but only 1 recorded -- that's
+    // a small positive cell shared by the row's bundle, so the WHOLE row
+    // (including the otherwise-fine-looking roster size) is suppressed.
+    expect(row.stats.suppressed).toBe(true);
   });
 
   // ---------------------------------------------------------------------
@@ -274,5 +272,22 @@ describe.skipIf(!runDb)("APS data-readiness audit [integration]", () => {
     // Only the metric with real recorded data counts -- the attached-but-empty
     // one must not, even though it's attached to 3 (>= MIN_PERIODS_FOR_DOGFOOD) periods.
     expect(dogfood.metricsWithEnoughObservationsCount).toBe(1);
+  });
+
+  it("does not let a cross-tenant MetricPeriodMetric/entry inflate a metric's dogfood readiness (ADR-002 tenant boundary)", async () => {
+    const fixture = await createCrossTenantDogfoodAttachment(prisma);
+    createdAllianceIds.push(fixture.allianceAId, fixture.allianceBId);
+
+    const report = await runInReadOnlyAuditTransaction(prisma, (tx) =>
+      runApsDataReadinessAudit(tx, [fixture.allianceAId]),
+    );
+    const dogfood = report.alliances[0]!.dogfoodReadiness;
+
+    // Alliance A's metric is attached only to alliance B's foreign period
+    // (with a real entry there) -- if the query weren't re-scoped by
+    // allianceId, that would count as 1 period of valid data. It must
+    // count as ZERO for alliance A.
+    expect(dogfood.totalMetricCount).toBe(1);
+    expect(dogfood.metricsWithEnoughObservationsCount).toBe(0);
   });
 });

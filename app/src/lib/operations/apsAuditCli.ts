@@ -67,12 +67,18 @@ export function assertAuditTargetIdentity(
   if (isKnownLocalHostname(target.hostname)) return;
 
   if (confirmIdentity !== target.identity) {
+    // Deliberately includes ONLY `target.identity`, not `target.hostname` or
+    // `isProduction` -- this message reaches stderr/CI logs on every
+    // accidental invocation against a non-local database, so it must stay
+    // as narrow as possible. `identity` itself can't be dropped too: it's
+    // the exact string the operator must pass back via
+    // `--yes-i-am-sure-this-is-<identity>`, so the confirmation flow would
+    // be unusable without a way to discover it from the refusal itself.
     throw new Error(
-      `Refusing to audit a non-local database (identity: ${target.identity}, host: ${target.hostname}` +
-        `${target.isProduction ? ", flagged PRODUCTION by PRODUCTION_DB_HOSTS" : ""}): pass ` +
-        `--yes-i-am-sure-this-is-${target.identity} (exact database identity) so this evidence run is bound to ` +
-        "the approved database. Only a positively-identified local database (localhost/127.0.0.1) skips this " +
-        "confirmation -- an unset or incomplete PRODUCTION_DB_HOSTS allowlist does NOT.",
+      `Refusing to audit a non-local database: pass --yes-i-am-sure-this-is-${target.identity} (exact database ` +
+        "identity) so this evidence run is bound to the approved database. Only a positively-identified local " +
+        "database (localhost/127.0.0.1) skips this confirmation -- an unset or incomplete PRODUCTION_DB_HOSTS " +
+        "allowlist does NOT.",
     );
   }
 }

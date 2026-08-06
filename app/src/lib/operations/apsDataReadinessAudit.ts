@@ -36,7 +36,7 @@ import {
   MIN_CELL_SIZE,
   assignPseudonymousAllianceLabels,
   assignPseudonymousMetricLabels,
-  suppressSmallCell,
+  suppressCorrelatedCounts,
   type SuppressibleStatistic,
 } from "./apsAuditPrivacy";
 import {
@@ -77,7 +77,7 @@ export type CurrentPeriodWeightStats =
       weightSum: number;
     };
 
-/** Active-member coverage for one metric in one period. Suppressed as a single bundle -- these counts all derive from the same (potentially small) active-roster population. */
+/** Active-member coverage for one metric in one period. */
 export type MetricCoverageStats = {
   currentActiveMemberCount: number;
   recordedActiveMemberCount: number;
@@ -99,24 +99,39 @@ export type NumericDistribution = {
   outlierCount: number;
 };
 
+/** `distribution` is `null` when there are genuinely zero valid values -- an honest "no data" state, distinct from suppression (see `MetricDistributionRow.stats`). */
 export type NumericMetricDistributionSection = {
   kind: "NUMERIC";
-  distribution: SuppressibleStatistic<NumericDistribution>;
+  distribution: NumericDistribution | null;
 };
 
 export type BooleanMetricDistributionSection = {
   kind: "BOOLEAN";
-  counts: SuppressibleStatistic<{ trueCount: number; falseCount: number }>;
+  counts: { trueCount: number; falseCount: number };
+};
+
+/**
+ * Every count for one metric in one period is bundled and suppressed
+ * TOGETHER (`MetricDistributionRow.stats`), never field-by-field: coverage,
+ * archived contributors, and the section's total valid count are linked by
+ * an exact relationship (e.g. `totalValid = recordedActiveMemberCount +
+ * archivedContributingMemberCount`), so independently suppressing just one
+ * of them while showing the other two would let the hidden one be
+ * recovered by subtraction. See `suppressCorrelatedCounts` in
+ * `apsAuditPrivacy.ts`.
+ */
+export type MetricRowStats = {
+  coverage: MetricCoverageStats;
+  /** Archived (former) members whose latest value still counts in the rollup. */
+  archivedContributingMemberCount: number;
+  section: NumericMetricDistributionSection | BooleanMetricDistributionSection;
 };
 
 export type MetricDistributionRow = {
   metricLabel: string;
   summaryKind: MetricSummaryKind;
   trendDirection: MetricTrendDirection;
-  coverage: SuppressibleStatistic<MetricCoverageStats>;
-  /** Archived (former) members whose latest value still counts in the rollup, suppressed against the archived-roster population. */
-  archivedContributingMemberCount: SuppressibleStatistic<number>;
-  section: NumericMetricDistributionSection | BooleanMetricDistributionSection;
+  stats: SuppressibleStatistic<MetricRowStats>;
 };
 
 export type DogfoodReadinessStats = {
@@ -286,7 +301,7 @@ async function queryCoverageAndDistribution(
     metric_types AS (
       SELECT id AS metric_id, (type = 'BOOLEAN'::"Metric_Type") AS is_boolean
       FROM "Metric"
-      WHERE id IN (${Prisma.join(metricIds)})
+      WHERE id IN (${Prisma.join(metricIds)}) AND "allianceId" = ${allianceId}
     ),
     cells AS (
       SELECT
@@ -355,28 +370,40 @@ type PeriodsWithValidDataRawRow = { metric_id: string; periods_with_valid_data_c
 
 async function queryPeriodsWithValidDataCounts(
   tx: AuditTxClient,
+  allianceId: string,
   metricIds: string[],
 ): Promise<Map<string, number>> {
   if (metricIds.length === 0) return new Map();
 
+  // Every join below is explicitly re-scoped to `allianceId` -- `Metric`,
+  // `MetricPeriod`, and `AllianceMember` each carry their own `allianceId`
+  // column, but nothing at the FK level stops a `MetricPeriodMetric` or
+  // `MemberMetricEntry` row from pairing an in-allowlist metric with an
+  // out-of-scope period/member (whether from a bug, a bad migration, or
+  // inconsistent data). Re-checking `allianceId` at every join is
+  // defense-in-depth against exactly that (ADR-002: never assume a single
+  // alliance), independent of whether such a row could exist today.
   const rows = await tx.$queryRaw<PeriodsWithValidDataRawRow[]>`
     WITH attached_periods AS (
-      SELECT DISTINCT "periodId" AS period_id, "metricId" AS metric_id
-      FROM "MetricPeriodMetric"
-      WHERE "metricId" IN (${Prisma.join(metricIds)}) AND active = true
+      SELECT DISTINCT mpm."periodId" AS period_id, mpm."metricId" AS metric_id
+      FROM "MetricPeriodMetric" mpm
+      JOIN "MetricPeriod" mp ON mp.id = mpm."periodId" AND mp."allianceId" = ${allianceId}
+      WHERE mpm."metricId" IN (${Prisma.join(metricIds)}) AND mpm.active = true
     ),
     latest AS (
       SELECT DISTINCT ON (mme."periodId", mme."metricId", mme."allianceMemberId")
         mme."periodId" AS period_id, mme."metricId" AS metric_id, mme.value
       FROM "MemberMetricEntry" mme
       JOIN attached_periods ap ON ap.period_id = mme."periodId" AND ap.metric_id = mme."metricId"
+      JOIN "AllianceMember" am ON am.id = mme."allianceMemberId" AND am."allianceId" = ${allianceId}
       ORDER BY mme."periodId", mme."metricId", mme."allianceMemberId", mme."recordedAt" DESC, mme."createdAt" DESC, mme.id DESC
     ),
     metric_types AS (
       SELECT id AS metric_id, (type = 'BOOLEAN'::"Metric_Type") AS is_boolean
       FROM "Metric"
-      WHERE id IN (${Prisma.join(metricIds)})
+      WHERE id IN (${Prisma.join(metricIds)}) AND "allianceId" = ${allianceId}
     ),
+    -- Uses attached_periods/latest's already-alliance-scoped joins above.
     valid_periods AS (
       SELECT DISTINCT l.period_id, l.metric_id
       FROM latest l
@@ -445,46 +472,28 @@ function buildCurrentPeriodWeightStats(
   };
 }
 
-const EMPTY_NUMERIC_DISTRIBUTION: NumericDistribution = {
-  count: 0,
-  min: 0,
-  max: 0,
-  p25: 0,
-  p50: 0,
-  p75: 0,
-  zeroCount: 0,
-  negativeCount: 0,
-  outlierCount: 0,
-};
-
 function buildNumericSection(aggregate: CoverageDistributionAggregate): NumericMetricDistributionSection {
-  const distribution: NumericDistribution =
-    aggregate.numericValidCount > 0
-      ? {
-          count: aggregate.numericValidCount,
-          min: aggregate.minValue!,
-          max: aggregate.maxValue!,
-          p25: aggregate.p25!,
-          p50: aggregate.p50!,
-          p75: aggregate.p75!,
-          zeroCount: aggregate.zeroCount,
-          negativeCount: aggregate.negativeCount,
-          outlierCount: aggregate.outlierCount,
-        }
-      : EMPTY_NUMERIC_DISTRIBUTION;
-
   return {
     kind: "NUMERIC",
-    distribution: suppressSmallCell(aggregate.numericValidCount, distribution),
+    distribution:
+      aggregate.numericValidCount > 0
+        ? {
+            count: aggregate.numericValidCount,
+            min: aggregate.minValue!,
+            max: aggregate.maxValue!,
+            p25: aggregate.p25!,
+            p50: aggregate.p50!,
+            p75: aggregate.p75!,
+            zeroCount: aggregate.zeroCount,
+            negativeCount: aggregate.negativeCount,
+            outlierCount: aggregate.outlierCount,
+          }
+        : null,
   };
 }
 
 function buildBooleanSection(aggregate: CoverageDistributionAggregate): BooleanMetricDistributionSection {
-  const totalValid = aggregate.trueCount + aggregate.falseCount;
-  return {
-    kind: "BOOLEAN",
-    counts: suppressSmallCell(totalValid, { trueCount: aggregate.trueCount, falseCount: aggregate.falseCount }),
-  };
+  return { kind: "BOOLEAN", counts: { trueCount: aggregate.trueCount, falseCount: aggregate.falseCount } };
 }
 
 async function buildMetricDistributionRows(
@@ -537,24 +546,34 @@ async function buildMetricDistributionRows(
       missingActiveMemberCount: aggregate.missingActiveMemberCount,
     };
 
+    const stats: MetricRowStats = {
+      coverage,
+      archivedContributingMemberCount: aggregate.archivedContributingMemberCount,
+      section: metric.type === Metric_Type.BOOLEAN ? buildBooleanSection(aggregate) : buildNumericSection(aggregate),
+    };
+
+    // totalValidCount = recordedActiveMemberCount + archivedContributingMemberCount
+    // EXACTLY (numericValidCount/trueCount+falseCount both span active AND
+    // archived members -- see queryCoverageAndDistribution). Every count in
+    // that relationship must suppress together, or the one left out is
+    // recoverable from the other two by subtraction.
+    const totalValidCount = aggregate.numericValidCount + aggregate.trueCount + aggregate.falseCount;
+
     return {
       metricLabel: metricLabels.get(metric.id)!,
       summaryKind: metric.summaryKind,
       trendDirection: metric.trendDirection,
-      // Gated on the active ROSTER size (the shared denominator for all four
-      // bundled counts), not on any one of them individually -- a small
-      // active roster makes any breakdown of it identifying, regardless of
-      // which specific count within the bundle happens to be small.
-      coverage: suppressSmallCell(aggregate.currentActiveMemberCount, coverage),
-      // Reported standalone (no denominator shown alongside it), so the
-      // count IS its own cell size here: "archivedContributingMemberCount: 1"
-      // is itself the identifying quantity, independent of the active
-      // roster's size.
-      archivedContributingMemberCount: suppressSmallCell(
-        aggregate.archivedContributingMemberCount,
-        aggregate.archivedContributingMemberCount,
+      stats: suppressCorrelatedCounts(
+        [
+          aggregate.currentActiveMemberCount,
+          aggregate.recordedActiveMemberCount,
+          aggregate.invalidActiveMemberCount,
+          aggregate.missingActiveMemberCount,
+          aggregate.archivedContributingMemberCount,
+          totalValidCount,
+        ],
+        stats,
       ),
-      section: metric.type === Metric_Type.BOOLEAN ? buildBooleanSection(aggregate) : buildNumericSection(aggregate),
     };
   });
 }
@@ -582,10 +601,12 @@ async function buildMetricStabilityStats(
 
 async function buildDogfoodReadinessStats(
   tx: AuditTxClient,
+  allianceId: string,
   metrics: readonly MetricWithAttachments[],
 ): Promise<DogfoodReadinessStats> {
   const periodsWithValidData = await queryPeriodsWithValidDataCounts(
     tx,
+    allianceId,
     metrics.map((metric) => metric.id),
   );
 
@@ -616,7 +637,7 @@ async function buildAllianceAuditSection(
     currentPeriodWeights: buildCurrentPeriodWeightStats(currentPeriod, metrics),
     metricDistributions: await buildMetricDistributionRows(tx, allianceId, currentPeriod, metrics),
     metricStability: await buildMetricStabilityStats(metrics, periods),
-    dogfoodReadiness: await buildDogfoodReadinessStats(tx, metrics),
+    dogfoodReadiness: await buildDogfoodReadinessStats(tx, allianceId, metrics),
   };
 }
 

@@ -235,7 +235,7 @@ describe("runApsDataReadinessAudit", () => {
     };
   }
 
-  it("wires DB-computed coverage counts through to the report, suppressing a small-cell distribution", async () => {
+  it("wires DB-computed coverage counts through to the report, suppressing the whole row when the numeric cell is small", async () => {
     const tx = mockTx({
       allianceIds: ["alliance-1"],
       ...activePeriodAndMetric(),
@@ -270,21 +270,14 @@ describe("runApsDataReadinessAudit", () => {
     const report = await runApsDataReadinessAudit(tx, ["alliance-1"]);
     const row = report.alliances[0]!.metricDistributions[0]!;
 
-    // Active roster (10) is large enough that the coverage bundle itself
-    // isn't suppressed...
-    expect(row.coverage).toEqual({
-      suppressed: false,
-      value: { currentActiveMemberCount: 10, recordedActiveMemberCount: 2, invalidActiveMemberCount: 0, missingActiveMemberCount: 8 },
-    });
-    expect(row.section.kind).toBe("NUMERIC");
-    if (row.section.kind === "NUMERIC") {
-      // ...but only 2 valid values were ever recorded -- below MIN_CELL_SIZE,
-      // so the distribution itself must still be suppressed independently.
-      expect(row.section.distribution.suppressed).toBe(true);
-    }
+    // Only 2 valid values were ever recorded (and only 2 of 10 active
+    // members recorded at all) -- both are risky-small positive counts, so
+    // the ENTIRE row (coverage included) is suppressed as one bundle, not
+    // just the numeric distribution.
+    expect(row.stats.suppressed).toBe(true);
   });
 
-  it("suppresses active-member coverage as a bundle when the active roster itself is a small cell", async () => {
+  it("does not suppress a row when every count is either 0 or at/above MIN_CELL_SIZE", async () => {
     const tx = mockTx({
       allianceIds: ["alliance-1"],
       ...activePeriodAndMetric(),
@@ -300,15 +293,35 @@ describe("runApsDataReadinessAudit", () => {
           },
         ],
       },
-      coverageRows: [coverageRow({ metric_id: "m1", current_active_member_count: BigInt(3), recorded_active_member_count: BigInt(3) })],
+      coverageRows: [
+        coverageRow({
+          metric_id: "m1",
+          current_active_member_count: BigInt(10),
+          recorded_active_member_count: BigInt(10),
+          numeric_valid_count: BigInt(10),
+          min_value: 1,
+          max_value: 10,
+          p25: 3,
+          p50: 5,
+          p75: 8,
+        }),
+      ],
     });
 
     const report = await runApsDataReadinessAudit(tx, ["alliance-1"]);
     const row = report.alliances[0]!.metricDistributions[0]!;
-    expect(row.coverage.suppressed).toBe(true);
+    expect(row.stats.suppressed).toBe(false);
+    if (!row.stats.suppressed) {
+      expect(row.stats.value.coverage).toEqual({
+        currentActiveMemberCount: 10,
+        recordedActiveMemberCount: 10,
+        invalidActiveMemberCount: 0,
+        missingActiveMemberCount: 0,
+      });
+    }
   });
 
-  it("suppresses archivedContributingMemberCount independently of coverage suppression", async () => {
+  it("suppresses the whole row (not just archivedContributingMemberCount) when only the archived count is a small positive cell -- preventing a subtraction leak", async () => {
     const tx = mockTx({
       allianceIds: ["alliance-1"],
       ...activePeriodAndMetric(),
@@ -330,7 +343,10 @@ describe("runApsDataReadinessAudit", () => {
           current_active_member_count: BigInt(20),
           recorded_active_member_count: BigInt(20),
           archived_contributing_member_count: BigInt(1),
-          true_count: BigInt(15),
+          // trueCount + falseCount (21) - recordedActiveMemberCount (20) = 1
+          // would trivially reveal the suppressed archived count if either
+          // side of that subtraction were shown while the other was hidden.
+          true_count: BigInt(16),
           false_count: BigInt(5),
         }),
       ],
@@ -338,11 +354,10 @@ describe("runApsDataReadinessAudit", () => {
 
     const report = await runApsDataReadinessAudit(tx, ["alliance-1"]);
     const row = report.alliances[0]!.metricDistributions[0]!;
-    // Large active roster -> coverage is NOT suppressed...
-    expect(row.coverage.suppressed).toBe(false);
-    // ...but only 1 archived contributor -> that count IS suppressed, even
-    // though it rides along with an otherwise-unsuppressed row.
-    expect(row.archivedContributingMemberCount.suppressed).toBe(true);
+    // Coverage (20/20) and the boolean total (21) are each individually
+    // "large," but the archived count (1) is a risky small cell shared by
+    // the same bundle -- the WHOLE row must suppress, not just that field.
+    expect(row.stats.suppressed).toBe(true);
   });
 
   it("does not disclose invalid-boolean counts through the boolean section (they live only in coverage)", async () => {
@@ -365,25 +380,27 @@ describe("runApsDataReadinessAudit", () => {
         coverageRow({
           metric_id: "m1",
           current_active_member_count: BigInt(20),
-          recorded_active_member_count: BigInt(18),
-          invalid_active_member_count: BigInt(2),
+          recorded_active_member_count: BigInt(15),
+          invalid_active_member_count: BigInt(5),
           true_count: BigInt(10),
-          false_count: BigInt(8),
+          false_count: BigInt(5),
         }),
       ],
     });
 
     const report = await runApsDataReadinessAudit(tx, ["alliance-1"]);
     const row = report.alliances[0]!.metricDistributions[0]!;
-    expect(row.section.kind).toBe("BOOLEAN");
-    if (row.section.kind === "BOOLEAN") {
-      expect(row.section.counts).toEqual({ suppressed: false, value: { trueCount: 10, falseCount: 8 } });
-      expect(JSON.stringify(row.section)).not.toContain("invalid");
+    expect(row.stats.suppressed).toBe(false);
+    if (!row.stats.suppressed) {
+      expect(row.stats.value.section).toEqual({ kind: "BOOLEAN", counts: { trueCount: 10, falseCount: 5 } });
+      expect(JSON.stringify(row.stats.value.section)).not.toContain("invalid");
+      expect(row.stats.value.coverage).toEqual({
+        currentActiveMemberCount: 20,
+        recordedActiveMemberCount: 15,
+        invalidActiveMemberCount: 5,
+        missingActiveMemberCount: 0,
+      });
     }
-    expect(row.coverage).toEqual({
-      suppressed: false,
-      value: { currentActiveMemberCount: 20, recordedActiveMemberCount: 18, invalidActiveMemberCount: 2, missingActiveMemberCount: 0 },
-    });
   });
 
   it("counts a metric as dogfood-ready only from DB-confirmed valid-data periods, not mere attachment", async () => {
@@ -453,7 +470,7 @@ describe("runApsDataReadinessAudit", () => {
     expect(serialized).not.toMatch(/playerName/);
   });
 
-  it(`does not suppress a distribution with at least MIN_CELL_SIZE (${MIN_CELL_SIZE}) contributing values`, async () => {
+  it(`does not suppress a row with exactly MIN_CELL_SIZE (${MIN_CELL_SIZE}) contributing values`, async () => {
     const tx = mockTx({
       allianceIds: ["alliance-1"],
       ...activePeriodAndMetric(),
@@ -486,9 +503,38 @@ describe("runApsDataReadinessAudit", () => {
 
     const report = await runApsDataReadinessAudit(tx, ["alliance-1"]);
     const row = report.alliances[0]!.metricDistributions[0]!;
-    expect(row.section.kind).toBe("NUMERIC");
-    if (row.section.kind === "NUMERIC") {
-      expect(row.section.distribution.suppressed).toBe(false);
+    expect(row.stats.suppressed).toBe(false);
+    if (!row.stats.suppressed) {
+      expect(row.stats.value.section.kind).toBe("NUMERIC");
+    }
+  });
+
+  it("does not treat an honest zero-data metric (attached but never entered) as a suppressed small cell", async () => {
+    const tx = mockTx({
+      allianceIds: ["alliance-1"],
+      ...activePeriodAndMetric(),
+      metrics: {
+        "alliance-1": [
+          {
+            id: "m1",
+            type: Metric_Type.NUMERIC,
+            summaryKind: MetricSummaryKind.SUM,
+            trendDirection: MetricTrendDirection.NEUTRAL,
+            active: true,
+            periodMetrics: [{ periodId: "p1", weight: 1, required: false, active: true }],
+          },
+        ],
+      },
+      // Large active roster, but literally nobody ever recorded a value --
+      // every count is 0 or the full roster size, nothing "small and positive."
+      coverageRows: [coverageRow({ metric_id: "m1", current_active_member_count: BigInt(50), missing_active_member_count: BigInt(50) })],
+    });
+
+    const report = await runApsDataReadinessAudit(tx, ["alliance-1"]);
+    const row = report.alliances[0]!.metricDistributions[0]!;
+    expect(row.stats.suppressed).toBe(false);
+    if (!row.stats.suppressed) {
+      expect(row.stats.value.section).toEqual({ kind: "NUMERIC", distribution: null });
     }
   });
 });

@@ -8,30 +8,29 @@
  * `formatSuppressibleStatistic`.
  */
 import { formatSuppressibleStatistic } from "./apsAuditPrivacy";
-import type {
-  ApsDataReadinessAuditReport,
-  AllianceAuditSection,
-  MetricCoverageStats,
-  NumericDistribution,
-} from "./apsDataReadinessAudit";
+import type { ApsDataReadinessAuditReport, AllianceAuditSection, MetricRowStats } from "./apsDataReadinessAudit";
 
-function formatDistribution(distribution: NumericDistribution): string {
-  return (
-    `count=${distribution.count} min=${distribution.min} max=${distribution.max} ` +
-    `p25=${distribution.p25.toFixed(2)} p50=${distribution.p50.toFixed(2)} p75=${distribution.p75.toFixed(2)} ` +
-    `zeros=${distribution.zeroCount} negatives=${distribution.negativeCount} outliers=${distribution.outlierCount}`
-  );
-}
-
-function formatCoverage(coverage: MetricCoverageStats): string {
-  return (
+function formatRowStats(stats: MetricRowStats): string {
+  const { coverage } = stats;
+  const lines = [
     `active ${coverage.recordedActiveMemberCount}/${coverage.currentActiveMemberCount} recorded, ` +
-    `${coverage.invalidActiveMemberCount} invalid, ${coverage.missingActiveMemberCount} missing`
-  );
-}
+      `${coverage.invalidActiveMemberCount} invalid, ${coverage.missingActiveMemberCount} missing`,
+    `archived contributors: ${stats.archivedContributingMemberCount}`,
+  ];
 
-function formatBooleanCounts(counts: { trueCount: number; falseCount: number }): string {
-  return `true=${counts.trueCount} false=${counts.falseCount}`;
+  if (stats.section.kind === "BOOLEAN") {
+    lines.push(`true=${stats.section.counts.trueCount} false=${stats.section.counts.falseCount}`);
+  } else if (stats.section.distribution === null) {
+    lines.push("no valid values recorded");
+  } else {
+    const d = stats.section.distribution;
+    lines.push(
+      `count=${d.count} min=${d.min} max=${d.max} p25=${d.p25.toFixed(2)} p50=${d.p50.toFixed(2)} p75=${d.p75.toFixed(2)} ` +
+        `zeros=${d.zeroCount} negatives=${d.negativeCount} outliers=${d.outlierCount}`,
+    );
+  }
+
+  return lines.join("\n    ");
 }
 
 function formatAllianceSection(section: AllianceAuditSection): string[] {
@@ -77,15 +76,7 @@ function formatAllianceSection(section: AllianceAuditSection): string[] {
   } else {
     for (const row of section.metricDistributions) {
       lines.push(`- ${row.metricLabel} [${row.summaryKind}/${row.trendDirection}]:`);
-      lines.push(`    coverage: ${formatSuppressibleStatistic(row.coverage, formatCoverage)}`);
-      lines.push(
-        `    archived contributors: ${formatSuppressibleStatistic(row.archivedContributingMemberCount, (n) => String(n))}`,
-      );
-      if (row.section.kind === "BOOLEAN") {
-        lines.push(`    ${formatSuppressibleStatistic(row.section.counts, formatBooleanCounts)}`);
-      } else {
-        lines.push(`    ${formatSuppressibleStatistic(row.section.distribution, formatDistribution)}`);
-      }
+      lines.push(`    ${formatSuppressibleStatistic(row.stats, formatRowStats)}`);
     }
   }
 

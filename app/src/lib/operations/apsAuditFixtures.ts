@@ -184,11 +184,11 @@ export async function createAllianceWithSparsePeriod(prisma: PrismaClient) {
 }
 
 /**
- * One BOOLEAN metric with a mix of true/false/invalid active values, plus
- * one archived member whose still-valid latest value contributes to the
- * true/false counts. Exercises the boolean coverage/count split (invalid
- * counts live only in `coverage`, never duplicated into the boolean
- * section) with enough contributors (>= MIN_CELL_SIZE) to stay unsuppressed.
+ * One BOOLEAN metric with active AND archived contributors, each population
+ * (active recorded, active missing, archived contributing, combined
+ * true/false total) at or above `MIN_CELL_SIZE` so none of the correlated
+ * counts trip small-cell suppression -- exercises the "genuinely safe to
+ * show everything" case with real numbers to check.
  */
 export async function createAllianceWithBooleanValues(prisma: PrismaClient) {
   const alliance = await createAlliance(prisma, "BooleanValues");
@@ -208,15 +208,74 @@ export async function createAllianceWithBooleanValues(prisma: PrismaClient) {
     data: { periodId: period.id, metricId: metric.id, weight: 1, required: false, active: true },
   });
 
-  // 3 true, 2 false, 1 invalid (legacy non-0/1 value) among active members.
-  const activeValues = [1, 1, 1, 0, 0, 7];
+  // 20 active members: 10 true, 5 false (15 recorded), 5 missing, 0 invalid.
+  const activeValues: (number | null)[] = [...Array(10).fill(1), ...Array(5).fill(0), ...Array(5).fill(null)];
   const activeMembers = await Promise.all(
     activeValues.map((_, index) => prisma.allianceMember.create({ data: { allianceId: alliance.id, playerName: `Active ${index}` } })),
   );
   await Promise.all(
-    activeMembers.map((member, index) =>
+    activeMembers.map((member, index) => {
+      const value = activeValues[index];
+      if (value === null) return Promise.resolve();
+      return prisma.memberMetricEntry.create({
+        data: { allianceMemberId: member.id, periodId: period.id, metricId: metric.id, value },
+      });
+    }),
+  );
+
+  // 5 archived members, all still contributing a valid value: 3 true, 2 false.
+  const archivedValues = [1, 1, 1, 0, 0];
+  const archivedMembers = await Promise.all(
+    archivedValues.map((_, index) =>
+      prisma.allianceMember.create({
+        data: { allianceId: alliance.id, playerName: `Archived ${index}`, archivedAt: new Date("2026-01-05") },
+      }),
+    ),
+  );
+  await Promise.all(
+    archivedMembers.map((member, index) =>
       prisma.memberMetricEntry.create({
-        data: { allianceMemberId: member.id, periodId: period.id, metricId: metric.id, value: activeValues[index]! },
+        data: { allianceMemberId: member.id, periodId: period.id, metricId: metric.id, value: archivedValues[index]! },
+      }),
+    ),
+  );
+
+  return { allianceId: alliance.id, periodId: period.id, metricId: metric.id };
+}
+
+/**
+ * A large, otherwise entirely unsuppressed active cohort (20 recorded, 0
+ * invalid, 0 missing) alongside exactly ONE archived contributor. Exercises
+ * the anti-subtraction fix directly against real PostgreSQL: coverage
+ * (20/20) and the boolean total (21) are each individually "large," but the
+ * archived count (1) is a small positive cell shared by the same row --
+ * the whole row must suppress, not just `archivedContributingMemberCount`.
+ */
+export async function createAllianceWithSmallArchivedCohort(prisma: PrismaClient) {
+  const alliance = await createAlliance(prisma, "SmallArchivedCohort");
+  const period = await prisma.metricPeriod.create({
+    data: {
+      allianceId: alliance.id,
+      name: "Week 1",
+      startsAt: new Date("2026-01-01"),
+      endsAt: new Date("2026-01-08"),
+      active: true,
+    },
+  });
+  const metric = await prisma.metric.create({
+    data: { allianceId: alliance.id, name: "Fixture Metric", type: Metric_Type.BOOLEAN, summaryKind: MetricSummaryKind.TRUE_RATE },
+  });
+  await prisma.metricPeriodMetric.create({
+    data: { periodId: period.id, metricId: metric.id, weight: 1, required: false, active: true },
+  });
+
+  const activeMembers = await Promise.all(
+    Array.from({ length: 20 }, (_, index) => prisma.allianceMember.create({ data: { allianceId: alliance.id, playerName: `Active ${index}` } })),
+  );
+  await Promise.all(
+    activeMembers.map((member) =>
+      prisma.memberMetricEntry.create({
+        data: { allianceMemberId: member.id, periodId: period.id, metricId: metric.id, value: 1 },
       }),
     ),
   );
@@ -272,6 +331,54 @@ export async function createAllianceWithAttachedButEmptyMetric(prisma: PrismaCli
   // emptyMetric is attached to every period above but never gets an entry.
 
   return { allianceId: alliance.id, readyMetricId: readyMetric.id, emptyMetricId: emptyMetric.id };
+}
+
+/**
+ * Two alliances, plus one deliberately inconsistent cross-tenant row: a
+ * `MetricPeriodMetric` attaching alliance A's metric to alliance B's
+ * period, with a real entry from an alliance-B member. Nothing at the
+ * Prisma-relation level stops this from existing (there's no composite FK
+ * enforcing metric/period same-alliance), so the dogfood-readiness query
+ * must not let it inflate alliance A's readiness count -- see
+ * `queryPeriodsWithValidDataCounts`'s explicit `allianceId` re-scoping.
+ */
+export async function createCrossTenantDogfoodAttachment(prisma: PrismaClient) {
+  const allianceA = await createAlliance(prisma, "CrossTenantA");
+  const allianceB = await createAlliance(prisma, "CrossTenantB");
+
+  const metricA = await prisma.metric.create({
+    data: { allianceId: allianceA.id, name: "Alliance A Metric", type: Metric_Type.NUMERIC, summaryKind: MetricSummaryKind.SUM },
+  });
+  // Alliance A has its OWN legitimate periods (so it has something to audit
+  // besides the foreign one below), but the metric is never actually
+  // attached to any of them with real data.
+  const ownPeriods = await Promise.all(
+    [
+      { name: "A Week 1", startsAt: new Date("2026-01-01"), endsAt: new Date("2026-01-08") },
+      { name: "A Week 2", startsAt: new Date("2026-01-09"), endsAt: new Date("2026-01-16") },
+    ].map((data) => prisma.metricPeriod.create({ data: { allianceId: allianceA.id, active: true, ...data } })),
+  );
+
+  const foreignPeriod = await prisma.metricPeriod.create({
+    data: { allianceId: allianceB.id, name: "B Week 1", startsAt: new Date("2026-01-01"), endsAt: new Date("2026-01-08"), active: true },
+  });
+  const foreignMember = await prisma.allianceMember.create({ data: { allianceId: allianceB.id, playerName: "B Member" } });
+
+  // The inconsistent cross-tenant attachment + entry.
+  await prisma.metricPeriodMetric.create({
+    data: { periodId: foreignPeriod.id, metricId: metricA.id, weight: 1, required: false, active: true },
+  });
+  await prisma.memberMetricEntry.create({
+    data: { allianceMemberId: foreignMember.id, periodId: foreignPeriod.id, metricId: metricA.id, value: 10 },
+  });
+
+  return {
+    allianceAId: allianceA.id,
+    allianceBId: allianceB.id,
+    metricAId: metricA.id,
+    ownPeriodIds: ownPeriods.map((p) => p.id),
+    foreignPeriodId: foreignPeriod.id,
+  };
 }
 
 /**
