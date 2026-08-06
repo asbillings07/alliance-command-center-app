@@ -23,7 +23,7 @@ test.describe("Historical Roster Import", () => {
         await page.goto(`/alliances/${allianceId}/members/import`);
         await expect(page.getByRole("heading", { name: "Member Import" })).toBeVisible();
 
-        await page.getByRole("tab", { name: "Historical Roster" }).click();
+        await page.getByRole("button", { name: "Historical Roster", exact: true }).click();
         await expect(page.getByText("Historical roster mode")).toBeVisible();
 
         const csvContent =
@@ -100,7 +100,7 @@ test.describe("Historical Roster Import", () => {
 
         await login({ email, password, displayName: "Admin User" });
         await page.goto(`/alliances/${allianceId}/members/import`);
-        await page.getByRole("tab", { name: "Historical Roster" }).click();
+        await page.getByRole("button", { name: "Historical Roster", exact: true }).click();
 
         const csvContent = `Player,THP,Role\nAlreadyActiveConflictMember,5000,R2`;
         const fileInput = page.locator('input[type="file"]');
@@ -172,7 +172,7 @@ test.describe("Historical Roster Import", () => {
 
         await login({ email, password, displayName: "Admin User" });
         await page.goto(`/alliances/${allianceId}/members/import`);
-        await page.getByRole("tab", { name: "Historical Roster" }).click();
+        await page.getByRole("button", { name: "Historical Roster", exact: true }).click();
 
         const csvContent = `Player,THP,Role\nA11yHistoricalHero,10000,R4`;
         const fileInput = page.locator('input[type="file"]');
@@ -208,6 +208,39 @@ test.describe("Historical Roster Import", () => {
         });
     });
 
+    test("switches import mode via ordinary keyboard button activation (Tab focus + Enter/Space), not a custom tablist widget", async ({
+        page,
+        login,
+        adminScenario,
+    }) => {
+        // #282 follow-up: the mode switch is a plain <button aria-pressed>
+        // toggle group, not a WAI-ARIA tablist — so it needs no bespoke
+        // roving-tabindex or arrow-key handling to be keyboard-operable.
+        // Every browser already activates a focused <button> on Enter or
+        // Space natively; this is the real-browser proof of that, since
+        // jsdom component tests can't exercise native keyboard-to-click
+        // browser behavior.
+        const { allianceId, email, password } = adminScenario;
+        await login({ email, password, displayName: "Admin User" });
+        await page.goto(`/alliances/${allianceId}/members/import`);
+
+        const historicalButton = page.getByRole("button", { name: "Historical Roster", exact: true });
+        const currentButton = page.getByRole("button", { name: "Current Roster", exact: true });
+        await expect(currentButton).toHaveAttribute("aria-pressed", "true");
+        await expect(historicalButton).toHaveAttribute("aria-pressed", "false");
+
+        await historicalButton.focus();
+        await page.keyboard.press("Enter");
+        await expect(historicalButton).toHaveAttribute("aria-pressed", "true");
+        await expect(page.getByText("Historical roster mode")).toBeVisible();
+
+        await currentButton.focus();
+        await page.keyboard.press(" ");
+        await expect(currentButton).toHaveAttribute("aria-pressed", "true");
+        await expect(historicalButton).toHaveAttribute("aria-pressed", "false");
+        await expect(page.getByText("Scope: Alliance Members")).toBeVisible();
+    });
+
     test("renders the Historical Roster preview at a 320px viewport without horizontal overflow", async ({
         page,
         login,
@@ -219,7 +252,7 @@ test.describe("Historical Roster Import", () => {
         await page.setViewportSize({ width: 320, height: 800 });
 
         await page.goto(`/alliances/${allianceId}/members/import`);
-        await page.getByRole("tab", { name: "Historical Roster" }).click();
+        await page.getByRole("button", { name: "Historical Roster", exact: true }).click();
 
         const csvContent = `Player,THP,Role\nMobileHistoricalHeroWithALongName,10000,R4`;
         const fileInput = page.locator('input[type="file"]');

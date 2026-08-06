@@ -35,11 +35,22 @@ export function ImportModeSwitcher({ allianceId, existingMembers, returnTo, canM
 
     return (
         <div className="flex flex-col gap-6">
-            <div className="flex items-center gap-2 border-b border-border pb-3" role="tablist" aria-label="Import mode">
+            {/*
+             * Deliberately plain toggle buttons, not an ARIA tablist. A real
+             * tablist requires roving tabindex, arrow-key navigation, and an
+             * associated tabpanel (WAI-ARIA APG) — implementing that for a
+             * two-option mode switch is more machinery than this control's
+             * actual complexity warrants. `aria-pressed` on an ordinary
+             * `<button>` communicates the same "which mode is active" state
+             * with coherent semantics, and needs no custom keyboard handling
+             * at all: every browser already activates a focused `<button>`
+             * on Enter/Space natively — see this file's own e2e keyboard
+             * coverage for the real-browser proof.
+             */}
+            <div className="flex items-center gap-2 border-b border-border pb-3" role="group" aria-label="Import mode">
                 <button
                     type="button"
-                    role="tab"
-                    aria-selected={mode === "current"}
+                    aria-pressed={mode === "current"}
                     onClick={() => setMode("current")}
                     className={`px-4 py-2 rounded-md text-sm font-medium cursor-pointer ${
                         mode === "current"
@@ -52,8 +63,7 @@ export function ImportModeSwitcher({ allianceId, existingMembers, returnTo, canM
                 {canManageMembers && (
                     <button
                         type="button"
-                        role="tab"
-                        aria-selected={mode === "historical"}
+                        aria-pressed={mode === "historical"}
                         onClick={() => setMode("historical")}
                         className={`px-4 py-2 rounded-md text-sm font-medium cursor-pointer ${
                             mode === "historical"

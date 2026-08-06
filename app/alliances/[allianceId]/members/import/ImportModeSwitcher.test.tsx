@@ -66,14 +66,19 @@ describe("ImportModeSwitcher [component]", () => {
 
         expect(container.textContent).toContain("Historical Roster");
 
-        const historicalTab = Array.from(container.querySelectorAll('[role="tab"]')).find((el) =>
+        const historicalButton = Array.from(container.querySelectorAll("button")).find((el) =>
             el.textContent?.includes("Historical Roster")
         ) as HTMLButtonElement;
+        // Plain toggle button, not a fake ARIA tab (#282 follow-up) —
+        // `aria-pressed` communicates which mode is active without the
+        // roving-tabindex/arrow-key machinery a real tablist would require.
+        expect(historicalButton.getAttribute("aria-pressed")).toBe("false");
 
         await act(async () => {
-            historicalTab.click();
+            historicalButton.click();
         });
 
+        expect(historicalButton.getAttribute("aria-pressed")).toBe("true");
         expect(container.textContent).toContain("Historical roster mode");
         expect(container.textContent).not.toContain("Scope: Alliance Members");
     });
