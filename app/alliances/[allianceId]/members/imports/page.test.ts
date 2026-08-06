@@ -112,11 +112,14 @@ describe("MemberImportHistoryPage", () => {
                 actorDisplayNameSnapshot: "Leader One",
                 createdAt: new Date("2026-08-01T12:00:00Z"),
                 createdCount: 5,
+                mode: "CURRENT" as const,
+                createdArchivedCount: 0,
                 restoredCount: 2,
                 skippedExistingCount: 1,
                 skippedDuplicateCount: 1,
                 skippedEmptyNameCount: 0,
                 skippedUnselectedCount: 1,
+                skippedLifecycleConflictCount: 0,
             },
         ] as unknown as Awaited<ReturnType<typeof prisma.memberImport.findMany>>);
 
@@ -154,11 +157,14 @@ describe("MemberImportHistoryPage", () => {
                 actorDisplayNameSnapshot: "Leader One",
                 createdAt: new Date("2026-08-01T12:00:00Z"),
                 createdCount: 5,
+                mode: "CURRENT" as const,
+                createdArchivedCount: 0,
                 restoredCount: 2,
                 skippedExistingCount: 1,
                 skippedDuplicateCount: 1,
                 skippedEmptyNameCount: 0,
                 skippedUnselectedCount: 1,
+                skippedLifecycleConflictCount: 0,
             },
         ] as unknown as Awaited<ReturnType<typeof prisma.memberImport.findMany>>);
 
@@ -195,11 +201,14 @@ describe("MemberImportHistoryPage", () => {
                 actorDisplayNameSnapshot: null,
                 createdAt: new Date("2026-08-01T12:00:00Z"),
                 createdCount: 1,
+                mode: "CURRENT" as const,
+                createdArchivedCount: 0,
                 restoredCount: 0,
                 skippedExistingCount: 0,
                 skippedDuplicateCount: 0,
                 skippedEmptyNameCount: 0,
                 skippedUnselectedCount: 0,
+                skippedLifecycleConflictCount: 0,
             },
         ] as unknown as Awaited<ReturnType<typeof prisma.memberImport.findMany>>);
 
@@ -242,11 +251,14 @@ describe("MemberImportHistoryPage", () => {
                 actorDisplayNameSnapshot: null,
                 createdAt: new Date("2026-08-01T12:00:00Z"),
                 createdCount: 1,
+                mode: "CURRENT" as const,
+                createdArchivedCount: 0,
                 restoredCount: 0,
                 skippedExistingCount: 0,
                 skippedDuplicateCount: 0,
                 skippedEmptyNameCount: 0,
                 skippedUnselectedCount: 0,
+                skippedLifecycleConflictCount: 0,
             },
         ] as unknown as Awaited<ReturnType<typeof prisma.memberImport.findMany>>);
 

@@ -46,12 +46,15 @@ export default async function MemberImportDetailPage({ params }: Params) {
             actorEmailSnapshot: true,
             actorDisplayNameSnapshot: true,
             createdAt: true,
+            mode: true,
             createdCount: true,
+            createdArchivedCount: true,
             restoredCount: true,
             skippedExistingCount: true,
             skippedDuplicateCount: true,
             skippedEmptyNameCount: true,
             skippedUnselectedCount: true,
+            skippedLifecycleConflictCount: true,
             rollback: { select: { id: true } },
             changes: {
                 orderBy: [{ sourceRow: "asc" }, { id: "asc" }],
@@ -80,8 +83,10 @@ export default async function MemberImportDetailPage({ params }: Params) {
         memberImport.skippedExistingCount +
         memberImport.skippedDuplicateCount +
         memberImport.skippedEmptyNameCount +
-        memberImport.skippedUnselectedCount;
+        memberImport.skippedUnselectedCount +
+        memberImport.skippedLifecycleConflictCount;
 
+    const isHistorical = memberImport.mode === "HISTORICAL";
     const detailLabel = memberImport.fileName;
 
     return (
@@ -113,10 +118,25 @@ export default async function MemberImportDetailPage({ params }: Params) {
                 )
             }
         >
+            {isHistorical && (
+                <div className="mb-4">
+                    <Badge variant="info" size="sm">
+                        Historical Roster Import
+                    </Badge>
+                </div>
+            )}
+
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 <div className="bg-success/10 border border-success/30 rounded-lg p-4 text-center">
                     <p className="text-2xl font-bold text-success">{memberImport.createdCount}</p>
-                    <p className="text-sm text-text-secondary">Created</p>
+                    <p className="text-sm text-text-secondary">
+                        Created
+                        {memberImport.createdArchivedCount > 0 && (
+                            <span className="block text-xs text-text-muted">
+                                {memberImport.createdArchivedCount} archived
+                            </span>
+                        )}
+                    </p>
                 </div>
                 <div className="bg-warning/10 border border-warning/30 rounded-lg p-4 text-center">
                     <p className="text-2xl font-bold text-warning">{memberImport.restoredCount}</p>
@@ -156,6 +176,12 @@ export default async function MemberImportDetailPage({ params }: Params) {
                         {memberImport.skippedUnselectedCount > 0 && (
                             <li>
                                 <strong>{memberImport.skippedUnselectedCount}</strong> rows unselected during review
+                            </li>
+                        )}
+                        {memberImport.skippedLifecycleConflictCount > 0 && (
+                            <li>
+                                <strong>{memberImport.skippedLifecycleConflictCount}</strong> existing active members
+                                requested Archived were left active (never auto-archived)
                             </li>
                         )}
                     </ul>
@@ -199,7 +225,11 @@ export default async function MemberImportDetailPage({ params }: Params) {
                                             variant={change.changeType === MemberImportChangeType.CREATED ? "success" : "warning"}
                                             size="sm"
                                         >
-                                            {change.changeType === MemberImportChangeType.CREATED ? "Created" : "Restored"}
+                                            {change.changeType === MemberImportChangeType.CREATED
+                                                ? change.archivedAtAfter
+                                                    ? "Created (Archived)"
+                                                    : "Created"
+                                                : "Restored"}
                                         </Badge>
                                     </td>
                                     <td className="px-4 py-3 text-right text-text-secondary whitespace-nowrap">

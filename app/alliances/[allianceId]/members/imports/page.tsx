@@ -61,12 +61,15 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
             actorEmailSnapshot: true,
             actorDisplayNameSnapshot: true,
             createdAt: true,
+            mode: true,
             createdCount: true,
+            createdArchivedCount: true,
             restoredCount: true,
             skippedExistingCount: true,
             skippedDuplicateCount: true,
             skippedEmptyNameCount: true,
             skippedUnselectedCount: true,
+            skippedLifecycleConflictCount: true,
         },
     });
 
@@ -128,9 +131,11 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
                                             imp.skippedExistingCount +
                                             imp.skippedDuplicateCount +
                                             imp.skippedEmptyNameCount +
-                                            imp.skippedUnselectedCount;
+                                            imp.skippedUnselectedCount +
+                                            imp.skippedLifecycleConflictCount;
                                         const detailHref = `/alliances/${allianceId}/members/imports/${imp.id}`;
                                         const actorLabel = imp.actorDisplayNameSnapshot ?? imp.actorEmailSnapshot;
+                                        const isHistorical = imp.mode === "HISTORICAL";
 
                                         return (
                                             <tr
@@ -153,7 +158,14 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
                                                         href={detailHref}
                                                         className="block px-4 py-3 font-medium text-primary-light hover:text-primary before:absolute before:inset-0 before:content-['']"
                                                     >
-                                                        {imp.fileName}
+                                                        <span className="flex items-center gap-2">
+                                                            {imp.fileName}
+                                                            {isHistorical && (
+                                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-primary/20 text-primary-light">
+                                                                    Historical Roster
+                                                                </span>
+                                                            )}
+                                                        </span>
                                                         {imp.sourceSheetName && (
                                                             <span className="block text-xs font-normal text-text-muted">
                                                                 {imp.sourceSheetName}
@@ -169,12 +181,23 @@ export default async function MemberImportHistoryPage({ params, searchParams }: 
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-medium text-success whitespace-nowrap">
                                                     {imp.createdCount}
+                                                    {imp.createdArchivedCount > 0 && (
+                                                        <span className="block text-xs font-normal text-text-muted">
+                                                            {imp.createdArchivedCount} archived
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-medium text-warning whitespace-nowrap">
                                                     {imp.restoredCount}
                                                 </td>
                                                 <td className="px-4 py-3 text-right text-text-muted whitespace-nowrap">
                                                     {skippedTotal}
+                                                    {imp.skippedLifecycleConflictCount > 0 && (
+                                                        <span className="block text-xs font-normal text-text-muted">
+                                                            {imp.skippedLifecycleConflictCount} conflict
+                                                            {imp.skippedLifecycleConflictCount === 1 ? "" : "s"}
+                                                        </span>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );

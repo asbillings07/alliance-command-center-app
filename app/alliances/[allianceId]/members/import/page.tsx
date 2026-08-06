@@ -2,7 +2,7 @@ import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { validateSetupImportReturnTo } from "@/app/src/lib/setup/validateSetupImportReturnTo";
-import { RosterImportForm } from "./RosterImportForm";
+import { ImportModeSwitcher } from "./ImportModeSwitcher";
 import { PageLayout, Card, BackToSetupLink } from "@/app/src/components";
 import { TourAutoStart } from "@/app/src/components/client";
 
@@ -18,7 +18,7 @@ type Params = {
 export default async function MemberImportPage({ params, searchParams }: Params) {
     const { allianceId } = await params;
     const { returnTo: rawReturnTo } = await searchParams;
-    await requireAllianceAccess({
+    const auth = await requireAllianceAccess({
         allianceId,
         requiredPermission: Permissions.IMPORT_MEMBERS,
     });
@@ -55,10 +55,11 @@ export default async function MemberImportPage({ params, searchParams }: Params)
             <TourAutoStart />
             <Card>
                 <Card.Body>
-                    <RosterImportForm
+                    <ImportModeSwitcher
                         allianceId={allianceId}
                         existingMembers={existingMembers}
                         returnTo={returnTo ?? undefined}
+                        canManageMembers={auth.permissions.canManageMembers}
                     />
                 </Card.Body>
             </Card>

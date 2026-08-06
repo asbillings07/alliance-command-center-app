@@ -2,13 +2,13 @@
 
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { normalizeName } from "@/app/src/lib/memberMatcher";
-import { parseStrictInteger } from "@/app/src/lib/numberParser";
 import { withAllianceMemberLock } from "@/app/src/lib/allianceMemberLock";
 import { MAX_ACTIVE_ALLIANCE_MEMBERS, getAvailableMemberCapacity } from "@/app/src/lib/memberCapacity";
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
-import { MAX_PHYSICAL_ROWS_PER_SHEET } from "@/app/src/lib/workbookParser";
 import { MemberImportChangeType } from "@/app/generated/prisma/enums";
+import { validateImportProvenance, validateStructuralEntries, validateThpValue } from "./importValidation";
+import type { ImportProvenance } from "./importValidation";
 
 export type RosterEntry = {
     playerName: string;
@@ -42,14 +42,6 @@ type ArchivedMemberSnapshot = {
     archivedAt: Date | null;
 };
 
-// Provenance metadata about the uploaded file. Like sourceRow, this is
-// client-supplied display metadata, not authenticated proof — validated
-// below before it's trusted for history.
-export type ImportProvenance = {
-    fileName: string;
-    sourceSheetName: string;
-};
-
 export type ImportResult = {
     created: number;
     restored: number;
@@ -63,8 +55,6 @@ export type ImportResult = {
     // zero-net-effect commit where every row was skipped).
     memberImportId: string | null;
 };
-
-const MAX_NAME_METADATA_LENGTH = 255;
 
 function failResult(errors: string[], skippedEmptyNames = 0): ImportResult {
     return {
@@ -98,107 +88,27 @@ export async function importMembers(
     // missing/null/non-object third argument, and `provenance.fileName` on
     // that throws outside the try/catch below rather than failing closed
     // with a normal error result.
-    if (provenance === null || typeof provenance !== "object") {
-        return failResult(["Missing or invalid file name"]);
+    const provenanceResult = validateImportProvenance(provenance);
+    if (!provenanceResult.success) {
+        return failResult([provenanceResult.error]);
     }
-    if (typeof provenance.fileName !== "string") {
-        return failResult(["Missing or invalid file name"]);
-    }
-    if (typeof provenance.sourceSheetName !== "string") {
-        return failResult(["Missing or invalid worksheet name"]);
-    }
-    const fileName = provenance.fileName.trim();
-    const sourceSheetName = provenance.sourceSheetName.trim();
-    if (fileName.length === 0 || fileName.length > MAX_NAME_METADATA_LENGTH) {
-        return failResult(["Missing or invalid file name"]);
-    }
-    if (sourceSheetName.length === 0 || sourceSheetName.length > MAX_NAME_METADATA_LENGTH) {
-        return failResult(["Missing or invalid worksheet name"]);
-    }
+    const { fileName, sourceSheetName } = provenanceResult;
 
-    if (entries.length === 0) {
-        return failResult(["No entries to import"]);
+    const structuralResult = validateStructuralEntries(entries);
+    if (!structuralResult.success) {
+        return failResult(structuralResult.errors, structuralResult.skippedEmptyNames);
     }
-
-    // Abuse protection ceiling for row count (separate from the 100-active-member domain capacity)
-    if (entries.length > 2000) {
-        return failResult(["File exceeds maximum technical ceiling of 2,000 entries"]);
-    }
-
-    // sourceRow must be a positive, safe integer within the parser's physical
-    // row ceiling, and a source row cannot produce multiple affected changes
-    // — enforced here by requiring every submitted sourceRow to be unique,
-    // and backed at the DB by MemberImportChange's
-    // @@unique([memberImportId, sourceRow]).
-    const seenSourceRows = new Set<number>();
-    for (const entry of entries) {
-        if (
-            !Number.isSafeInteger(entry.sourceRow) ||
-            entry.sourceRow <= 0 ||
-            entry.sourceRow > MAX_PHYSICAL_ROWS_PER_SHEET
-        ) {
-            return failResult([`Invalid source row for player "${entry.playerName}"`]);
-        }
-        if (seenSourceRows.has(entry.sourceRow)) {
-            return failResult([`Duplicate source row ${entry.sourceRow} in submitted entries`]);
-        }
-        seenSourceRows.add(entry.sourceRow);
-    }
-
-    // Validate player names - filter out empty/whitespace-only entries
-    let skippedEmptyNames = 0;
-    const validatedEntries: ValidatedRosterEntry[] = [];
-    for (const entry of entries) {
-        const trimmedName = entry.playerName.trim();
-        if (!trimmedName) {
-            skippedEmptyNames++;
-        } else {
-            validatedEntries.push({
-                playerName: trimmedName,
-                thp: entry.thp,
-                role: entry.role,
-                restore: entry.restore,
-                selected: entry.selected,
-                sourceRow: entry.sourceRow,
-            });
-        }
-    }
-
-    if (validatedEntries.length === 0) {
-        return failResult(
-            skippedEmptyNames > 0
-                ? ["All entries have empty player names"]
-                : ["No valid entries to import"],
-            skippedEmptyNames
-        );
-    }
+    const { skippedEmptyNames } = structuralResult;
+    const validatedEntries: ValidatedRosterEntry[] = structuralResult.validatedEntries;
 
     // Validate selected THP values with parseStrictInteger and THP domain rule (non-negative)
     for (const entry of validatedEntries) {
-        if (entry.selected !== false && entry.thp !== undefined && entry.thp !== null) {
-            if (typeof entry.thp !== "string") {
-                return failResult(
-                    [`Invalid THP value for player "${entry.playerName}": THP must be provided as a raw string`],
-                    skippedEmptyNames
-                );
+        if (entry.selected !== false) {
+            const thpResult = validateThpValue(entry.thp, entry.playerName);
+            if (!thpResult.success) {
+                return failResult([thpResult.error], skippedEmptyNames);
             }
-            const rawThpStr = entry.thp.trim();
-            if (rawThpStr !== "") {
-                const parsed = parseStrictInteger(rawThpStr);
-                if (!parsed.success) {
-                    return failResult(
-                        [`Invalid THP value "${rawThpStr}" for player "${entry.playerName}": ${parsed.error}`],
-                        skippedEmptyNames
-                    );
-                }
-                if (parsed.value < 0) {
-                    return failResult(
-                        [`Total Hero Power cannot be negative for player "${entry.playerName}" (${parsed.value})`],
-                        skippedEmptyNames
-                    );
-                }
-                entry.parsedThp = parsed.value;
-            }
+            entry.parsedThp = thpResult.parsedThp;
         }
     }
 
