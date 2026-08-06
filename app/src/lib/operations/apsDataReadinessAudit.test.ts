@@ -470,6 +470,79 @@ describe("runApsDataReadinessAudit", () => {
     expect(serialized).not.toMatch(/playerName/);
   });
 
+  it("suppresses the whole row when the boolean section's own true/false split has a small subgroup, even though the total is large", async () => {
+    const tx = mockTx({
+      allianceIds: ["alliance-1"],
+      ...activePeriodAndMetric(),
+      metrics: {
+        "alliance-1": [
+          {
+            id: "m1",
+            type: Metric_Type.BOOLEAN,
+            summaryKind: MetricSummaryKind.TRUE_RATE,
+            trendDirection: MetricTrendDirection.NEUTRAL,
+            active: true,
+            periodMetrics: [{ periodId: "p1", weight: 1, required: false, active: true }],
+          },
+        ],
+      },
+      coverageRows: [
+        coverageRow({
+          metric_id: "m1",
+          current_active_member_count: BigInt(10),
+          recorded_active_member_count: BigInt(10),
+          // Total (10) clears MIN_CELL_SIZE, but the split (9/1) discloses
+          // an exact one-member subgroup unless it's part of the gate too.
+          true_count: BigInt(9),
+          false_count: BigInt(1),
+        }),
+      ],
+    });
+
+    const report = await runApsDataReadinessAudit(tx, ["alliance-1"]);
+    const row = report.alliances[0]!.metricDistributions[0]!;
+    expect(row.stats.suppressed).toBe(true);
+  });
+
+  it("suppresses the whole row when a numeric section has exactly one zero/negative/outlier value, even though the total is large", async () => {
+    const tx = mockTx({
+      allianceIds: ["alliance-1"],
+      ...activePeriodAndMetric(),
+      metrics: {
+        "alliance-1": [
+          {
+            id: "m1",
+            type: Metric_Type.NUMERIC,
+            summaryKind: MetricSummaryKind.SUM,
+            trendDirection: MetricTrendDirection.NEUTRAL,
+            active: true,
+            periodMetrics: [{ periodId: "p1", weight: 1, required: false, active: true }],
+          },
+        ],
+      },
+      coverageRows: [
+        coverageRow({
+          metric_id: "m1",
+          current_active_member_count: BigInt(10),
+          recorded_active_member_count: BigInt(10),
+          numeric_valid_count: BigInt(10),
+          min_value: 0,
+          max_value: 100,
+          p25: 10,
+          p50: 20,
+          p75: 30,
+          // 10 valid values, but exactly one is negative -- disclosing that
+          // subgroup even though numericValidCount (10) clears the threshold.
+          negative_count: BigInt(1),
+        }),
+      ],
+    });
+
+    const report = await runApsDataReadinessAudit(tx, ["alliance-1"]);
+    const row = report.alliances[0]!.metricDistributions[0]!;
+    expect(row.stats.suppressed).toBe(true);
+  });
+
   it(`does not suppress a row with exactly MIN_CELL_SIZE (${MIN_CELL_SIZE}) contributing values`, async () => {
     const tx = mockTx({
       allianceIds: ["alliance-1"],

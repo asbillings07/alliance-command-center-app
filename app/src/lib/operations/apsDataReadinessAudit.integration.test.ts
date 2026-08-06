@@ -192,19 +192,19 @@ describe.skipIf(!runDb)("APS data-readiness audit [integration]", () => {
       const section = row.stats.value.section;
       expect(section.kind).toBe("NUMERIC");
       if (section.kind !== "NUMERIC" || section.distribution === null) throw new Error("expected a numeric distribution");
-      // Fixture values: [-50, -10, 0, 20, 80].
+      // Fixture values: [-50,-40,-30,-20,-10, 10,20,...,150] (20 values).
       const dist = section.distribution;
-      expect(dist.count).toBe(5);
+      expect(dist.count).toBe(20);
       expect(dist.min).toBe(-50);
-      expect(dist.max).toBe(80);
-      expect(dist.negativeCount).toBe(2);
-      expect(dist.zeroCount).toBe(1);
+      expect(dist.max).toBe(150);
+      expect(dist.negativeCount).toBe(5);
+      expect(dist.zeroCount).toBe(0);
       // PERCENTILE_CONT(0.25/0.5/0.75) over the sorted values.
-      expect(dist.p25).toBeCloseTo(-10);
-      expect(dist.p50).toBeCloseTo(0);
-      expect(dist.p75).toBeCloseTo(20);
-      // IQR = 30; fence = [-10 - 45, 20 + 45] = [-55, 65] -> only 80 is outside it.
-      expect(dist.outlierCount).toBe(1);
+      expect(dist.p25).toBeCloseTo(5);
+      expect(dist.p50).toBeCloseTo(55);
+      expect(dist.p75).toBeCloseTo(102.5);
+      // IQR = 97.5; fence = [5 - 146.25, 102.5 + 146.25] = [-141.25, 248.75] -> nothing outside it.
+      expect(dist.outlierCount).toBe(0);
     }
   });
 
@@ -289,5 +289,22 @@ describe.skipIf(!runDb)("APS data-readiness audit [integration]", () => {
     // count as ZERO for alliance A.
     expect(dogfood.totalMetricCount).toBe(1);
     expect(dogfood.metricsWithEnoughObservationsCount).toBe(0);
+  });
+
+  it("does not count a cross-tenant MetricPeriodMetric attachment in this alliance's activeAttachmentCount", async () => {
+    const fixture = await createCrossTenantDogfoodAttachment(prisma);
+    createdAllianceIds.push(fixture.allianceAId, fixture.allianceBId);
+
+    const report = await runInReadOnlyAuditTransaction(prisma, (tx) =>
+      runApsDataReadinessAudit(tx, [fixture.allianceAId]),
+    );
+    const config = report.alliances[0]!.metricConfiguration;
+
+    // Alliance A's metric is attached only to alliance B's foreign period --
+    // if `periodMetrics` weren't scoped by `period.allianceId`, that would
+    // count as 1 active attachment. It must count as ZERO for alliance A.
+    expect(config.totalMetricCount).toBe(1);
+    expect(config.activeAttachmentCount).toBe(0);
+    expect(config.inactiveAttachmentCount).toBe(0);
   });
 });

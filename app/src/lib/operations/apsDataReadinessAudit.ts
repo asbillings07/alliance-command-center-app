@@ -190,7 +190,18 @@ async function loadAllianceMetrics(tx: AuditTxClient, allianceId: string): Promi
       summaryKind: true,
       trendDirection: true,
       active: true,
-      periodMetrics: { select: { periodId: true, weight: true, required: true, active: true } },
+      // `Metric` is alliance-scoped, but `MetricPeriodMetric` has independent
+      // FKs to `Metric` and `MetricPeriod` with no composite constraint
+      // tying them to the SAME alliance -- nothing stops an inconsistent
+      // attachment from pairing this alliance's metric with a foreign
+      // alliance's period. Filtering on `period.allianceId` here (rather
+      // than after loading) keeps every downstream count -- attachment
+      // counts, stability, dogfood -- scoped to this alliance's own periods
+      // regardless of what a foreign/buggy attachment might otherwise add.
+      periodMetrics: {
+        where: { period: { allianceId } },
+        select: { periodId: true, weight: true, required: true, active: true },
+      },
     },
   });
 }
@@ -556,7 +567,11 @@ async function buildMetricDistributionRows(
     // EXACTLY (numericValidCount/trueCount+falseCount both span active AND
     // archived members -- see queryCoverageAndDistribution). Every count in
     // that relationship must suppress together, or the one left out is
-    // recoverable from the other two by subtraction.
+    // recoverable from the other two by subtraction. The section's OWN
+    // internal breakdown (trueCount/falseCount; zero/negative/outlier
+    // counts) must join the same bundle too: e.g. 10 valid values split
+    // 9/1 has a "large" total (10) but still discloses an exact one-member
+    // subgroup (falseCount=1) unless that breakdown is part of the gate.
     const totalValidCount = aggregate.numericValidCount + aggregate.trueCount + aggregate.falseCount;
 
     return {
@@ -571,6 +586,11 @@ async function buildMetricDistributionRows(
           aggregate.missingActiveMemberCount,
           aggregate.archivedContributingMemberCount,
           totalValidCount,
+          aggregate.trueCount,
+          aggregate.falseCount,
+          aggregate.zeroCount,
+          aggregate.negativeCount,
+          aggregate.outlierCount,
         ],
         stats,
       ),

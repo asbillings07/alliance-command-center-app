@@ -118,6 +118,13 @@ export async function createAllianceWithChangedMetricBetweenPeriods(prisma: Pris
 }
 
 /** One numeric metric with a mix of negative and positive recorded values. */
+/**
+ * 20 values: 5 negative, 0 zero, 15 positive, none an outlier by the Tukey
+ * fence. Every category count (negative/zero/outlier) is either 0 or
+ * >= MIN_CELL_SIZE so the row is genuinely unsuppressed, unlike a smaller
+ * sample where e.g. exactly one negative value would itself be a
+ * small-cell disclosure (see `suppressCorrelatedCounts`).
+ */
 export async function createAllianceWithNegativeValues(prisma: PrismaClient) {
   const alliance = await createAlliance(prisma, "NegativeValues");
   const period = await prisma.metricPeriod.create({
@@ -136,7 +143,9 @@ export async function createAllianceWithNegativeValues(prisma: PrismaClient) {
     data: { periodId: period.id, metricId: metric.id, weight: 1, required: false, active: true },
   });
 
-  const values = [-50, -10, 0, 20, 80];
+  const values = [
+    -50, -40, -30, -20, -10, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150,
+  ];
   const members = await Promise.all(
     values.map((_, index) => prisma.allianceMember.create({ data: { allianceId: alliance.id, playerName: `Member ${index}` } })),
   );
