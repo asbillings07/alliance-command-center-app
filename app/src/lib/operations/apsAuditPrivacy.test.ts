@@ -3,6 +3,7 @@ import {
   MIN_CELL_SIZE,
   assignPseudonymousAllianceLabels,
   assignPseudonymousMetricLabels,
+  coarsenSmallCount,
   formatSuppressibleStatistic,
   suppressCorrelatedCounts,
   suppressSmallCell,
@@ -91,6 +92,28 @@ describe("suppressCorrelatedCounts", () => {
   it("supports a custom minimum threshold", () => {
     expect(suppressCorrelatedCounts([2], "x", 3)).toEqual({ suppressed: true, cellSize: 2, minCellSize: 3 });
     expect(suppressCorrelatedCounts([3], "x", 3)).toEqual({ suppressed: false, value: "x" });
+  });
+});
+
+describe("coarsenSmallCount", () => {
+  it("renders 0 exactly", () => {
+    expect(coarsenSmallCount(0)).toBe("0");
+  });
+
+  it.each([1, 2, 3, 4])("renders a small positive count (%i) as a coarse range, not the exact number", (n) => {
+    const result = coarsenSmallCount(n);
+    expect(result).toBe(`1-${MIN_CELL_SIZE - 1}`);
+    expect(result).not.toBe(String(n));
+  });
+
+  it("renders a count at or above MIN_CELL_SIZE exactly", () => {
+    expect(coarsenSmallCount(MIN_CELL_SIZE)).toBe(String(MIN_CELL_SIZE));
+    expect(coarsenSmallCount(50)).toBe("50");
+  });
+
+  it("supports a custom minimum threshold", () => {
+    expect(coarsenSmallCount(2, 3)).toBe("1-2");
+    expect(coarsenSmallCount(3, 3)).toBe("3");
   });
 });
 

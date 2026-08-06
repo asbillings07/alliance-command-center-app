@@ -23,6 +23,18 @@ describe("validateAllianceAllowlist", () => {
     expect(tx.alliance.findMany as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
   });
 
+  it("never discloses the raw duplicate alliance id(s) in the error message, only the count", async () => {
+    const tx = mockTx(["cln1secretallianceid", "cln1secretallianceid"]);
+    try {
+      await validateAllianceAllowlist(tx, ["cln1secretallianceid", "cln1secretallianceid"]);
+      throw new Error("expected validateAllianceAllowlist to throw");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).not.toContain("cln1secretallianceid");
+      expect(message).toContain("1 duplicate alliance id");
+    }
+  });
+
   it("rejects an unknown id that does not resolve to a real alliance", async () => {
     const tx = mockTx(["a"]); // only "a" resolves
     await expect(validateAllianceAllowlist(tx, ["a", "unknown"])).rejects.toThrow(/did not resolve/i);

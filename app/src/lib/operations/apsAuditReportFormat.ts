@@ -1,14 +1,31 @@
 /**
  * Formats an `ApsDataReadinessAuditReport` (#284 PR A) into the sanitized
- * plain-text report the CLI prints as its *only* output. Every value that
- * reaches this formatter has already been pseudonymized and small-cell
- * suppressed by `apsDataReadinessAudit.ts` — this module does not re-derive
- * or re-check that; it only renders what it's given, and never disclosed
- * the exact suppressed cell size for anything it renders via
- * `formatSuppressibleStatistic`.
+ * plain-text report the CLI prints as its *only* output.
+ *
+ * Two distinct privacy mechanisms meet here, for two distinct threats:
+ *  - Member-derived statistics (coverage, archived contributions,
+ *    distribution/boolean breakdowns) arrive from `apsDataReadinessAudit.ts`
+ *    already small-cell SUPPRESSED (`formatSuppressibleStatistic`) --
+ *    protecting individual members from being identified by a small cohort.
+ *  - Alliance-configuration counts (periods, metric types/attachments,
+ *    weight components, stability changes, dogfood readiness) are plain
+ *    numbers from the report, which THIS module coarsens
+ *    (`coarsenSmallCount`) before printing -- protecting the pseudonymous
+ *    ALLIANCE's identity from a sparse configuration acting as a
+ *    fingerprint. This is deliberately a coarsening, not a suppression: the
+ *    underlying `ApsDataReadinessAuditReport` object stays exact so a
+ *    reviewer with legitimate access to it (before formatting) isn't
+ *    blocked from reasoning about it -- only the printed CLI output is
+ *    coarsened.
  */
-import { formatSuppressibleStatistic } from "./apsAuditPrivacy";
+import { coarsenSmallCount, formatSuppressibleStatistic } from "./apsAuditPrivacy";
 import type { ApsDataReadinessAuditReport, AllianceAuditSection, MetricRowStats } from "./apsDataReadinessAudit";
+
+function formatCoarseRecord<T extends string>(record: Record<T, number>): string {
+  return Object.entries<number>(record)
+    .map(([key, value]) => `${key}: ${coarsenSmallCount(value)}`)
+    .join(", ");
+}
 
 function formatRowStats(stats: MetricRowStats): string {
   const { coverage } = stats;
@@ -39,23 +56,31 @@ function formatAllianceSection(section: AllianceAuditSection): string[] {
 
   lines.push("");
   lines.push("### Comparable evaluation periods");
-  lines.push(`- Total periods: ${section.comparablePeriods.periodCount}`);
-  lines.push(`- Periods with both start and end dates: ${section.comparablePeriods.periodsWithBothDatesCount}`);
-  lines.push(`- Comparable period pairs (equal duration, non-overlapping): ${section.comparablePeriods.comparablePairCount}`);
+  lines.push(`- Total periods: ${coarsenSmallCount(section.comparablePeriods.periodCount)}`);
+  lines.push(`- Periods with both start and end dates: ${coarsenSmallCount(section.comparablePeriods.periodsWithBothDatesCount)}`);
+  lines.push(
+    `- Comparable period pairs (equal duration, non-overlapping): ${coarsenSmallCount(section.comparablePeriods.comparablePairCount)}`,
+  );
   const durations = section.comparablePeriods.durationBucketCounts;
   lines.push(
-    `- Period duration buckets: <=7d: ${durations.LTE_7_DAYS}, 8-14d: ${durations.D8_TO_14_DAYS}, ` +
-      `15-31d: ${durations.D15_TO_31_DAYS}, 32d+: ${durations.D32_PLUS_DAYS}`,
+    `- Period duration buckets: <=7d: ${coarsenSmallCount(durations.LTE_7_DAYS)}, 8-14d: ${coarsenSmallCount(durations.D8_TO_14_DAYS)}, ` +
+      `15-31d: ${coarsenSmallCount(durations.D15_TO_31_DAYS)}, 32d+: ${coarsenSmallCount(durations.D32_PLUS_DAYS)}`,
   );
 
   lines.push("");
   lines.push("### Configured metrics");
   const config = section.metricConfiguration;
-  lines.push(`- Total metrics: ${config.totalMetricCount} (active: ${config.activeMetricCount}, archived: ${config.archivedMetricCount})`);
-  lines.push(`- By type: ${JSON.stringify(config.byType)}`);
-  lines.push(`- By summary kind: ${JSON.stringify(config.bySummaryKind)}`);
-  lines.push(`- By trend direction: ${JSON.stringify(config.byTrendDirection)}`);
-  lines.push(`- Attachments across all periods — active: ${config.activeAttachmentCount}, inactive: ${config.inactiveAttachmentCount}`);
+  lines.push(
+    `- Total metrics: ${coarsenSmallCount(config.totalMetricCount)} (active: ${coarsenSmallCount(config.activeMetricCount)}, ` +
+      `archived: ${coarsenSmallCount(config.archivedMetricCount)})`,
+  );
+  lines.push(`- By type: ${formatCoarseRecord(config.byType)}`);
+  lines.push(`- By summary kind: ${formatCoarseRecord(config.bySummaryKind)}`);
+  lines.push(`- By trend direction: ${formatCoarseRecord(config.byTrendDirection)}`);
+  lines.push(
+    `- Attachments across all periods — active: ${coarsenSmallCount(config.activeAttachmentCount)}, ` +
+      `inactive: ${coarsenSmallCount(config.inactiveAttachmentCount)}`,
+  );
 
   lines.push("");
   lines.push("### Current period weights");
@@ -63,9 +88,11 @@ function formatAllianceSection(section: AllianceAuditSection): string[] {
     lines.push("- No active period found for this alliance.");
   } else {
     const weights = section.currentPeriodWeights;
-    lines.push(`- Active components: ${weights.activeComponentCount}`);
-    lines.push(`- Zero-weight components: ${weights.zeroWeightComponentCount}`);
-    lines.push(`- Required components: ${weights.requiredComponentCount}`);
+    lines.push(`- Active components: ${coarsenSmallCount(weights.activeComponentCount)}`);
+    lines.push(`- Zero-weight components: ${coarsenSmallCount(weights.zeroWeightComponentCount)}`);
+    lines.push(`- Required components: ${coarsenSmallCount(weights.requiredComponentCount)}`);
+    // Not coarsened: a configuration VALUE (leader-chosen weights summed),
+    // not a count of things, so there's no small "cohort" being disclosed.
     lines.push(`- Weight sum: ${weights.weightSum}`);
   }
 
@@ -83,17 +110,17 @@ function formatAllianceSection(section: AllianceAuditSection): string[] {
   lines.push("");
   lines.push("### Configuration stability across consecutive dated periods");
   const stability = section.metricStability;
-  lines.push(`- Consecutive dated-period pairs: ${stability.consecutivePeriodPairCount}`);
-  lines.push(`- Metrics added: ${stability.metricsAddedCount}`);
-  lines.push(`- Metrics removed: ${stability.metricsRemovedCount}`);
-  lines.push(`- Weights changed: ${stability.weightChangedCount}`);
+  lines.push(`- Consecutive dated-period pairs: ${coarsenSmallCount(stability.consecutivePeriodPairCount)}`);
+  lines.push(`- Metrics added: ${coarsenSmallCount(stability.metricsAddedCount)}`);
+  lines.push(`- Metrics removed: ${coarsenSmallCount(stability.metricsRemovedCount)}`);
+  lines.push(`- Weights changed: ${coarsenSmallCount(stability.weightChangedCount)}`);
 
   lines.push("");
   lines.push("### Dogfood readiness");
   const dogfood = section.dogfoodReadiness;
   lines.push(
-    `- ${dogfood.metricsWithEnoughObservationsCount} of ${dogfood.totalMetricCount} metrics have at least one ` +
-      `valid recorded value in at least ${dogfood.minPeriodsForDogfood} distinct periods.`,
+    `- ${coarsenSmallCount(dogfood.metricsWithEnoughObservationsCount)} of ${coarsenSmallCount(dogfood.totalMetricCount)} metrics have ` +
+      `at least one valid recorded value in at least ${dogfood.minPeriodsForDogfood} distinct periods.`,
   );
 
   lines.push("");

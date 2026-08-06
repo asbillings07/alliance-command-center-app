@@ -15,9 +15,11 @@ import type { resolveBackfillTargetIdentity } from "./betaParticipantBackfillDb"
 export function parseAuditArgs(argv: string[]): {
   allianceIds: string[];
   confirmIdentity: string | null;
+  showTargetIdentity: boolean;
 } {
   let allianceIds: string[] = [];
   let confirmIdentity: string | null = null;
+  let showTargetIdentity = false;
 
   for (const arg of argv) {
     if (arg.startsWith("--alliance-ids=")) {
@@ -28,13 +30,17 @@ export function parseAuditArgs(argv: string[]): {
         .filter(Boolean);
       continue;
     }
+    if (arg === "--show-target-identity") {
+      showTargetIdentity = true;
+      continue;
+    }
     const identityMatch = arg.match(/^--yes-i-am-sure-this-is-(.+)$/);
     if (identityMatch) {
       confirmIdentity = identityMatch[1]!;
     }
   }
 
-  return { allianceIds, confirmIdentity };
+  return { allianceIds, confirmIdentity, showTargetIdentity };
 }
 
 const KNOWN_LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
@@ -59,6 +65,15 @@ function isKnownLocalHostname(hostname: string): boolean {
  * only make this check MORE conservative (asking for a confirmation it
  * turned out not to strictly need), never less -- it can never silently
  * skip the guardrail the way gating on `isProduction` alone would.
+ *
+ * The thrown message is fully generic -- no identity, hostname, or
+ * production classification -- because it reaches stderr/CI logs on every
+ * accidental invocation against a non-local database, including ones an
+ * operator never intended to run at all. It does not try to double as the
+ * mechanism for discovering the confirmation string: that's a separate,
+ * explicit, minimal action (`--show-target-identity`, handled by the CLI
+ * entrypoint) an operator has to deliberately request, never something
+ * disclosed as a side effect of failing.
  */
 export function assertAuditTargetIdentity(
   confirmIdentity: string | null,
@@ -67,18 +82,12 @@ export function assertAuditTargetIdentity(
   if (isKnownLocalHostname(target.hostname)) return;
 
   if (confirmIdentity !== target.identity) {
-    // Deliberately includes ONLY `target.identity`, not `target.hostname` or
-    // `isProduction` -- this message reaches stderr/CI logs on every
-    // accidental invocation against a non-local database, so it must stay
-    // as narrow as possible. `identity` itself can't be dropped too: it's
-    // the exact string the operator must pass back via
-    // `--yes-i-am-sure-this-is-<identity>`, so the confirmation flow would
-    // be unusable without a way to discover it from the refusal itself.
     throw new Error(
-      `Refusing to audit a non-local database: pass --yes-i-am-sure-this-is-${target.identity} (exact database ` +
-        "identity) so this evidence run is bound to the approved database. Only a positively-identified local " +
-        "database (localhost/127.0.0.1) skips this confirmation -- an unset or incomplete PRODUCTION_DB_HOSTS " +
-        "allowlist does NOT.",
+      "Refusing to audit a non-local database: this requires an explicit --yes-i-am-sure-this-is-<identity> " +
+        "confirmation bound to the exact target database. Run with --show-target-identity (a separate, " +
+        "deliberate action) to look up the identity string for the currently configured DATABASE_URL, then " +
+        "re-run with that confirmation flag. Only a positively-identified local database (localhost/127.0.0.1) " +
+        "skips this confirmation -- an unset or incomplete PRODUCTION_DB_HOSTS allowlist does NOT.",
     );
   }
 }

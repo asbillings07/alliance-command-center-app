@@ -115,3 +115,32 @@ export function formatSuppressibleStatistic<T>(stat: SuppressibleStatistic<T>, f
   }
   return format(stat.value);
 }
+
+/**
+ * Coarsens a single alliance-configuration count (period counts, metric
+ * type/summary/direction/attachment counts, weight-component counts,
+ * stability-change counts, dogfood counts) rather than a member-derived
+ * one -- these describe the alliance's own setup, not any individual's
+ * behavior, so `suppressCorrelatedCounts`'s member-privacy bundling
+ * doesn't apply. They're rendered as a coarse range instead of an exact
+ * number specifically to avoid a sparse configuration acting as a
+ * re-identifying fingerprint for an otherwise-pseudonymous alliance (a
+ * DIFFERENT concern from small-cell member suppression -- see the
+ * `apsAuditReportFormat.ts` module doc comment).
+ *
+ * `0` is rendered exactly (it's not a "small identifiable group," it's an
+ * absence), and so is anything >= `minCellSize`; only a positive count
+ * below the threshold is replaced with a `1-(minCellSize - 1)` range.
+ *
+ * NOTE: coarsening one field in a set that sums to an exactly-known total
+ * does not, by itself, make the coarsened field unrecoverable by
+ * arithmetic against the other (exact) fields in the same set. This is a
+ * good-faith reduction in casual precision, not a cryptographic guarantee
+ * -- see the report's `limitations` list.
+ */
+export function coarsenSmallCount(n: number, minCellSize: number = MIN_CELL_SIZE): string {
+  if (n > 0 && n < minCellSize) {
+    return `1-${minCellSize - 1}`;
+  }
+  return String(n);
+}

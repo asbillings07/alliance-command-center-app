@@ -26,6 +26,14 @@ describe("parseAuditArgs", () => {
     const { confirmIdentity } = parseAuditArgs(["--alliance-ids=abc"]);
     expect(confirmIdentity).toBeNull();
   });
+
+  it("parses --show-target-identity", () => {
+    expect(parseAuditArgs(["--show-target-identity"]).showTargetIdentity).toBe(true);
+  });
+
+  it("defaults showTargetIdentity to false when not supplied", () => {
+    expect(parseAuditArgs(["--alliance-ids=abc"]).showTargetIdentity).toBe(false);
+  });
 });
 
 describe("assertAuditTargetIdentity", () => {
@@ -44,7 +52,7 @@ describe("assertAuditTargetIdentity", () => {
     ).toThrow(/Refusing to audit a non-local database/);
   });
 
-  it("never discloses the hostname or production classification in the thrown message, only the identity needed to confirm", () => {
+  it("never discloses the hostname, identity, or production classification in the thrown message -- identity lookup is a separate, explicit action", () => {
     try {
       assertAuditTargetIdentity(null, {
         identity: "ep-prod-123",
@@ -55,13 +63,13 @@ describe("assertAuditTargetIdentity", () => {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       expect(message).not.toContain("prod-super-secret-host.example.com");
+      expect(message).not.toContain("ep-prod-123");
       // The env-var name itself is generic operator guidance, not a
       // disclosure of THIS target's classification -- but the message must
       // never state that this specific target was flagged as production.
       expect(message).not.toMatch(/flagged.*production/i);
-      // The identity itself IS expected -- the operator needs it to construct
-      // the confirmation flag.
-      expect(message).toContain("ep-prod-123");
+      // Points the operator at the separate, deliberate lookup instead.
+      expect(message).toContain("--show-target-identity");
     }
   });
 

@@ -45,8 +45,14 @@ export async function validateAllianceAllowlist(
 
   const duplicates = findDuplicates(allianceIds);
   if (duplicates.length > 0) {
+    // Deliberately reports only the count, never the raw id(s): this error
+    // can bubble to stderr/CI logs, and a raw alliance id is a real
+    // database primary key an operator could use to look up or reference
+    // the tenant directly -- the same disclosure-surface concern as the
+    // unresolved-id branch below.
     throw new AllianceAllowlistError(
-      `Refusing to run: duplicate alliance id(s) in the allowlist: ${duplicates.join(", ")}.`,
+      `Refusing to run: ${duplicates.length} duplicate alliance id(s) in the allowlist. Confirm the exact, ` +
+        "consented allowlist before retrying.",
     );
   }
 
