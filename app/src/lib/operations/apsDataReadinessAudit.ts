@@ -288,9 +288,10 @@ async function buildMetricDistributionRows(
     for (const member of archivedMembers) {
       const value = latest.get(`${metric.id}:${member.id}`);
       if (value === undefined) continue;
-      archivedContributingMemberCount += 1;
       const valid = metric.type === Metric_Type.BOOLEAN ? isValidBooleanMetricValue(value) : true;
-      if (valid) allValidValues.push(value);
+      if (!valid) continue;
+      archivedContributingMemberCount += 1;
+      allValidValues.push(value);
     }
 
     const section: NumericMetricDistributionSection | BooleanMetricDistributionSection =

@@ -206,6 +206,52 @@ describe("runApsDataReadinessAudit", () => {
     }
   });
 
+  it("does not count an archived member as contributing when their recorded value is invalid", async () => {
+    const tx = mockTx({
+      allianceIds: ["alliance-1"],
+      periods: {
+        "alliance-1": [
+          {
+            id: "p1",
+            startsAt: new Date("2026-01-01"),
+            endsAt: new Date("2026-01-08"),
+            createdAt: new Date("2026-01-01"),
+            active: true,
+          },
+        ],
+      },
+      metrics: {
+        "alliance-1": [
+          {
+            id: "m1",
+            type: Metric_Type.BOOLEAN,
+            summaryKind: MetricSummaryKind.TRUE_RATE,
+            trendDirection: MetricTrendDirection.NEUTRAL,
+            active: true,
+            periodMetrics: [{ periodId: "p1", weight: 1, required: false, active: true }],
+          },
+        ],
+      },
+      roster: {
+        "alliance-1": [{ id: "archived-member-1", archivedAt: new Date("2026-01-05") }],
+      },
+      entriesByPeriod: {
+        // 7 is not a valid BOOLEAN value (only 0/1 are) -- this archived
+        // member should NOT be counted as a contributor.
+        p1: [{ allianceMemberId: "archived-member-1", metricId: "m1", value: 7 }],
+      },
+    });
+
+    const report = await runApsDataReadinessAudit(tx, ["alliance-1"]);
+    const row = report.alliances[0]!.metricDistributions[0]!;
+    expect(row.archivedContributingMemberCount).toBe(0);
+    expect(row.section.kind).toBe("BOOLEAN");
+    if (row.section.kind === "BOOLEAN") {
+      expect(row.section.trueCount).toBe(0);
+      expect(row.section.falseCount).toBe(0);
+    }
+  });
+
   it("never includes a metric or member name anywhere in the report", async () => {
     const tx = mockTx({
       allianceIds: ["alliance-1"],

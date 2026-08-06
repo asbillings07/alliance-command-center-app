@@ -59,9 +59,10 @@ export function assertAuditTargetIdentity(
   confirmIdentity: string | null,
   target: ReturnType<typeof resolveBackfillTargetIdentity>,
 ): void {
-  console.log(
-    `Audit target database identity: ${target.identity} (host: ${target.hostname})${target.isProduction ? " — PRODUCTION" : ""}`,
-  );
+  // Deliberately does not log the target identity/hostname on success --
+  // this script's only output is the final sanitized report (see module
+  // doc comment). On refusal, the thrown error already names the required
+  // identity, so operators still learn it when confirmation is missing.
   if (target.isProduction && confirmIdentity !== target.identity) {
     throw new Error(
       `Refusing to audit a production database: pass --yes-i-am-sure-this-is-${target.identity} (exact database identity) ` +
