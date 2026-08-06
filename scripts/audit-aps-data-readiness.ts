@@ -66,7 +66,9 @@ async function main(): Promise<void> {
   const target = resolveBackfillTargetIdentity();
   assertAuditTargetIdentity(args.confirmIdentity, target);
 
-  const report = await runInReadOnlyAuditTransaction(prisma, (tx) => runApsDataReadinessAudit(tx, args.allianceIds));
+  const report = await runInReadOnlyAuditTransaction(prisma, (tx) => runApsDataReadinessAudit(tx, args.allianceIds), {
+    allianceCount: args.allianceIds.length,
+  });
 
   // The ONLY output this script ever produces. Do not add additional
   // logging of intermediate query results anywhere above this line.

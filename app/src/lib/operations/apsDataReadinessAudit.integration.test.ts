@@ -68,6 +68,62 @@ describe.skipIf(!runDb)("APS data-readiness audit [integration]", () => {
     ).rejects.toThrow(/timeout/i);
   });
 
+  // -------------------------------------------------------------------------
+  // Whole-transaction budget vs. per-statement cap -- these two timeouts must
+  // stay independent (review regression: the transaction budget used to be a
+  // fixed `statementTimeoutMs + 5s`, which could abort a real multi-alliance
+  // run even though no individual statement ever exceeded its own cap).
+  // -------------------------------------------------------------------------
+
+  it("lets several sequential statements, each individually within the statement cap, complete when the whole-transaction budget is sized for them", async () => {
+    const result = await runInReadOnlyAuditTransaction(
+      prisma,
+      async (tx) => {
+        // 5 statements x 300ms = ~1.5s of real work, each comfortably under
+        // the 1s per-statement cap -- this must NOT be mistaken for a
+        // runaway single query.
+        for (let i = 0; i < 5; i += 1) {
+          await tx.$queryRawUnsafe("SELECT pg_sleep(0.3)::text");
+        }
+        return "done";
+      },
+      // allianceCount: 2 sizes the default whole-transaction budget as
+      // 5_000 + 2 * 6 * 1_000 = 17_000ms -- comfortably above the ~1.5s of
+      // real work above, and above the old fixed `statementTimeoutMs + 5s`
+      // (6_000ms) this scenario is deliberately close to.
+      { statementTimeoutMs: 1_000, allianceCount: 2 },
+    );
+
+    expect(result).toBe("done");
+  });
+
+  it("fails the whole transaction atomically once its own (explicitly small) budget is exceeded, even though every individual statement stayed within the statement cap", async () => {
+    await expect(
+      runInReadOnlyAuditTransaction(
+        prisma,
+        async (tx) => {
+          // Same shape as the passing case above (statements individually
+          // within the 1s statement cap), but the transaction's own budget
+          // is deliberately set smaller than their combined real time.
+          for (let i = 0; i < 5; i += 1) {
+            await tx.$queryRawUnsafe("SELECT pg_sleep(0.3)::text");
+          }
+          return "should not reach here";
+        },
+        { statementTimeoutMs: 1_000, transactionTimeoutMs: 1_000 },
+      ),
+    ).rejects.toThrow(/timeout|closed|expired/i);
+  });
+
+  it("rejects an explicit transactionTimeoutMs smaller than statementTimeoutMs before ever opening a transaction", async () => {
+    await expect(
+      runInReadOnlyAuditTransaction(prisma, async () => null, {
+        statementTimeoutMs: 5_000,
+        transactionTimeoutMs: 1_000,
+      }),
+    ).rejects.toThrow(/transaction timeout/i);
+  });
+
   it("commits nothing even on a fully successful, non-throwing run", async () => {
     const before = await prisma.alliance.count();
     const fixture = await createAllianceWithMissingValues(prisma);
