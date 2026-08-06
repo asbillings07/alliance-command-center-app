@@ -834,8 +834,24 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                             <h3 className="font-semibold text-text-primary">Review &amp; Assign Status</h3>
                             <p className="text-sm text-text-secondary">{visibleRows.length} row(s) in this view</p>
                         </div>
-                        <div className="max-h-[32rem] overflow-y-auto">
-                            <table className="w-full text-sm">
+                        {/*
+                         * `overflow-x-auto` (not `overflow-hidden`) plus a
+                         * `min-w` on the table itself (#282 follow-up): a
+                         * plain `w-full` table has no minimum, so
+                         * `table-layout: auto` proportionally shrinks every
+                         * column — including the Player name input — to fit
+                         * whatever narrow width its container is clipped to.
+                         * At 320px that squeezed Player down to ~41px,
+                         * unreadable and barely editable. Giving the table a
+                         * real minimum width lets it overflow horizontally
+                         * within this local, scrollable container instead —
+                         * the page itself never gets wider than the
+                         * viewport (see this file's own 320px e2e test),
+                         * but the Player column keeps a legible, editable
+                         * minimum regardless of screen width.
+                         */}
+                        <div className="max-h-[32rem] overflow-y-auto overflow-x-auto">
+                            <table className="w-full min-w-[46rem] text-sm">
                                 <thead className="bg-surface-secondary sticky top-0 border-b border-border">
                                     <tr>
                                         <th className="w-12 px-4 py-2">
@@ -855,7 +871,9 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                                                 className="w-4 h-4 rounded border-border"
                                             />
                                         </th>
-                                        <th className="text-left px-4 py-2 font-medium text-text-primary">Player</th>
+                                        <th className="text-left px-4 py-2 font-medium text-text-primary min-w-[10rem]">
+                                            Player
+                                        </th>
                                         <th className="text-left px-4 py-2 font-medium text-text-primary w-40">Outcome</th>
                                         <th className="text-left px-4 py-2 font-medium text-text-primary w-36">THP</th>
                                         <th className="text-left px-4 py-2 font-medium text-text-primary w-28">Role</th>

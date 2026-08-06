@@ -241,7 +241,7 @@ test.describe("Historical Roster Import", () => {
         await expect(page.getByText("Scope: Alliance Members")).toBeVisible();
     });
 
-    test("renders the Historical Roster preview at a 320px viewport without horizontal overflow", async ({
+    test("renders the Historical Roster preview at a 320px viewport with the Player column actually readable and editable, not just page-level non-overflow", async ({
         page,
         login,
         adminScenario,
@@ -264,10 +264,28 @@ test.describe("Historical Roster Import", () => {
         await expect(page.getByText("Review & Assign Status")).toBeVisible();
         await page.waitForLoadState("networkidle");
 
+        // The page itself never grows wider than the viewport — the wide
+        // review table scrolls horizontally within its own local,
+        // explicitly overflow-x-auto container instead (#282 follow-up).
         const { docScrollWidth, viewportWidth } = await page.evaluate(() => ({
             docScrollWidth: document.documentElement.scrollWidth,
             viewportWidth: document.documentElement.clientWidth,
         }));
         expect(docScrollWidth).toBeLessThanOrEqual(viewportWidth);
+
+        // The real evidence gate: the Player name input itself must be
+        // wide enough to actually read and edit a representative long
+        // name, not squeezed down to a few pixels by a table that was
+        // forced to fit entirely within the 320px viewport.
+        const playerInput = page.getByRole("textbox", { name: "Player name" });
+        const box = await playerInput.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.width).toBeGreaterThanOrEqual(120);
+
+        // Editable, not merely wide: focus it, change the value, and
+        // confirm the full (untruncated) result round-trips — proving this
+        // is a real usable input at this viewport, not a decorative sliver.
+        await playerInput.fill("Edited Mobile Player Name");
+        await expect(playerInput).toHaveValue("Edited Mobile Player Name");
     });
 });
