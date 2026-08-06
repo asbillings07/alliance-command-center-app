@@ -11,7 +11,31 @@ describe("computeComparablePeriodStats", () => {
       { id: "p1", startsAt: null, endsAt: null },
       { id: "p2", startsAt: new Date("2026-01-01"), endsAt: new Date("2026-01-08") },
     ]);
-    expect(stats).toEqual({ periodCount: 2, periodsWithBothDatesCount: 1, comparablePairCount: 0 });
+    expect(stats.periodCount).toBe(2);
+    expect(stats.periodsWithBothDatesCount).toBe(1);
+    expect(stats.comparablePairCount).toBe(0);
+    // 2026-01-01 to 2026-01-08 is a 7-day period.
+    expect(stats.durationBucketCounts).toEqual({
+      LTE_7_DAYS: 1,
+      D8_TO_14_DAYS: 0,
+      D15_TO_31_DAYS: 0,
+      D32_PLUS_DAYS: 0,
+    });
+  });
+
+  it("buckets period durations coarsely rather than reporting exact lengths", () => {
+    const stats = computeComparablePeriodStats([
+      { id: "weekly", startsAt: new Date("2026-01-01"), endsAt: new Date("2026-01-08") }, // 7 days
+      { id: "biweekly", startsAt: new Date("2026-02-01"), endsAt: new Date("2026-02-11") }, // 10 days
+      { id: "monthly", startsAt: new Date("2026-03-01"), endsAt: new Date("2026-03-25") }, // 24 days
+      { id: "long", startsAt: new Date("2026-04-01"), endsAt: new Date("2026-05-10") }, // 39 days
+    ]);
+    expect(stats.durationBucketCounts).toEqual({
+      LTE_7_DAYS: 1,
+      D8_TO_14_DAYS: 1,
+      D15_TO_31_DAYS: 1,
+      D32_PLUS_DAYS: 1,
+    });
   });
 
   it("counts a comparable pair: same duration, non-overlapping", () => {

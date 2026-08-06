@@ -58,9 +58,10 @@ describe("suppressSmallCell", () => {
 });
 
 describe("formatSuppressibleStatistic", () => {
-  it("formats a suppressed statistic without leaking the underlying value", () => {
+  it("formats a suppressed statistic without leaking the underlying value or the exact suppressed cell size", () => {
     const result = formatSuppressibleStatistic({ suppressed: true, cellSize: 2, minCellSize: 5 }, (v) => String(v));
-    expect(result).toBe("suppressed (cell size 2 < 5)");
+    expect(result).toBe("suppressed (cell size < 5)");
+    expect(result).not.toContain("2");
   });
 
   it("formats a non-suppressed statistic using the provided formatter", () => {

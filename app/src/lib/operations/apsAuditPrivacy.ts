@@ -75,9 +75,17 @@ export function suppressSmallCell<T>(
   return { suppressed: false, value };
 }
 
+/**
+ * Renders a suppressed statistic without disclosing the exact suppressed
+ * cell size -- "cell size < 5" only, never "cell size 2 < 5". The exact
+ * count is itself information about a small, potentially identifiable
+ * cohort (e.g. "exactly 2 of this alliance's members recorded a value"),
+ * so it must never reach this audit's printed output even inside the
+ * "suppressed" message meant to explain the redaction.
+ */
 export function formatSuppressibleStatistic<T>(stat: SuppressibleStatistic<T>, format: (value: T) => string): string {
   if (stat.suppressed) {
-    return `suppressed (cell size ${stat.cellSize} < ${stat.minCellSize})`;
+    return `suppressed (cell size < ${stat.minCellSize})`;
   }
   return format(stat.value);
 }

@@ -18,11 +18,38 @@ export type AuditPeriodCandidate = {
   endsAt: Date | null;
 };
 
+/**
+ * Coarse duration buckets, never the exact period length. #284's evidence
+ * requirements ask for both the *count* and the *duration* of comparable
+ * periods (does an alliance evaluate roughly weekly, biweekly, monthly, or
+ * something irregular?) -- bucketing answers that without disclosing an
+ * exact, potentially identifying period length for a small sample.
+ */
+export type PeriodDurationBucket = "LTE_7_DAYS" | "D8_TO_14_DAYS" | "D15_TO_31_DAYS" | "D32_PLUS_DAYS";
+
+export const PERIOD_DURATION_BUCKETS: readonly PeriodDurationBucket[] = [
+  "LTE_7_DAYS",
+  "D8_TO_14_DAYS",
+  "D15_TO_31_DAYS",
+  "D32_PLUS_DAYS",
+];
+
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+function bucketForDurationDays(days: number): PeriodDurationBucket {
+  if (days <= 7) return "LTE_7_DAYS";
+  if (days <= 14) return "D8_TO_14_DAYS";
+  if (days <= 31) return "D15_TO_31_DAYS";
+  return "D32_PLUS_DAYS";
+}
+
 export type ComparablePeriodStats = {
   periodCount: number;
   periodsWithBothDatesCount: number;
   /** Pairs of dated periods with identical duration where one strictly precedes the other (same rule as resolveComparablePeriod.ts). */
   comparablePairCount: number;
+  /** One count per dated period (not per pair), bucketed by (endsAt - startsAt). */
+  durationBucketCounts: Record<PeriodDurationBucket, number>;
 };
 
 function isDated(period: AuditPeriodCandidate): period is AuditPeriodCandidate & { startsAt: Date; endsAt: Date } {
@@ -49,10 +76,21 @@ export function computeComparablePeriodStats(periods: readonly AuditPeriodCandid
       }
     }
   }
+
+  const durationBucketCounts = Object.fromEntries(PERIOD_DURATION_BUCKETS.map((bucket) => [bucket, 0])) as Record<
+    PeriodDurationBucket,
+    number
+  >;
+  for (const period of dated) {
+    const days = (period.endsAt.getTime() - period.startsAt.getTime()) / MS_PER_DAY;
+    durationBucketCounts[bucketForDurationDays(days)] += 1;
+  }
+
   return {
     periodCount: periods.length,
     periodsWithBothDatesCount: dated.length,
     comparablePairCount,
+    durationBucketCounts,
   };
 }
 

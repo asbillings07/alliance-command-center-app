@@ -3,11 +3,17 @@
  * plain-text report the CLI prints as its *only* output. Every value that
  * reaches this formatter has already been pseudonymized and small-cell
  * suppressed by `apsDataReadinessAudit.ts` — this module does not re-derive
- * or re-check that; it only renders what it's given.
+ * or re-check that; it only renders what it's given, and never disclosed
+ * the exact suppressed cell size for anything it renders via
+ * `formatSuppressibleStatistic`.
  */
 import { formatSuppressibleStatistic } from "./apsAuditPrivacy";
-import type { ApsDataReadinessAuditReport, AllianceAuditSection } from "./apsDataReadinessAudit";
-import type { NumericDistribution } from "./apsAuditDistribution";
+import type {
+  ApsDataReadinessAuditReport,
+  AllianceAuditSection,
+  MetricCoverageStats,
+  NumericDistribution,
+} from "./apsDataReadinessAudit";
 
 function formatDistribution(distribution: NumericDistribution): string {
   return (
@@ -15,6 +21,17 @@ function formatDistribution(distribution: NumericDistribution): string {
     `p25=${distribution.p25.toFixed(2)} p50=${distribution.p50.toFixed(2)} p75=${distribution.p75.toFixed(2)} ` +
     `zeros=${distribution.zeroCount} negatives=${distribution.negativeCount} outliers=${distribution.outlierCount}`
   );
+}
+
+function formatCoverage(coverage: MetricCoverageStats): string {
+  return (
+    `active ${coverage.recordedActiveMemberCount}/${coverage.currentActiveMemberCount} recorded, ` +
+    `${coverage.invalidActiveMemberCount} invalid, ${coverage.missingActiveMemberCount} missing`
+  );
+}
+
+function formatBooleanCounts(counts: { trueCount: number; falseCount: number }): string {
+  return `true=${counts.trueCount} false=${counts.falseCount}`;
 }
 
 function formatAllianceSection(section: AllianceAuditSection): string[] {
@@ -26,6 +43,11 @@ function formatAllianceSection(section: AllianceAuditSection): string[] {
   lines.push(`- Total periods: ${section.comparablePeriods.periodCount}`);
   lines.push(`- Periods with both start and end dates: ${section.comparablePeriods.periodsWithBothDatesCount}`);
   lines.push(`- Comparable period pairs (equal duration, non-overlapping): ${section.comparablePeriods.comparablePairCount}`);
+  const durations = section.comparablePeriods.durationBucketCounts;
+  lines.push(
+    `- Period duration buckets: <=7d: ${durations.LTE_7_DAYS}, 8-14d: ${durations.D8_TO_14_DAYS}, ` +
+      `15-31d: ${durations.D15_TO_31_DAYS}, 32d+: ${durations.D32_PLUS_DAYS}`,
+  );
 
   lines.push("");
   lines.push("### Configured metrics");
@@ -54,14 +76,13 @@ function formatAllianceSection(section: AllianceAuditSection): string[] {
     lines.push("- No actively attached metrics with data for the current period.");
   } else {
     for (const row of section.metricDistributions) {
+      lines.push(`- ${row.metricLabel} [${row.summaryKind}/${row.trendDirection}]:`);
+      lines.push(`    coverage: ${formatSuppressibleStatistic(row.coverage, formatCoverage)}`);
       lines.push(
-        `- ${row.metricLabel} [${row.summaryKind}/${row.trendDirection}]: ` +
-          `active ${row.recordedActiveMemberCount}/${row.currentActiveMemberCount} recorded, ` +
-          `${row.invalidActiveMemberCount} invalid, ${row.missingActiveMemberCount} missing, ` +
-          `${row.archivedContributingMemberCount} archived contributors`,
+        `    archived contributors: ${formatSuppressibleStatistic(row.archivedContributingMemberCount, (n) => String(n))}`,
       );
       if (row.section.kind === "BOOLEAN") {
-        lines.push(`    true=${row.section.trueCount} false=${row.section.falseCount} invalid=${row.section.invalidCount}`);
+        lines.push(`    ${formatSuppressibleStatistic(row.section.counts, formatBooleanCounts)}`);
       } else {
         lines.push(`    ${formatSuppressibleStatistic(row.section.distribution, formatDistribution)}`);
       }
@@ -80,8 +101,8 @@ function formatAllianceSection(section: AllianceAuditSection): string[] {
   lines.push("### Dogfood readiness");
   const dogfood = section.dogfoodReadiness;
   lines.push(
-    `- ${dogfood.metricsWithEnoughObservationsCount} of ${dogfood.totalMetricCount} metrics attached to at least ` +
-      `${dogfood.minPeriodsForDogfood} periods.`,
+    `- ${dogfood.metricsWithEnoughObservationsCount} of ${dogfood.totalMetricCount} metrics have at least one ` +
+      `valid recorded value in at least ${dogfood.minPeriodsForDogfood} distinct periods.`,
   );
 
   lines.push("");

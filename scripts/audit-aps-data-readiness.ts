@@ -2,16 +2,21 @@
  * APS data-readiness audit CLI (#284 PR A).
  *
  * Read-only evidence for the Alliance Performance Score discovery ADR
- * (#284) — see `docs/adr/017-alliance-performance-score-domain-model.md`
+ * (#284) -- see `docs/adr/017-alliance-performance-score-domain-model.md`
  * once written, and `app/src/lib/operations/apsDataReadinessAudit.ts` for
  * what this actually queries.
+ *
+ * This is a thin entrypoint only -- `parseAuditArgs`/`assertAuditTargetIdentity`
+ * live in `app/src/lib/operations/apsAuditCli.ts` (import-safe, unit-tested
+ * under `npm run test:unit`) so nothing here needs to be imported by a test.
  *
  * Safety properties (do not weaken without updating ADR-017's evidence
  * section):
  *   - Requires an explicit, non-empty, comma-separated `--alliance-ids=`
  *     allowlist. NEVER defaults to "every alliance."
- *   - Requires `--yes-i-am-sure-this-is-<db-identity>` before running
- *     against anything but local dev, matching `validate-beta-participants.ts`.
+ *   - Requires `--yes-i-am-sure-this-is-<db-identity>` for every database
+ *     target not positively identified as local (see `apsAuditCli.ts` --
+ *     this fails closed even if `PRODUCTION_DB_HOSTS` is unset/incomplete).
  *   - The entire audit runs inside a transaction PostgreSQL itself enforces
  *     as read-only (`SET TRANSACTION READ ONLY`), not merely a Prisma
  *     transaction-client convention.
@@ -26,50 +31,10 @@
 import "dotenv/config";
 import { prisma } from "../app/src/lib/prisma";
 import { resolveBackfillTargetIdentity } from "../app/src/lib/operations/betaParticipantBackfillDb";
+import { parseAuditArgs, assertAuditTargetIdentity } from "../app/src/lib/operations/apsAuditCli";
 import { runInReadOnlyAuditTransaction } from "../app/src/lib/operations/apsAuditTransaction";
 import { runApsDataReadinessAudit } from "../app/src/lib/operations/apsDataReadinessAudit";
 import { formatApsDataReadinessAuditReport } from "../app/src/lib/operations/apsAuditReportFormat";
-
-export function parseAuditArgs(argv: string[]): {
-  allianceIds: string[];
-  confirmIdentity: string | null;
-} {
-  let allianceIds: string[] = [];
-  let confirmIdentity: string | null = null;
-
-  for (const arg of argv) {
-    if (arg.startsWith("--alliance-ids=")) {
-      allianceIds = arg
-        .slice("--alliance-ids=".length)
-        .split(",")
-        .map((id) => id.trim())
-        .filter(Boolean);
-      continue;
-    }
-    const identityMatch = arg.match(/^--yes-i-am-sure-this-is-(.+)$/);
-    if (identityMatch) {
-      confirmIdentity = identityMatch[1]!;
-    }
-  }
-
-  return { allianceIds, confirmIdentity };
-}
-
-export function assertAuditTargetIdentity(
-  confirmIdentity: string | null,
-  target: ReturnType<typeof resolveBackfillTargetIdentity>,
-): void {
-  // Deliberately does not log the target identity/hostname on success --
-  // this script's only output is the final sanitized report (see module
-  // doc comment). On refusal, the thrown error already names the required
-  // identity, so operators still learn it when confirmation is missing.
-  if (target.isProduction && confirmIdentity !== target.identity) {
-    throw new Error(
-      `Refusing to audit a production database: pass --yes-i-am-sure-this-is-${target.identity} (exact database identity) ` +
-        "so this evidence run is bound to the approved database. Local/dev databases do not require this flag.",
-    );
-  }
-}
 
 async function main(): Promise<void> {
   const args = parseAuditArgs(process.argv.slice(2));

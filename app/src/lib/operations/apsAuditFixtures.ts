@@ -184,6 +184,97 @@ export async function createAllianceWithSparsePeriod(prisma: PrismaClient) {
 }
 
 /**
+ * One BOOLEAN metric with a mix of true/false/invalid active values, plus
+ * one archived member whose still-valid latest value contributes to the
+ * true/false counts. Exercises the boolean coverage/count split (invalid
+ * counts live only in `coverage`, never duplicated into the boolean
+ * section) with enough contributors (>= MIN_CELL_SIZE) to stay unsuppressed.
+ */
+export async function createAllianceWithBooleanValues(prisma: PrismaClient) {
+  const alliance = await createAlliance(prisma, "BooleanValues");
+  const period = await prisma.metricPeriod.create({
+    data: {
+      allianceId: alliance.id,
+      name: "Week 1",
+      startsAt: new Date("2026-01-01"),
+      endsAt: new Date("2026-01-08"),
+      active: true,
+    },
+  });
+  const metric = await prisma.metric.create({
+    data: { allianceId: alliance.id, name: "Fixture Metric", type: Metric_Type.BOOLEAN, summaryKind: MetricSummaryKind.TRUE_RATE },
+  });
+  await prisma.metricPeriodMetric.create({
+    data: { periodId: period.id, metricId: metric.id, weight: 1, required: false, active: true },
+  });
+
+  // 3 true, 2 false, 1 invalid (legacy non-0/1 value) among active members.
+  const activeValues = [1, 1, 1, 0, 0, 7];
+  const activeMembers = await Promise.all(
+    activeValues.map((_, index) => prisma.allianceMember.create({ data: { allianceId: alliance.id, playerName: `Active ${index}` } })),
+  );
+  await Promise.all(
+    activeMembers.map((member, index) =>
+      prisma.memberMetricEntry.create({
+        data: { allianceMemberId: member.id, periodId: period.id, metricId: metric.id, value: activeValues[index]! },
+      }),
+    ),
+  );
+
+  const archivedMember = await prisma.allianceMember.create({
+    data: { allianceId: alliance.id, playerName: "Archived", archivedAt: new Date("2026-01-05") },
+  });
+  await prisma.memberMetricEntry.create({
+    data: { allianceMemberId: archivedMember.id, periodId: period.id, metricId: metric.id, value: 1 },
+  });
+
+  return { allianceId: alliance.id, periodId: period.id, metricId: metric.id };
+}
+
+/**
+ * Two metrics, each actively attached to three periods: one genuinely
+ * dogfood-ready (a valid entry recorded in every period), one attached to
+ * the same three periods but with zero entries ever recorded. Exercises
+ * the dogfood-readiness distinction between "attached" and "has real data."
+ */
+export async function createAllianceWithAttachedButEmptyMetric(prisma: PrismaClient) {
+  const alliance = await createAlliance(prisma, "AttachedButEmpty");
+  const periods = await Promise.all(
+    [
+      { name: "Week 1", startsAt: new Date("2026-01-01"), endsAt: new Date("2026-01-08") },
+      { name: "Week 2", startsAt: new Date("2026-01-09"), endsAt: new Date("2026-01-16") },
+      { name: "Week 3", startsAt: new Date("2026-01-17"), endsAt: new Date("2026-01-24") },
+    ].map((data) => prisma.metricPeriod.create({ data: { allianceId: alliance.id, active: true, ...data } })),
+  );
+
+  const readyMetric = await prisma.metric.create({
+    data: { allianceId: alliance.id, name: "Ready Metric", type: Metric_Type.NUMERIC, summaryKind: MetricSummaryKind.SUM },
+  });
+  const emptyMetric = await prisma.metric.create({
+    data: { allianceId: alliance.id, name: "Empty Metric", type: Metric_Type.NUMERIC, summaryKind: MetricSummaryKind.SUM },
+  });
+
+  await Promise.all(
+    periods.flatMap((period) => [
+      prisma.metricPeriodMetric.create({ data: { periodId: period.id, metricId: readyMetric.id, weight: 1, required: false, active: true } }),
+      prisma.metricPeriodMetric.create({ data: { periodId: period.id, metricId: emptyMetric.id, weight: 1, required: false, active: true } }),
+    ]),
+  );
+
+  const member = await prisma.allianceMember.create({ data: { allianceId: alliance.id, playerName: "Solo" } });
+  await Promise.all(
+    periods.map((period) =>
+      prisma.memberMetricEntry.create({
+        data: { allianceMemberId: member.id, periodId: period.id, metricId: readyMetric.id, value: 10 },
+      }),
+    ),
+  );
+  // emptyMetric is attached to every period above but never gets an entry.
+
+  return { allianceId: alliance.id, readyMetricId: readyMetric.id, emptyMetricId: emptyMetric.id };
+}
+
+/**
  * Illustrative only — NOT database-backed. `target`/`floor`/`cap` do not
  * exist in the schema yet; this exists so ADR-017's normalization worked
  * examples have one concrete, reusable numeric scenario to reference for a
