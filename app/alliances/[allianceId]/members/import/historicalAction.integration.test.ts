@@ -478,6 +478,53 @@ describe.skipIf(!runDb)("importHistoricalRoster [integration]", () => {
         expect(importCount).toBe(0);
     });
 
+    it("integration: a request submitting the ambiguous row as selected: false (mirroring the client's forced deselection) still aborts the whole import — a valid, otherwise-selected row is never committed alongside it", async () => {
+        // Regression coverage for the server-authoritative half of the
+        // ambiguous-match rule: the client disables Import for the whole
+        // file, but a direct/tampered action request bypasses that button
+        // entirely, so the server itself must reject this regardless of
+        // the ambiguous row's own `selected` value.
+        const alliance = await makeAllianceWithActiveMembers(0);
+        const memberA = await prisma.allianceMember.create({
+            data: { allianceId: alliance.id, playerName: "Team Player", thp: 1000, role: "R1", archivedAt: new Date("2024-01-01T00:00:00Z") },
+        });
+        const memberB = await prisma.allianceMember.create({
+            data: { allianceId: alliance.id, playerName: "TEAM  PLAYER", thp: 2000, role: "R2" },
+        });
+
+        const entries = withSourceRows([
+            // Mirrors the client's own forced deselection of the ambiguous
+            // row — never a genuine leader choice.
+            { playerName: "Team Player", finalStatus: "unassigned", selected: false },
+            // A row the leader genuinely left unselected.
+            { playerName: "Genuinely Unselected Player", finalStatus: "unassigned", selected: false },
+            // A row that would otherwise import cleanly on its own.
+            { playerName: "Valid New Member", thp: "1000", finalStatus: "active" },
+        ]);
+        const fingerprint = await computeLiveFingerprint(alliance.id, entries);
+
+        const result = await importHistoricalRoster(alliance.id, entries, provenance, fingerprint);
+
+        expect(result.errors).toHaveLength(1);
+        expect(result.errors[0]).toContain("matches more than one existing member");
+        expect(result.createdActive).toBe(0);
+        expect(result.memberImportId).toBeNull();
+
+        // The whole transaction aborted — the otherwise-valid row was
+        // never created, and neither ambiguous member was touched.
+        const createdValid = await prisma.allianceMember.findFirst({
+            where: { allianceId: alliance.id, playerName: "Valid New Member" },
+        });
+        expect(createdValid).toBeNull();
+        const untouchedA = await prisma.allianceMember.findUniqueOrThrow({ where: { id: memberA.id } });
+        const untouchedB = await prisma.allianceMember.findUniqueOrThrow({ where: { id: memberB.id } });
+        expect(untouchedA.archivedAt).not.toBeNull();
+        expect(untouchedB.archivedAt).toBeNull();
+
+        const importCount = await prisma.memberImport.count({ where: { allianceId: alliance.id } });
+        expect(importCount).toBe(0);
+    });
+
     it("integration: a plain concurrent update to an untouched, matched (ALREADY_MATCHES) member never gets lost or silently overridden by the import's own commit — real PostgreSQL overlap", async () => {
         const alliance = await makeAllianceWithActiveMembers(0);
         const bystander = await prisma.allianceMember.create({

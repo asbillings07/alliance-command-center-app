@@ -176,6 +176,26 @@ function classifyEntries(
         }
         seen.add(normalized);
 
+        // Ambiguous existing-name matches abort the whole import
+        // regardless of this row's selection state (#282 follow-up).
+        // Checking this only after an `entry.selected === false` skip let
+        // a request submit the ambiguous row as unselected and still
+        // commit the file's other rows, persisting the forced conflict as
+        // an ordinary "unselected" skip instead of the file-wide block
+        // #282 requires — the client mirrors this by disabling Import
+        // entirely while any ambiguous match exists, but the server can't
+        // rely on that; it must be the authoritative source of this rule.
+        const matches = existingByNormalizedName.get(normalized);
+        if (matches && matches.length > 1) {
+            // Ambiguous: two or more live members normalize to the same
+            // name. Arbitrarily picking whichever this read returned last
+            // could restore or overwrite the wrong record — fail the whole
+            // import instead of guessing.
+            throw new Error(
+                `Player "${entry.playerName}" matches more than one existing member in your alliance and can't be imported until that name conflict is resolved.`
+            );
+        }
+
         if (entry.selected === false) {
             skippedUnselected++;
             continue;
@@ -199,16 +219,6 @@ function classifyEntries(
             );
         }
 
-        const matches = existingByNormalizedName.get(normalized);
-        if (matches && matches.length > 1) {
-            // Ambiguous: two or more live members normalize to the same
-            // name. Arbitrarily picking whichever this read returned last
-            // could restore or overwrite the wrong record — fail the whole
-            // import instead of guessing.
-            throw new Error(
-                `Player "${entry.playerName}" matches more than one existing member in your alliance and can't be imported until that name conflict is resolved.`
-            );
-        }
         const existing = matches?.[0];
         const classification = classifyHistoricalRosterRow(
             { matched: !!existing, currentlyArchived: existing ? existing.archivedAt !== null : false },

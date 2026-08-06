@@ -566,6 +566,51 @@ describe("importHistoricalRoster", () => {
         expect(mockMemberImport.create).not.toHaveBeenCalled();
     });
 
+    it("rejects the whole import when an ambiguous row is submitted as selected: false (mirroring the client's forced deselection), even alongside a genuinely unselected row and an otherwise-valid selected row", async () => {
+        // A direct/tampered action request can't rely on the client's own
+        // Import-disabled button — the ambiguous check must fire before
+        // the `selected === false` early return so this can never commit
+        // the file's other rows while persisting the ambiguous row as an
+        // ordinary "unselected" skip.
+        const memberA: ExistingMember = {
+            id: "member-a",
+            playerName: "Team Player",
+            archivedAt: new Date("2023-01-01T00:00:00.000Z"),
+            thp: null,
+            role: null,
+        };
+        const memberB: ExistingMember = {
+            id: "member-b",
+            playerName: "TEAM  PLAYER", // normalizes to the same key as memberA
+            archivedAt: null,
+            thp: 1000,
+            role: "R1",
+        };
+        mockAllianceMember.findMany.mockResolvedValue([memberA, memberB]);
+        mockAllianceMember.count.mockResolvedValue(1);
+
+        const entries = withSourceRows([
+            // Mirrors exactly what the client submits for an ambiguous
+            // row: forced to selected: false, never a genuine leader
+            // choice.
+            { playerName: "Team Player", finalStatus: "unassigned", selected: false },
+            // A row the leader genuinely left unselected.
+            { playerName: "Genuinely Unselected", finalStatus: "unassigned", selected: false },
+            // A row that would otherwise import cleanly.
+            { playerName: "Valid New Member", thp: "1000", finalStatus: "active", selected: true },
+        ]);
+
+        const result = await importHistoricalRoster(allianceId, entries, provenance, "[]");
+
+        expect(result.errors.length).toBe(1);
+        expect(result.errors[0]).toContain("matches more than one existing member");
+        // The whole transaction aborts — the otherwise-valid row is never
+        // committed, and the ambiguous row is never persisted as a
+        // dishonest "unselected" skip.
+        expect(mockAllianceMember.createManyAndReturn).not.toHaveBeenCalled();
+        expect(mockMemberImport.create).not.toHaveBeenCalled();
+    });
+
     it("re-reads and reclassifies every member a second time immediately before committing any mutation, instead of taking a row lock on AllianceMember", async () => {
         // A `SELECT ... FOR UPDATE` over every AllianceMember row here would
         // take an Alliance-then-AllianceMember lock order, the exact
