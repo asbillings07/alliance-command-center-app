@@ -495,12 +495,14 @@ describe.skipIf(!runDb)("importHistoricalRoster [integration]", () => {
         const fingerprint = await computeLiveFingerprint(alliance.id, entries);
 
         // Genuinely concurrent (Promise.all, not sequenced): a plain update
-        // to the bystander — completely unrelated to this action's own
-        // lock/fingerprint machinery — races the import. Before locking
-        // every existing member row up front (#282 follow-up), nothing in
-        // this transaction took any lock on a row it never writes to, so
-        // this update could interleave freely; now it must wait for this
-        // transaction to commit or roll back.
+        // to the bystander races the import. This action never takes a row
+        // lock on a member it doesn't write to (that would invert the
+        // Alliance/AllianceMember lock order against bulkArchiveMembers and
+        // risk a deadlock — see historicalAction.ts's top comment), so this
+        // update can interleave freely. That's fine here: `thp` isn't part
+        // of the fingerprint this action's stale-drift recheck compares, so
+        // an unrelated scalar change on an ALREADY_MATCHES row never aborts
+        // the import — only a *lifecycle* drift (archivedAt) would.
         const [importResult, concurrentUpdate] = await Promise.all([
             importHistoricalRoster(alliance.id, entries, provenance, fingerprint),
             prisma.allianceMember.update({ where: { id: bystander.id }, data: { thp: 9999 } }),
@@ -520,6 +522,65 @@ describe.skipIf(!runDb)("importHistoricalRoster [integration]", () => {
             where: { memberImportId: importResult.memberImportId!, allianceMemberId: bystander.id },
         });
         expect(bystanderChange).toBeNull();
+    });
+
+    it("integration: bulkArchiveMembers races this import on the exact row it depends on without ever deadlocking; any resulting drift aborts the whole import instead of committing stale data — real PostgreSQL overlap", async () => {
+        // bulkArchiveMembers (bulk-actions.ts) updates the AllianceMember
+        // row first and only locks Alliance afterward (via
+        // touchAllianceSetupActivity) — the exact reverse of
+        // withAllianceMemberLock's Alliance-then-AllianceMember order this
+        // action uses. If this action ever took an explicit row lock on
+        // every member up front (an earlier version of this fix did),
+        // overlapping these two would deadlock under real Postgres instead
+        // of either committing cleanly or aborting with a friendly
+        // stale-preview error.
+        const alliance = await makeAllianceWithActiveMembers(0);
+        const target = await prisma.allianceMember.create({
+            data: { allianceId: alliance.id, playerName: "Race Target", thp: 1000, role: "R1" },
+        });
+
+        // ALREADY_MATCHES (active, requesting active) unless the racing
+        // archive lands first. A second row gives this transaction real
+        // write work so it isn't instantaneous relative to the archive.
+        const entries = withSourceRows([
+            { playerName: "Race Target", thp: "1000", finalStatus: "active" },
+            { playerName: "Unrelated New Member", thp: "2000", finalStatus: "active" },
+        ]);
+        const fingerprint = await computeLiveFingerprint(alliance.id, entries);
+
+        const { bulkArchiveMembers } = await import("../bulk-actions");
+        const archiveFormData = new FormData();
+        archiveFormData.set("allianceId", alliance.id);
+        archiveFormData.append("memberId", target.id);
+
+        const [importResult, archiveResult] = await Promise.all([
+            importHistoricalRoster(alliance.id, entries, provenance, fingerprint),
+            bulkArchiveMembers(archiveFormData),
+        ]);
+
+        // Simply reaching this line already proves neither call rejected
+        // with a raw Postgres "deadlock detected" error — Promise.all
+        // above would have rethrown it.
+        expect(archiveResult.success).toBe(true);
+
+        if (importResult.errors.length > 0) {
+            // The archive won the race and landed before this
+            // transaction's end-of-commit recheck — the whole import
+            // aborted rather than committing against a stale
+            // "Race Target is still active" classification.
+            expect(importResult.errors[0]).toContain("out of date");
+            expect(importResult.memberImportId).toBeNull();
+        } else {
+            // This import's own read (first pass or recheck) won the race
+            // and classified Race Target as ALREADY_MATCHES before the
+            // archive landed; the archive still applies afterward.
+            expect(importResult.memberImportId).not.toBeNull();
+        }
+
+        // Either way, the archive always wins in the end — never lost and
+        // never silently reversed by this import's own commit.
+        const finalTarget = await prisma.allianceMember.findUniqueOrThrow({ where: { id: target.id } });
+        expect(finalTarget.archivedAt).not.toBeNull();
     });
 
     it("integration: rejects the whole import and creates zero members when the actor lacks canManageMembers", async () => {

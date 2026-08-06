@@ -364,6 +364,48 @@ describe("HistoricalRosterImportForm [component]", () => {
         expect(container.textContent).toContain("Nothing was imported.");
     });
 
+    it("disables Import for the whole file when it mixes an ambiguous-match row with a genuinely unselected row and an otherwise-valid selected row", async () => {
+        const existingMembers = [
+            { id: "m1", playerName: "Team Player", archivedAt: null },
+            { id: "m2", playerName: "TEAM  PLAYER", archivedAt: null }, // ambiguous with Team Player
+        ];
+
+        await act(async () => {
+            root.render(createElement(HistoricalRosterImportForm, { allianceId, existingMembers }));
+        });
+
+        await act(async () => {
+            fireFileUpload(`Player\nTeam Player\nBrand New Hero\nGenuinely Unselected`);
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        // Resolve the valid new row so only the ambiguous-match blocking is
+        // left under test, and genuinely unselect the third row.
+        const activeButtons = Array.from(container.querySelectorAll("button")).filter((b) => b.textContent === "Active");
+        await act(async () => {
+            (activeButtons[0] as HTMLButtonElement).click();
+        });
+        // Player names live in an `<input value="...">`, not plain text, so
+        // find the target row via the input's value rather than textContent.
+        const nameInputs = Array.from(
+            container.querySelectorAll<HTMLInputElement>('input[aria-label="Player name"]')
+        );
+        const unselectedRow = nameInputs.find((input) => input.value === "Genuinely Unselected")?.closest("tr");
+        expect(unselectedRow).not.toBeUndefined();
+        const unselectedRowCheckbox = unselectedRow!.querySelector<HTMLInputElement>('input[type="checkbox"]');
+        expect(unselectedRowCheckbox).not.toBeNull();
+        await act(async () => {
+            unselectedRowCheckbox!.click();
+        });
+
+        // Even though there's a valid, fully-resolved selected row, Import
+        // stays disabled for the entire file — never silently proceeding
+        // while an ambiguous name conflict is present anywhere in it.
+        expect(container.textContent).toContain("Import Disabled");
+        const importBtn = findButtonByText("Import");
+        expect(importBtn.disabled).toBe(true);
+    });
+
     it("blocks a row whose name matches two existing members ambiguously, and never lets it be selected", async () => {
         const existingMembers = [
             { id: "m1", playerName: "Team Player", archivedAt: null },
@@ -379,8 +421,8 @@ describe("HistoricalRosterImportForm [component]", () => {
             await new Promise((r) => setTimeout(r, 50));
         });
 
+        expect(container.textContent).toContain("Import Disabled");
         expect(container.textContent).toContain("Ambiguous Match");
-        expect(container.textContent).toContain("Blocked");
 
         // No rows left to review in the main table — the only row in the
         // file is entirely excluded, not merely unselected.

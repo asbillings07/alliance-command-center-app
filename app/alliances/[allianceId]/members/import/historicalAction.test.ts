@@ -566,22 +566,26 @@ describe("importHistoricalRoster", () => {
         expect(mockMemberImport.create).not.toHaveBeenCalled();
     });
 
-    it("locks every existing member row in the alliance (SELECT ... FOR UPDATE) before reading them for classification", async () => {
+    it("re-reads and reclassifies every member a second time immediately before committing any mutation, instead of taking a row lock on AllianceMember", async () => {
+        // A `SELECT ... FOR UPDATE` over every AllianceMember row here would
+        // take an Alliance-then-AllianceMember lock order, the exact
+        // reverse of bulkArchiveMembers's AllianceMember-then-Alliance
+        // order (bulk-actions.ts) — risking a real Postgres deadlock. This
+        // action instead re-reads and reclassifies right before any
+        // mutation, aborting on drift instead of blocking a concurrent
+        // writer. See historicalAction.integration.test.ts for the real-
+        // Postgres proof that racing bulkArchiveMembers never deadlocks.
         mockAllianceMember.findMany.mockResolvedValue([]);
         mockAllianceMember.count.mockResolvedValue(0);
 
         const entries = withSourceRows([{ playerName: "New Person", finalStatus: "active" }]);
         const fingerprint = buildValidFingerprint([], entries);
 
-        const { prisma } = await import("@/app/src/lib/prisma");
-        const executeRawMock = prisma.$executeRaw as unknown as ReturnType<typeof vi.fn>;
-
         await importHistoricalRoster(allianceId, entries, provenance, fingerprint);
 
-        expect(executeRawMock).toHaveBeenCalled();
-        const lockCallOrder = executeRawMock.mock.invocationCallOrder[0];
-        const readCallOrder = mockAllianceMember.findMany.mock.invocationCallOrder[0];
-        expect(readCallOrder).toBeGreaterThan(lockCallOrder);
+        // Once for the classification/fingerprint read, once for the
+        // end-of-transaction stale recheck — never an explicit member lock.
+        expect(mockAllianceMember.findMany).toHaveBeenCalledTimes(2);
     });
 
     it("skips unselected rows and never includes them in the fingerprint contract", async () => {

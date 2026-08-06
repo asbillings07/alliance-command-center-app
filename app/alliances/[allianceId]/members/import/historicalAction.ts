@@ -7,7 +7,6 @@ import { MAX_ACTIVE_ALLIANCE_MEMBERS, getAvailableMemberCapacity } from "@/app/s
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 import { MemberImportChangeType, MemberImportMode } from "@/app/generated/prisma/enums";
-import { Prisma } from "@/app/generated/prisma/client";
 import { validateImportProvenance, validateStructuralEntries, validateThpValue } from "./importValidation";
 import type { ImportProvenance } from "./importValidation";
 import { classifyHistoricalRosterRow } from "./historicalClassification";
@@ -108,6 +107,165 @@ const STALE_PREVIEW_ERROR =
     "Your preview is out of date because member data changed since you loaded this page. " +
     "Refresh and review the import again before submitting.";
 
+type ClassificationPass = {
+    fingerprintRows: HistoricalFingerprintRow[];
+    toCreate: { entry: ValidatedHistoricalEntry; wantArchived: boolean }[];
+    toRestore: { before: ExistingMemberSnapshot; entry: ValidatedHistoricalEntry }[];
+    skippedDuplicates: number;
+    skippedUnselected: number;
+    skippedExisting: number;
+    skippedLifecycleConflict: number;
+};
+
+/**
+ * Classifies every validated entry against one snapshot of the alliance's
+ * current members. Called twice against two independent, unlocked reads
+ * (see this file's own top comment) rather than taking an explicit row
+ * lock on every member: `bulkArchiveMembers` (bulk-actions.ts) updates an
+ * `AllianceMember` row first and only locks `Alliance` afterward via
+ * `touchAllianceSetupActivity`, the exact reverse of `withAllianceMemberLock`'s
+ * order. A `SELECT ... FOR UPDATE` over every member row here would take
+ * that Alliance-then-AllianceMember lock order and could deadlock against
+ * an overlapping archive holding the reverse order — Postgres would abort
+ * one of the two transactions with a raw `deadlock detected` error instead
+ * of either a clean success or a friendly "preview is out of date" message.
+ * Re-reading and reclassifying instead never blocks a concurrent writer, so
+ * it can't participate in a lock-order deadlock at all.
+ */
+function classifyEntries(
+    existingRows: ExistingMemberSnapshot[],
+    validatedEntries: ValidatedHistoricalEntry[]
+): ClassificationPass {
+    // Group by normalized name instead of overwriting on collision. Raw
+    // `(allianceId, playerName)` uniqueness doesn't prevent two live
+    // members from normalizing to the same key (case or collapsed-
+    // whitespace variants), so a Map keyed by that name would otherwise
+    // silently keep whichever row this read returned last. See the
+    // ambiguous-match check below, which fails the whole import instead of
+    // guessing.
+    const existingByNormalizedName = new Map<string, ExistingMemberSnapshot[]>();
+    for (const m of existingRows) {
+        const key = normalizeName(m.playerName);
+        const group = existingByNormalizedName.get(key);
+        if (group) {
+            group.push(m);
+        } else {
+            existingByNormalizedName.set(key, [m]);
+        }
+    }
+
+    const toCreate: ClassificationPass["toCreate"] = [];
+    const toRestore: ClassificationPass["toRestore"] = [];
+    const fingerprintRows: HistoricalFingerprintRow[] = [];
+
+    const seen = new Set<string>();
+    let skippedDuplicates = 0;
+    let skippedUnselected = 0;
+    let skippedExisting = 0;
+    let skippedLifecycleConflict = 0;
+
+    for (const entry of validatedEntries) {
+        const normalized = normalizeName(entry.playerName);
+
+        // Duplicate-in-file detection consumes the "first occurrence" slot
+        // regardless of selection, matching ../action.ts's importMembers()
+        // precedent.
+        if (seen.has(normalized)) {
+            skippedDuplicates++;
+            continue;
+        }
+        seen.add(normalized);
+
+        if (entry.selected === false) {
+            skippedUnselected++;
+            continue;
+        }
+
+        // `HistoricalFinalStatus` is only a TypeScript union, not a runtime
+        // guarantee — a direct action caller (bypassing the client
+        // entirely) could submit an arbitrary string. Without this check,
+        // classifyHistoricalRosterRow's `===` comparisons would silently
+        // treat anything that isn't exactly "active" as
+        // archived-for-a-new-member or active-for-an-archived-match,
+        // creating or restoring data from an unrecognized status instead
+        // of failing closed.
+        if (
+            entry.finalStatus !== "active" &&
+            entry.finalStatus !== "archived" &&
+            entry.finalStatus !== "unassigned"
+        ) {
+            throw new Error(
+                `Row for player "${entry.playerName}" has an invalid status and can't be imported. Refresh and try again.`
+            );
+        }
+
+        const matches = existingByNormalizedName.get(normalized);
+        if (matches && matches.length > 1) {
+            // Ambiguous: two or more live members normalize to the same
+            // name. Arbitrarily picking whichever this read returned last
+            // could restore or overwrite the wrong record — fail the whole
+            // import instead of guessing.
+            throw new Error(
+                `Player "${entry.playerName}" matches more than one existing member in your alliance and can't be imported until that name conflict is resolved.`
+            );
+        }
+        const existing = matches?.[0];
+        const classification = classifyHistoricalRosterRow(
+            { matched: !!existing, currentlyArchived: existing ? existing.archivedAt !== null : false },
+            entry.finalStatus
+        );
+
+        if (classification.outcome === "UNASSIGNED_BLOCKED") {
+            // The client blocks confirmation until every selected row has
+            // an outcome — reaching this means either a client bug or a
+            // bypass. Fail the whole import rather than silently skip: an
+            // "unassigned" row is not a decision, it's a missing one.
+            throw new Error(
+                `Row for player "${entry.playerName}" must have an Active or Archived outcome assigned before importing.`
+            );
+        }
+
+        fingerprintRows.push({
+            sourceRow: entry.sourceRow,
+            normalizedName: normalized,
+            matchedMemberId: existing?.id ?? null,
+            currentlyArchived: existing ? existing.archivedAt !== null : null,
+            requestedStatus: entry.finalStatus,
+            appliedFieldPolicy: classification.appliedFieldPolicy,
+        });
+
+        switch (classification.outcome) {
+            case "CREATE_ACTIVE":
+                toCreate.push({ entry, wantArchived: false });
+                break;
+            case "CREATE_ARCHIVED":
+                toCreate.push({ entry, wantArchived: true });
+                break;
+            case "RESTORE":
+                // Safe: RESTORE is only ever classified when `existing` is
+                // defined (matched === true).
+                toRestore.push({ before: existing!, entry });
+                break;
+            case "ALREADY_MATCHES":
+                skippedExisting++;
+                break;
+            case "LIFECYCLE_CONFLICT":
+                skippedLifecycleConflict++;
+                break;
+        }
+    }
+
+    return {
+        fingerprintRows,
+        toCreate,
+        toRestore,
+        skippedDuplicates,
+        skippedUnselected,
+        skippedExisting,
+        skippedLifecycleConflict,
+    };
+}
+
 export async function importHistoricalRoster(
     allianceId: string,
     entries: HistoricalRosterEntry[],
@@ -143,161 +301,26 @@ export async function importHistoricalRoster(
 
     try {
         const result = await withAllianceMemberLock(allianceId, async (tx, activeMembersCount) => {
-            // Row-lock every member currently in this alliance *before*
-            // reading any of them for classification. A selected historical
-            // row can end up matching (and mutating) any existing member by
-            // normalized name, so every one of them — not only the rows this
-            // transaction ultimately writes to — must be locked before the
-            // fingerprint/classification read runs. An ordinary
-            // (non-locked) `archiveMember`/`updateMember` write targeting
-            // any of these rows needs the same row lock we're about to
-            // hold, so it simply waits until this transaction commits or
-            // rolls back — closing the mid-transaction lifecycle-drift
-            // window for every outcome, not only RESTORE's already-guarded
-            // write below. See #277 PR 3's undo flow for the same "lock
-            // everything this transaction's reads and fingerprint depend
-            // on" precedent. Bounded by realistic alliance member counts
-            // (active capped at 100; archived history grows slowly), so
-            // locking the whole set for this rare, leader-initiated import
-            // is an acceptable trade-off.
-            await tx.$executeRaw(Prisma.sql`SELECT id FROM "AllianceMember" WHERE "allianceId" = ${allianceId} FOR UPDATE`);
-
-            // Fresh read inside the lock — the single source of truth this
-            // entire commit (classification, fingerprint, and the actual
-            // mutations) is derived from.
+            // Fresh read inside the lock — the first of two independent
+            // snapshots this commit is derived from (see classifyEntries's
+            // doc comment for why this is a re-read, not a row lock).
             const existingInTx = await tx.allianceMember.findMany({
                 where: { allianceId },
                 select: { id: true, playerName: true, archivedAt: true, thp: true, role: true },
             });
 
-            // Group by normalized name instead of overwriting on collision.
-            // Raw `(allianceId, playerName)` uniqueness doesn't prevent two
-            // live members from normalizing to the same key (case or
-            // collapsed-whitespace variants), so a Map keyed by that name
-            // would otherwise silently keep whichever row `findMany`
-            // returned last. See the ambiguous-match check inside the loop
-            // below, which fails the whole import instead of guessing.
-            const existingByNormalizedName = new Map<string, ExistingMemberSnapshot[]>();
-            for (const m of existingInTx) {
-                const key = normalizeName(m.playerName);
-                const group = existingByNormalizedName.get(key);
-                if (group) {
-                    group.push(m);
-                } else {
-                    existingByNormalizedName.set(key, [m]);
-                }
-            }
+            const firstPass = classifyEntries(existingInTx, validatedEntries);
+            const { toCreate, toRestore } = firstPass;
+            const { skippedDuplicates, skippedUnselected, skippedExisting, skippedLifecycleConflict } = firstPass;
 
-            const toCreate: { entry: ValidatedHistoricalEntry; wantArchived: boolean }[] = [];
-            const toRestore: { before: ExistingMemberSnapshot; entry: ValidatedHistoricalEntry }[] = [];
-            const fingerprintRows: HistoricalFingerprintRow[] = [];
-
-            const seenInTx = new Set<string>();
-            let skippedDuplicates = 0;
-            let skippedUnselected = 0;
-            let skippedExisting = 0;
-            let skippedLifecycleConflict = 0;
-
-            for (const entry of validatedEntries) {
-                const normalized = normalizeName(entry.playerName);
-
-                // Duplicate-in-file detection consumes the "first occurrence"
-                // slot regardless of selection, matching ../action.ts's
-                // importMembers() precedent.
-                if (seenInTx.has(normalized)) {
-                    skippedDuplicates++;
-                    continue;
-                }
-                seenInTx.add(normalized);
-
-                if (entry.selected === false) {
-                    skippedUnselected++;
-                    continue;
-                }
-
-                // `HistoricalFinalStatus` is only a TypeScript union, not a
-                // runtime guarantee — a direct action caller (bypassing the
-                // client entirely) could submit an arbitrary string.
-                // Without this check, classifyHistoricalRosterRow's `===`
-                // comparisons would silently treat anything that isn't
-                // exactly "active" as archived-for-a-new-member or
-                // active-for-an-archived-match, creating or restoring data
-                // from an unrecognized status instead of failing closed.
-                if (
-                    entry.finalStatus !== "active" &&
-                    entry.finalStatus !== "archived" &&
-                    entry.finalStatus !== "unassigned"
-                ) {
-                    throw new Error(
-                        `Row for player "${entry.playerName}" has an invalid status and can't be imported. Refresh and try again.`
-                    );
-                }
-
-                const matches = existingByNormalizedName.get(normalized);
-                if (matches && matches.length > 1) {
-                    // Ambiguous: two or more live members normalize to the
-                    // same name. Arbitrarily picking whichever this read
-                    // returned last could restore or overwrite the wrong
-                    // record — fail the whole import instead of guessing.
-                    throw new Error(
-                        `Player "${entry.playerName}" matches more than one existing member in your alliance and can't be imported until that name conflict is resolved.`
-                    );
-                }
-                const existing = matches?.[0];
-                const classification = classifyHistoricalRosterRow(
-                    { matched: !!existing, currentlyArchived: existing ? existing.archivedAt !== null : false },
-                    entry.finalStatus
-                );
-
-                if (classification.outcome === "UNASSIGNED_BLOCKED") {
-                    // The client blocks confirmation until every selected row
-                    // has an outcome — reaching this means either a client
-                    // bug or a bypass. Fail the whole import rather than
-                    // silently skip: an "unassigned" row is not a decision,
-                    // it's a missing one.
-                    throw new Error(
-                        `Row for player "${entry.playerName}" must have an Active or Archived outcome assigned before importing.`
-                    );
-                }
-
-                fingerprintRows.push({
-                    sourceRow: entry.sourceRow,
-                    normalizedName: normalized,
-                    matchedMemberId: existing?.id ?? null,
-                    currentlyArchived: existing ? existing.archivedAt !== null : null,
-                    requestedStatus: entry.finalStatus,
-                    appliedFieldPolicy: classification.appliedFieldPolicy,
-                });
-
-                switch (classification.outcome) {
-                    case "CREATE_ACTIVE":
-                        toCreate.push({ entry, wantArchived: false });
-                        break;
-                    case "CREATE_ARCHIVED":
-                        toCreate.push({ entry, wantArchived: true });
-                        break;
-                    case "RESTORE":
-                        // Safe: RESTORE is only ever classified when `existing`
-                        // is defined (matched === true).
-                        toRestore.push({ before: existing!, entry });
-                        break;
-                    case "ALREADY_MATCHES":
-                        skippedExisting++;
-                        break;
-                    case "LIFECYCLE_CONFLICT":
-                        skippedLifecycleConflict++;
-                        break;
-                }
-            }
-
-            // Stale-preview fail-closed check: compare what this fresh,
-            // locked read classifies against exactly what the client
-            // reviewed and submitted. Any drift — a different match, a
-            // different lifecycle state, a different requested outcome, or
-            // a different applied-field policy for any row — aborts the
+            // Stale-preview fail-closed check: compare what this fresh read
+            // classifies against exactly what the client reviewed and
+            // submitted. Any drift — a different match, a different
+            // lifecycle state, a different requested outcome, or a
+            // different applied-field policy for any row — aborts the
             // entire import untouched. See this file's own top comment for
             // the concrete scenario this prevents.
-            const liveFingerprint = computeHistoricalImportFingerprint(fingerprintRows);
+            const liveFingerprint = computeHistoricalImportFingerprint(firstPass.fingerprintRows);
             if (liveFingerprint !== expectedFingerprint) {
                 throw new Error(STALE_PREVIEW_ERROR);
             }
@@ -331,6 +354,26 @@ export async function importHistoricalRoster(
                         `(${createActiveCount} new, ${toRestore.length} restored). ` +
                         `Deselect ${overflow} member${overflow === 1 ? "" : "s"} to continue.`
                 );
+            }
+
+            // End-of-transaction stale recheck: re-read and reclassify
+            // immediately before committing any mutation. Any drift at all
+            // since the first read — including to a row this transaction
+            // never writes to (ALREADY_MATCHES/LIFECYCLE_CONFLICT) — aborts
+            // the whole import rather than committing against data that's
+            // already stale by now. This is the "revalidate every matched
+            // row" half of classifyEntries's contract; the RESTORE guard
+            // below is additional, narrower defense-in-depth for the
+            // residual window between this recheck and its own write.
+            const recheckRows = await tx.allianceMember.findMany({
+                where: { allianceId },
+                select: { id: true, playerName: true, archivedAt: true, thp: true, role: true },
+            });
+            const recheckFingerprint = computeHistoricalImportFingerprint(
+                classifyEntries(recheckRows, validatedEntries).fingerprintRows
+            );
+            if (recheckFingerprint !== liveFingerprint) {
+                throw new Error(STALE_PREVIEW_ERROR);
             }
 
             const now = new Date();

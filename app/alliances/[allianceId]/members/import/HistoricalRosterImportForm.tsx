@@ -372,6 +372,16 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
     );
     const duplicateInFileRows = parsedMembers.filter((m) => m.isDuplicateInFile);
     const ambiguousMatchRows = parsedMembers.filter((m) => m.isAmbiguousMatch);
+    // An ambiguous row is force-deselected client-side (never a genuine
+    // user choice), and the server has no way to tell "the leader
+    // intentionally left this unselected" apart from "the form overrode
+    // this because the name conflict has no safe resolution" once a row
+    // reaches the request as `selected: false` — both land in
+    // `skippedUnselectedCount`. Rather than let a mixed import silently
+    // mislabel these rows in the completion summary and durable history,
+    // block the whole import until every ambiguous name is resolved (the
+    // leader renames or merges the duplicate in their current roster).
+    const hasAmbiguousMatches = ambiguousMatchRows.length > 0;
 
     const classifiedRows = selectableMembers.map((member) => ({ member, classification: classificationFor(member) }));
     const selectedClassified = classifiedRows.filter((r) => r.member.selected);
@@ -718,17 +728,16 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                     </div>
                 )}
 
-                {ambiguousMatchRows.length > 0 && (
+                {hasAmbiguousMatches && (
                     <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger flex flex-col gap-1">
                         <p className="font-semibold text-danger">
-                            {ambiguousMatchRows.length} Row{ambiguousMatchRows.length === 1 ? "" : "s"} Blocked — Ambiguous
-                            Match in Your Roster
+                            Import Disabled — Ambiguous Match{ambiguousMatchRows.length === 1 ? "" : "es"} in Your Roster
                         </p>
                         <p className="text-sm text-text-secondary">
                             {ambiguousMatchRows.length} row{ambiguousMatchRows.length === 1 ? "" : "s"} match a player
                             name shared by two or more existing members in your alliance (a spacing or capitalization
-                            variant). Rename the duplicate members in your roster to resolve this before these rows
-                            can be imported — they can&apos;t be selected until then.
+                            variant). Import is disabled for this entire file — including its other, unrelated rows —
+                            until you rename or merge the duplicate members in your current roster and re-upload.
                         </p>
                     </div>
                 )}
@@ -814,7 +823,9 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                     <div className="bg-primary/10 border border-primary/30 rounded-lg p-6 text-center">
                         <p className="text-text-primary font-medium">No rows to review.</p>
                         <p className="text-sm text-text-secondary mt-1">
-                            Every row in this file was a duplicate or had an empty player name.
+                            {hasAmbiguousMatches
+                                ? "Every row in this file was a duplicate, had an empty player name, or matched an ambiguous existing member name."
+                                : "Every row in this file was a duplicate or had an empty player name."}
                         </p>
                     </div>
                 ) : (
@@ -1035,7 +1046,8 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                             selectedUnassignedCount > 0 ||
                             isOverCapacity ||
                             hasBlockingThpError ||
-                            hasBlockingDiagnostics
+                            hasBlockingDiagnostics ||
+                            hasAmbiguousMatches
                         }
                         className="px-4 py-2 rounded-md bg-success text-white hover:bg-success/90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
