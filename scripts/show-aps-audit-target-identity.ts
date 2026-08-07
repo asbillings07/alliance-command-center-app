@@ -7,15 +7,18 @@
  * audit CLI itself -- so the audit CLI's own stdout/stderr can never carry
  * a database identity under any invocation, including an accidental one.
  * This script:
- *   - Imports nothing beyond `dotenv/config`, Node's `fs`/`os`/`path`/
- *     `crypto`, and `apsAuditIdentityLookup.ts` (itself importing only
- *     `productionDb.ts`, which has zero imports). It can never construct or
- *     connect a Prisma client -- by construction of its import graph, not
- *     by convention -- so resolving an identity here never touches a
- *     database at all, reachable or not.
- *   - Writes the identity to a local file (mode 0600, current user only)
- *     under the OS temp directory, never to stdout/stderr, so it can't end
- *     up in shell history, CI logs, or a captured terminal transcript.
+ *   - Imports nothing beyond `dotenv/config`, `apsAuditIdentityLookup.ts`
+ *     (itself importing only `productionDb.ts`, which has zero imports),
+ *     and `apsAuditIdentityFileWriter.ts` (Node builtins only: `fs`/`os`/
+ *     `path`/`crypto`). It can never construct or connect a Prisma client
+ *     -- by construction of its import graph, not by convention -- so
+ *     resolving an identity here never touches a database at all,
+ *     reachable or not.
+ *   - Writes the identity to a local file (mode 0600, current user only,
+ *     exclusively created -- see `apsAuditIdentityFileWriter.ts` for why
+ *     that matters on a shared temp directory) under the OS temp
+ *     directory, never to stdout/stderr, so it can't end up in shell
+ *     history, CI logs, or a captured terminal transcript.
  *   - Prints only the file's path -- never the identity itself.
  *
  * Usage:
@@ -24,16 +27,12 @@
  *   rm <path printed above>    # clean up when done
  */
 import "dotenv/config";
-import { randomBytes } from "node:crypto";
-import { writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { resolveApsAuditTargetIdentity } from "../app/src/lib/operations/apsAuditIdentityLookup";
+import { writeIdentityToLocalFile } from "../app/src/lib/operations/apsAuditIdentityFileWriter";
 
 function main(): void {
   const identity = resolveApsAuditTargetIdentity();
-  const path = join(tmpdir(), `aps-audit-target-identity-${randomBytes(6).toString("hex")}.local`);
-  writeFileSync(path, `${identity}\n`, { mode: 0o600 });
+  const path = writeIdentityToLocalFile(identity);
 
   // Deliberately the ONLY output this script ever produces -- the file
   // path, never the identity itself. See the module doc comment.

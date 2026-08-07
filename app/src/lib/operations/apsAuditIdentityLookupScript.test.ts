@@ -37,6 +37,17 @@ describe("show-aps-audit-target-identity.ts", () => {
     }
   });
 
+  it("the identity-file-writer module it depends on is equally Prisma-free (Node builtins only)", () => {
+    const writerPath = join(process.cwd(), "app", "src", "lib", "operations", "apsAuditIdentityFileWriter.ts");
+    const source = readFileSync(writerPath, "utf8");
+    const importSpecifiers = [...source.matchAll(/(?:import|from)\s+["']([^"']+)["']/g)].map((m) => m[1]);
+    expect(importSpecifiers.length).toBeGreaterThan(0);
+    for (const specifier of importSpecifiers) {
+      expect(specifier.toLowerCase()).not.toContain("prisma");
+      expect(specifier.startsWith("node:")).toBe(true);
+    }
+  });
+
   it("writes the identity to a local file and prints only the file path -- never the identity -- to EITHER stdout or stderr, even against an unroutable host (proving no connection attempt)", () => {
     cleanupWrittenFiles();
     try {
