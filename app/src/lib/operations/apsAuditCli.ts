@@ -11,6 +11,7 @@
  * test run); this module has no top-level side effects at all.
  */
 import type { resolveBackfillTargetIdentity } from "./betaParticipantBackfillDb";
+import { AuditUsageError } from "./apsAuditUsageError";
 
 export function parseAuditArgs(argv: string[]): {
   allianceIds: string[];
@@ -77,7 +78,7 @@ export function assertAuditTargetIdentity(
   if (isKnownLocalHostname(target.hostname)) return;
 
   if (confirmIdentity !== target.identity) {
-    throw new Error(
+    throw new AuditUsageError(
       "Refusing to audit a non-local database: this requires an explicit --yes-i-am-sure-this-is-<identity> " +
         "confirmation bound to the exact target database. Run `npx tsx scripts/show-aps-audit-target-identity.ts` " +
         "(a separate, deliberate action that writes the identity to a local file, never to stdout/stderr) to look " +
@@ -86,4 +87,31 @@ export function assertAuditTargetIdentity(
         "unset or incomplete PRODUCTION_DB_HOSTS allowlist does NOT.",
     );
   }
+}
+
+/**
+ * Formats the message the CLI entrypoint's top-level `.catch()` prints for
+ * ANY failure (#284 PR A review). Only `AuditUsageError` (and its
+ * subclasses -- `AllianceAllowlistError`, the identity-confirmation throw
+ * above, the CLI's own "missing --alliance-ids" throw) has a message this
+ * codebase constructed itself and already reviewed for safety; its
+ * `.message` is echoed verbatim. Any other error -- most notably a
+ * Prisma/pg error, which commonly embeds the target database host (e.g.
+ * "Can't reach database server at `ep-...`") or echoes query arguments
+ * (potentially including allowlisted alliance ids) -- is reported with a
+ * fixed, generic message instead. Never widen this to print `error`,
+ * `error.message`, or `String(error)` for the unexpected branch: doing so
+ * would silently defeat the identity guard and allowlist enforced
+ * elsewhere in this CLI, via whatever an unrelated runtime failure happens
+ * to embed in its message.
+ */
+export function formatAuditCliFailureMessage(error: unknown): string {
+  if (error instanceof AuditUsageError) {
+    return `\nAPS data-readiness audit failed: ${error.message}`;
+  }
+  return (
+    "\nAPS data-readiness audit failed with an unexpected error. Details are intentionally suppressed here: " +
+    "unexpected (e.g. Prisma/database) errors can embed the target host or query arguments, which must never " +
+    "reach this script's output. Re-run locally with additional (uncommitted) logging to investigate."
+  );
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AllianceAllowlistError, validateAllianceAllowlist } from "./apsAuditAllowlist";
+import { AuditUsageError } from "./apsAuditUsageError";
 import type { AuditTxClient } from "./apsAuditTransaction";
 
 function mockTx(resolvedIds: string[]): AuditTxClient {
@@ -50,5 +51,10 @@ describe("validateAllianceAllowlist", () => {
     const tx = mockTx(["a"]);
     await validateAllianceAllowlist(tx, ["a"]);
     expect(tx.alliance.findMany).toHaveBeenCalledWith({ where: { id: { in: ["a"] } }, select: { id: true } });
+  });
+
+  it("throws AllianceAllowlistError as an AuditUsageError, so the CLI entrypoint treats its message as safe to print", async () => {
+    const tx = mockTx([]);
+    await expect(validateAllianceAllowlist(tx, [])).rejects.toBeInstanceOf(AuditUsageError);
   });
 });

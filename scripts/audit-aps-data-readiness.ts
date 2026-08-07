@@ -23,6 +23,12 @@
  *   - Prints ONLY the final, pseudonymized, small-cell-suppressed report.
  *     No raw query result, and no intermediate value, is ever printed,
  *     logged, or written to a file by this script.
+ *   - On failure, prints the error message ONLY for known-safe,
+ *     operator-facing usage errors (`AuditUsageError` and its subclasses --
+ *     see `apsAuditUsageError.ts`). Any other (unexpected) error -- most
+ *     notably a Prisma/pg error, which commonly embeds the target
+ *     database host or echoes query arguments -- is reported generically,
+ *     never with its own message.
  *
  * Usage:
  *   npm run aps:audit-data-readiness -- --alliance-ids=cln1...,cln2...
@@ -38,16 +44,17 @@
 import "dotenv/config";
 import { prisma } from "../app/src/lib/prisma";
 import { resolveBackfillTargetIdentity } from "../app/src/lib/operations/betaParticipantBackfillDb";
-import { parseAuditArgs, assertAuditTargetIdentity } from "../app/src/lib/operations/apsAuditCli";
+import { parseAuditArgs, assertAuditTargetIdentity, formatAuditCliFailureMessage } from "../app/src/lib/operations/apsAuditCli";
 import { runInReadOnlyAuditTransaction } from "../app/src/lib/operations/apsAuditTransaction";
 import { runApsDataReadinessAudit } from "../app/src/lib/operations/apsDataReadinessAudit";
 import { formatApsDataReadinessAuditReport } from "../app/src/lib/operations/apsAuditReportFormat";
+import { AuditUsageError } from "../app/src/lib/operations/apsAuditUsageError";
 
 async function main(): Promise<void> {
   const args = parseAuditArgs(process.argv.slice(2));
 
   if (args.allianceIds.length === 0) {
-    throw new Error(
+    throw new AuditUsageError(
       "Refusing to run: --alliance-ids=<id1,id2,...> is required and must be non-empty. " +
         "This audit never defaults to auditing every alliance — pass the exact, consented allowlist.",
     );
@@ -67,7 +74,16 @@ async function main(): Promise<void> {
 
 main()
   .catch((error) => {
-    console.error("\nAPS data-readiness audit failed:", error instanceof Error ? error.message : error);
+    // `formatAuditCliFailureMessage` (unit-tested in `apsAuditCli.test.ts`)
+    // only echoes `.message` for `AuditUsageError` and its subclasses --
+    // errors this codebase constructs itself, with messages already
+    // reviewed for safety. Anything else -- notably a Prisma/pg error,
+    // which commonly embeds the target database host or echoes query
+    // arguments -- is reported generically, never with its own message or
+    // the error object itself. Do not inline this logic here again;
+    // widening it to print unexpected error details would silently defeat
+    // the identity guard and allowlist above.
+    console.error(formatAuditCliFailureMessage(error));
     process.exitCode = 1;
   })
   .finally(async () => {

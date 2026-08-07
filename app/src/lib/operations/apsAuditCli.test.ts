@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assertAuditTargetIdentity, parseAuditArgs } from "./apsAuditCli";
+import { assertAuditTargetIdentity, formatAuditCliFailureMessage, parseAuditArgs } from "./apsAuditCli";
+import { AuditUsageError } from "./apsAuditUsageError";
 
 describe("parseAuditArgs", () => {
   it("parses a comma-separated alliance-ids list", () => {
@@ -106,5 +107,45 @@ describe("assertAuditTargetIdentity", () => {
         hostname: "ep-unknown-remote-456.us-east-1.aws.neon.tech",
       }),
     ).not.toThrow();
+  });
+});
+
+describe("formatAuditCliFailureMessage", () => {
+  it("echoes the message verbatim for an AuditUsageError", () => {
+    const message = formatAuditCliFailureMessage(new AuditUsageError("Refusing to run: missing --alliance-ids."));
+    expect(message).toContain("Refusing to run: missing --alliance-ids.");
+  });
+
+  it("echoes the message verbatim for an AuditUsageError subclass (e.g. AllianceAllowlistError)", () => {
+    class SomeSubclass extends AuditUsageError {}
+    const message = formatAuditCliFailureMessage(new SomeSubclass("Refusing to run: 2 duplicate alliance id(s)."));
+    expect(message).toContain("Refusing to run: 2 duplicate alliance id(s).");
+  });
+
+  it("suppresses the message entirely for a plain Error, even one shaped like a real Prisma connection failure", () => {
+    // The exact shape Prisma throws when it can't reach a Neon/Postgres
+    // host -- the regression this exists to prevent is this string
+    // reaching stderr/CI logs unchanged.
+    const prismaLikeError = new Error(
+      "Can't reach database server at `ep-secret-prod-host-123456-pooler.us-east-2.aws.neon.tech:5432`",
+    );
+    const message = formatAuditCliFailureMessage(prismaLikeError);
+    expect(message).not.toContain("ep-secret-prod-host-123456");
+    expect(message).not.toContain("Can't reach database server");
+    expect(message).toContain("unexpected error");
+  });
+
+  it("suppresses the message entirely for a raw thrown string/non-Error value", () => {
+    const message = formatAuditCliFailureMessage("some raw string containing a secret-looking-host.example.com");
+    expect(message).not.toContain("secret-looking-host");
+    expect(message).toContain("unexpected error");
+  });
+
+  it("suppresses a query-argument-shaped error message (e.g. echoing an allowlisted alliance id)", () => {
+    const queryErrorShape = new Error(
+      "Invalid `tx.alliance.findMany()` invocation: Argument id: got invalid value 'cln_secret_tenant_id_123'",
+    );
+    const message = formatAuditCliFailureMessage(queryErrorShape);
+    expect(message).not.toContain("cln_secret_tenant_id_123");
   });
 });

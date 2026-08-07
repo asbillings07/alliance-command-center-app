@@ -9,8 +9,15 @@
  * entirely) aborts the whole audit before any other query runs.
  */
 import type { AuditTxClient } from "./apsAuditTransaction";
+import { AuditUsageError } from "./apsAuditUsageError";
 
-export class AllianceAllowlistError extends Error {
+/**
+ * Extends `AuditUsageError`: every message thrown below is one this module
+ * constructs itself (counts only, never raw alliance ids -- see the
+ * comments at each throw site), so it's safe for the CLI entrypoint to
+ * print verbatim.
+ */
+export class AllianceAllowlistError extends AuditUsageError {
   constructor(message: string) {
     super(message);
     this.name = "AllianceAllowlistError";
