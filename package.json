@@ -36,6 +36,7 @@
     "beta:backfill-participants": "tsx scripts/backfill-beta-participants.ts",
     "beta:validate-participants": "tsx scripts/validate-beta-participants.ts",
     "feedback:backfill-inbox": "tsx scripts/backfill-feedback-inbox.ts",
+    "aps:audit-data-readiness": "tsx scripts/audit-aps-data-readiness.ts",
     "e2e:setup": "tsx scripts/setup-e2e-env.ts",
     "e2e": "tsx ./node_modules/@playwright/test/cli.js test",
     "e2e:ui": "tsx ./node_modules/@playwright/test/cli.js test --ui",
