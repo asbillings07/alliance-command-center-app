@@ -15,11 +15,9 @@ import type { resolveBackfillTargetIdentity } from "./betaParticipantBackfillDb"
 export function parseAuditArgs(argv: string[]): {
   allianceIds: string[];
   confirmIdentity: string | null;
-  showTargetIdentity: boolean;
 } {
   let allianceIds: string[] = [];
   let confirmIdentity: string | null = null;
-  let showTargetIdentity = false;
 
   for (const arg of argv) {
     if (arg.startsWith("--alliance-ids=")) {
@@ -30,17 +28,13 @@ export function parseAuditArgs(argv: string[]): {
         .filter(Boolean);
       continue;
     }
-    if (arg === "--show-target-identity") {
-      showTargetIdentity = true;
-      continue;
-    }
     const identityMatch = arg.match(/^--yes-i-am-sure-this-is-(.+)$/);
     if (identityMatch) {
       confirmIdentity = identityMatch[1]!;
     }
   }
 
-  return { allianceIds, confirmIdentity, showTargetIdentity };
+  return { allianceIds, confirmIdentity };
 }
 
 const KNOWN_LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
@@ -70,10 +64,11 @@ function isKnownLocalHostname(hostname: string): boolean {
  * production classification -- because it reaches stderr/CI logs on every
  * accidental invocation against a non-local database, including ones an
  * operator never intended to run at all. It does not try to double as the
- * mechanism for discovering the confirmation string: that's a separate,
- * explicit, minimal action (`--show-target-identity`, handled by the CLI
- * entrypoint) an operator has to deliberately request, never something
- * disclosed as a side effect of failing.
+ * mechanism for discovering the confirmation string either: that lookup is
+ * a wholly separate, minimal script (`scripts/show-aps-audit-target-identity.ts`)
+ * that writes the identity to a local file instead of stdout/stderr, so it
+ * never becomes something this audit CLI itself discloses as a side effect
+ * of failing.
  */
 export function assertAuditTargetIdentity(
   confirmIdentity: string | null,
@@ -84,10 +79,11 @@ export function assertAuditTargetIdentity(
   if (confirmIdentity !== target.identity) {
     throw new Error(
       "Refusing to audit a non-local database: this requires an explicit --yes-i-am-sure-this-is-<identity> " +
-        "confirmation bound to the exact target database. Run with --show-target-identity (a separate, " +
-        "deliberate action) to look up the identity string for the currently configured DATABASE_URL, then " +
-        "re-run with that confirmation flag. Only a positively-identified local database (localhost/127.0.0.1) " +
-        "skips this confirmation -- an unset or incomplete PRODUCTION_DB_HOSTS allowlist does NOT.",
+        "confirmation bound to the exact target database. Run `npx tsx scripts/show-aps-audit-target-identity.ts` " +
+        "(a separate, deliberate action that writes the identity to a local file, never to stdout/stderr) to look " +
+        "up the identity string for the currently configured DATABASE_URL, then re-run with that confirmation " +
+        "flag. Only a positively-identified local database (localhost/127.0.0.1) skips this confirmation -- an " +
+        "unset or incomplete PRODUCTION_DB_HOSTS allowlist does NOT.",
     );
   }
 }

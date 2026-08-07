@@ -25,16 +25,15 @@
  *     logged, or written to a file by this script.
  *
  * Usage:
- *   npm run aps:audit-data-readiness -- --show-target-identity
  *   npm run aps:audit-data-readiness -- --alliance-ids=cln1...,cln2...
  *   npm run aps:audit-data-readiness -- --alliance-ids=cln1...,cln2... --yes-i-am-sure-this-is-<db-identity>
  *
- * `--show-target-identity` is the ONLY sanctioned way to look up the
- * confirmation string for a non-local `DATABASE_URL` -- the refusal error
- * thrown by `assertAuditTargetIdentity` deliberately never discloses it, so
- * it can't leak into stderr/CI logs on an accidental invocation. This flag
- * requires no database connection (identity is derived from `DATABASE_URL`
- * alone) and prints nothing but the identity string itself.
+ * To look up the confirmation string for a non-local `DATABASE_URL`, run
+ * `npx tsx scripts/show-aps-audit-target-identity.ts` -- a wholly separate,
+ * minimal script that writes the identity to a local file (never to
+ * stdout/stderr) and cannot construct or connect a database client by
+ * construction of its import graph. This script never discloses identity
+ * itself, on any path, including the refusal error below.
  */
 import "dotenv/config";
 import { prisma } from "../app/src/lib/prisma";
@@ -46,15 +45,6 @@ import { formatApsDataReadinessAuditReport } from "../app/src/lib/operations/aps
 
 async function main(): Promise<void> {
   const args = parseAuditArgs(process.argv.slice(2));
-
-  // Deliberate, explicit, minimal-disclosure lookup path: prints ONLY the
-  // identity string, requires no DB connection, and does nothing else --
-  // see the module doc comment for why this exists instead of the refusal
-  // error below disclosing identity itself.
-  if (args.showTargetIdentity) {
-    console.log(resolveBackfillTargetIdentity().identity);
-    return;
-  }
 
   if (args.allianceIds.length === 0) {
     throw new Error(

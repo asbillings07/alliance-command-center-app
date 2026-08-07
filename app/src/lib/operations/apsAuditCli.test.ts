@@ -26,14 +26,6 @@ describe("parseAuditArgs", () => {
     const { confirmIdentity } = parseAuditArgs(["--alliance-ids=abc"]);
     expect(confirmIdentity).toBeNull();
   });
-
-  it("parses --show-target-identity", () => {
-    expect(parseAuditArgs(["--show-target-identity"]).showTargetIdentity).toBe(true);
-  });
-
-  it("defaults showTargetIdentity to false when not supplied", () => {
-    expect(parseAuditArgs(["--alliance-ids=abc"]).showTargetIdentity).toBe(false);
-  });
 });
 
 describe("assertAuditTargetIdentity", () => {
@@ -68,8 +60,8 @@ describe("assertAuditTargetIdentity", () => {
       // disclosure of THIS target's classification -- but the message must
       // never state that this specific target was flagged as production.
       expect(message).not.toMatch(/flagged.*production/i);
-      // Points the operator at the separate, deliberate lookup instead.
-      expect(message).toContain("--show-target-identity");
+      // Points the operator at the separate, deliberate lookup script instead.
+      expect(message).toContain("show-aps-audit-target-identity.ts");
     }
   });
 

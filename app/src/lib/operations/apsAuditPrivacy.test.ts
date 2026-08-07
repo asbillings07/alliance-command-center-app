@@ -3,6 +3,7 @@ import {
   MIN_CELL_SIZE,
   assignPseudonymousAllianceLabels,
   assignPseudonymousMetricLabels,
+  coarsenCorrelatedCounts,
   coarsenSmallCount,
   formatSuppressibleStatistic,
   suppressCorrelatedCounts,
@@ -114,6 +115,39 @@ describe("coarsenSmallCount", () => {
   it("supports a custom minimum threshold", () => {
     expect(coarsenSmallCount(2, 3)).toBe("1-2");
     expect(coarsenSmallCount(3, 3)).toBe("3");
+  });
+});
+
+describe("coarsenCorrelatedCounts", () => {
+  it("renders every count in the bundle exactly when all are 0 or >= minCellSize", () => {
+    const result = coarsenCorrelatedCounts({ total: 20, active: 15, archived: 5 });
+    expect(result).toEqual({ total: "20", active: "15", archived: "5" });
+  });
+
+  it("renders every count in the bundle exactly when all are 0", () => {
+    const result = coarsenCorrelatedCounts({ total: 0, active: 0, archived: 0 });
+    expect(result).toEqual({ total: "0", active: "0", archived: "0" });
+  });
+
+  it("suppresses EVERY count in the bundle -- not just the risky one -- once any is small and positive", () => {
+    // This is the specific gap independent coarsening can't close: if only
+    // `archived` were coarsened here, `total - active` would still recover
+    // it exactly.
+    const result = coarsenCorrelatedCounts({ total: 20, active: 18, archived: 2 });
+    expect(result.total).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
+    expect(result.active).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
+    expect(result.archived).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
+  });
+
+  it("never discloses the exact triggering cell size in the suppression marker", () => {
+    const result = coarsenCorrelatedCounts({ a: 1, b: 100 });
+    expect(result.a).not.toMatch(/cell size 1\b/);
+    expect(result.b).not.toMatch(/cell size 1\b/);
+  });
+
+  it("supports a custom minimum threshold", () => {
+    expect(coarsenCorrelatedCounts({ a: 2, b: 10 }, 3)).toEqual({ a: "suppressed (cell size < 3)", b: "suppressed (cell size < 3)" });
+    expect(coarsenCorrelatedCounts({ a: 3, b: 10 }, 3)).toEqual({ a: "3", b: "10" });
   });
 });
 

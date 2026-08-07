@@ -166,7 +166,7 @@ const LIMITATIONS = [
   "Leader-intent evidence (targets/weights leaders already use outside ACC) is not produced by this audit; see the evidence report's separate leader-intent section.",
   "Distribution statistics (min/max/quantiles/outliers) include both active and archived members' latest valid values for the period, matching the same rollup population Reports already uses for SUM/AVERAGE — coverage counts remain active-member-scoped.",
   "Period durations are reported as coarse buckets, never exact lengths.",
-  "The printed report also coarsens small (1-4) alliance-configuration counts (periods, metric types/attachments, weight components, stability changes, dogfood readiness) to reduce sparse-configuration re-identification risk. This is a coarsening for casual reading, not a guarantee against reconstruction by cross-referencing other exact fields in the same report.",
+  "The printed report also coarsens small (1-4) alliance-configuration counts (periods, metric types/attachments, weight components, stability changes, dogfood readiness) to reduce sparse-configuration re-identification risk. Counts that are exact breakdowns of each other (e.g. metric types summing to the total metric count, duration buckets summing to dated-period count) are suppressed as a single bundle, not independently, specifically to prevent recovering a suppressed value by subtracting the other exact fields in the same group. This covers every closed-sum relationship identified in this report's own fields; it is not a guarantee against reconstruction from information outside this report.",
 ];
 
 // ---------------------------------------------------------------------------

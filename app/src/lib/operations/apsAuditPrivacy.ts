@@ -144,3 +144,37 @@ export function coarsenSmallCount(n: number, minCellSize: number = MIN_CELL_SIZE
   }
   return String(n);
 }
+
+/**
+ * Coarsens a *named bundle* of alliance-configuration counts TOGETHER,
+ * rather than each one independently -- the same closed-sum problem
+ * `suppressCorrelatedCounts` solves for member-derived statistics also
+ * applies here: several of these counts are exact breakdowns of (or
+ * otherwise exactly derivable from) each other (e.g. `byType` values sum to
+ * `totalMetricCount`; duration buckets sum to `periodsWithBothDatesCount`).
+ * Independently coarsening only the small ones while leaving the total and
+ * the other categories exact lets a reader recover the coarsened value(s)
+ * by subtraction -- exactly the gap `coarsenSmallCount` alone does not
+ * close for a *group* of related counts.
+ *
+ * Unlike `coarsenSmallCount` (which returns a `1-(minCellSize-1)` range for
+ * a single small count), this returns the SAME opaque "suppressed" marker
+ * for every member of the bundle once ANY of them is small -- there is no
+ * safe partial disclosure once one member of a closed-sum group is small,
+ * because the others (however they're rendered) combined with a still-exact
+ * total would still pin it down. Either every count in the bundle is safe
+ * to show exactly (0, or >= `minCellSize`), or none of them are shown at
+ * all.
+ */
+export function coarsenCorrelatedCounts<K extends string>(
+  counts: Record<K, number>,
+  minCellSize: number = MIN_CELL_SIZE,
+): Record<K, string> {
+  const entries = Object.entries(counts) as [K, number][];
+  const anyRisky = entries.some(([, n]) => n > 0 && n < minCellSize);
+  if (!anyRisky) {
+    return Object.fromEntries(entries.map(([key, n]) => [key, String(n)])) as Record<K, string>;
+  }
+  const suppressedLabel = `suppressed (cell size < ${minCellSize})`;
+  return Object.fromEntries(entries.map(([key]) => [key, suppressedLabel])) as Record<K, string>;
+}
