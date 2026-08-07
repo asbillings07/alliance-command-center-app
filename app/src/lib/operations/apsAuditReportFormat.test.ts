@@ -227,28 +227,46 @@ describe("formatApsDataReadinessAuditReport", () => {
   });
 
   // ---------------------------------------------------------------------
-  // Comparable periods (standalone counts + the duration-bucket bundle).
+  // Comparable periods -- ONE bundle covering periodCount,
+  // periodsWithBothDatesCount, comparablePairCount, and the duration
+  // buckets together (review regression: periodCount used to be coarsened
+  // independently of periodsWithBothDatesCount, so two individually-large
+  // values close together, e.g. 20/19, could disclose "1 undated period"
+  // by subtraction even though neither alone was small).
   // ---------------------------------------------------------------------
 
-  it.each([1, 2, 3, 4])("coarsens a small (%i) standalone period count to a range instead of the exact number", (n) => {
+  it.each([1, 2, 3, 4])("suppresses the whole period bundle when the period count itself is small (%i)", (n) => {
     const section = baseSection({
       comparablePeriods: { periodCount: n, periodsWithBothDatesCount: 0, comparablePairCount: n, durationBucketCounts: { ...EMPTY_DURATION_BUCKETS } },
     });
 
     const output = formatApsDataReadinessAuditReport(baseReport([section]));
-    const range = `1-${MIN_CELL_SIZE - 1}`;
-    expect(output).toContain(`Total periods: ${range}`);
-    expect(output).toContain(`Comparable period pairs (equal duration, non-overlapping): ${range}`);
+    expect(output).toContain(`Total periods: ${SUPPRESSED}`);
+    expect(output).toContain(`Comparable period pairs (equal duration, non-overlapping): ${SUPPRESSED}`);
     expect(output).not.toMatch(new RegExp(`^- Total periods: ${n}$`, "m"));
   });
 
-  it("renders exact standalone period counts once they clear MIN_CELL_SIZE", () => {
+  it("renders exact period counts once every value (and every pairwise difference) clears MIN_CELL_SIZE", () => {
     const section = baseSection({
       comparablePeriods: { periodCount: MIN_CELL_SIZE, periodsWithBothDatesCount: 0, comparablePairCount: MIN_CELL_SIZE, durationBucketCounts: { ...EMPTY_DURATION_BUCKETS } },
     });
 
     const output = formatApsDataReadinessAuditReport(baseReport([section]));
     expect(output).toContain(`Total periods: ${MIN_CELL_SIZE}`);
+  });
+
+  it("equation-aware: suppresses BOTH periodCount and periodsWithBothDatesCount when each individually clears MIN_CELL_SIZE but their difference (undated periods) does not", () => {
+    const section = baseSection({
+      comparablePeriods: { periodCount: 20, periodsWithBothDatesCount: 19, comparablePairCount: 5, durationBucketCounts: { LTE_7_DAYS: 19, D8_TO_14_DAYS: 0, D15_TO_31_DAYS: 0, D32_PLUS_DAYS: 0 } },
+    });
+
+    const output = formatApsDataReadinessAuditReport(baseReport([section]));
+    // Neither raw value (20, 19) is individually small, but their
+    // difference (1 undated period) is -- the whole bundle must suppress.
+    expect(output).toContain(`Total periods: ${SUPPRESSED}`);
+    expect(output).toContain(`Periods with both start and end dates: ${SUPPRESSED}`);
+    expect(output).not.toContain("Total periods: 20");
+    expect(output).not.toContain("both start and end dates: 19");
   });
 
   it("renders 0 period counts exactly, not as a coarse range", () => {
@@ -401,6 +419,20 @@ describe("formatApsDataReadinessAuditReport", () => {
     expect(output).toContain(`Required components: ${SUPPRESSED}`);
     expect(output).not.toContain("Active components: 20");
     // weightSum is a configuration VALUE, not a count of things -- never coarsened.
+    expect(output).toContain("Weight sum: 42");
+  });
+
+  it("equation-aware: suppresses the weight bundle when active and required each individually clear MIN_CELL_SIZE but their difference (not-required components) does not", () => {
+    const section = baseSection({
+      currentPeriodWeights: { currentPeriodFound: true, activeComponentCount: 20, zeroWeightComponentCount: 5, requiredComponentCount: 19, weightSum: 42 },
+    });
+
+    const output = formatApsDataReadinessAuditReport(baseReport([section]));
+    expect(output).toContain(`Active components: ${SUPPRESSED}`);
+    expect(output).toContain(`Required components: ${SUPPRESSED}`);
+    expect(output).not.toContain("Active components: 20");
+    expect(output).not.toContain("Required components: 19");
+    // weightSum is still never coarsened.
     expect(output).toContain("Weight sum: 42");
   });
 

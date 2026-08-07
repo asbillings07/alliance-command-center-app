@@ -149,6 +149,41 @@ describe("coarsenCorrelatedCounts", () => {
     expect(coarsenCorrelatedCounts({ a: 2, b: 10 }, 3)).toEqual({ a: "suppressed (cell size < 3)", b: "suppressed (cell size < 3)" });
     expect(coarsenCorrelatedCounts({ a: 3, b: 10 }, 3)).toEqual({ a: "3", b: "10" });
   });
+
+  // -------------------------------------------------------------------
+  // Equation-aware: two individually-safe values whose DIFFERENCE is
+  // small still disclose a derivable complement (review regression).
+  // -------------------------------------------------------------------
+
+  it("suppresses both values when each individually clears minCellSize but their difference does not (total=20/enough=19 -> complement=1)", () => {
+    const result = coarsenCorrelatedCounts({ total: 20, enough: 19 });
+    expect(result.total).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
+    expect(result.enough).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
+  });
+
+  it("suppresses the whole bundle when only ONE pair among several is close, even though every raw value is individually safe", () => {
+    // active=20/required=19 -> complement ("not required") = 1, even
+    // though zeroWeight=5 is unrelated and comfortably safe on its own.
+    const result = coarsenCorrelatedCounts({ active: 20, zeroWeight: 5, required: 19 });
+    expect(result.active).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
+    expect(result.zeroWeight).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
+    expect(result.required).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
+  });
+
+  it("does NOT suppress when every pairwise difference also clears minCellSize", () => {
+    const result = coarsenCorrelatedCounts({ periodCount: 20, periodsWithBothDates: 10, comparablePairs: 0 });
+    expect(result).toEqual({ periodCount: "20", periodsWithBothDates: "10", comparablePairs: "0" });
+  });
+
+  it("treats a difference of exactly 0 as safe (two equal values disclose no complement)", () => {
+    const result = coarsenCorrelatedCounts({ a: 20, b: 20 });
+    expect(result).toEqual({ a: "20", b: "20" });
+  });
+
+  it("treats a difference of exactly minCellSize as safe, matching the single-value boundary", () => {
+    const result = coarsenCorrelatedCounts({ a: 20, b: 15 });
+    expect(result).toEqual({ a: "20", b: "15" });
+  });
 });
 
 describe("formatSuppressibleStatistic", () => {

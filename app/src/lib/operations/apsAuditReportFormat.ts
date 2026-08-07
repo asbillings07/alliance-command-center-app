@@ -17,17 +17,18 @@
  *    legitimate access to it (before formatting) isn't blocked from
  *    reasoning about it -- only the printed CLI output is coarsened.
  *
- * Within that second category, counts that are exact breakdowns of (or
- * otherwise exactly derivable from) each other are coarsened as a single
- * BUNDLE (`coarsenCorrelatedCounts`), not independently
- * (`coarsenSmallCount`): independently coarsening only the small members of
- * a closed-sum group while leaving the total and other categories exact
- * would let a reader recover the coarsened value(s) by subtraction. Genuine
- * standalone counts (e.g. total period count, comparable-pair count) use
- * `coarsenSmallCount` directly since nothing else in the report sums to
- * them.
+ * Within that second category, every count in this module is coarsened as
+ * part of a named BUNDLE (`coarsenCorrelatedCounts`), never independently:
+ * `coarsenCorrelatedCounts` is equation-aware, checking not just each raw
+ * value but every pairwise difference within the bundle too, so two
+ * otherwise-safe values (e.g. `total=20`/`enough=19`) that are merely close
+ * together can't disclose a small derived complement (`total - enough = 1`)
+ * either. A count only gets its own single-member "bundle" when nothing
+ * else in the report is close enough to it to matter -- but even then it
+ * goes through the same function, so nothing in this module bypasses the
+ * pairwise check by construction.
  */
-import { coarsenCorrelatedCounts, coarsenSmallCount, formatSuppressibleStatistic } from "./apsAuditPrivacy";
+import { coarsenCorrelatedCounts, formatSuppressibleStatistic } from "./apsAuditPrivacy";
 import type { ApsDataReadinessAuditReport, AllianceAuditSection, MetricRowStats } from "./apsDataReadinessAudit";
 
 function formatRowStats(stats: MetricRowStats): string {
@@ -54,13 +55,20 @@ function formatRowStats(stats: MetricRowStats): string {
 }
 
 function formatComparablePeriods(stats: AllianceAuditSection["comparablePeriods"]): string[] {
-  // `periodsWithBothDatesCount` is an exact breakdown of `durationBucketCounts`
-  // (every dated period falls into exactly one bucket) -- bundled together
-  // so a small bucket can't be recovered by subtracting the other
-  // (otherwise-exact) buckets from an otherwise-exact total.
+  // One bundle for the whole section, not a standalone `periodCount` next
+  // to a separately-bundled duration breakdown: `periodCount` and
+  // `periodsWithBothDatesCount` can each independently clear `minCellSize`
+  // while their DIFFERENCE ("undated periods") is still small and exact
+  // (e.g. 20 vs 19) -- a complement `coarsenCorrelatedCounts`'s
+  // pairwise-difference check only catches if both values are in the same
+  // bundle. `comparablePairCount` joins too, for the same defense-in-depth
+  // reason (it has no known exact relationship to the others, but bundling
+  // costs nothing and closes any relationship this doc comment missed).
   const durations = stats.durationBucketCounts;
   const bundle = coarsenCorrelatedCounts({
+    periodCount: stats.periodCount,
     periodsWithBothDates: stats.periodsWithBothDatesCount,
+    comparablePairs: stats.comparablePairCount,
     lte7: durations.LTE_7_DAYS,
     d8to14: durations.D8_TO_14_DAYS,
     d15to31: durations.D15_TO_31_DAYS,
@@ -68,13 +76,9 @@ function formatComparablePeriods(stats: AllianceAuditSection["comparablePeriods"
   });
 
   return [
-    // Standalone: nothing else in the report sums to periodCount (it
-    // includes undated periods, which have no other breakdown at all).
-    `- Total periods: ${coarsenSmallCount(stats.periodCount)}`,
+    `- Total periods: ${bundle.periodCount}`,
     `- Periods with both start and end dates: ${bundle.periodsWithBothDates}`,
-    // Standalone: comparablePairCount is a count of PAIRS, not a breakdown
-    // that sums to any other shown total.
-    `- Comparable period pairs (equal duration, non-overlapping): ${coarsenSmallCount(stats.comparablePairCount)}`,
+    `- Comparable period pairs (equal duration, non-overlapping): ${bundle.comparablePairs}`,
     `- Period duration buckets: <=7d: ${bundle.lte7}, 8-14d: ${bundle.d8to14}, 15-31d: ${bundle.d15to31}, 32d+: ${bundle.d32plus}`,
   ];
 }

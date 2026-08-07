@@ -159,20 +159,40 @@ export function coarsenSmallCount(n: number, minCellSize: number = MIN_CELL_SIZE
  *
  * Unlike `coarsenSmallCount` (which returns a `1-(minCellSize-1)` range for
  * a single small count), this returns the SAME opaque "suppressed" marker
- * for every member of the bundle once ANY of them is small -- there is no
+ * for every member of the bundle once ANY of them is risky -- there is no
  * safe partial disclosure once one member of a closed-sum group is small,
  * because the others (however they're rendered) combined with a still-exact
  * total would still pin it down. Either every count in the bundle is safe
  * to show exactly (0, or >= `minCellSize`), or none of them are shown at
  * all.
+ *
+ * EQUATION-AWARE: checking each raw value alone is not enough. Two values
+ * that are each individually safe (0 or >= `minCellSize`) can still be
+ * close enough together that their DIFFERENCE discloses a small derived
+ * complement -- e.g. `total=20`/`enough=19` never trips a per-value check,
+ * but `total - enough = 1` (an exact "1 not-ready" count) is exactly the
+ * kind of small subgroup this function exists to hide. So every pairwise
+ * absolute difference within the bundle is checked too, not just the raw
+ * values. This is deliberately a conservative, general rule rather than
+ * per-bundle equation modeling: it catches every real complement in a
+ * bundle without the caller having to declare which pairs are "really"
+ * related by subtraction, at the cost of occasionally suppressing a bundle
+ * over a coincidental (not domain-meaningful) closeness between two
+ * unrelated members -- an acceptable false positive given the alternative
+ * is a missed disclosure.
  */
 export function coarsenCorrelatedCounts<K extends string>(
   counts: Record<K, number>,
   minCellSize: number = MIN_CELL_SIZE,
 ): Record<K, string> {
   const entries = Object.entries(counts) as [K, number][];
-  const anyRisky = entries.some(([, n]) => n > 0 && n < minCellSize);
-  if (!anyRisky) {
+  const values = entries.map(([, n]) => n);
+  const isRisky = (n: number) => n > 0 && n < minCellSize;
+
+  const anyValueRisky = values.some(isRisky);
+  const anyComplementRisky = values.some((a, i) => values.some((b, j) => j > i && isRisky(Math.abs(a - b))));
+
+  if (!anyValueRisky && !anyComplementRisky) {
     return Object.fromEntries(entries.map(([key, n]) => [key, String(n)])) as Record<K, string>;
   }
   const suppressedLabel = `suppressed (cell size < ${minCellSize})`;

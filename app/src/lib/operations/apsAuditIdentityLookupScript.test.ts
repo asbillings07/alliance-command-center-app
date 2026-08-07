@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,10 +37,13 @@ describe("show-aps-audit-target-identity.ts", () => {
     }
   });
 
-  it("writes the identity to a local file and prints only the file path -- never the identity -- to stdout, even against an unroutable host (proving no connection attempt)", () => {
+  it("writes the identity to a local file and prints only the file path -- never the identity -- to EITHER stdout or stderr, even against an unroutable host (proving no connection attempt)", () => {
     cleanupWrittenFiles();
     try {
-      const stdout = execFileSync("npx", ["tsx", SCRIPT_PATH], {
+      // spawnSync (not execFileSync, which only returns stdout and would
+      // silently miss a regression that wrote the identity to stderr
+      // instead) captures both streams explicitly.
+      const result = spawnSync("npx", ["tsx", SCRIPT_PATH], {
         env: { ...process.env, DATABASE_URL: FAKE_DATABASE_URL },
         encoding: "utf8",
         // Generous for `npx tsx` cold-start, but far short of what a real
@@ -50,7 +53,17 @@ describe("show-aps-audit-target-identity.ts", () => {
         timeout: 15_000,
       });
 
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+
+      const { stdout, stderr } = result;
       expect(stdout).not.toContain(EXPECTED_IDENTITY);
+      expect(stderr).not.toContain(EXPECTED_IDENTITY);
+      expect(stderr).not.toContain(FAKE_DATABASE_URL);
+      expect(stdout).not.toContain(FAKE_DATABASE_URL);
+      // Nothing at all on stderr on a successful run -- any diagnostic
+      // output there would itself be worth scrutinizing for a leak.
+      expect(stderr.trim()).toBe("");
 
       const pathMatch = stdout.match(/local file \(not printed here\): (\S+)/);
       expect(pathMatch).not.toBeNull();
