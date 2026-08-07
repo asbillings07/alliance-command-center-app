@@ -235,14 +235,17 @@ describe("formatApsDataReadinessAuditReport", () => {
   // by subtraction even though neither alone was small).
   // ---------------------------------------------------------------------
 
-  it.each([1, 2, 3, 4])("suppresses the whole period bundle when the period count itself is small (%i)", (n) => {
+  it.each([1, 2, 3, 4])("suppresses the whole period bundle when the period count itself is small (%i), independently coarsening the unrelated pair count", (n) => {
     const section = baseSection({
       comparablePeriods: { periodCount: n, periodsWithBothDatesCount: 0, comparablePairCount: n, durationBucketCounts: { ...EMPTY_DURATION_BUCKETS } },
     });
 
     const output = formatApsDataReadinessAuditReport(baseReport([section]));
     expect(output).toContain(`Total periods: ${SUPPRESSED}`);
-    expect(output).toContain(`Comparable period pairs (equal duration, non-overlapping): ${SUPPRESSED}`);
+    // comparablePairCount has no total/subset relationship to periodCount
+    // (different units: periods vs. pairs) -- it's coarsened standalone,
+    // not swept into the period bundle's suppression.
+    expect(output).toContain(`Comparable period pairs (equal duration, non-overlapping): 1-${MIN_CELL_SIZE - 1}`);
     expect(output).not.toMatch(new RegExp(`^- Total periods: ${n}$`, "m"));
   });
 
@@ -436,17 +439,34 @@ describe("formatApsDataReadinessAuditReport", () => {
     expect(output).toContain("Weight sum: 42");
   });
 
-  it.each([1, 2, 3, 4])("suppresses the whole stability bundle when any member is small (%i)", (n) => {
+  it.each([1, 2, 3, 4])(
+    "coarsens only the small stability count (%i) to a range, leaving the other unrelated counts exact",
+    (n) => {
+      const section = baseSection({
+        metricStability: { consecutivePeriodPairCount: 20, metricsAddedCount: n, metricsRemovedCount: 20, weightChangedCount: 20 },
+      });
+
+      const output = formatApsDataReadinessAuditReport(baseReport([section]));
+      // consecutivePeriodPairCount, metricsRemovedCount, and
+      // weightChangedCount have no total/subset relationship to
+      // metricsAddedCount -- each is coarsened INDEPENDENTLY, so the small
+      // added-count doesn't drag the others down with it.
+      expect(output).toContain("Consecutive dated-period pairs: 20");
+      expect(output).toContain(`Metrics added: 1-${MIN_CELL_SIZE - 1}`);
+      expect(output).toContain("Metrics removed: 20");
+      expect(output).toContain("Weights changed: 20");
+    },
+  );
+
+  it("does not suppress metric stability counts that merely happen to be numerically close (added=11/removed=9), since they have no real equation linking them", () => {
     const section = baseSection({
-      metricStability: { consecutivePeriodPairCount: 20, metricsAddedCount: n, metricsRemovedCount: 20, weightChangedCount: 20 },
+      metricStability: { consecutivePeriodPairCount: 20, metricsAddedCount: 11, metricsRemovedCount: 9, weightChangedCount: 0 },
     });
 
     const output = formatApsDataReadinessAuditReport(baseReport([section]));
-    expect(output).toContain(`Consecutive dated-period pairs: ${SUPPRESSED}`);
-    expect(output).toContain(`Metrics added: ${SUPPRESSED}`);
-    expect(output).toContain(`Metrics removed: ${SUPPRESSED}`);
-    expect(output).toContain(`Weights changed: ${SUPPRESSED}`);
-    expect(output).not.toContain("Metrics removed: 20");
+    expect(output).toContain("Metrics added: 11");
+    expect(output).toContain("Metrics removed: 9");
+    expect(output).not.toContain(SUPPRESSED);
   });
 
   it.each([1, 2, 3, 4])(

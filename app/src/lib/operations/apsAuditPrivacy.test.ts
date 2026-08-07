@@ -146,43 +146,63 @@ describe("coarsenCorrelatedCounts", () => {
   });
 
   it("supports a custom minimum threshold", () => {
-    expect(coarsenCorrelatedCounts({ a: 2, b: 10 }, 3)).toEqual({ a: "suppressed (cell size < 3)", b: "suppressed (cell size < 3)" });
-    expect(coarsenCorrelatedCounts({ a: 3, b: 10 }, 3)).toEqual({ a: "3", b: "10" });
+    expect(coarsenCorrelatedCounts({ a: 2, b: 10 }, { minCellSize: 3 })).toEqual({
+      a: "suppressed (cell size < 3)",
+      b: "suppressed (cell size < 3)",
+    });
+    expect(coarsenCorrelatedCounts({ a: 3, b: 10 }, { minCellSize: 3 })).toEqual({ a: "3", b: "10" });
   });
 
   // -------------------------------------------------------------------
-  // Equation-aware: two individually-safe values whose DIFFERENCE is
-  // small still disclose a derivable complement (review regression).
+  // additionalRiskValues: an implicit complement (total minus a shown
+  // subset) that is never itself a rendered field must still gate the
+  // whole bundle when it's small (review regression #1).
   // -------------------------------------------------------------------
 
-  it("suppresses both values when each individually clears minCellSize but their difference does not (total=20/enough=19 -> complement=1)", () => {
-    const result = coarsenCorrelatedCounts({ total: 20, enough: 19 });
+  it("suppresses the whole bundle when a declared additionalRiskValues complement is small, even though every rendered value is individually safe", () => {
+    // total=20/enough=19 -> the implicit "not enough" complement is 1,
+    // even though neither `total` nor `enough` is itself small.
+    const result = coarsenCorrelatedCounts({ total: 20, enough: 19 }, { additionalRiskValues: [20 - 19] });
     expect(result.total).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
     expect(result.enough).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
   });
 
-  it("suppresses the whole bundle when only ONE pair among several is close, even though every raw value is individually safe", () => {
-    // active=20/required=19 -> complement ("not required") = 1, even
-    // though zeroWeight=5 is unrelated and comfortably safe on its own.
-    const result = coarsenCorrelatedCounts({ active: 20, zeroWeight: 5, required: 19 });
-    expect(result.active).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
-    expect(result.zeroWeight).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
-    expect(result.required).toBe(`suppressed (cell size < ${MIN_CELL_SIZE})`);
+  it("does not suppress when a declared additionalRiskValues complement also clears minCellSize", () => {
+    const result = coarsenCorrelatedCounts({ total: 20, enough: 10 }, { additionalRiskValues: [20 - 10] });
+    expect(result).toEqual({ total: "20", enough: "10" });
   });
 
-  it("does NOT suppress when every pairwise difference also clears minCellSize", () => {
-    const result = coarsenCorrelatedCounts({ periodCount: 20, periodsWithBothDates: 10, comparablePairs: 0 });
-    expect(result).toEqual({ periodCount: "20", periodsWithBothDates: "10", comparablePairs: "0" });
+  it("treats a zero additionalRiskValues complement as safe (an exact match discloses no small subgroup)", () => {
+    const result = coarsenCorrelatedCounts({ total: 20, enough: 20 }, { additionalRiskValues: [20 - 20] });
+    expect(result).toEqual({ total: "20", enough: "20" });
   });
 
-  it("treats a difference of exactly 0 as safe (two equal values disclose no complement)", () => {
-    const result = coarsenCorrelatedCounts({ a: 20, b: 20 });
-    expect(result).toEqual({ a: "20", b: "20" });
+  it("treats an additionalRiskValues complement of exactly minCellSize as safe, matching the single-value boundary", () => {
+    const result = coarsenCorrelatedCounts({ total: 20, enough: 15 }, { additionalRiskValues: [20 - 15] });
+    expect(result).toEqual({ total: "20", enough: "15" });
   });
 
-  it("treats a difference of exactly minCellSize as safe, matching the single-value boundary", () => {
-    const result = coarsenCorrelatedCounts({ a: 20, b: 15 });
-    expect(result).toEqual({ a: "20", b: "15" });
+  // -------------------------------------------------------------------
+  // Genuinely UNRELATED counts that merely happen to be numerically close
+  // must NOT be suppressed -- flagging them would erase valid evidence
+  // and mislabel it as suppressed for a reason that doesn't apply (review
+  // regression #2, pushing back on the earlier blanket pairwise-diff
+  // approach).
+  // -------------------------------------------------------------------
+
+  it("does NOT suppress two unrelated, individually-safe counts merely because they are numerically close (active=11/inactive=9 attachments)", () => {
+    const result = coarsenCorrelatedCounts({ active: 11, inactive: 9 });
+    expect(result).toEqual({ active: "11", inactive: "9" });
+  });
+
+  it("does NOT suppress two unrelated, individually-safe counts in different units merely because they are numerically close (periods=20/pairs=19)", () => {
+    const result = coarsenCorrelatedCounts({ periods: 20, pairs: 19 });
+    expect(result).toEqual({ periods: "20", pairs: "19" });
+  });
+
+  it("does NOT suppress metric stability counts (added=11/removed=9) that have no total/subset relationship to each other", () => {
+    const result = coarsenCorrelatedCounts({ added: 11, removed: 9 });
+    expect(result).toEqual({ added: "11", removed: "9" });
   });
 });
 

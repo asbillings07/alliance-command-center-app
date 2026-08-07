@@ -166,33 +166,42 @@ export function coarsenSmallCount(n: number, minCellSize: number = MIN_CELL_SIZE
  * to show exactly (0, or >= `minCellSize`), or none of them are shown at
  * all.
  *
- * EQUATION-AWARE: checking each raw value alone is not enough. Two values
- * that are each individually safe (0 or >= `minCellSize`) can still be
- * close enough together that their DIFFERENCE discloses a small derived
- * complement -- e.g. `total=20`/`enough=19` never trips a per-value check,
- * but `total - enough = 1` (an exact "1 not-ready" count) is exactly the
- * kind of small subgroup this function exists to hide. So every pairwise
- * absolute difference within the bundle is checked too, not just the raw
- * values. This is deliberately a conservative, general rule rather than
- * per-bundle equation modeling: it catches every real complement in a
- * bundle without the caller having to declare which pairs are "really"
- * related by subtraction, at the cost of occasionally suppressing a bundle
- * over a coincidental (not domain-meaningful) closeness between two
- * unrelated members -- an acceptable false positive given the alternative
- * is a missed disclosure.
+ * EQUATION-AWARE, NOT PAIRWISE: checking each raw value alone is not
+ * enough when the bundle omits an implicit complement -- e.g.
+ * `total=20`/`enough=19` never trips a per-value check, but
+ * `total - enough = 1` (an exact "1 not-ready" count that is never itself
+ * a key in the bundle) is exactly the kind of small subgroup this function
+ * exists to hide. But the fix is NOT "flag any two values in the bundle
+ * that happen to be numerically close" -- a difference is only meaningful
+ * when it corresponds to a REAL subtraction relationship in the domain
+ * (typically total-minus-shown-subset). Two counts that merely happen to
+ * sit close together with no such relationship (e.g. active/inactive
+ * attachment counts, or metrics-added/metrics-removed across periods,
+ * which are independent tallies in different, non-overlapping units) leak
+ * nothing by both being shown exactly, and treating their closeness as
+ * risky would suppress valid audit evidence while calling the result
+ * "suppressed (cell size < N)" -- which is simply false for those counts.
+ *
+ * So the caller must declare any such implicit complement explicitly via
+ * `additionalRiskValues` (typically `[total - shownSubset]` for each
+ * subset of `total` that isn't itself a full, exhaustive decomposition
+ * already covered by the bundle's own keys). These values participate in
+ * the same 0-or->=minCellSize risk check as the bundle's own counts, but
+ * are never rendered themselves -- they exist purely to make sure a small
+ * *implicit* remainder can't be smuggled past this gate.
  */
 export function coarsenCorrelatedCounts<K extends string>(
   counts: Record<K, number>,
-  minCellSize: number = MIN_CELL_SIZE,
+  options: { minCellSize?: number; additionalRiskValues?: readonly number[] } = {},
 ): Record<K, string> {
+  const minCellSize = options.minCellSize ?? MIN_CELL_SIZE;
+  const additionalRiskValues = options.additionalRiskValues ?? [];
   const entries = Object.entries(counts) as [K, number][];
-  const values = entries.map(([, n]) => n);
   const isRisky = (n: number) => n > 0 && n < minCellSize;
 
-  const anyValueRisky = values.some(isRisky);
-  const anyComplementRisky = values.some((a, i) => values.some((b, j) => j > i && isRisky(Math.abs(a - b))));
+  const anyRisky = entries.some(([, n]) => isRisky(n)) || additionalRiskValues.some(isRisky);
 
-  if (!anyValueRisky && !anyComplementRisky) {
+  if (!anyRisky) {
     return Object.fromEntries(entries.map(([key, n]) => [key, String(n)])) as Record<K, string>;
   }
   const suppressedLabel = `suppressed (cell size < ${minCellSize})`;
