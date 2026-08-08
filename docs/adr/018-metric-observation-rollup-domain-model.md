@@ -1,6 +1,6 @@
 # ADR-018: Metric Observation Grain and Member-Period Rollups
 
-**Status:** Accepted (deployment mechanics amended per the [#287 database design](../database-design/287-metric-observations-and-member-period-rollups.md)'s expand/contract review)
+**Status:** Accepted (deployment mechanics amended per the expand/contract review in the [#287 database design](../database-design/287-metric-observations-and-member-period-rollups.md))
 
 **Date:** 2026-08-08
 

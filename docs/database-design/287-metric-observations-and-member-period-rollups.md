@@ -129,9 +129,9 @@ model MemberMetricEntry {
 
 `MetricPeriod` gets **no new column**. Boundary immutability is enforced by a trigger that checks for the *existence* of a `DAILY_OBSERVATION`-grain entry (§4), not by a stored "locked" flag — one less piece of redundant state to keep in sync, consistent with the Prisma Philosophy's preference for relations over duplicated data.
 
-## 3. Constraints, uniqueness, and indexes — exact DDL
+## 3. CHECK constraints and the grain-snapshot foreign key — exact DDL
 
-Everything below is added in the Phase 1 migration (§1), in the same transaction as the column additions, hand-appended to the `prisma migrate dev`-generated file exactly as the `metric_summary_kind_matches_type` precedent does today ([migration](../../prisma/migrations/20260801160620_metric_summary_kind/migration.sql)).
+3a–3c below are `CHECK` constraints, which `schema.prisma` has no native syntax for — like every existing CHECK in this codebase, they're added in the Phase 1 migration (§1), in the same transaction as the column additions, hand-appended to the `prisma migrate dev`-generated file exactly as the `metric_summary_kind_matches_type` precedent does today ([migration](../../prisma/migrations/20260801160620_metric_summary_kind/migration.sql)). 3d's composite foreign key, and §2's composite unique constraint and new index, are by contrast native Prisma schema constructs (`@relation`, `@@unique`, `@@index`) already declared in §2's schema diff — `prisma migrate dev` generates their DDL automatically from that diff, with no hand-appending required. 3d repeats the resulting `FOREIGN KEY` here only to make its exact shape and guarantee explicit, not because it needs separate manual authoring.
 
 **3a. `Metric` grain/rollup/type compatibility** (extends, does not replace, the existing `metric_summary_kind_matches_type` CHECK):
 
