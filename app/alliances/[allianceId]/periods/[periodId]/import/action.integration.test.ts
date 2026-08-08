@@ -298,6 +298,46 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
         expect(createdMetric).not.toBeNull();
     });
 
+    it("writes observationGrain re-fetched from each resolved metric's own grain, and status ACTIVE explicitly, for both an existing attach and a mid-transaction create (ADR-018 §3)", async () => {
+        const { alliance, member, periodA, libraryMetric } = await makeTestSetup();
+
+        vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
+            user: { id: "integration-test-user", email: "test@local" },
+            permissions: {
+                canImportMetrics: true,
+                canConfigurePeriods: true,
+                canConfigureMetrics: true,
+            } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["permissions"],
+            membership: { role: "ADMIN" } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["membership"],
+        });
+
+        await importMemberMetrics({
+            periodId: periodA.id,
+            allianceId: alliance.id,
+            mappings: [
+                {
+                    sourceColumnName: "Library Metric",
+                    target: { kind: "existing", metricId: libraryMetric.id },
+                    entries: [{ memberId: member.id, rawValue: "100" }],
+                },
+                {
+                    sourceColumnName: "Brand New Metric",
+                    target: { kind: "create", name: "Brand New Metric" },
+                    entries: [{ memberId: member.id, rawValue: "200" }],
+                },
+            ],
+        });
+
+        const entries = await prisma.memberMetricEntry.findMany({
+            where: { periodId: periodA.id },
+        });
+        expect(entries).toHaveLength(2);
+        for (const entry of entries) {
+            expect(entry.observationGrain).toBe("PERIOD_VALUE");
+            expect(entry.status).toBe("ACTIVE");
+        }
+    });
+
     it("rejects import when period belongs to another alliance", async () => {
         const setup1 = await makeTestSetup();
         const setup2 = await makeTestSetup();

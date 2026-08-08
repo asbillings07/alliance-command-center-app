@@ -20,6 +20,11 @@ import {
   type MultiPeriodImportGroupInput,
 } from "@/app/src/lib/import/multiPeriodImport";
 import { assertBooleanMetricValuesValid } from "@/app/src/lib/metrics/assertBooleanMetricValues";
+import {
+  loadMetricObservationGrains,
+  requireMetricObservationGrain,
+} from "@/app/src/lib/metrics/loadMetricObservationGrains";
+import { MemberMetricEntryStatus } from "@/app/generated/prisma/enums";
 
 export type MultiPeriodImportMetricsInput = {
   allianceId: string;
@@ -222,13 +227,26 @@ export async function importMultiPeriodMetrics(
       // BOOLEAN-mapped value outside {0, 1} before writing anything (#190).
       await assertBooleanMetricValuesValid(tx, plan.mappings);
 
+      // ADR-018 §3: each entry is written with its own metric's actual grain,
+      // re-fetched post-resolution for this group (never a pre-resolution
+      // snapshot or a hardcoded value) - see import/action.ts for the same
+      // requirement and rationale. Every write here remains PERIOD_VALUE
+      // until a later slice adds per-column daily-observation import support.
+      const grainByMetricId = await loadMetricObservationGrains(
+        tx,
+        plan.mappings.map((mapping) => mapping.metricId),
+      );
+
       for (const mapping of plan.mappings) {
+        const observationGrain = requireMetricObservationGrain(grainByMetricId, mapping.metricId);
         await tx.memberMetricEntry.createMany({
           data: mapping.entries.map((entry) => ({
             allianceMemberId: entry.memberId,
             periodId,
             metricId: mapping.metricId,
             value: entry.value,
+            observationGrain,
+            status: MemberMetricEntryStatus.ACTIVE,
           })),
         });
       }

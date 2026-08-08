@@ -95,6 +95,45 @@ describe.skipIf(!runDb)("metrics action [integration]", () => {
     expect(metric?.unitLabel).toBe("pts");
   });
 
+  it("createMetric explicitly sets PERIOD_VALUE + LATEST, never relying on the schema's temporary Phase 1 default (ADR-018 §1)", async () => {
+    const alliance = await makeAlliance();
+
+    await createMetric(
+      buildFormData({
+        allianceId: alliance.id,
+        name: "VS Score",
+        type: "NUMERIC",
+        summaryKind: "SUM",
+        unitLabel: "pts",
+      }),
+    );
+
+    const metric = await prisma.metric.findFirst({ where: { allianceId: alliance.id } });
+    expect(metric?.observationGrain).toBe("PERIOD_VALUE");
+    expect(metric?.memberPeriodRollup).toBe("LATEST");
+  });
+
+  it("a raw update attempting to change observationGrain or memberPeriodRollup after creation is rejected by the database (ADR-018 §1)", async () => {
+    const alliance = await makeAlliance();
+    const metric = await prisma.metric.create({
+      data: { allianceId: alliance.id, name: "Immutable Grain Metric", type: "NUMERIC" },
+    });
+
+    await expect(
+      prisma.metric.update({
+        where: { id: metric.id },
+        data: { observationGrain: "DAILY_OBSERVATION" },
+      }),
+    ).rejects.toThrow(/immutable after creation/i);
+
+    await expect(
+      prisma.metric.update({
+        where: { id: metric.id },
+        data: { memberPeriodRollup: "SUM" },
+      }),
+    ).rejects.toThrow(/immutable after creation/i);
+  });
+
   it("editMetric ignores a submitted type change even when the metric already has entries", async () => {
     const alliance = await makeAlliance();
     const metric = await prisma.metric.create({

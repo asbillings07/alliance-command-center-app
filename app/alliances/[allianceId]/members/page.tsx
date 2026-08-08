@@ -146,6 +146,13 @@ export default async function MembersPage({ params, searchParams }: Params) {
 
     const latestMetricValueByMemberAndMetric = new Map<string, number>();
     for (const entry of periodMetricEntries) {
+        // ADR-018 §2: a VOIDED row carries a null value; skip it here rather
+        // than surface it as a member's latest value. No write path can
+        // create one yet (the void mutation is a later #287 slice), so this
+        // is a no-op today and a safety net once it exists - this whole
+        // reduction is superseded by the canonical read model in a later
+        // slice regardless.
+        if (entry.value === null) continue;
         const key = `${entry.allianceMemberId}:${entry.metricId}`;
         if (!latestMetricValueByMemberAndMetric.has(key)) {
             latestMetricValueByMemberAndMetric.set(key, entry.value);
