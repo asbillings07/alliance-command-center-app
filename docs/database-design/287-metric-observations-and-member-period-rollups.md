@@ -354,14 +354,61 @@ aggregated_per_member AS (
     MAX("observedOn") AS last_observed_on
   FROM active_slots
   GROUP BY "metricId", "allianceMemberId"
+),
+requested_metrics AS (
+  -- Tenant-scoped a second time, independent of slot_winner's own join:
+  -- an allianceId/id mismatch here means $3 can never smuggle a
+  -- cross-tenant metric id into the base relation below, even if $1/$3
+  -- were passed inconsistently by a caller bug.
+  SELECT "id", "observationGrain", "memberPeriodRollup"
+  FROM "Metric"
+  WHERE "allianceId" = $1 AND "id" = ANY($3)
+),
+base AS (
+  -- Every (requested metric x alliance member) pair, regardless of
+  -- whether any MemberMetricEntry exists. This is what makes "zero
+  -- active slots -> NULL" real (ADR-018 §1): without this CROSS JOIN,
+  -- every CTE above is sourced from MemberMetricEntry, so a member with
+  -- no rows for a metric would have no base row to LEFT JOIN onto and
+  -- would be silently absent from the result set rather than returned
+  -- with a NULL value.
+  SELECT rm."id" AS "metricId", am."id" AS "allianceMemberId",
+    rm."observationGrain", rm."memberPeriodRollup"
+  FROM requested_metrics rm
+  CROSS JOIN "AllianceMember" am
+  WHERE am."allianceId" = $1
 )
 -- Final SELECT branches per Metric.memberPeriodRollup (LATEST vs. SUM vs.
--- AVERAGE) and LEFT JOINs so a member with zero active winning slots for a
--- metric still appears with a NULL derived value (ADR-018 §1's "zero active
--- slots" rule), never absent from the result set and never coerced to 0.
+-- AVERAGE) and LEFT JOINs onto `base` so a member with zero active winning
+-- slots for a metric still appears with a NULL derived value (ADR-018 §1's
+-- "zero active slots" rule), never absent from the result set and never
+-- coerced to 0. `provenance` is ADR-018 §5's static function of
+-- configuration, never inferred from whether rows happen to exist.
+SELECT
+  b."metricId",
+  b."allianceMemberId",
+  CASE b."memberPeriodRollup"
+    WHEN 'LATEST' THEN lpm."value"
+    WHEN 'SUM' THEN apm.sum_value
+    WHEN 'AVERAGE' THEN apm.avg_value
+  END AS "value",
+  COALESCE(apm.observation_count, 0) AS "observationCount",
+  apm.last_observed_on AS "lastObservedOn",
+  CASE
+    WHEN b."observationGrain" = 'PERIOD_VALUE' THEN 'Source period value'
+    WHEN b."memberPeriodRollup" = 'LATEST' THEN 'Derived (latest observation)'
+    WHEN b."memberPeriodRollup" = 'SUM' THEN 'Derived (sum)'
+    WHEN b."memberPeriodRollup" = 'AVERAGE' THEN 'Derived (average)'
+  END AS "provenance"
+FROM base b
+LEFT JOIN latest_per_member lpm
+  ON lpm."metricId" = b."metricId" AND lpm."allianceMemberId" = b."allianceMemberId"
+LEFT JOIN aggregated_per_member apm
+  ON apm."metricId" = b."metricId" AND apm."allianceMemberId" = b."allianceMemberId"
+ORDER BY b."metricId", b."allianceMemberId";
 ```
 
-**Expected query plan:** the `slot_winner` CTE's `DISTINCT ON` is served by §2's new `(periodId, metricId, allianceMemberId, observedOn, recordedAt DESC, createdAt DESC, id DESC)` index — an index scan on the `periodId`/`metricId` predicate whose trailing key order exactly matches the `DISTINCT ON`'s `ORDER BY`, so Postgres needs no separate sort step, mirroring the reasoning already documented for the existing index. It is not an index-only scan (`value`/`status` are not in the index), so a heap fetch is still required per selected row — identical tradeoff to today's query.
+**Expected query plan:** the `slot_winner` CTE's `DISTINCT ON` is served by §2's new `(periodId, metricId, allianceMemberId, observedOn, recordedAt DESC, createdAt DESC, id DESC)` index — an index scan on the `periodId`/`metricId` predicate whose trailing key order exactly matches the `DISTINCT ON`'s `ORDER BY`, so Postgres needs no separate sort step, mirroring the reasoning already documented for the existing index. It is not an index-only scan (`value`/`status` are not in the index), so a heap fetch is still required per selected row — identical tradeoff to today's query. `base`'s `CROSS JOIN` is bounded by `$3`'s (small, caller-supplied) metric count times the alliance's member count — an index scan on `AllianceMember.allianceId` and a primary-key lookup for each `Metric` id in `$3` — never a full-table cross product.
 
 `observationCount` and `lastObservedOn` (ADR-018 §5) are `active_slots`' `COUNT(*)`/`MAX("observedOn")` directly — never a raw row count, and never inflated by corrections or tombstones, since `slot_winner` already collapsed each slot to one row before `active_slots` filters to `ACTIVE`.
 
@@ -380,7 +427,7 @@ New `*.integration.test.ts` files (per the [`apsDataReadinessAudit.integration.t
 | `metricPeriodBoundaryImmutability.integration.test.ts` | §4b trigger rejects a boundary `UPDATE` once a `DAILY_OBSERVATION` entry exists; boundary edits remain unrestricted before that |
 | `metricPeriodBoundaryInsertRace.integration.test.ts` | Two-session regression for §4c's `FOR SHARE` fix: open a daily-observation `INSERT` in session A (holding the lock before committing), attempt a concurrent boundary `UPDATE` in session B and prove it blocks rather than succeeding against stale data; repeat with the ordering reversed (B's boundary `UPDATE` first, A's `INSERT` blocks and then correctly fails once B's new, narrower boundaries are visible) |
 | `metricPeriodBoundaryInsertRaceMultiPeriod.integration.test.ts` | Two multi-period-import transactions holding `FOR SHARE` on the same two periods in opposite acquisition orders both commit without deadlocking; a boundary `UPDATE` on either period blocks while either import transaction is still open, matching the single-period case |
-| `metricPeriodAllianceLockOrdering.integration.test.ts` | Two parts, both against the **same** `MetricPeriod` row and the **same** `Alliance` row (using different periods, as an earlier draft of this test did, would let the two transactions serialize purely on `Alliance` without ever contending on `MetricPeriod`, so a writer that reversed the order would still pass). **(a) Regression baseline:** the real `record/action.ts` insert and the real `periods/action.ts` boundary edit (with a genuinely different `startsAt`/`endsAt`), run concurrently against the same period. Asserts **no deadlock/hang occurs**, and exactly the serialized outcome §4's business-rule triggers require — never that both commit, which 4b makes impossible whenever the two actually contend: whichever acquires the `MetricPeriod` lock first proceeds normally; the other, once unblocked, sees the now-committed state and is handled by the relevant trigger — if the insert won, 4b's `EXISTS` check now finds that daily entry and the boundary edit is rejected; if the boundary edit won, 4c re-validates `observedOn` against the *new* range and the insert either succeeds or fails depending on whether the date is still in range. The test asserts one of these two success/failure pairs deterministically occurs (by acquisition order, not by chance) and that neither transaction ever hangs. **(b) Hazard canary, raw SQL:** two manually-sequenced sessions simulate the two lock *orderings* directly — one holds `MetricPeriod`'s lock and then requests `Alliance`'s, the other is deliberately driven `Alliance`-then-`MetricPeriod` (the order this design forbids) — and asserts Postgres's deadlock detector aborts one of them. (b) targets the `Alliance`-ordering hazard this section exists to rule out; (a) targets the separate, already-documented 4b/4c business-rule outcome that a same-period test surfaces as a side effect — the two parts are not proving the same thing, and (a)'s assertion must reflect that rather than claim two unconditional commits |
+| `metricPeriodAllianceLockOrdering.integration.test.ts` | Two parts, both against the **same** `MetricPeriod` row and the **same** `Alliance` row (using different periods, as an earlier draft of this test did, would let the two transactions serialize purely on `Alliance` without ever contending on `MetricPeriod`, so a writer that reversed the order would still pass). **(a) Regression baseline:** the real `record/action.ts` insert (`observedOn` = day 4 of a day-1-to-day-7 period) and the real `periods/action.ts` boundary edit narrowing the period to days 5–7 — a range that **deliberately excludes** the inserted date — run concurrently against the same period. That exclusion is pinned on purpose: a boundary edit whose new range still contained the inserted date would let both legitimately commit (4c's revalidation would simply pass), which is correct Postgres behavior but not what this regression is for, so the fixture must not leave that case ambiguous. With the exclusion, exactly one commit is correct for either acquisition order — never both, and never a hang: if the insert wins the `MetricPeriod` lock first, it commits and the boundary edit is then rejected once 4b's `EXISTS` check sees that now-committed daily entry; if the boundary edit wins first, it commits and the insert is then rejected once 4c revalidates `observedOn` against the new, narrower range that no longer contains it. The test asserts no deadlock/hang plus exactly one commit for both acquisition orders. **(b) Hazard canary, raw SQL:** two manually-sequenced sessions simulate the two lock *orderings* directly — one holds `MetricPeriod`'s lock and then requests `Alliance`'s, the other is deliberately driven `Alliance`-then-`MetricPeriod` (the order this design forbids) — and asserts Postgres's deadlock detector aborts one of them. (b) targets the `Alliance`-ordering hazard this section exists to rule out; (a) targets the separate, already-documented 4b/4c business-rule serialization that a same-period test surfaces as a side effect |
 | `memberMetricEntryDailyValidation.integration.test.ts` | §4c trigger rejects a daily entry when either period boundary is null, and when `observedOn` falls outside `[startsAt, endsAt]` |
 | `memberMetricEntryImmutable.integration.test.ts` | §4d trigger rejects a raw `UPDATE` to any field of an existing `MemberMetricEntry` row, including one that would otherwise move `observedOn`/`periodId` into an out-of-range combination |
 | `memberMetricEntryGrainFk.integration.test.ts` | §3d composite FK rejects an entry whose `observationGrain` doesn't match its metric's actual grain |
