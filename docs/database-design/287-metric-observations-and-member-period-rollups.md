@@ -96,7 +96,8 @@ model MemberMetricEntry {
 
   // ADR-018 §4. NOT NULL iff observationGrain = DAILY_OBSERVATION (CHECK in
   // §3c), a source-declared YYYY-MM-DD civil date — see ADR-018 §4 for why
-  // this is DATE, not DateTime.
+  // this is stored as a Postgres DATE column (via Prisma's DateTime scalar
+  // with @db.Date), not a plain DateTime/TIMESTAMP column.
   observedOn DateTime? @db.Date
 
   // ADR-018 §2. Permanent default — never dropped (contrast with the three
@@ -265,7 +266,7 @@ FOR EACH ROW
 EXECUTE FUNCTION member_metric_entry_validate_daily_observation();
 ```
 
-`observedOn IS NOT NULL` for `DAILY_OBSERVATION` rows is already guaranteed by the CHECK in §3c before this trigger body runs, so 4c does not re-check nullability.
+This trigger's range comparison does not separately raise on a `NULL` `observedOn`: `NEW."observedOn" < ...` and `> ...` both evaluate to `NULL`, not `TRUE`, when `observedOn` is `NULL`, so the `IF` above silently passes rather than raising in that case — this is not a gap, because PostgreSQL validates `CHECK` constraints (including §3c's `observedOn IS NOT NULL` requirement for `DAILY_OBSERVATION` rows) against each row's final values only *after* every `BEFORE ROW` trigger has run, not before. The two checks are independent safety nets against the same `NULL` case, not one relying on the other having already run — a `NULL` `observedOn` is always rejected by §3c immediately after this trigger returns, regardless of ordering.
 
 **Lock ordering — the real lock sets, not a single-row simplification.** A single `INSERT` (4c) or boundary `UPDATE` (4b) each lock exactly one `MetricPeriod` row. But [`multiPeriodAction.ts:182-241`](<../../app/alliances/[allianceId]/periods/[periodId]/import/multiPeriodAction.ts#L182-L241>) runs one `$transaction` that loops over several `groupPlan`s (from line 189's `for (const groupPlan of groupPlans)`), each targeting its own period (existing or newly created), and inserts that group's `MemberMetricEntry` rows before moving to the next — so a single multi-period import transaction can hold 4c's `FOR SHARE` lock on **multiple** `MetricPeriod` rows simultaneously, acquired in `groupPlans`' array order (client/leader-controlled column-mapping order, not sorted by id or any other canonical key).
 
