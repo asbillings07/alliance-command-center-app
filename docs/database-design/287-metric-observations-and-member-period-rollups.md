@@ -2,7 +2,7 @@
 
 **Issue:** [#287](https://github.com/asbillings07/alliance-command-center-app/issues/287)
 
-**Domain model:** [ADR-018](../adr/018-metric-observation-rollup-domain-model.md) (Proposed — this design's approval, specifically §1's deployment-safety gate, is what promotes it to Accepted)
+**Domain model:** [ADR-018](../adr/018-metric-observation-rollup-domain-model.md) (Accepted in this same PR — §1 below corrects the deployment mechanics ADR-018's Consequences section previously got wrong, and that correction is applied to ADR-018 itself here, not left as a standing contradiction between a merged ADR and this design)
 
 **Date:** 2026-08-08
 
@@ -12,7 +12,7 @@
 
 ## 1. Deployment safety analysis (the approval gate)
 
-ADR-018's own Consequences section previously said the legacy backfill and the removal of its temporary defaults happen "in the same migration." That is unsafe under this project's actual deployment pipeline, and this design corrects it before anything else.
+ADR-018's own Consequences section previously said the legacy backfill and the removal of its temporary defaults happen "in the same migration." That is unsafe under this project's actual deployment pipeline. This design corrects it before anything else, and that correction is not merely asserted here — it is applied directly to ADR-018's own text in this PR, so the merged ADR and this design agree rather than one silently superseding the other.
 
 **The pipeline, per [ADR-011](../adr/011-continuous-delivery.md)'s Deployment Pipeline section:**
 
@@ -59,12 +59,13 @@ enum MemberMetricEntryStatus {
 model Metric {
   // ...existing fields unchanged...
 
-  // ADR-018 §1. Phase 1: @default(PERIOD_VALUE)/@default(LATEST) (temporary,
-  // dropped in Phase 3 — see §1 of this design). Creation-time immutable,
+  // ADR-018 §1. Phase 1: @default(PERIOD_VALUE)/@default(LATEST) below are
+  // temporary — dropped in Phase 3 (see §1 of this design) once every writer
+  // (§8) supplies both explicitly. Creation-time immutable thereafter,
   // enforced by the metric_reporting_fields_immutable_trigger in §4, not by
   // Prisma or the update action's payload shape.
-  observationGrain   MetricObservationGrain
-  memberPeriodRollup MemberPeriodRollupKind
+  observationGrain   MetricObservationGrain @default(PERIOD_VALUE)
+  memberPeriodRollup MemberPeriodRollupKind @default(LATEST)
 
   entries MemberMetricEntry[]
 
@@ -86,11 +87,11 @@ model MemberMetricEntry {
   metricId     String
   periodMetric MetricPeriodMetric @relation(fields: [periodId, metricId], references: [periodId, metricId])
 
-  // ADR-018 §3. Phase 1: @default(PERIOD_VALUE) (temporary, dropped in
-  // Phase 3). Written once at insert time from the metric's own grain;
-  // the composite FK below is the actual guarantee that this copy can never
-  // drift from Metric.observationGrain.
-  observationGrain MetricObservationGrain
+  // ADR-018 §3. Phase 1: @default(PERIOD_VALUE) below is temporary — dropped
+  // in Phase 3, same as Metric's two fields above. Written once at insert
+  // time from the metric's own grain; the composite FK below is the actual
+  // guarantee that this copy can never drift from Metric.observationGrain.
+  observationGrain MetricObservationGrain @default(PERIOD_VALUE)
   metric           Metric @relation(fields: [metricId, observationGrain], references: [id, observationGrain])
 
   // ADR-018 §4. NOT NULL iff observationGrain = DAILY_OBSERVATION (CHECK in
@@ -98,8 +99,9 @@ model MemberMetricEntry {
   // this is DATE, not DateTime.
   observedOn DateTime? @db.Date
 
-  // ADR-018 §2. Permanent default — never dropped (contrast with the two
-  // temporary defaults above).
+  // ADR-018 §2. Permanent default — never dropped (contrast with the three
+  // temporary Phase-1-only defaults above: Metric's two and this model's own
+  // observationGrain).
   status MemberMetricEntryStatus @default(ACTIVE)
 
   // ADR-018 §2. Now nullable: a VOIDED row carries no value (CHECK in §4).
@@ -171,7 +173,7 @@ ALTER TABLE "MemberMetricEntry" ADD CONSTRAINT "member_metric_entry_metric_grain
 
 ## 4. PostgreSQL enforcement — triggers
 
-This is the first use of a database trigger in this codebase. All three are `BEFORE` triggers that `RAISE EXCEPTION` to reject the offending statement; none rewrite `NEW`.
+This is the first use of a database trigger in this codebase. All four are `BEFORE` triggers that `RAISE EXCEPTION` to reject the offending statement; none rewrite `NEW`.
 
 **4a. `Metric.type`/`observationGrain`/`memberPeriodRollup` creation-time immutability** (ADR-018 §1 — a strictly stronger guarantee than the existing app-only `type` precedent in [`metrics/action.ts`](<../../app/alliances/[allianceId]/metrics/action.ts#L201>)):
 
@@ -229,8 +231,19 @@ DECLARE
   period_ends_at   TIMESTAMP(3);
 BEGIN
   IF NEW."observationGrain" = 'DAILY_OBSERVATION' THEN
+    -- FOR SHARE, not a plain SELECT: this is the actual serialization
+    -- mechanism against a concurrent boundary UPDATE, not just a read. An
+    -- unlocked SELECT here would let this INSERT validate against boundaries
+    -- that a concurrent transaction is simultaneously changing (or about to
+    -- change) — both could then commit, leaving the observation outside the
+    -- final boundaries. UPDATE "MetricPeriod" always acquires a row-level
+    -- lock that conflicts with FOR SHARE, so whichever transaction (this
+    -- insert, or a concurrent boundary edit) reaches the row first forces
+    -- the other to wait until it commits or rolls back — see the two-session
+    -- regression test in §7. Only one row is ever locked per transaction
+    -- here, so this cannot deadlock against itself.
     SELECT "startsAt", "endsAt" INTO period_starts_at, period_ends_at
-    FROM "MetricPeriod" WHERE id = NEW."periodId";
+    FROM "MetricPeriod" WHERE id = NEW."periodId" FOR SHARE;
 
     IF period_starts_at IS NULL OR period_ends_at IS NULL THEN
       RAISE EXCEPTION 'Period % must have both start and end dates set before recording a daily observation', NEW."periodId";
@@ -251,6 +264,27 @@ EXECUTE FUNCTION member_metric_entry_validate_daily_observation();
 ```
 
 `observedOn IS NOT NULL` for `DAILY_OBSERVATION` rows is already guaranteed by the CHECK in §3c before this trigger body runs, so 4c does not re-check nullability.
+
+**Lock ordering between 4b and 4c is consistent by construction, not by convention**: both ever lock exactly one thing — the single `MetricPeriod` row named by `periodId`/`id` — so there is no second lock either trigger could acquire out of order, and therefore no deadlock path between an insert and a boundary edit. PostgreSQL's default `READ COMMITTED` isolation permits the un-locked race this section fixes (each statement sees its own snapshot; two concurrent transactions can both read a "safe" state and both commit); the `FOR SHARE` lock in 4c is what actually serializes the two operations, not the isolation level.
+
+**4d. `MemberMetricEntry` full immutability after insert.** 4c only validates at `INSERT` time; nothing stopped a subsequent raw `UPDATE` from moving an already-validated row's `observedOn` or `periodId` to a combination that was never checked against any period's boundaries, or reassigning `metricId`/`allianceMemberId` entirely. Re-deriving and re-running 4c's validation on every `UPDATE` would work, but it fights the domain model rather than matching it: ADR-018 §2 already treats this table as append-only — every legitimate change is a new row (a correction or a void), never an in-place edit of an existing one, and no production write path calls `.update()` on it today. The correct enforcement is therefore that **no field of an existing `MemberMetricEntry` row may ever change**, which subsumes the identity-drift gap as a special case rather than patching around it:
+
+```sql
+CREATE OR REPLACE FUNCTION member_metric_entry_immutable()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'MemberMetricEntry rows are immutable after insert (id=%) — write a new row (correction or void) instead of updating an existing one', OLD.id;
+  RETURN NEW; -- unreachable; RAISE EXCEPTION above always aborts the statement
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER member_metric_entry_immutable_trigger
+BEFORE UPDATE ON "MemberMetricEntry"
+FOR EACH ROW
+EXECUTE FUNCTION member_metric_entry_immutable();
+```
+
+This trigger rejects an `UPDATE` unconditionally — there is no legitimate case to allow through, so it does not need `IS DISTINCT FROM` comparisons the way 4a's field-scoped immutability does.
 
 ## 5. Legacy backfill (Phase 1 migration, exact order)
 
@@ -274,11 +308,17 @@ WITH slot_winner AS (
   -- slot, regardless of status — status is resolved *after* picking the
   -- winner, never before, so a later VOIDED row correctly beats an earlier
   -- ACTIVE one for the same slot.
-  SELECT DISTINCT ON ("metricId", "allianceMemberId", "observedOn")
-    "metricId", "allianceMemberId", "observedOn", "value", "status"
-  FROM "MemberMetricEntry"
-  WHERE "periodId" = $1 AND "metricId" = ANY($2) AND "allianceMember"."allianceId" = $3
-  ORDER BY "metricId", "allianceMemberId", "observedOn", "recordedAt" DESC, "createdAt" DESC, "id" DESC
+  SELECT DISTINCT ON (mme."metricId", mme."allianceMemberId", mme."observedOn")
+    mme."metricId", mme."allianceMemberId", mme."observedOn", mme."value", mme."status"
+  FROM "MemberMetricEntry" mme
+  -- Explicit join, not a bare reference to an undefined alias: tenant
+  -- scoping is enforced against AllianceMember.allianceId, exactly as the
+  -- eight existing "latest wins" implementations already do (ADR-018 §2's
+  -- "every partition key must include metricId explicitly" applies equally
+  -- to this join never being silently omitted).
+  JOIN "AllianceMember" am ON am.id = mme."allianceMemberId"
+  WHERE mme."periodId" = $1 AND mme."metricId" = ANY($2) AND am."allianceId" = $3
+  ORDER BY mme."metricId", mme."allianceMemberId", mme."observedOn", mme."recordedAt" DESC, mme."createdAt" DESC, mme."id" DESC
 ),
 active_slots AS (
   -- Phase 2 input: only ACTIVE winning slots ever contribute (ADR-018 §1).
@@ -322,8 +362,11 @@ New `*.integration.test.ts` files (per the [`apsDataReadinessAudit.integration.t
 | Test file | Proves |
 |---|---|
 | `metricGrainImmutability.integration.test.ts` | §4a trigger rejects a raw `UPDATE` changing `type`/`observationGrain`/`memberPeriodRollup` on an existing `Metric` |
+| `metricGrainWriterDefaults.integration.test.ts` | §8's `createMetric` and `metricResolution`'s auto-create-on-import path each explicitly set `PERIOD_VALUE + LATEST` on a create with no grain/rollup input — proving the application, not the database default, is the source of the value |
 | `metricPeriodBoundaryImmutability.integration.test.ts` | §4b trigger rejects a boundary `UPDATE` once a `DAILY_OBSERVATION` entry exists; boundary edits remain unrestricted before that |
+| `metricPeriodBoundaryInsertRace.integration.test.ts` | Two-session regression for §4c's `FOR SHARE` fix: open a daily-observation `INSERT` in session A (holding the lock before committing), attempt a concurrent boundary `UPDATE` in session B and prove it blocks rather than succeeding against stale data; repeat with the ordering reversed (B's boundary `UPDATE` first, A's `INSERT` blocks and then correctly fails once B's new, narrower boundaries are visible) |
 | `memberMetricEntryDailyValidation.integration.test.ts` | §4c trigger rejects a daily entry when either period boundary is null, and when `observedOn` falls outside `[startsAt, endsAt]` |
+| `memberMetricEntryImmutable.integration.test.ts` | §4d trigger rejects a raw `UPDATE` to any field of an existing `MemberMetricEntry` row, including one that would otherwise move `observedOn`/`periodId` into an out-of-range combination |
 | `memberMetricEntryGrainFk.integration.test.ts` | §3d composite FK rejects an entry whose `observationGrain` doesn't match its metric's actual grain |
 | `memberMetricEntryStatusValueCheck.integration.test.ts` | §3b CHECK rejects `(ACTIVE, NULL)` and `(VOIDED, non-NULL)`; accepts the two valid combinations |
 | `metricBooleanDailyRejection.integration.test.ts` | §3a CHECK rejects a `BOOLEAN`-type metric configured with `DAILY_OBSERVATION` |
@@ -338,13 +381,22 @@ New `*.integration.test.ts` files (per the [`apsDataReadinessAudit.integration.t
 
 Fresh as of this design (`rg -n 'memberMetricEntry\.|"MemberMetricEntry"|metricEntries' app`, then read each match in context) — **more complete than ADR-018's own inventory**, which this table supersedes as the current source of truth. This is itself evidence for ADR-018 §6's point that a hand-maintained list drifts; this table is the concrete instance of the "implementation-time exhaustive checklist" that section requires, produced now rather than deferred.
 
-**Writers** (need `observationGrain` + grain-aware `observedOn`/`status` handling; all three currently `createMany({ allianceMemberId, periodId, metricId, value })` with no grain awareness):
+**`MemberMetricEntry` writers** (need `observationGrain` + grain-aware `observedOn`/`status` handling; all three currently `createMany({ allianceMemberId, periodId, metricId, value })` with no grain awareness):
 
 | File:line | Path |
 |---|---|
 | [`record/action.ts:97`](<../../app/alliances/[allianceId]/periods/[periodId]/record/action.ts#L97>) | Manual recording |
 | [`import/action.ts:184`](<../../app/alliances/[allianceId]/periods/[periodId]/import/action.ts#L184>) | Single-period import |
 | [`multiPeriodAction.ts:226`](<../../app/alliances/[allianceId]/periods/[periodId]/import/multiPeriodAction.ts#L226>) | Multi-period import |
+
+**`Metric` writers** (need `observationGrain` + `memberPeriodRollup` supplied explicitly — the exact same "every writer" requirement §1 makes for `MemberMetricEntry` applies here too, and this design's original inventory missed both):
+
+| File:line | Path | Phase 1 contract |
+|---|---|---|
+| [`metrics/action.ts:135`](<../../app/alliances/[allianceId]/metrics/action.ts#L135>) | `createMetric` — the leader-facing "new metric" form | Today this action never accepts grain/rollup (the form has no such fields yet). Building the leader-facing daily-metric-configuration UI (letting a leader actually choose `DAILY_OBSERVATION`/`SUM`/`AVERAGE` when creating a metric) is a separate, later implementation PR, not this migration's job. For Phase 1, this action must be changed to *explicitly* pass `observationGrain: 'PERIOD_VALUE', memberPeriodRollup: 'LATEST'` in its `tx.metric.create` call — matching the only semantics the current form can express — rather than silently relying on the schema default. This keeps the action correct through Phase 3 (once the default is dropped) without requiring the new UI to exist yet |
+| [`metricResolution.ts:192`](<../../app/src/lib/metricResolution.ts#L192>) | The spreadsheet importer's auto-create-on-unmatched-column path (`tx.metric.upsert(...)`) | Already hardcodes `type: Metric_Type.NUMERIC` for a metric it has never seen before — i.e. it already guesses one reporting field silently, a pre-existing condition this design does not introduce but must not compound. For Phase 1, this path must equally hardcode `observationGrain: 'PERIOD_VALUE', memberPeriodRollup: 'LATEST'` in its `create` branch, explicitly, so it stops depending on the default in Phase 3. A real leader-facing confirmation step for grain choice at import time is out of scope for this design — ADR-018's own Non-goals list "UI design for the daily-ledger drill-down" as an implementation-issue concern, and this is the same category of deferred import UX. Phase 1 only needs to stop relying on the database default, not solve that UX |
+
+Both additions need a `metricGrainWriterDefaults.integration.test.ts` case in §7: creating a metric through each path with no explicit grain/rollup input still results in `PERIOD_VALUE + LATEST`, proving the *application* now sets this value rather than the database silently filling it in — the distinction that matters once Phase 3 removes the fallback.
 
 **Semantic value/report consumers** (migrate to §6's canonical read model):
 
@@ -400,7 +452,7 @@ Test fixture writers (`apsAuditFixtures.ts`, and any future test builders) also 
 
 ## Related work
 
-- [ADR-018](../adr/018-metric-observation-rollup-domain-model.md) — the domain model this design implements; promoted to Accepted once §1 of this design is approved.
+- [ADR-018](../adr/018-metric-observation-rollup-domain-model.md) — the domain model this design implements; amended and promoted to Accepted in this same PR, once §1's expand/contract correction is applied to its own text.
 - [ADR-011](../adr/011-continuous-delivery.md) — the deployment pipeline §1's expand/contract analysis is built around.
 - [#287](https://github.com/asbillings07/alliance-command-center-app/issues/287) — the issue this design and ADR-018 both resolve.
 - [#285](https://github.com/asbillings07/alliance-command-center-app/pull/285) — the real-Postgres integration-test precedent §7 follows.
