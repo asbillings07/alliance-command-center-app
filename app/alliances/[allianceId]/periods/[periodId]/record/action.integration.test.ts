@@ -137,7 +137,7 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
     expect(entry?.value).toBe(4200);
   });
 
-  it("revalidates the setup domain, matching the touchAllianceSetupActivity call in the same transaction", async () => {
+  it("revalidates all five observation-changing-write domains (ADR-018), matching the touchAllianceSetupActivity call in the same transaction", async () => {
     const { alliance, member, period, metric } = await makeSetup("NUMERIC");
 
     await recordMemberMetrics({
@@ -147,12 +147,27 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
       entries: [{ memberId: member.id, value: 100 }],
     });
 
-    expect(revalidateAllianceData).toHaveBeenCalledWith(
-      expect.objectContaining({
-        allianceId: alliance.id,
-        periodId: period.id,
-        domains: expect.arrayContaining(["setup", "evaluation-results", "reports"]),
-      }),
-    );
+    expect(revalidateAllianceData).toHaveBeenCalledWith({
+      allianceId: alliance.id,
+      periodId: period.id,
+      domains: ["members", "dashboard", "setup", "evaluation-results", "reports"],
+    });
+  });
+
+  it("writes observationGrain from the metric's own grain and status ACTIVE explicitly, never relying on the schema default (ADR-018 §3)", async () => {
+    const { alliance, member, period, metric } = await makeSetup("NUMERIC");
+
+    await recordMemberMetrics({
+      allianceId: alliance.id,
+      periodId: period.id,
+      metricId: metric.id,
+      entries: [{ memberId: member.id, value: 100 }],
+    });
+
+    const entry = await prisma.memberMetricEntry.findFirst({
+      where: { periodId: period.id, metricId: metric.id },
+    });
+    expect(entry?.observationGrain).toBe("PERIOD_VALUE");
+    expect(entry?.status).toBe("ACTIVE");
   });
 });

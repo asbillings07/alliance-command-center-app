@@ -168,6 +168,45 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
     expect(entriesB[0].value).toBe(200);
   });
 
+  it("writes observationGrain re-fetched per group from each resolved metric's own grain, and status ACTIVE explicitly (ADR-018 §3)", async () => {
+    const { alliance, member, periodA, periodB, killsA, killsB } = await makeTestSetup();
+
+    await importMultiPeriodMetrics({
+      allianceId: alliance.id,
+      groups: [
+        {
+          target: { kind: "existing", periodId: periodA.id },
+          mappings: [
+            {
+              sourceColumnName: "Kills on 3/29",
+              target: { kind: "existing", metricId: killsA.id },
+              entries: [{ memberId: member.id, rawValue: "100" }],
+            },
+          ],
+        },
+        {
+          target: { kind: "existing", periodId: periodB.id },
+          mappings: [
+            {
+              sourceColumnName: "Kills on 4/13",
+              target: { kind: "existing", metricId: killsB.id },
+              entries: [{ memberId: member.id, rawValue: "200" }],
+            },
+          ],
+        },
+      ],
+    });
+
+    const entries = await prisma.memberMetricEntry.findMany({
+      where: { periodId: { in: [periodA.id, periodB.id] } },
+    });
+    expect(entries).toHaveLength(2);
+    for (const entry of entries) {
+      expect(entry.observationGrain).toBe("PERIOD_VALUE");
+      expect(entry.status).toBe("ACTIVE");
+    }
+  });
+
   it("rejects when a target period does not belong to the alliance", async () => {
     const setup1 = await makeTestSetup();
     const setup2 = await makeTestSetup();

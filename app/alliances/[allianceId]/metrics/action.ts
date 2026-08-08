@@ -1,5 +1,11 @@
 "use server";
-import { Metric_Type, MetricSummaryKind, MetricTrendDirection } from "@/app/generated/prisma/client";
+import {
+  Metric_Type,
+  MetricSummaryKind,
+  MetricTrendDirection,
+  MetricObservationGrain,
+  MemberPeriodRollupKind,
+} from "@/app/generated/prisma/client";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
@@ -141,6 +147,13 @@ export async function createMetric(
           summaryKind: reporting.data.summaryKind,
           unitLabel: reporting.data.unitLabel,
           trendDirection: reporting.data.trendDirection,
+          // ADR-018 / #287: explicit, not relying on the schema's temporary
+          // Phase 1 default (database design §1/§8) - this form can only
+          // express today's period-value/latest semantics, so it says so
+          // explicitly. Daily-observation configuration is a later,
+          // separate leader-facing UI, not a silent capability of this form.
+          observationGrain: MetricObservationGrain.PERIOD_VALUE,
+          memberPeriodRollup: MemberPeriodRollupKind.LATEST,
         },
       });
       await touchAllianceSetupActivity(tx, allianceId);
