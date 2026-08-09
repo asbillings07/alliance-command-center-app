@@ -13,7 +13,7 @@
  * caller-supplied transaction.
  */
 import type { Prisma } from "@/app/generated/prisma/client";
-import { Metric_Type } from "@/app/generated/prisma/enums";
+import { Metric_Type, MetricObservationGrain, MemberPeriodRollupKind } from "@/app/generated/prisma/enums";
 import { Permissions, type Permission } from "@/app/src/lib/auth/permissions";
 import { normalizeName } from "@/app/src/lib/memberMatcher";
 
@@ -189,9 +189,23 @@ export async function resolveMetricTargets(
             // The [allianceId, name] unique index ignores `active`, so this can
             // match an *archived* metric of the same name. Reactivate it on
             // conflict; otherwise we would attach/import into a hidden metric.
+            //
+            // observationGrain/memberPeriodRollup are set explicitly (ADR-018
+            // §3, mirroring createMetric in metrics/action.ts) rather than left
+            // to the schema's temporary Phase 1 default: neither import flow has
+            // a way for the caller to request DAILY_OBSERVATION, so every metric
+            // this path can create is a PERIOD_VALUE/LATEST metric today. A
+            // grain-selector UI that lets import *create* a DAILY_OBSERVATION
+            // metric is separate, later work (#287 database design §8, Slice 4).
             const metric = await tx.metric.upsert({
                 where: { allianceId_name: { allianceId, name } },
-                create: { allianceId, name, type: Metric_Type.NUMERIC },
+                create: {
+                    allianceId,
+                    name,
+                    type: Metric_Type.NUMERIC,
+                    observationGrain: MetricObservationGrain.PERIOD_VALUE,
+                    memberPeriodRollup: MemberPeriodRollupKind.LATEST,
+                },
                 update: { active: true },
                 select: { id: true },
             });

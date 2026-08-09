@@ -336,6 +336,15 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             expect(entry.observationGrain).toBe("PERIOD_VALUE");
             expect(entry.status).toBe("ACTIVE");
         }
+
+        // The metric created mid-transaction by resolveMetricTargets must also
+        // carry these explicitly - not the schema's temporary Phase 1 default
+        // - since neither import flow can yet request DAILY_OBSERVATION.
+        const createdMetric = await prisma.metric.findFirst({
+            where: { allianceId: alliance.id, name: "Brand New Metric" },
+        });
+        expect(createdMetric?.observationGrain).toBe("PERIOD_VALUE");
+        expect(createdMetric?.memberPeriodRollup).toBe("LATEST");
     });
 
     it("rejects import when period belongs to another alliance", async () => {

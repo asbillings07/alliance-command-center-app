@@ -516,6 +516,19 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
         where: { periodId: { in: createdPeriods.map((period) => period.id) } },
       }),
     ).toBe(2);
+
+    // Metrics created mid-transaction by resolveMetricTargets must carry
+    // observationGrain/memberPeriodRollup explicitly - not the schema's
+    // temporary Phase 1 default - since neither import flow can yet request
+    // DAILY_OBSERVATION (ADR-018 §3).
+    const createdMetrics = await prisma.metric.findMany({
+      where: { allianceId: alliance.id, name: { in: ["March Kills", "April Kills"] } },
+    });
+    expect(createdMetrics).toHaveLength(2);
+    for (const metric of createdMetrics) {
+      expect(metric.observationGrain).toBe("PERIOD_VALUE");
+      expect(metric.memberPeriodRollup).toBe("LATEST");
+    }
   });
 
   it("rolls back newly-created period rows when a later group fails inside the transaction", async () => {
