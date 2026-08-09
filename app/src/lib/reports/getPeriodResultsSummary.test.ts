@@ -83,10 +83,9 @@ describe("getPeriodResultsSummary", () => {
       row("mem1", "m1", 1),
       row("mem1", "m2", 1),
       row("mem2", "m1", 1),
-      // A voided-only member: `memberPeriodMetricValues` already resolved
-      // this to observationCount 0 - this consumer must not re-derive
-      // participation from row presence alone.
-      row("mem3", "m1", 0),
+      // No zero-observation row for mem3 here - `onlyParticipating: true`
+      // means the (mocked) read model itself excludes non-participants;
+      // this consumer must not re-derive participation from row presence.
     ]);
 
     vi.mocked(prisma.allianceMember.findMany).mockResolvedValue([
@@ -95,7 +94,9 @@ describe("getPeriodResultsSummary", () => {
 
     const summary = await getPeriodResultsSummary({ allianceId: "a1", periodId: "p1" });
 
-    expect(memberPeriodMetricValues).toHaveBeenCalledWith("a1", "p1", ["m1", "m2"]);
+    expect(memberPeriodMetricValues).toHaveBeenCalledWith("a1", "p1", ["m1", "m2"], {
+      onlyParticipating: true,
+    });
 
     expect(prisma.allianceMember.findMany).toHaveBeenCalledWith({
       where: {

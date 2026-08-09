@@ -71,10 +71,20 @@ export async function getPeriodResultsSummary(params: {
   // voided-only member as "participating" today. See
   // `docs/database-design/287-slice3-consumer-parity-log.md` for the
   // parity proof against the previous `groupBy` implementation.
-  const allMemberMetricValues = await memberPeriodMetricValues(allianceId, periodId, activeMetricIds);
-  const distinctMemberMetricPairs = allMemberMetricValues
-    .filter((row) => row.observationCount > 0)
-    .map((row) => ({ allianceMemberId: row.allianceMemberId, metricId: row.metricId }));
+  //
+  // `onlyParticipating: true` pushes that filter into SQL - this consumer
+  // never needs the full (metrics × roster) cross join the default
+  // behavior returns, only the pairs that actually participated.
+  const participatingMemberMetricValues = await memberPeriodMetricValues(
+    allianceId,
+    periodId,
+    activeMetricIds,
+    { onlyParticipating: true },
+  );
+  const distinctMemberMetricPairs = participatingMemberMetricValues.map((row) => ({
+    allianceMemberId: row.allianceMemberId,
+    metricId: row.metricId,
+  }));
 
   const participatingMemberIdsList = Array.from(
     new Set(distinctMemberMetricPairs.map((p) => p.allianceMemberId))
