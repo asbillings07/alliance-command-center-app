@@ -210,9 +210,14 @@ type MatrixCellValue = { metricId: string; memberId: string; value: number | nul
  * that is inert today - no leader can create a `DAILY_OBSERVATION` metric
  * yet; see `docs/database-design/287-slice3-consumer-parity-log.md`).
  *
- * `onlyParticipating: true` matches the previous query's own behavior
- * exactly: it never returned a row for a (metric, member) with zero
- * entries either, relying on `buildCell`'s `?? null` fallback for those.
+ * `onlyParticipating: true` matches the previous query's *consumer-visible*
+ * behavior, not its raw row shape: the old query still returned a row for
+ * a voided-only (metric, member) pair (with `value: null`), while this one
+ * excludes that pair entirely (`observationCount` must be `> 0`). Both
+ * resolve to the same rendered cell either way, because `buildCell`'s
+ * `?? null` fallback already treats "no row" and "row with a null value"
+ * identically - see the parity log's voided-only-entry scenario for the
+ * full comparison.
  *
  * No longer bounded to exactly this page's members at the query level:
  * `memberPeriodMetricValues` has no member filter (matching every other
