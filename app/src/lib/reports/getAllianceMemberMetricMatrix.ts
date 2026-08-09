@@ -45,10 +45,12 @@ import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetr
  *   2. A roster query (CTE-joined against the selected columns' latest
  *      values, for the archived-inclusion check and any metric-based sort)
  *      — paginated, filtered, searched, sorted.
- *   3. A cell-value query for exactly this page's members × selected
- *      columns (≤ pageSize × MATRIX_MAX_COLUMNS rows), grouped in JS into
- *      one cell per (row, column) - via the canonical read model (#287
- *      Slice 3), so a cell shows a metric's true rolled-up value.
+ *   3. A cell-value fetch, via the canonical read model (#287 Slice 3),
+ *      grouped in JS into one cell per (row, column) - filtered down to
+ *      exactly this page's members afterward. This one is no longer
+ *      bounded to `pageSize × MATRIX_MAX_COLUMNS` rows at the query level
+ *      (see `queryMatrixCells`'s doc comment); only the *result* used by
+ *      this function is bounded to that.
  *
  * Pure types/logic (column resolution, sort normalization, cell status)
  * live in `./allianceMemberMatrix` — this file is the DB orchestration only,
@@ -212,14 +214,16 @@ type MatrixCellValue = { metricId: string; memberId: string; value: number | nul
  * exactly: it never returned a row for a (metric, member) with zero
  * entries either, relying on `buildCell`'s `?? null` fallback for those.
  *
- * Still bounded to exactly this page's members - `memberPeriodMetricValues`
- * cross-joins the *full* roster against the selected columns, so this
- * filters down to `memberIds` in JS rather than passing a member filter
- * through (the canonical read model has no such parameter, matching every
- * other consumer's use of it). At this product's alliance-size scale
- * (bounded by `MATRIX_MAX_COLUMNS` columns), this is the same order of
+ * No longer bounded to exactly this page's members at the query level:
+ * `memberPeriodMetricValues` has no member filter (matching every other
+ * consumer's use of it), so it cross-joins the *full* roster against the
+ * selected columns, and only the *returned result* is filtered down to
+ * `memberIds` in JS. At this product's alliance-size scale (bounded by
+ * `MATRIX_MAX_COLUMNS` columns), the full-roster fetch is the same order of
  * magnitude already proved acceptable by
- * `memberPeriodRollupTenantIsolationAndPerformance.integration.test.ts`.
+ * `memberPeriodRollupTenantIsolationAndPerformance.integration.test.ts` -
+ * but if alliance sizes grow enough for this to matter, the fix is a member
+ * filter on `memberPeriodMetricValues` itself, not a workaround here.
  */
 async function queryMatrixCells(
   allianceId: string,
