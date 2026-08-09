@@ -22,7 +22,10 @@ import {
 } from "@/app/src/lib/reports/metricRollup";
 import { buildMetricVisualModel, type MetricVisualModel, type VisualCohortRow } from "@/app/src/lib/reports/metricVisualModel";
 import { buildMetricInterpretationSummary } from "@/app/src/lib/reports/metricInterpretationSummary";
-import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
+import {
+  memberPeriodMetricValues,
+  type MemberPeriodMetricValue,
+} from "@/app/src/lib/metrics/memberPeriodMetricValues";
 import { isValidBooleanMetricValue } from "@/app/src/lib/metrics/booleanMetricValue";
 
 // Re-exported so every existing importer of these previously-local
@@ -292,9 +295,35 @@ async function queryAllianceMemberRoster(allianceId: string): Promise<AggregateR
 }
 
 /**
- * Rollup + coverage aggregate, computed once against the *entire* cohort
- * (both active and archived contributors) — never against a
- * filtered/paginated slice. Reused unchanged for the comparison period.
+ * The two DB round-trips `queryAggregate` and `queryVisualizationRows` each
+ * need for a given (allianceId, periodId, metricId) — split out so a
+ * request that needs *both* (any SUM/AVERAGE/NONE+NUMERIC report) fetches
+ * once and derives both results from the same in-memory data, rather than
+ * each independently re-fetching the identical full-cohort values + roster.
+ *
+ * #287 Slice 3 perf fix (post-review): the initial migration had
+ * `queryAggregate`/`queryVisualizationRows` each call
+ * `memberPeriodMetricValues` + the roster query independently, doubling
+ * two full-cohort reads on every request that needed both — a regression
+ * from the old raw-SQL shape's 1-query-each. See
+ * `docs/database-design/287-slice3-consumer-parity-log.md`.
+ */
+async function fetchMemberPeriodValuesAndRoster(
+  allianceId: string,
+  periodId: string,
+  metricId: string,
+): Promise<{ values: MemberPeriodMetricValue[]; roster: AggregateRosterMember[] }> {
+  const [values, roster] = await Promise.all([
+    memberPeriodMetricValues(allianceId, periodId, [metricId]),
+    queryAllianceMemberRoster(allianceId),
+  ]);
+  return { values, roster };
+}
+
+/**
+ * Pure derivation of the rollup + coverage aggregate from already-fetched
+ * values/roster (both active and archived contributors) — never against a
+ * filtered/paginated slice.
  *
  * #287 Slice 3: sources each member's value from `memberPeriodMetricValues`
  * (ADR-018 §6) instead of a raw `DISTINCT ON` over `MemberMetricEntry`, so
@@ -318,16 +347,11 @@ async function queryAllianceMemberRoster(allianceId: string): Promise<AggregateR
  * (e.g. 12.5) needs to contribute an exact amount to this cohort-wide total,
  * rather than being silently rounded on the way in.
  */
-async function queryAggregate(
-  allianceId: string,
-  periodId: string,
-  metricId: string,
+function computeAggregateSnapshot(
+  values: readonly MemberPeriodMetricValue[],
+  roster: readonly AggregateRosterMember[],
   isBooleanMetric: boolean,
-): Promise<AggregateSnapshot> {
-  const [values, roster] = await Promise.all([
-    memberPeriodMetricValues(allianceId, periodId, [metricId]),
-    queryAllianceMemberRoster(allianceId),
-  ]);
+): AggregateSnapshot {
   const valueByMember = new Map(values.map((row) => [row.allianceMemberId, row.value]));
 
   let sumValue = 0;
@@ -391,11 +415,28 @@ async function queryAggregate(
 }
 
 /**
- * The bounded, full-cohort row set backing the metric's chart
- * (`metricVisualModel.ts`'s builders) — #264 PR4. Independent of the
- * roster's own search/filter/sort/pagination on purpose: a leader
- * searching the roster for one player must never change what the chart
- * above it shows for the whole alliance.
+ * Fetch + compute in one call, for callers (only the comparison period,
+ * below) that need *just* the aggregate for a period and have no
+ * visualization rows to derive alongside it.
+ */
+async function queryAggregate(
+  allianceId: string,
+  periodId: string,
+  metricId: string,
+  isBooleanMetric: boolean,
+): Promise<AggregateSnapshot> {
+  const { values, roster } = await fetchMemberPeriodValuesAndRoster(allianceId, periodId, metricId);
+  return computeAggregateSnapshot(values, roster, isBooleanMetric);
+}
+
+/**
+ * Pure derivation of the bounded, full-cohort row set backing the metric's
+ * chart (`metricVisualModel.ts`'s builders) — #264 PR4, from
+ * already-fetched values/roster (shared with `computeAggregateSnapshot`
+ * for the primary period - see `fetchMemberPeriodValuesAndRoster`).
+ * Independent of the roster's own search/filter/sort/pagination on
+ * purpose: a leader searching the roster for one player must never change
+ * what the chart above it shows for the whole alliance.
  *
  * Inclusion mirrors the roster's own "all" filter exactly (every active
  * member, including a missing value; an archived member only if they
@@ -409,19 +450,12 @@ async function queryAggregate(
  * decisions about what to do with it.
  *
  * Bounded at exactly one row per qualifying member — O(alliance members),
- * never O(entries) — #287 Slice 3: sources values from the canonical read
- * model (see `queryAggregate`'s doc comment for the parity rationale
- * shared by both).
+ * never O(entries).
  */
-async function queryVisualizationRows(
-  allianceId: string,
-  periodId: string,
-  metricId: string,
-): Promise<VisualCohortRow[]> {
-  const [values, roster] = await Promise.all([
-    memberPeriodMetricValues(allianceId, periodId, [metricId]),
-    queryAllianceMemberRoster(allianceId),
-  ]);
+function deriveVisualizationRows(
+  values: readonly MemberPeriodMetricValue[],
+  roster: readonly AggregateRosterMember[],
+): VisualCohortRow[] {
   const valueByMember = new Map(values.map((row) => [row.allianceMemberId, row.value]));
 
   return roster
@@ -740,23 +774,26 @@ export async function getMetricSummaryReport(params: {
     searchPattern,
   };
 
-  // `queryVisualizationRows` backs SUM/AVERAGE/NONE+NUMERIC charts, which need
+  // The visualization rows back SUM/AVERAGE/NONE+NUMERIC charts, which need
   // per-member values (see metricVisualModel.ts's builders). TRUE_RATE and
   // NONE+BOOLEAN instead read their visual model straight off `aggregate` —
-  // running the extra full-cohort query for them would have no functional
-  // benefit, only cost.
+  // deriving an unused per-member array for them would have no functional
+  // benefit. This is a pure-JS skip now (#287 Slice 3 perf fix): the DB
+  // fetch it used to also skip is shared with the aggregate below, so it
+  // always runs exactly once regardless of this flag.
   const needsVisualizationRows =
     metric.summaryKind === MetricSummaryKind.SUM ||
     metric.summaryKind === MetricSummaryKind.AVERAGE ||
     (metric.summaryKind === MetricSummaryKind.NONE && !isBooleanMetric);
 
-  const [aggregate, totalRowCount, visualizationRows] = await Promise.all([
-    queryAggregate(allianceId, periodId, metricId, isBooleanMetric),
+  const [{ values: primaryValues, roster: primaryRoster }, totalRowCount] = await Promise.all([
+    fetchMemberPeriodValuesAndRoster(allianceId, periodId, metricId),
     countRosterRows(rosterParams),
-    needsVisualizationRows
-      ? queryVisualizationRows(allianceId, periodId, metricId)
-      : Promise.resolve<VisualCohortRow[]>([]),
   ]);
+  const aggregate = computeAggregateSnapshot(primaryValues, primaryRoster, isBooleanMetric);
+  const visualizationRows: VisualCohortRow[] = needsVisualizationRows
+    ? deriveVisualizationRows(primaryValues, primaryRoster)
+    : [];
 
   const page = resolvePageAgainstTotal(requestedPage, totalRowCount, pageSize);
   const offset = (page - 1) * pageSize;

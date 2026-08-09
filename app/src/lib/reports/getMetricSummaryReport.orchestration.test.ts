@@ -329,10 +329,12 @@ describe("getMetricSummaryReport orchestration", () => {
       expect(report.interpretationSummary).toBe(
         "14 of 18 valid responses were Yes; 2 active members have no recorded response.",
       );
-      // TRUE_RATE's visual model is sourced entirely from `aggregate` - the
-      // visualization query itself must never run for it (#264 PR4:
-      // running an unused full-cohort query has no functional benefit).
-      // memberPeriodMetricValues called exactly once (queryAggregate only).
+      // TRUE_RATE's visual model is sourced entirely from `aggregate` - no
+      // per-member visualization rows are derived for it (#264 PR4: an
+      // unused array has no functional benefit). Regardless,
+      // memberPeriodMetricValues is called exactly once - the aggregate's
+      // own fetch (#287 Slice 3 perf fix: shared with visualization when
+      // both are needed, so this count never varies by summary kind).
       expect(memberPeriodMetricValues).toHaveBeenCalledTimes(1);
       // $queryRaw called exactly twice: roster count, roster rows.
       expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
@@ -387,8 +389,11 @@ describe("getMetricSummaryReport orchestration", () => {
       });
 
       expect(report.visualModel).toMatchObject({ kind: "NONE", valueKind: "NUMERIC", validCount: 2 });
-      // memberPeriodMetricValues called twice: queryAggregate + queryVisualizationRows.
-      expect(memberPeriodMetricValues).toHaveBeenCalledTimes(2);
+      // #287 Slice 3 perf fix: the aggregate and the visualization rows
+      // now share one fetch (fetchMemberPeriodValuesAndRoster) - exactly
+      // one memberPeriodMetricValues call regardless of whether this
+      // summary kind needs visualization rows derived from it.
+      expect(memberPeriodMetricValues).toHaveBeenCalledTimes(1);
       expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
     });
   });
@@ -548,11 +553,10 @@ describe("getMetricSummaryReport orchestration", () => {
       expect(report.dataStatus).toBe("NO_VALUES");
       // Must never reach the comparison-period aggregate query, let alone
       // compute an absoluteChange/percentageChange against it.
-      // memberPeriodMetricValues called exactly once (selected period's
-      // queryAggregate only - no visualization for NONE+... wait, SUM
-      // summaryKind needs visualization too, so twice: aggregate + visualization,
-      // both for the selected period, never the comparison period).
-      expect(memberPeriodMetricValues).toHaveBeenCalledTimes(2);
+      // memberPeriodMetricValues called exactly once: the selected period's
+      // shared aggregate+visualization fetch (#287 Slice 3 perf fix) - never
+      // the comparison period's.
+      expect(memberPeriodMetricValues).toHaveBeenCalledTimes(1);
       expect(memberPeriodMetricValues).not.toHaveBeenCalledWith(ALLIANCE_ID, "eligible-period", expect.anything());
       expect(report.comparison).toEqual({
         status: "NO_DATA_IN_SELECTED_PERIOD",
