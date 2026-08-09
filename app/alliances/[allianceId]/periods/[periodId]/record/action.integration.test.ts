@@ -61,7 +61,10 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
     }
   });
 
-  async function makeSetup(metricType: "NUMERIC" | "BOOLEAN") {
+  async function makeSetup(
+    metricType: "NUMERIC" | "BOOLEAN",
+    observationGrain: "PERIOD_VALUE" | "DAILY_OBSERVATION" = "PERIOD_VALUE",
+  ) {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const alliance = await prisma.alliance.create({
       data: { name: `Record Action Alliance ${suffix}`, server: "1001" },
@@ -77,7 +80,13 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
     });
 
     const metric = await prisma.metric.create({
-      data: { allianceId: alliance.id, name: "Metric", type: metricType },
+      data: {
+        allianceId: alliance.id,
+        name: "Metric",
+        type: metricType,
+        observationGrain,
+        memberPeriodRollup: observationGrain === "DAILY_OBSERVATION" ? "SUM" : "LATEST",
+      },
     });
 
     await prisma.metricPeriodMetric.create({
@@ -137,7 +146,7 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
     expect(entry?.value).toBe(4200);
   });
 
-  it("revalidates the setup domain, matching the touchAllianceSetupActivity call in the same transaction", async () => {
+  it("revalidates all five observation-changing-write domains (ADR-018), matching the touchAllianceSetupActivity call in the same transaction", async () => {
     const { alliance, member, period, metric } = await makeSetup("NUMERIC");
 
     await recordMemberMetrics({
@@ -147,12 +156,45 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
       entries: [{ memberId: member.id, value: 100 }],
     });
 
-    expect(revalidateAllianceData).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(revalidateAllianceData).toHaveBeenCalledWith({
+      allianceId: alliance.id,
+      periodId: period.id,
+      domains: ["members", "dashboard", "setup", "evaluation-results", "reports"],
+    });
+  });
+
+  it("writes observationGrain from the metric's own grain and status ACTIVE explicitly, never relying on the schema default (ADR-018 §3)", async () => {
+    const { alliance, member, period, metric } = await makeSetup("NUMERIC");
+
+    await recordMemberMetrics({
+      allianceId: alliance.id,
+      periodId: period.id,
+      metricId: metric.id,
+      entries: [{ memberId: member.id, value: 100 }],
+    });
+
+    const entry = await prisma.memberMetricEntry.findFirst({
+      where: { periodId: period.id, metricId: metric.id },
+    });
+    expect(entry?.observationGrain).toBe("PERIOD_VALUE");
+    expect(entry?.status).toBe("ACTIVE");
+  });
+
+  it("rejects recording against a DAILY_OBSERVATION metric with zero writes, since this form cannot collect observedOn (#287)", async () => {
+    const { alliance, member, period, metric } = await makeSetup("NUMERIC", "DAILY_OBSERVATION");
+
+    await expect(
+      recordMemberMetrics({
         allianceId: alliance.id,
         periodId: period.id,
-        domains: expect.arrayContaining(["setup", "evaluation-results", "reports"]),
+        metricId: metric.id,
+        entries: [{ memberId: member.id, value: 5 }],
       }),
-    );
+    ).rejects.toThrow(/daily observations/i);
+
+    const count = await prisma.memberMetricEntry.count({
+      where: { periodId: period.id, metricId: metric.id },
+    });
+    expect(count).toBe(0);
   });
 });

@@ -19,6 +19,36 @@ enum Metric_Type {
   BOOLEAN
 }
 
+// ADR-018 / #287: whether a Metric's MemberMetricEntry rows represent one
+// value per period (today's only behavior) or one value per calendar day
+// within the period, rolled up per MemberPeriodRollupKind below. Immutable
+// after creation (enforced by metric_reporting_fields_immutable_trigger,
+// see the #287 database design's §4a) - a metric's historical entries are
+// only meaningful under the grain they were recorded with.
+enum MetricObservationGrain {
+  PERIOD_VALUE
+  DAILY_OBSERVATION
+}
+
+// ADR-018 / #287: how a member's DAILY_OBSERVATION entries for a period
+// collapse into the single derived value existing reports/summaries consume.
+// LATEST is also PERIOD_VALUE's only valid rollup (the compatibility CHECK
+// in the #287 database design's §3a enforces this pairing). Immutable
+// after creation alongside observationGrain, same trigger and same reason.
+enum MemberPeriodRollupKind {
+  LATEST
+  SUM
+  AVERAGE
+}
+
+// ADR-018 / #287: append-only tombstone state for a MemberMetricEntry row.
+// Voiding an observation inserts a new VOIDED row rather than deleting or
+// updating the original - see the #287 database design's §2 and §3b.
+enum MemberMetricEntryStatus {
+  ACTIVE
+  VOIDED
+}
+
 // Reporting semantics for a metric (#190): how per-member values should be
 // rolled up into an alliance-level summary. SUM/AVERAGE are only valid for
 // NUMERIC metrics; TRUE_RATE is only valid for BOOLEAN metrics; NONE is valid
@@ -200,21 +230,21 @@ model MemberImport {
   // #277 PR 4 (#282): CURRENT for every import before this shipped and for
   // every current-roster import after it — HISTORICAL only for a completed
   // historical-roster import.
-  mode MemberImportMode @default(CURRENT)
+  mode                          MemberImportMode @default(CURRENT)
   // Subset of createdCount: how many of the created members were created
   // directly archived (changeType stays CREATED — see
   // MemberImportChange_created_before_state_check — only archivedAtAfter
   // differs). createdCount - createdArchivedCount derives active creations.
   // Always 0 for a CURRENT-mode import, which never creates an archived
   // member.
-  createdArchivedCount Int @default(0)
+  createdArchivedCount          Int              @default(0)
   // Historical-mode only: an existing *active* member whose row requested
   // Archived. Never auto-applied (see #282's field policy) — reported so
   // the leader knows to use the separate bulk-archive workflow instead.
   // No existing counter fits: skippedExistingCount's own copy specifically
   // means "already matched the requested state", which for an active
   // member requesting Archived is false, not true.
-  skippedLifecycleConflictCount Int @default(0)
+  skippedLifecycleConflictCount Int              @default(0)
 
   createdAt DateTime @default(now())
 
@@ -551,11 +581,26 @@ model Metric {
   // rather than silently reinterpreting its historical comparisons.
   trendDirection MetricTrendDirection @default(NEUTRAL)
 
+  // ADR-018 / #287. Phase 1 (see the #287 database design's §1): the
+  // @default(...) below are temporary, dropped once every writer (that
+  // design's §8) supplies both explicitly - a new metric must select both,
+  // never rely on a schema default. Creation-time immutable thereafter,
+  // enforced by metric_reporting_fields_immutable_trigger (§4a), not by
+  // Prisma or any action's payload shape.
+  observationGrain   MetricObservationGrain @default(PERIOD_VALUE)
+  memberPeriodRollup MemberPeriodRollupKind @default(LATEST)
+
   periodMetrics MetricPeriodMetric[]
+  entries       MemberMetricEntry[]
 
   createdAt DateTime @default(now())
 
   @@unique([allianceId, name])
+  // Required as a composite foreign-key target for MemberMetricEntry's
+  // grain snapshot (ADR-018 §3) - redundant with the primary key alone, but
+  // a composite FK's target columns must themselves be under a unique
+  // constraint together.
+  @@unique([id, observationGrain])
 }
 
 model MetricPeriod {
@@ -602,7 +647,29 @@ model MemberMetricEntry {
   metricId     String
   periodMetric MetricPeriodMetric @relation(fields: [periodId, metricId], references: [periodId, metricId])
 
-  value Int
+  // ADR-018 / #287. Phase 1: @default(PERIOD_VALUE) below is temporary -
+  // dropped in the same later Phase 3 as Metric's two fields above. Written
+  // once at insert time from the metric's own grain; the composite FK below
+  // is the actual guarantee that this copy can never drift from
+  // Metric.observationGrain.
+  observationGrain MetricObservationGrain @default(PERIOD_VALUE)
+  metric           Metric                 @relation(fields: [metricId, observationGrain], references: [id, observationGrain], map: "member_metric_entry_metric_grain_fkey")
+
+  // ADR-018 §4 / #287. NOT NULL iff observationGrain = DAILY_OBSERVATION
+  // (CHECK in the #287 database design's §3c), a source-declared
+  // YYYY-MM-DD civil date - stored as a Postgres DATE column (via Prisma's
+  // DateTime scalar with @db.Date), not a plain DateTime/TIMESTAMP column,
+  // so it can never be shifted by a timezone.
+  observedOn DateTime? @db.Date
+
+  // ADR-018 §2 / #287. Permanent default - never dropped (contrast with the
+  // three temporary Phase-1-only defaults above: Metric's two and this
+  // model's own observationGrain).
+  status MemberMetricEntryStatus @default(ACTIVE)
+
+  // ADR-018 §2 / #287. Now nullable: a VOIDED row carries no value (CHECK
+  // in the #287 database design's §3b).
+  value Int?
 
   recordedAt DateTime @default(now())
   createdAt  DateTime @default(now())
@@ -614,8 +681,18 @@ model MemberMetricEntry {
   // and the trailing sort-ordered columns match that query's ORDER BY
   // exactly, so Postgres needs no separate sort step for the DISTINCT ON.
   // Not an index-only scan — `value` isn't part of the index, so a heap
-  // fetch is still required for each selected row.
+  // fetch is still required for each selected row. Unchanged: still serves
+  // PERIOD_VALUE metrics' single-slot-per-member query exactly as today
+  // (observedOn is always NULL for these rows, so this index's key never
+  // needs it).
   @@index([periodId, metricId, allianceMemberId, recordedAt(sort: Desc), createdAt(sort: Desc), id(sort: Desc)])
+  // ADR-018 / #287. New: serves DAILY_OBSERVATION metrics' per-slot winner
+  // resolution (partition by periodId, metricId, allianceMemberId,
+  // observedOn; order by recordedAt/createdAt/id desc) and the
+  // correction-lookup UI's "find this exact date's history for this
+  // member/metric" query. Not an index-only scan (value/status aren't in
+  // the key), but eliminates the sort step for both.
+  @@index([periodId, metricId, allianceMemberId, observedOn, recordedAt(sort: Desc), createdAt(sort: Desc), id(sort: Desc)])
 }
 
 model LeadershipNote {

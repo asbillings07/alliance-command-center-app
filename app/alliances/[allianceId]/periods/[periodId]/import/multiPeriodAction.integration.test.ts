@@ -168,6 +168,45 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
     expect(entriesB[0].value).toBe(200);
   });
 
+  it("writes observationGrain re-fetched per group from each resolved metric's own grain, and status ACTIVE explicitly (ADR-018 §3)", async () => {
+    const { alliance, member, periodA, periodB, killsA, killsB } = await makeTestSetup();
+
+    await importMultiPeriodMetrics({
+      allianceId: alliance.id,
+      groups: [
+        {
+          target: { kind: "existing", periodId: periodA.id },
+          mappings: [
+            {
+              sourceColumnName: "Kills on 3/29",
+              target: { kind: "existing", metricId: killsA.id },
+              entries: [{ memberId: member.id, rawValue: "100" }],
+            },
+          ],
+        },
+        {
+          target: { kind: "existing", periodId: periodB.id },
+          mappings: [
+            {
+              sourceColumnName: "Kills on 4/13",
+              target: { kind: "existing", metricId: killsB.id },
+              entries: [{ memberId: member.id, rawValue: "200" }],
+            },
+          ],
+        },
+      ],
+    });
+
+    const entries = await prisma.memberMetricEntry.findMany({
+      where: { periodId: { in: [periodA.id, periodB.id] } },
+    });
+    expect(entries).toHaveLength(2);
+    for (const entry of entries) {
+      expect(entry.observationGrain).toBe("PERIOD_VALUE");
+      expect(entry.status).toBe("ACTIVE");
+    }
+  });
+
   it("rejects when a target period does not belong to the alliance", async () => {
     const setup1 = await makeTestSetup();
     const setup2 = await makeTestSetup();
@@ -477,6 +516,19 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
         where: { periodId: { in: createdPeriods.map((period) => period.id) } },
       }),
     ).toBe(2);
+
+    // Metrics created mid-transaction by resolveMetricTargets must carry
+    // observationGrain/memberPeriodRollup explicitly - not the schema's
+    // temporary Phase 1 default - since neither import flow can yet request
+    // DAILY_OBSERVATION (ADR-018 §3).
+    const createdMetrics = await prisma.metric.findMany({
+      where: { allianceId: alliance.id, name: { in: ["March Kills", "April Kills"] } },
+    });
+    expect(createdMetrics).toHaveLength(2);
+    for (const metric of createdMetrics) {
+      expect(metric.observationGrain).toBe("PERIOD_VALUE");
+      expect(metric.memberPeriodRollup).toBe("LATEST");
+    }
   });
 
   it("rolls back newly-created period rows when a later group fails inside the transaction", async () => {
@@ -761,6 +813,60 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
         where: { periodId: periodA.id, metricId: boolMetric.id },
       });
       expect(entry?.value).toBe(0);
+    });
+  });
+
+  describe("DAILY_OBSERVATION metric rejection (#287)", () => {
+    it("rejects a group mapped to a DAILY_OBSERVATION metric with zero writes across every period in the batch, since this importer cannot collect observedOn", async () => {
+      const { alliance, member, periodA, periodB, killsB } = await makeTestSetup();
+      const dailyMetric = await prisma.metric.create({
+        data: {
+          allianceId: alliance.id,
+          name: "Daily VS",
+          type: "NUMERIC",
+          observationGrain: "DAILY_OBSERVATION",
+          memberPeriodRollup: "SUM",
+        },
+      });
+      await prisma.metricPeriodMetric.create({
+        data: { periodId: periodA.id, metricId: dailyMetric.id, weight: 1, required: false },
+      });
+
+      await expect(
+        importMultiPeriodMetrics({
+          allianceId: alliance.id,
+          groups: [
+            // Ordered first so it actually writes inside the transaction -
+            // proving the second group's rejection rolls it back too, not
+            // just that it was never attempted.
+            {
+              target: { kind: "existing", periodId: periodB.id },
+              mappings: [
+                {
+                  sourceColumnName: "Kills B",
+                  target: { kind: "existing", metricId: killsB.id },
+                  entries: [{ memberId: member.id, rawValue: "20" }],
+                },
+              ],
+            },
+            {
+              target: { kind: "existing", periodId: periodA.id },
+              mappings: [
+                {
+                  sourceColumnName: "Daily VS",
+                  target: { kind: "existing", metricId: dailyMetric.id },
+                  entries: [{ memberId: member.id, rawValue: "10" }],
+                },
+              ],
+            },
+          ],
+        }),
+      ).rejects.toThrow(/daily observations/i);
+
+      // The whole transaction rolled back - including Period B's write,
+      // which succeeded before Period A's group was rejected.
+      expect(await prisma.memberMetricEntry.count({ where: { periodId: periodA.id } })).toBe(0);
+      expect(await prisma.memberMetricEntry.count({ where: { periodId: periodB.id } })).toBe(0);
     });
   });
 });

@@ -4,7 +4,11 @@ import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
-import { Metric_Type } from "@/app/generated/prisma/enums";
+import {
+  Metric_Type,
+  MemberMetricEntryStatus,
+  MetricObservationGrain,
+} from "@/app/generated/prisma/enums";
 import { isValidBooleanMetricValue } from "@/app/src/lib/metrics/booleanMetricValue";
 import { revalidatePath } from "next/cache";
 
@@ -46,16 +50,32 @@ export async function recordMemberMetrics(
   }
 
   // Validate metric is configured for this period, and load the authoritative
-  // metric type so BOOLEAN metrics can be validated below.
+  // metric type (for BOOLEAN validation below) and observationGrain. ADR-018
+  // §3: an entry's grain is always written from the metric's own grain at
+  // insert time, never hardcoded or assumed - the grain-snapshot foreign key
+  // rejects any mismatch, but this manual-recording form only ever presents a
+  // single value per member, so every write here is PERIOD_VALUE today.
   const periodMetric = await prisma.metricPeriodMetric.findUnique({
     where: {
       periodId_metricId: { periodId, metricId },
     },
-    include: { metric: { select: { type: true } } },
+    include: { metric: { select: { type: true, observationGrain: true } } },
   });
 
   if (!periodMetric) {
     throw new Error("Metric is not configured for this period");
+  }
+
+  // This manual-recording form collects one value per member with no way to
+  // capture an observation date, so a DAILY_OBSERVATION metric would
+  // otherwise deterministically fail the grain/observedOn CHECK constraint
+  // below with a much less useful DB-level message. Reject it here instead,
+  // before any validation or write - remove this guard once a later slice
+  // adds a daily-entry UI (#287 database design §8).
+  if (periodMetric.metric.observationGrain === MetricObservationGrain.DAILY_OBSERVATION) {
+    throw new Error(
+      "This metric records daily observations and cannot be recorded here yet - this form has no way to collect the observation date",
+    );
   }
 
   // Validate all entries have integer values; BOOLEAN metrics additionally
@@ -100,6 +120,8 @@ export async function recordMemberMetrics(
         periodId,
         metricId,
         value: entry.value,
+        observationGrain: periodMetric.metric.observationGrain,
+        status: MemberMetricEntryStatus.ACTIVE,
       })),
     });
     await touchAllianceSetupActivity(tx, allianceId);
@@ -109,8 +131,11 @@ export async function recordMemberMetrics(
   revalidateAllianceData({
     allianceId,
     periodId,
+    // ADR-018: every observation-changing write invalidates the same five
+    // domains as import (members/dashboard read entry-derived setup
+    // completion and roster values, not just the period/report views).
     // "setup" matches the touchAllianceSetupActivity call above — without it
     // the setup checklist can show a stale setupActivityAt after recording.
-    domains: ["setup", "evaluation-results", "reports"],
+    domains: ["members", "dashboard", "setup", "evaluation-results", "reports"],
   });
 }

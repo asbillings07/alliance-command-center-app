@@ -19,6 +19,12 @@ import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceDa
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { classifyColumn } from "@/app/src/lib/columnClassifier";
 import { assertBooleanMetricValuesValid } from "@/app/src/lib/metrics/assertBooleanMetricValues";
+import {
+  assertNoDailyObservationMetrics,
+  loadMetricObservationGrains,
+  requireMetricObservationGrain,
+} from "@/app/src/lib/metrics/loadMetricObservationGrains";
+import { MemberMetricEntryStatus } from "@/app/generated/prisma/enums";
 
 type ImportMetricsInput = {
   periodId: string;
@@ -180,13 +186,34 @@ export async function importMemberMetrics(
     // BOOLEAN-mapped value outside {0, 1} before writing anything (#190).
     await assertBooleanMetricValuesValid(tx, plan.mappings);
 
+    // ADR-018 §3: each entry is written with its own metric's actual grain,
+    // re-fetched post-resolution (never a pre-resolution snapshot or a
+    // hardcoded value) - a "create" target only becomes a concrete metric id
+    // above, and the grain-snapshot foreign key would otherwise reject any
+    // mismatch. This importer has no per-column date collection yet (#287
+    // database design §8), so every write here remains PERIOD_VALUE until a
+    // later slice adds daily-observation import support - reject any
+    // DAILY_OBSERVATION-mapped column now, before writing anything, with a
+    // clear message instead of letting the DB CHECK constraint reject it.
+    const grainByMetricId = await loadMetricObservationGrains(
+      tx,
+      plan.mappings.map((mapping) => mapping.metricId),
+    );
+    assertNoDailyObservationMetrics(
+      grainByMetricId,
+      plan.mappings.map((mapping) => mapping.metricId),
+    );
+
     for (const mapping of plan.mappings) {
+      const observationGrain = requireMetricObservationGrain(grainByMetricId, mapping.metricId);
       await tx.memberMetricEntry.createMany({
         data: mapping.entries.map((entry) => ({
           allianceMemberId: entry.memberId,
           periodId,
           metricId: mapping.metricId,
           value: entry.value,
+          observationGrain,
+          status: MemberMetricEntryStatus.ACTIVE,
         })),
       });
     }

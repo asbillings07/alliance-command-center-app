@@ -214,6 +214,24 @@ describe("resolveMetricTargets", () => {
         );
     });
 
+    it("explicitly sets observationGrain PERIOD_VALUE and memberPeriodRollup LATEST on a brand-new metric, never relying on the schema default (ADR-018 §3)", async () => {
+        const { tx, metricUpsert } = makeTx({});
+        const classified: ClassifiedTarget[] = [
+            { disposition: "create", metricId: null, createName: "Donations" },
+        ];
+
+        await resolveMetricTargets(tx, { allianceId: "a1", periodId: "p1", classified });
+
+        expect(metricUpsert).toHaveBeenCalledWith(
+            expect.objectContaining({
+                create: expect.objectContaining({
+                    observationGrain: "PERIOD_VALUE",
+                    memberPeriodRollup: "LATEST",
+                }),
+            }),
+        );
+    });
+
     it("reports created=false when a create-intent metric already exists (converges via upsert)", async () => {
         const { tx } = makeTx({ metricByName: { Donations: { id: "m-don" } } });
         const classified: ClassifiedTarget[] = [

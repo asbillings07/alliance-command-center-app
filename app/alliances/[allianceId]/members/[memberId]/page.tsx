@@ -77,7 +77,7 @@ export default async function MemberPage({ params, searchParams }: Params) {
         : null;
 
     const activeMetricIds = selectedPeriod?.periodMetrics.map((pm) => pm.metricId) ?? [];
-    const memberEntries = selectedPeriod && activeMetricIds.length > 0
+    const rawMemberEntries = selectedPeriod && activeMetricIds.length > 0
         ? await prisma.memberMetricEntry.findMany({
               where: {
                   allianceMemberId: allianceMember.id,
@@ -95,6 +95,14 @@ export default async function MemberPage({ params, searchParams }: Params) {
               ],
           })
         : [];
+    // ADR-018 §2: a VOIDED row carries a null value; skip it here rather
+    // than surface it as a current/previous value. No write path can create
+    // one yet (the void mutation is a later #287 slice), so this is a no-op
+    // today and a safety net once it exists - this whole "keep two" reduction
+    // is superseded by the canonical read model in a later slice regardless.
+    const memberEntries = rawMemberEntries.filter(
+        (entry): entry is typeof entry & { value: number } => entry.value !== null,
+    );
 
     const entriesByMetric = new Map<string, typeof memberEntries>();
     for (const entry of memberEntries) {
