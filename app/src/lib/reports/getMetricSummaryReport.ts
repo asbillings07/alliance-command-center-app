@@ -22,6 +22,8 @@ import {
 } from "@/app/src/lib/reports/metricRollup";
 import { buildMetricVisualModel, type MetricVisualModel, type VisualCohortRow } from "@/app/src/lib/reports/metricVisualModel";
 import { buildMetricInterpretationSummary } from "@/app/src/lib/reports/metricInterpretationSummary";
+import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
+import { isValidBooleanMetricValue } from "@/app/src/lib/metrics/booleanMetricValue";
 
 // Re-exported so every existing importer of these previously-local
 // names (tests, getAlliancePerformanceReport.ts) keeps working unchanged —
@@ -58,13 +60,29 @@ export type { MetricVisualModel } from "@/app/src/lib/reports/metricVisualModel"
  * equivalent, and this report must never fetch every historical entry or
  * every roster member into JS to compute a total.
  *
- * Two independent DB round-trips drive the report body:
+ * Two independent round-trips drive the report body:
  *   1. A rollup+coverage aggregate over the *entire* cohort (unaffected by
  *      display filter/search/sort/pagination) — the "total" a leader sees
  *      must never silently change because they searched for a name.
  *   2. A paginated/filtered/sorted roster query for the visible table rows.
- * Both share the same `latest`-per-member `DISTINCT ON` CTE, so "latest
- * entry wins" is defined exactly once, in SQL, not duplicated in JS.
+ * (2) still runs its own raw SQL, sharing a `latest`-per-member
+ * `DISTINCT ON` CTE with itself across pagination/count/rank; (1) now
+ * sources its per-member values from the canonical read model instead
+ * (#287 Slice 3 — see the partial-migration note below).
+ *
+ * #287 Slice 3 (partial): `queryAggregate` and `queryVisualizationRows` —
+ * both full-cohort, *unpaginated* queries — migrated to
+ * `memberPeriodMetricValues` (ADR-018 §6), so a `DAILY_OBSERVATION`
+ * metric's cohort total correctly aggregates each member's true rolled-up
+ * period value instead of their latest single day's raw entry. The
+ * paginated/sorted/searched roster query below (2) did not: its
+ * competition ranking is a SQL window function computed over the *whole*
+ * (unfiltered, unpaginated) cohort before pagination — the same "value
+ * needed at the SQL level across every candidate row, not just the current
+ * page" tension deferred for `getAllianceMemberMetricMatrix.ts`'s
+ * `selected_values` CTE, and deferred here for the identical reason (see
+ * `docs/database-design/287-slice3-consumer-parity-log.md`): inert today,
+ * since no leader can create a `DAILY_OBSERVATION` metric yet.
  */
 
 export type MetricReportSort = "value_desc" | "value_asc" | "name_asc";
@@ -256,10 +274,49 @@ export function buildSearchPattern(raw: string | undefined | null): string {
 // Raw SQL orchestration
 // ---------------------------------------------------------------------------
 
+type AggregateRosterMember = { id: string; playerName: string; archivedAt: Date | null };
+
+/**
+ * The alliance's full member roster, ordered exactly as Postgres would
+ * order `ORDER BY "playerName" ASC, id ASC` (via Prisma's query builder,
+ * not raw SQL - there's no `DISTINCT ON`/window function need here) so
+ * `queryVisualizationRows` never has to re-sort in JS and risk a
+ * collation mismatch with the database's own ordering.
+ */
+async function queryAllianceMemberRoster(allianceId: string): Promise<AggregateRosterMember[]> {
+  return prisma.allianceMember.findMany({
+    where: { allianceId },
+    select: { id: true, playerName: true, archivedAt: true },
+    orderBy: [{ playerName: "asc" }, { id: "asc" }],
+  });
+}
+
 /**
  * Rollup + coverage aggregate, computed once against the *entire* cohort
  * (both active and archived contributors) — never against a
  * filtered/paginated slice. Reused unchanged for the comparison period.
+ *
+ * #287 Slice 3: sources each member's value from `memberPeriodMetricValues`
+ * (ADR-018 §6) instead of a raw `DISTINCT ON` over `MemberMetricEntry`, so
+ * a `DAILY_OBSERVATION` metric's total correctly aggregates each member's
+ * true rolled-up period value (inert today - no leader can create one yet;
+ * see `docs/database-design/287-slice3-consumer-parity-log.md`).
+ *
+ * Every counter below replicates its prior SQL `FILTER` clause exactly,
+ * field for field, to preserve the legacy invariant: `sum`/`average` only
+ * include a *valid* value (boolean-checked when relevant); `hasNegativeValues`
+ * and `latestEntryCount` check raw presence only, never boolean validity;
+ * `archivedContributingMemberCount` counts *any* archived value, valid or
+ * not — matching `buildRosterFromWhere`'s own "archived + has a value"
+ * inclusion rule elsewhere in this file.
+ *
+ * `sumValue`/`averageValue` are kept as exact (possibly fractional) sums,
+ * not rounded to a whole number the way the old query's `::bigint` cast
+ * did — safe today, since `MemberMetricEntry.value` is an integer column so
+ * every legacy per-member value is already whole, but correct-by-construction
+ * once a `DAILY_OBSERVATION + AVERAGE` metric's fractional per-member value
+ * (e.g. 12.5) needs to contribute an exact amount to this cohort-wide total,
+ * rather than being silently rounded on the way in.
  */
 async function queryAggregate(
   allianceId: string,
@@ -267,53 +324,71 @@ async function queryAggregate(
   metricId: string,
   isBooleanMetric: boolean,
 ): Promise<AggregateSnapshot> {
-  const rows = await prisma.$queryRaw<AggregateRawRow[]>`
-    WITH latest AS (
-      SELECT DISTINCT ON ("allianceMemberId") "allianceMemberId" AS member_id, value
-      FROM "MemberMetricEntry"
-      WHERE "periodId" = ${periodId} AND "metricId" = ${metricId}
-      ORDER BY "allianceMemberId", "recordedAt" DESC, "createdAt" DESC, id DESC
-    )
-    SELECT
-      COALESCE(SUM(l.value) FILTER (
-        WHERE l.value IS NOT NULL AND (NOT ${isBooleanMetric}::boolean OR l.value IN (0, 1))
-      ), 0)::bigint AS sum_value,
-      AVG(l.value) FILTER (
-        WHERE l.value IS NOT NULL AND (NOT ${isBooleanMetric}::boolean OR l.value IN (0, 1))
-      )::float8 AS avg_value,
-      COUNT(*) FILTER (WHERE ${isBooleanMetric}::boolean AND l.value = 1)::bigint AS true_count,
-      COUNT(*) FILTER (WHERE ${isBooleanMetric}::boolean AND l.value = 0)::bigint AS false_count,
-      COUNT(*) FILTER (
-        WHERE ${isBooleanMetric}::boolean AND l.value IS NOT NULL AND l.value NOT IN (0, 1)
-      )::bigint AS invalid_count,
-      COALESCE(BOOL_OR(l.value IS NOT NULL AND l.value < 0), FALSE) AS has_negative_values,
-      COUNT(*) FILTER (WHERE am."archivedAt" IS NULL)::bigint AS current_active_member_count,
-      COUNT(*) FILTER (
-        WHERE am."archivedAt" IS NULL AND l.value IS NOT NULL
-          AND (NOT ${isBooleanMetric}::boolean OR l.value IN (0, 1))
-      )::bigint AS recorded_active_member_count,
-      COUNT(*) FILTER (
-        WHERE am."archivedAt" IS NULL AND ${isBooleanMetric}::boolean
-          AND l.value IS NOT NULL AND l.value NOT IN (0, 1)
-      )::bigint AS invalid_active_member_count,
-      COUNT(*) FILTER (WHERE am."archivedAt" IS NULL AND l.value IS NULL)::bigint AS missing_active_member_count,
-      COUNT(*) FILTER (
-        WHERE am."archivedAt" IS NOT NULL AND l.value IS NOT NULL
-      )::bigint AS archived_contributing_member_count,
-      COUNT(*) FILTER (WHERE l.value IS NOT NULL)::bigint AS latest_entry_count
-    FROM "AllianceMember" am
-    LEFT JOIN latest l ON l.member_id = am.id
-    WHERE am."allianceId" = ${allianceId}
-  `;
-  return mapAggregateRow(rows[0]!);
-}
+  const [values, roster] = await Promise.all([
+    memberPeriodMetricValues(allianceId, periodId, [metricId]),
+    queryAllianceMemberRoster(allianceId),
+  ]);
+  const valueByMember = new Map(values.map((row) => [row.allianceMemberId, row.value]));
 
-type VisualizationRawRow = {
-  alliance_member_id: string;
-  player_name: string;
-  archived: boolean;
-  value: number | null;
-};
+  let sumValue = 0;
+  let averageSum = 0;
+  let averageCount = 0;
+  let trueCount = 0;
+  let falseCount = 0;
+  let invalidCount = 0;
+  let hasNegativeValues = false;
+  let currentActiveMemberCount = 0;
+  let recordedActiveMemberCount = 0;
+  let invalidActiveMemberCount = 0;
+  let missingActiveMemberCount = 0;
+  let archivedContributingMemberCount = 0;
+  let latestEntryCount = 0;
+
+  for (const member of roster) {
+    const archived = member.archivedAt !== null;
+    const value = valueByMember.get(member.id) ?? null;
+    const isValid = value !== null && (!isBooleanMetric || isValidBooleanMetricValue(value));
+
+    if (!archived) currentActiveMemberCount++;
+    if (value !== null && value < 0) hasNegativeValues = true;
+    if (value !== null) latestEntryCount++;
+
+    if (isBooleanMetric && value !== null) {
+      if (value === 1) trueCount++;
+      else if (value === 0) falseCount++;
+      else invalidCount++;
+    }
+
+    if (isValid) {
+      sumValue += value;
+      averageSum += value;
+      averageCount++;
+    }
+
+    if (!archived) {
+      if (isValid) recordedActiveMemberCount++;
+      if (isBooleanMetric && value !== null && !isValid) invalidActiveMemberCount++;
+      if (value === null) missingActiveMemberCount++;
+    } else if (value !== null) {
+      archivedContributingMemberCount++;
+    }
+  }
+
+  return {
+    sumValue,
+    averageValue: averageCount > 0 ? averageSum / averageCount : null,
+    trueCount,
+    falseCount,
+    invalidCount,
+    hasNegativeValues,
+    currentActiveMemberCount,
+    recordedActiveMemberCount,
+    invalidActiveMemberCount,
+    missingActiveMemberCount,
+    archivedContributingMemberCount,
+    latestEntryCount,
+  };
+}
 
 /**
  * The bounded, full-cohort row set backing the metric's chart
@@ -327,45 +402,36 @@ type VisualizationRawRow = {
  * contributed) — see `buildRosterFromWhere` — because that's already the
  * correct "everyone whose data belongs in an alliance-wide chart this
  * period" rule; there was no need to invent a second one. Unlike the
- * roster, this never excludes or nulls out an invalid boolean value (no
- * `isBooleanMetric` filtering anywhere below): `metricVisualModel.ts`
- * needs the *raw* value to keep TRUE_RATE/data-quality states honest, and
- * makes its own decisions about what to do with it.
+ * roster, this never excludes or nulls out an invalid boolean value: the
+ * value comes straight from `memberPeriodMetricValues`, which is itself
+ * type-agnostic (ADR-018 §6) — `metricVisualModel.ts` needs the *raw*
+ * value to keep TRUE_RATE/data-quality states honest, and makes its own
+ * decisions about what to do with it.
  *
  * Bounded at exactly one row per qualifying member — O(alliance members),
- * never O(entries) — via the same `latest`-per-member `DISTINCT ON` CTE
- * used everywhere else in this file, so "latest entry wins" stays defined
- * in exactly one place.
+ * never O(entries) — #287 Slice 3: sources values from the canonical read
+ * model (see `queryAggregate`'s doc comment for the parity rationale
+ * shared by both).
  */
 async function queryVisualizationRows(
   allianceId: string,
   periodId: string,
   metricId: string,
 ): Promise<VisualCohortRow[]> {
-  const rows = await prisma.$queryRaw<VisualizationRawRow[]>`
-    WITH latest AS (
-      SELECT DISTINCT ON ("allianceMemberId") "allianceMemberId" AS member_id, value
-      FROM "MemberMetricEntry"
-      WHERE "periodId" = ${periodId} AND "metricId" = ${metricId}
-      ORDER BY "allianceMemberId", "recordedAt" DESC, "createdAt" DESC, id DESC
-    )
-    SELECT
-      am.id AS alliance_member_id,
-      am."playerName" AS player_name,
-      (am."archivedAt" IS NOT NULL) AS archived,
-      l.value AS value
-    FROM "AllianceMember" am
-    LEFT JOIN latest l ON l.member_id = am.id
-    WHERE am."allianceId" = ${allianceId}
-      AND (am."archivedAt" IS NULL OR l.value IS NOT NULL)
-    ORDER BY am."playerName" ASC, am.id ASC
-  `;
-  return rows.map((row) => ({
-    allianceMemberId: row.alliance_member_id,
-    playerName: row.player_name,
-    archived: row.archived,
-    value: row.value,
-  }));
+  const [values, roster] = await Promise.all([
+    memberPeriodMetricValues(allianceId, periodId, [metricId]),
+    queryAllianceMemberRoster(allianceId),
+  ]);
+  const valueByMember = new Map(values.map((row) => [row.allianceMemberId, row.value]));
+
+  return roster
+    .filter((member) => member.archivedAt === null || valueByMember.get(member.id) != null)
+    .map((member) => ({
+      allianceMemberId: member.id,
+      playerName: member.playerName,
+      archived: member.archivedAt !== null,
+      value: valueByMember.get(member.id) ?? null,
+    }));
 }
 
 type RosterRawRow = {

@@ -6,11 +6,23 @@ vi.mock("@/app/src/lib/prisma", () => ({
     metric: { findFirst: vi.fn() },
     metricPeriod: { findFirst: vi.fn(), findMany: vi.fn() },
     metricPeriodMetric: { findUnique: vi.fn() },
+    allianceMember: { findMany: vi.fn() },
     $queryRaw: vi.fn(),
   },
 }));
+// #287 Slice 3: queryAggregate/queryVisualizationRows source per-member
+// values from the canonical read model instead of their own raw SQL now -
+// mocked directly (matching getPeriodResultsSummary.test.ts's precedent)
+// rather than reconstructing memberPeriodMetricValues' own internal SQL
+// shape here, which is that module's own concern (see
+// memberPeriodRollupAlgebra.integration.test.ts for its real behavior).
+vi.mock("@/app/src/lib/metrics/memberPeriodMetricValues", () => ({
+  memberPeriodMetricValues: vi.fn(),
+}));
 
 import { prisma } from "@/app/src/lib/prisma";
+import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
+import type { MemberPeriodMetricValue } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/enums";
 import { getMetricSummaryReport, MetricSummaryReportNotFoundError } from "./getMetricSummaryReport";
 
@@ -35,46 +47,58 @@ const SELECTED_PERIOD = {
   active: true,
 };
 
-function zeroAggregateRow(overrides: Record<string, unknown> = {}) {
+type FixtureMember = { id: string; playerName: string; archived?: boolean; value: number | null };
+
+/** A `memberPeriodMetricValues` row for a legacy `PERIOD_VALUE + LATEST` metric - `value` *is* the raw latest-entry value, matching this test suite's pre-#287 fixtures exactly. */
+function toRollupValue(member: FixtureMember, metricId = METRIC_ID): MemberPeriodMetricValue {
   return {
-    sum_value: BigInt(0),
-    avg_value: null,
-    true_count: BigInt(0),
-    false_count: BigInt(0),
-    invalid_count: BigInt(0),
-    has_negative_values: false,
-    current_active_member_count: BigInt(0),
-    recorded_active_member_count: BigInt(0),
-    invalid_active_member_count: BigInt(0),
-    missing_active_member_count: BigInt(0),
-    archived_contributing_member_count: BigInt(0),
-    latest_entry_count: BigInt(0),
-    ...overrides,
+    metricId,
+    allianceMemberId: member.id,
+    value: member.value,
+    observationCount: member.value === null ? 0 : 1,
+    lastObservedOn: null,
+    provenance: "Source period value",
   };
 }
 
 /**
- * Configures the standard call sequence: main aggregate, roster count,
- * visualization rows (only for the metric kinds that need them — see
- * `needsVisualizationRows` in getMetricSummaryReport.ts), roster rows.
- * Pass `visualizationRows: null` for a TRUE_RATE or NONE+BOOLEAN metric,
- * where that query is skipped entirely (#264 PR4).
+ * Wires the roster (`prisma.allianceMember.findMany`) and the per-period
+ * `memberPeriodMetricValues` fixture together, keyed by `periodId` so a
+ * comparison-period test can give the selected and comparison periods
+ * independent per-member values without depending on call order (both
+ * `queryAggregate` and `queryVisualizationRows` call
+ * `memberPeriodMetricValues` in parallel via `Promise.all`).
  */
-function mockCoreQueries(params: {
-  aggregateRow?: ReturnType<typeof zeroAggregateRow>;
-  totalRowCount?: number;
-  visualizationRows?: unknown[] | null;
-  rosterRows?: unknown[];
-}) {
-  const { aggregateRow = zeroAggregateRow(), totalRowCount = 0, visualizationRows = [], rosterRows = [] } = params;
-  const mocked = vi
-    .mocked(prisma.$queryRaw)
-    .mockResolvedValueOnce([aggregateRow])
-    .mockResolvedValueOnce([{ total: BigInt(totalRowCount) }]);
-  if (visualizationRows !== null) {
-    mocked.mockResolvedValueOnce(visualizationRows);
+function mockRosterAndValues(byPeriodId: Record<string, FixtureMember[]>) {
+  const allMemberIds = new Set(Object.values(byPeriodId).flatMap((members) => members.map((m) => m.id)));
+  const rosterById = new Map<string, FixtureMember>();
+  for (const members of Object.values(byPeriodId)) {
+    for (const member of members) rosterById.set(member.id, member);
   }
-  mocked.mockResolvedValueOnce(rosterRows);
+  vi.mocked(prisma.allianceMember.findMany).mockResolvedValue(
+    [...allMemberIds].map((id) => {
+      const member = rosterById.get(id)!;
+      return { id: member.id, playerName: member.playerName, archivedAt: member.archived ? new Date() : null };
+    }) as never,
+  );
+  vi.mocked(memberPeriodMetricValues).mockImplementation(async (_allianceId, periodId) => {
+    const members = byPeriodId[periodId];
+    if (!members) return [];
+    return members.map((member) => toRollupValue(member));
+  });
+}
+
+/**
+ * Configures the standard call sequence for `countRosterRows`/
+ * `queryRosterRows` — the only two calls still going straight to raw SQL
+ * in this file (#287 Slice 3's `selected_values`-CTE-equivalent deferral;
+ * see `docs/database-design/287-slice3-consumer-parity-log.md`).
+ */
+function mockRosterQuery(params: { totalRowCount?: number; rosterRows?: unknown[] }) {
+  const { totalRowCount = 0, rosterRows = [] } = params;
+  vi.mocked(prisma.$queryRaw)
+    .mockResolvedValueOnce([{ total: BigInt(totalRowCount) }])
+    .mockResolvedValueOnce(rosterRows);
 }
 
 describe("getMetricSummaryReport orchestration", () => {
@@ -113,7 +137,8 @@ describe("getMetricSummaryReport orchestration", () => {
     } as never);
     vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
     vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue(null);
-    mockCoreQueries({});
+    mockRosterAndValues({ [PERIOD_ID]: [] });
+    mockRosterQuery({});
 
     const report = await getMetricSummaryReport({
       allianceId: ALLIANCE_ID,
@@ -138,7 +163,8 @@ describe("getMetricSummaryReport orchestration", () => {
     } as never);
     vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
     vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active } as never);
-    mockCoreQueries({});
+    mockRosterAndValues({ [PERIOD_ID]: [] });
+    mockRosterQuery({});
 
     const report = await getMetricSummaryReport({
       allianceId: ALLIANCE_ID,
@@ -156,7 +182,8 @@ describe("getMetricSummaryReport orchestration", () => {
     } as never);
     vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
     vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active: true } as never);
-    mockCoreQueries({ aggregateRow: zeroAggregateRow({ latest_entry_count: BigInt(3) }) });
+    mockRosterAndValues({ [PERIOD_ID]: [{ id: "m1", playerName: "Alice", value: 10 }] });
+    mockRosterQuery({});
 
     const report = await getMetricSummaryReport({
       allianceId: ALLIANCE_ID,
@@ -171,8 +198,13 @@ describe("getMetricSummaryReport orchestration", () => {
     vi.mocked(prisma.metric.findFirst).mockResolvedValue(NUMERIC_METRIC as never);
     vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
     vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active: true } as never);
-    mockCoreQueries({
-      aggregateRow: zeroAggregateRow({ sum_value: BigInt(200), latest_entry_count: BigInt(2) }),
+    mockRosterAndValues({
+      [PERIOD_ID]: [
+        { id: "m1", playerName: "Alice", value: 150 },
+        { id: "m2", playerName: "Bob", value: 50 },
+      ],
+    });
+    mockRosterQuery({
       totalRowCount: 2,
       rosterRows: [
         { alliance_member_id: "m1", player_name: "Alice", archived: false, value: 150, rank: BigInt(1) },
@@ -217,14 +249,17 @@ describe("getMetricSummaryReport orchestration", () => {
       vi.mocked(prisma.metric.findFirst).mockResolvedValue(NUMERIC_METRIC as never);
       vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
       vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active: true } as never);
-      mockCoreQueries({
-        aggregateRow: zeroAggregateRow({ sum_value: BigInt(1000), latest_entry_count: BigInt(2) }),
-        // The visualization query's cohort deliberately differs from the roster page below it —
-        // this must drive the chart, not the (paginated, possibly filtered) roster rows.
-        visualizationRows: [
-          { alliance_member_id: "m1", player_name: "Alice", archived: false, value: 800 },
-          { alliance_member_id: "m2", player_name: "Bob", archived: false, value: 200 },
+      // The visualization query's cohort deliberately differs from the roster page below it —
+      // this must drive the chart, not the (paginated, possibly filtered) roster rows. Both
+      // queryAggregate and queryVisualizationRows read the *same* mocked roster/values here,
+      // so the "sum=1000" aggregate and the "800+200" visualization cohort must agree.
+      mockRosterAndValues({
+        [PERIOD_ID]: [
+          { id: "m1", playerName: "Alice", value: 800 },
+          { id: "m2", playerName: "Bob", value: 200 },
         ],
+      });
+      mockRosterQuery({
         totalRowCount: 1,
         // Roster page shows only one row (e.g. searched/filtered) — the chart must still see both members.
         rosterRows: [{ alliance_member_id: "m1", player_name: "Alice", archived: false, value: 800, rank: BigInt(1) }],
@@ -237,6 +272,7 @@ describe("getMetricSummaryReport orchestration", () => {
         periodId: PERIOD_ID,
       });
 
+      expect(report.rollup).toEqual({ kind: "SUM", total: 1000, hasNegativeValues: false });
       expect(report.visualModel).toMatchObject({
         kind: "SUM",
         consideredCount: 2,
@@ -258,21 +294,20 @@ describe("getMetricSummaryReport orchestration", () => {
       } as never);
       vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
       vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active: true } as never);
-      mockCoreQueries({
-        aggregateRow: zeroAggregateRow({
-          true_count: BigInt(14),
-          false_count: BigInt(4),
-          invalid_count: BigInt(1),
-          recorded_active_member_count: BigInt(18),
-          missing_active_member_count: BigInt(2),
-          current_active_member_count: BigInt(20),
-          latest_entry_count: BigInt(19),
-        }),
-        // TRUE_RATE's visual model is sourced entirely from `aggregate` —
-        // the visualization query itself must never run for it (#264 PR4:
-        // running an unused full-cohort query has no functional benefit).
-        visualizationRows: null,
+      mockRosterAndValues({
+        [PERIOD_ID]: [
+          ...Array.from({ length: 14 }, (_, i) => ({ id: `true-${i}`, playerName: `T${i}`, value: 1 })),
+          ...Array.from({ length: 4 }, (_, i) => ({ id: `false-${i}`, playerName: `F${i}`, value: 0 })),
+          // Archived (not active) so this exercises "invalidCount includes
+          // an archived contributor's out-of-range value" without also
+          // touching invalidActiveMemberCount - matching the interpretation
+          // summary's own "active members only" framing below.
+          { id: "invalid-1", playerName: "Invalid", value: 5, archived: true },
+          { id: "missing-1", playerName: "Missing", value: null },
+          { id: "missing-2", playerName: "Missing2", value: null },
+        ],
       });
+      mockRosterQuery({});
       vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([]);
 
       const report = await getMetricSummaryReport({
@@ -288,14 +323,19 @@ describe("getMetricSummaryReport orchestration", () => {
         invalidCount: 1,
         recordedActiveMemberCount: 18,
         missingActiveMemberCount: 2,
+        // 14 true + 4 false + 2 missing are active; the invalid one is archived.
         currentActiveMemberCount: 20,
       });
       expect(report.interpretationSummary).toBe(
         "14 of 18 valid responses were Yes; 2 active members have no recorded response.",
       );
-      // Exactly 3 calls: aggregate, roster count, roster rows — no
-      // visualization query.
-      expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+      // TRUE_RATE's visual model is sourced entirely from `aggregate` - the
+      // visualization query itself must never run for it (#264 PR4:
+      // running an unused full-cohort query has no functional benefit).
+      // memberPeriodMetricValues called exactly once (queryAggregate only).
+      expect(memberPeriodMetricValues).toHaveBeenCalledTimes(1);
+      // $queryRaw called exactly twice: roster count, roster rows.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
     });
 
     it("skips the visualization query for a NONE+BOOLEAN metric too, sourcing its visual model from aggregate", async () => {
@@ -306,14 +346,13 @@ describe("getMetricSummaryReport orchestration", () => {
       } as never);
       vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
       vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active: true } as never);
-      mockCoreQueries({
-        aggregateRow: zeroAggregateRow({
-          true_count: BigInt(5),
-          false_count: BigInt(5),
-          latest_entry_count: BigInt(10),
-        }),
-        visualizationRows: null,
+      mockRosterAndValues({
+        [PERIOD_ID]: [
+          ...Array.from({ length: 5 }, (_, i) => ({ id: `true-${i}`, playerName: `T${i}`, value: 1 })),
+          ...Array.from({ length: 5 }, (_, i) => ({ id: `false-${i}`, playerName: `F${i}`, value: 0 })),
+        ],
       });
+      mockRosterQuery({});
 
       const report = await getMetricSummaryReport({
         allianceId: ALLIANCE_ID,
@@ -322,7 +361,8 @@ describe("getMetricSummaryReport orchestration", () => {
       });
 
       expect(report.visualModel).toMatchObject({ kind: "NONE", valueKind: "BOOLEAN", trueCount: 5, falseCount: 5 });
-      expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+      expect(memberPeriodMetricValues).toHaveBeenCalledTimes(1);
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
     });
 
     it("still runs the visualization query for a NONE+NUMERIC metric, which needs per-member values", async () => {
@@ -332,13 +372,13 @@ describe("getMetricSummaryReport orchestration", () => {
       } as never);
       vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
       vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active: true } as never);
-      mockCoreQueries({
-        aggregateRow: zeroAggregateRow({ latest_entry_count: BigInt(2) }),
-        visualizationRows: [
-          { alliance_member_id: "m1", player_name: "Alice", archived: false, value: 10 },
-          { alliance_member_id: "m2", player_name: "Bob", archived: false, value: 20 },
+      mockRosterAndValues({
+        [PERIOD_ID]: [
+          { id: "m1", playerName: "Alice", value: 10 },
+          { id: "m2", playerName: "Bob", value: 20 },
         ],
       });
+      mockRosterQuery({});
 
       const report = await getMetricSummaryReport({
         allianceId: ALLIANCE_ID,
@@ -347,7 +387,9 @@ describe("getMetricSummaryReport orchestration", () => {
       });
 
       expect(report.visualModel).toMatchObject({ kind: "NONE", valueKind: "NUMERIC", validCount: 2 });
-      expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
+      // memberPeriodMetricValues called twice: queryAggregate + queryVisualizationRows.
+      expect(memberPeriodMetricValues).toHaveBeenCalledTimes(2);
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -358,8 +400,9 @@ describe("getMetricSummaryReport orchestration", () => {
     } as never);
     vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
     vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active: true } as never);
+    mockRosterAndValues({ [PERIOD_ID]: [] });
     // 55 total rows at page size 25 -> 3 pages; requesting page 99 must clamp to page 3.
-    mockCoreQueries({ totalRowCount: 55, rosterRows: [] });
+    mockRosterQuery({ totalRowCount: 55, rosterRows: [] });
 
     const report = await getMetricSummaryReport({
       allianceId: ALLIANCE_ID,
@@ -386,7 +429,8 @@ describe("getMetricSummaryReport orchestration", () => {
       } as never);
       vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(SELECTED_PERIOD as never);
       vi.mocked(prisma.metricPeriodMetric.findUnique).mockResolvedValue({ active: true } as never);
-      mockCoreQueries({});
+      mockRosterAndValues({ [PERIOD_ID]: [] });
+      mockRosterQuery({});
 
       const report = await getMetricSummaryReport({
         allianceId: ALLIANCE_ID,
@@ -400,7 +444,8 @@ describe("getMetricSummaryReport orchestration", () => {
 
     it("is NO_ELIGIBLE_PERIOD when there are no comparable candidates", async () => {
       mockAttachedActiveSum();
-      mockCoreQueries({});
+      mockRosterAndValues({ [PERIOD_ID]: [] });
+      mockRosterQuery({});
       vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([]);
 
       const report = await getMetricSummaryReport({
@@ -414,7 +459,8 @@ describe("getMetricSummaryReport orchestration", () => {
 
     it("is INVALID_COMPARISON_PERIOD when the requested comparePeriodId isn't eligible", async () => {
       mockAttachedActiveSum();
-      mockCoreQueries({});
+      mockRosterAndValues({ [PERIOD_ID]: [] });
+      mockRosterQuery({});
       vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
         {
           id: "eligible-period",
@@ -447,7 +493,11 @@ describe("getMetricSummaryReport orchestration", () => {
       // isolates "comparison period is empty" from "selected period is
       // empty" (see NO_DATA_IN_SELECTED_PERIOD below) — otherwise the new
       // selected-side gate would short-circuit before this branch ever runs.
-      mockCoreQueries({ aggregateRow: zeroAggregateRow({ sum_value: BigInt(100), latest_entry_count: BigInt(1) }) });
+      mockRosterAndValues({
+        [PERIOD_ID]: [{ id: "m1", playerName: "Alice", value: 100 }],
+        "eligible-period": [],
+      });
+      mockRosterQuery({});
       vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
         {
           id: "eligible-period",
@@ -458,10 +508,6 @@ describe("getMetricSummaryReport orchestration", () => {
           periodMetrics: [{ active: true }],
         },
       ] as never);
-      // 5th $queryRaw call = the comparison period's aggregate (after the
-      // selected period's aggregate, roster count, visualization rows, and
-      // roster rows).
-      vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([zeroAggregateRow()]);
 
       const report = await getMetricSummaryReport({
         allianceId: ALLIANCE_ID,
@@ -478,8 +524,10 @@ describe("getMetricSummaryReport orchestration", () => {
 
     it("is NO_DATA_IN_SELECTED_PERIOD (never a fabricated decline) when the selected period has no data but the eligible comparison period does", async () => {
       mockAttachedActiveSum();
-      // Selected period aggregate is zero (the default) -> dataStatus NO_VALUES.
-      mockCoreQueries({});
+      // Selected period has no values -> dataStatus NO_VALUES. The
+      // comparison period's own aggregate must never even be fetched.
+      mockRosterAndValues({ [PERIOD_ID]: [] });
+      mockRosterQuery({});
       vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
         {
           id: "eligible-period",
@@ -499,10 +547,13 @@ describe("getMetricSummaryReport orchestration", () => {
 
       expect(report.dataStatus).toBe("NO_VALUES");
       // Must never reach the comparison-period aggregate query, let alone
-      // compute an absoluteChange/percentageChange against it. Exactly 4
-      // calls: selected-period aggregate, roster count, visualization
-      // rows, roster rows.
-      expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
+      // compute an absoluteChange/percentageChange against it.
+      // memberPeriodMetricValues called exactly once (selected period's
+      // queryAggregate only - no visualization for NONE+... wait, SUM
+      // summaryKind needs visualization too, so twice: aggregate + visualization,
+      // both for the selected period, never the comparison period).
+      expect(memberPeriodMetricValues).toHaveBeenCalledTimes(2);
+      expect(memberPeriodMetricValues).not.toHaveBeenCalledWith(ALLIANCE_ID, "eligible-period", expect.anything());
       expect(report.comparison).toEqual({
         status: "NO_DATA_IN_SELECTED_PERIOD",
         period: { id: "eligible-period", name: "Week 11" },
@@ -512,7 +563,11 @@ describe("getMetricSummaryReport orchestration", () => {
 
     it("is COMPARED with an independently-computed comparison rollup and the change vs. the selected period", async () => {
       mockAttachedActiveSum();
-      mockCoreQueries({ aggregateRow: zeroAggregateRow({ sum_value: BigInt(150), latest_entry_count: BigInt(1) }) });
+      mockRosterAndValues({
+        [PERIOD_ID]: [{ id: "m1", playerName: "Alice", value: 150 }],
+        "eligible-period": [{ id: "m1", playerName: "Alice", value: 100 }],
+      });
+      mockRosterQuery({});
       vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
         {
           id: "eligible-period",
@@ -523,9 +578,6 @@ describe("getMetricSummaryReport orchestration", () => {
           periodMetrics: [{ active: true }],
         },
       ] as never);
-      vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([
-        zeroAggregateRow({ sum_value: BigInt(100), latest_entry_count: BigInt(1) }),
-      ]);
 
       const report = await getMetricSummaryReport({
         allianceId: ALLIANCE_ID,
