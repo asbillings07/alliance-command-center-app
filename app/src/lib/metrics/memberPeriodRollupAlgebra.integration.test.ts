@@ -276,6 +276,57 @@ describe.skipIf(!runDb)("memberPeriodMetricValues rollup algebra [integration]",
     expect(participatingOnlyResults[0]?.value).toBe(10);
   });
 
+  it("options.memberIds bounds both the ledger scan and the cross join to a known set of members, not just the returned result - for a paginated consumer that already knows which page it's on", async () => {
+    const { alliance, member, period, metric } = await makeSetup("LATEST");
+    const otherMember = await prisma.allianceMember.create({
+      data: { allianceId: alliance.id, playerName: "Off This Page" },
+    });
+
+    await insertEntry({
+      allianceMemberId: member.id,
+      periodId: period.id,
+      metricId: metric.id,
+      observedOn: "2026-01-06",
+      value: 42,
+      recordedAt: new Date("2026-01-06T12:00:00.000Z"),
+    });
+    await insertEntry({
+      allianceMemberId: otherMember.id,
+      periodId: period.id,
+      metricId: metric.id,
+      observedOn: "2026-01-06",
+      value: 99,
+      recordedAt: new Date("2026-01-06T12:00:00.000Z"),
+    });
+
+    const scopedResults = await memberPeriodMetricValues(alliance.id, period.id, [metric.id], {
+      memberIds: [member.id],
+    });
+
+    // otherMember's row never round-trips from the DB at all - not merely
+    // filtered out of the returned array - so this stays bounded to the
+    // caller's known page regardless of alliance size.
+    expect(scopedResults).toHaveLength(1);
+    expect(scopedResults[0]?.allianceMemberId).toBe(member.id);
+    expect(scopedResults[0]?.value).toBe(42);
+
+    // A foreign-tenant member id is silently dropped, same as a
+    // foreign-tenant metric id elsewhere - never a separate trust boundary.
+    const otherAlliance = await prisma.alliance.create({ data: { name: "Other Alliance", server: "1002" } });
+    createdAllianceIds.push(otherAlliance.id);
+    const foreignMember = await prisma.allianceMember.create({
+      data: { allianceId: otherAlliance.id, playerName: "Foreign Member" },
+    });
+    const withForeignMemberId = await memberPeriodMetricValues(alliance.id, period.id, [metric.id], {
+      memberIds: [member.id, foreignMember.id],
+    });
+    expect(withForeignMemberId.map((r) => r.allianceMemberId)).toEqual([member.id]);
+
+    // An empty memberIds array short-circuits to no query at all, mirroring
+    // the existing empty-metricIds early return.
+    expect(await memberPeriodMetricValues(alliance.id, period.id, [metric.id], { memberIds: [] })).toEqual([]);
+  });
+
   it("a slot voided and then reactivated by a later ACTIVE row contributes its reactivated value, needing no special mechanism beyond latest-wins", async () => {
     const { alliance, member, period, metric } = await makeSetup("SUM");
 

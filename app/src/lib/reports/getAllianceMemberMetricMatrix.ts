@@ -20,6 +20,7 @@ import {
   type MatrixRow,
   type AllianceMemberMetricMatrix,
 } from "@/app/src/lib/reports/allianceMemberMatrix";
+import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 
 /**
  * Bounded member-by-metric matrix read model (#264 PR3).
@@ -46,12 +47,28 @@ import {
  *      — paginated, filtered, searched, sorted.
  *   3. A cell-value query for exactly this page's members × selected
  *      columns (≤ pageSize × MATRIX_MAX_COLUMNS rows), grouped in JS into
- *      one cell per (row, column).
+ *      one cell per (row, column) - via the canonical read model (#287
+ *      Slice 3), so a cell shows a metric's true rolled-up value.
  *
  * Pure types/logic (column resolution, sort normalization, cell status)
  * live in `./allianceMemberMatrix` — this file is the DB orchestration only,
  * so client components (the column chooser/controls) can import the pure
  * side without pulling Prisma/`pg` into the browser bundle.
+ *
+ * #287 Slice 3 (partial): only round-trip 3 above has migrated to
+ * `memberPeriodMetricValues` (ADR-018 §6). Round-trips 1-2's
+ * `selected_values` CTE (archived-inclusion + metric-sort tiering, computed
+ * over the *whole* roster before pagination) still reads raw
+ * `MemberMetricEntry` rows directly - migrating it requires either fetching
+ * every member's cross-joined value into JS to sort/paginate there (the
+ * unbounded-in-memory anti-pattern this project is otherwise eliminating)
+ * or extracting `memberPeriodMetricValues`' CTE chain into a reusable SQL
+ * fragment this file's own paginated/sorted query can compose with. Both
+ * are deliberately deferred (see
+ * `docs/database-design/287-slice3-consumer-parity-log.md`): this gap is
+ * inert today, since no leader can create a `DAILY_OBSERVATION` metric yet,
+ * so archived-inclusion and metric-sort already agree with the canonical
+ * model for every metric that exists in production.
  */
 
 // Re-exported for convenience so most callers only need one import path.
@@ -181,24 +198,41 @@ async function queryMatrixRoster(
   `;
 }
 
-type MatrixCellRawRow = { metric_id: string; member_id: string; value: number };
+type MatrixCellValue = { metricId: string; memberId: string; value: number | null };
 
-/** Exactly this page's members × selected columns — bounded by `pageSize * MATRIX_MAX_COLUMNS`, never the full roster or full metric library. */
+/**
+ * #287 Slice 3: cell values now come from the canonical read model
+ * (ADR-018 §6) instead of a raw `DISTINCT ON` over `MemberMetricEntry`, so
+ * a `DAILY_OBSERVATION + SUM/AVERAGE` column correctly shows its rolled-up
+ * value rather than only its latest single day's raw entry (a divergence
+ * that is inert today - no leader can create a `DAILY_OBSERVATION` metric
+ * yet; see `docs/database-design/287-slice3-consumer-parity-log.md`).
+ *
+ * `onlyParticipating: true` matches the previous query's *consumer-visible*
+ * behavior, not its raw row shape: the old query still returned a row for
+ * a voided-only (metric, member) pair (with `value: null`), while this one
+ * excludes that pair entirely (`observationCount` must be `> 0`). Both
+ * resolve to the same rendered cell either way, because `buildCell`'s
+ * `?? null` fallback already treats "no row" and "row with a null value"
+ * identically - see the parity log's voided-only-entry scenario for the
+ * full comparison.
+ *
+ * Bounded via `memberPeriodMetricValues`'s `memberIds` option to exactly
+ * this page's members, so the query itself - not just the returned result -
+ * stays ≤ `pageSize * MATRIX_MAX_COLUMNS` rows regardless of alliance size.
+ */
 async function queryMatrixCells(
+  allianceId: string,
   periodId: string,
   metricIds: string[],
   memberIds: string[],
-): Promise<MatrixCellRawRow[]> {
+): Promise<MatrixCellValue[]> {
   if (metricIds.length === 0 || memberIds.length === 0) return [];
-  return prisma.$queryRaw<MatrixCellRawRow[]>`
-    SELECT DISTINCT ON ("metricId", "allianceMemberId")
-      "metricId" AS metric_id, "allianceMemberId" AS member_id, value
-    FROM "MemberMetricEntry"
-    WHERE "periodId" = ${periodId}
-      AND "metricId" IN (${Prisma.join(metricIds)})
-      AND "allianceMemberId" IN (${Prisma.join(memberIds)})
-    ORDER BY "metricId", "allianceMemberId", "recordedAt" DESC, "createdAt" DESC, id DESC
-  `;
+  const values = await memberPeriodMetricValues(allianceId, periodId, metricIds, {
+    onlyParticipating: true,
+    memberIds,
+  });
+  return values.map((row) => ({ metricId: row.metricId, memberId: row.allianceMemberId, value: row.value }));
 }
 
 /**
@@ -267,11 +301,11 @@ export async function getAllianceMemberMetricMatrix(params: {
   const rosterRows = await queryMatrixRoster(queryParams, pageSize, offset);
   const memberIds = rosterRows.map((row) => row.alliance_member_id);
 
-  const cellRows = await queryMatrixCells(periodId, columnIds, memberIds);
-  const cellsByMember = new Map<string, Map<string, number>>();
-  for (const row of cellRows) {
-    if (!cellsByMember.has(row.member_id)) cellsByMember.set(row.member_id, new Map());
-    cellsByMember.get(row.member_id)!.set(row.metric_id, row.value);
+  const cellValues = await queryMatrixCells(allianceId, periodId, columnIds, memberIds);
+  const cellsByMember = new Map<string, Map<string, number | null>>();
+  for (const cell of cellValues) {
+    if (!cellsByMember.has(cell.memberId)) cellsByMember.set(cell.memberId, new Map());
+    cellsByMember.get(cell.memberId)!.set(cell.metricId, cell.value);
   }
 
   const rows: MatrixRow[] = rosterRows.map((row) => ({
