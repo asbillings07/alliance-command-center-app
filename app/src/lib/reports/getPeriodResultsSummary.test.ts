@@ -10,14 +10,27 @@ vi.mock("@/app/src/lib/prisma", () => ({
       count: vi.fn(),
       findMany: vi.fn(),
     },
-    memberMetricEntry: {
-      groupBy: vi.fn(),
-    },
   },
+}));
+vi.mock("@/app/src/lib/metrics/memberPeriodMetricValues", () => ({
+  memberPeriodMetricValues: vi.fn(),
 }));
 
 import { prisma } from "@/app/src/lib/prisma";
+import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 import { getPeriodResultsSummary } from "./getPeriodResultsSummary";
+
+/** A `MemberPeriodMetricValue`-shaped row with only the fields this consumer reads. */
+function row(allianceMemberId: string, metricId: string, observationCount: number) {
+  return {
+    allianceMemberId,
+    metricId,
+    value: observationCount > 0 ? 1 : null,
+    observationCount,
+    lastObservedOn: null,
+    provenance: "Source period value" as const,
+  };
+}
 
 describe("getPeriodResultsSummary", () => {
   beforeEach(() => {
@@ -38,7 +51,7 @@ describe("getPeriodResultsSummary", () => {
     ).rejects.toThrow("Period not found");
   });
 
-  it("returns zero counts and skips entry query when period has no active metrics", async () => {
+  it("returns zero counts and skips the read model when period has no active metrics", async () => {
     vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue({
       id: "p1",
       periodMetrics: [],
@@ -52,10 +65,10 @@ describe("getPeriodResultsSummary", () => {
     expect(summary.participatingMemberCount).toBe(0);
     expect(summary.participatingActiveMemberCount).toBe(0);
     expect(summary.metrics).toEqual([]);
-    expect(prisma.memberMetricEntry.groupBy).not.toHaveBeenCalled();
+    expect(memberPeriodMetricValues).not.toHaveBeenCalled();
   });
 
-  it("filters query by active metric IDs and uses database-side groupBy aggregation", async () => {
+  it("filters query by active metric IDs and derives participation from observationCount > 0", async () => {
     vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue({
       id: "p1",
       periodMetrics: [
@@ -66,12 +79,14 @@ describe("getPeriodResultsSummary", () => {
 
     vi.mocked(prisma.allianceMember.count).mockResolvedValue(100);
 
-    vi.mocked(prisma.memberMetricEntry.groupBy).mockResolvedValue([
-      // DB groupBy distinct results: 1 per (member, metric)
-      { allianceMemberId: "mem1", metricId: "m1" },
-      { allianceMemberId: "mem1", metricId: "m2" },
-      { allianceMemberId: "mem2", metricId: "m1" },
-    ] as unknown as Awaited<ReturnType<typeof prisma.memberMetricEntry.groupBy>>);
+    vi.mocked(memberPeriodMetricValues).mockResolvedValue([
+      row("mem1", "m1", 1),
+      row("mem1", "m2", 1),
+      row("mem2", "m1", 1),
+      // No zero-observation row for mem3 here - `onlyParticipating: true`
+      // means the (mocked) read model itself excludes non-participants;
+      // this consumer must not re-derive participation from row presence.
+    ]);
 
     vi.mocked(prisma.allianceMember.findMany).mockResolvedValue([
       { id: "mem1" },
@@ -79,14 +94,8 @@ describe("getPeriodResultsSummary", () => {
 
     const summary = await getPeriodResultsSummary({ allianceId: "a1", periodId: "p1" });
 
-    // Verify DB groupBy parameters: filtering by active metrics
-    expect(prisma.memberMetricEntry.groupBy).toHaveBeenCalledWith({
-      by: ["allianceMemberId", "metricId"],
-      where: {
-        periodId: "p1",
-        metricId: { in: ["m1", "m2"] },
-        allianceMember: { allianceId: "a1" },
-      },
+    expect(memberPeriodMetricValues).toHaveBeenCalledWith("a1", "p1", ["m1", "m2"], {
+      onlyParticipating: true,
     });
 
     expect(prisma.allianceMember.findMany).toHaveBeenCalledWith({
@@ -99,7 +108,7 @@ describe("getPeriodResultsSummary", () => {
     });
 
     expect(summary.currentActiveMemberCount).toBe(100);
-    expect(summary.participatingMemberCount).toBe(2); // mem1, mem2
+    expect(summary.participatingMemberCount).toBe(2); // mem1, mem2 - mem3 excluded (0 observations)
     expect(summary.participatingActiveMemberCount).toBe(1); // mem1
 
     expect(summary.metrics).toEqual([

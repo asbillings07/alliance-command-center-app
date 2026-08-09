@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/app/src/lib/prisma";
+import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 
 export type MetricCoverageSummary = {
   metricId: string;
@@ -62,14 +63,28 @@ export async function getPeriodResultsSummary(params: {
     };
   }
 
-  const distinctMemberMetricPairs = await prisma.memberMetricEntry.groupBy({
-    by: ["allianceMemberId", "metricId"],
-    where: {
-      periodId,
-      metricId: { in: activeMetricIds },
-      allianceMember: { allianceId },
-    },
-  });
+  // #287 Slice 3: "participating" means at least one *active* winning slot,
+  // not merely a row's existence. `memberPeriodMetricValues` already
+  // resolves corrections (multiple rows collapse to their one winning
+  // slot) and excludes voided-only members entirely (`observationCount`
+  // stays 0) - a raw `groupBy` over `MemberMetricEntry` would still count a
+  // voided-only member as "participating" today. See
+  // `docs/database-design/287-slice3-consumer-parity-log.md` for the
+  // parity proof against the previous `groupBy` implementation.
+  //
+  // `onlyParticipating: true` pushes that filter into SQL - this consumer
+  // never needs the full (metrics × roster) cross join the default
+  // behavior returns, only the pairs that actually participated.
+  const participatingMemberMetricValues = await memberPeriodMetricValues(
+    allianceId,
+    periodId,
+    activeMetricIds,
+    { onlyParticipating: true },
+  );
+  const distinctMemberMetricPairs = participatingMemberMetricValues.map((row) => ({
+    allianceMemberId: row.allianceMemberId,
+    metricId: row.metricId,
+  }));
 
   const participatingMemberIdsList = Array.from(
     new Set(distinctMemberMetricPairs.map((p) => p.allianceMemberId))

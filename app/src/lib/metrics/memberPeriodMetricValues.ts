@@ -104,14 +104,29 @@ function parseCivilDateToUtcMidnight(civilDate: string): Date {
  * which is exactly what a bounded, paginated drill-down query into the raw
  * `MemberMetricEntry` ledger needs - inventing a synthetic token here would
  * duplicate that identity for no benefit.
+ *
+ * `options.onlyParticipating` (default `false`) restricts the result to
+ * rows with at least one active winning slot (`observationCount > 0`),
+ * pushing a consumer's own "I only care who participated" filter into SQL
+ * instead of shipping the full (metrics × roster) cross join to Node just
+ * to throw most of it away (e.g. `getPeriodResultsSummary.ts`). This is
+ * one additional `WHERE` on the same query, not a second implementation -
+ * every other invariant above is unchanged, and the default (`false`)
+ * preserves the full cross join for consumers that need every member's row
+ * even when empty (e.g. a report roster).
  */
 export async function memberPeriodMetricValues(
   allianceId: string,
   periodId: string,
   metricIds: readonly string[],
+  options?: { onlyParticipating?: boolean },
 ): Promise<MemberPeriodMetricValue[]> {
   const uniqueMetricIds = [...new Set(metricIds)];
   if (uniqueMetricIds.length === 0) return [];
+
+  const onlyParticipatingFilter = options?.onlyParticipating
+    ? Prisma.sql`WHERE apm."metricId" IS NOT NULL`
+    : Prisma.empty;
 
   const rows = await prisma.$queryRaw<RawRow[]>`
     WITH slot_winner AS (
@@ -172,6 +187,7 @@ export async function memberPeriodMetricValues(
       ON lpm."metricId" = b."metricId" AND lpm."allianceMemberId" = b."allianceMemberId"
     LEFT JOIN aggregated_per_member apm
       ON apm."metricId" = b."metricId" AND apm."allianceMemberId" = b."allianceMemberId"
+    ${onlyParticipatingFilter}
     ORDER BY b."metricId", b."allianceMemberId"
   `;
 

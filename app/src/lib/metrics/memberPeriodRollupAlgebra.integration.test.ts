@@ -243,6 +243,39 @@ describe.skipIf(!runDb)("memberPeriodMetricValues rollup algebra [integration]",
     },
   );
 
+  it("onlyParticipating: true restricts the result to rows with at least one active winning slot, pushing the filter into SQL instead of the caller's Node code", async () => {
+    const { alliance, member, period, metric } = await makeSetup("SUM");
+    const otherMember = await prisma.allianceMember.create({
+      data: { allianceId: alliance.id, playerName: "Never Participates" },
+    });
+
+    await insertEntry({
+      allianceMemberId: member.id,
+      periodId: period.id,
+      metricId: metric.id,
+      observedOn: "2026-01-06",
+      value: 10,
+      recordedAt: new Date("2026-01-06T12:00:00.000Z"),
+    });
+
+    const defaultResults = await memberPeriodMetricValues(alliance.id, period.id, [metric.id]);
+    const participatingOnlyResults = await memberPeriodMetricValues(alliance.id, period.id, [metric.id], {
+      onlyParticipating: true,
+    });
+
+    // Default behavior is unchanged: both members appear, including the
+    // one with zero active slots.
+    expect(defaultResults).toHaveLength(2);
+    expect(defaultResults.map((r) => r.allianceMemberId).sort()).toEqual(
+      [member.id, otherMember.id].sort(),
+    );
+
+    // onlyParticipating excludes otherMember entirely, not just its value.
+    expect(participatingOnlyResults).toHaveLength(1);
+    expect(participatingOnlyResults[0]?.allianceMemberId).toBe(member.id);
+    expect(participatingOnlyResults[0]?.value).toBe(10);
+  });
+
   it("a slot voided and then reactivated by a later ACTIVE row contributes its reactivated value, needing no special mechanism beyond latest-wins", async () => {
     const { alliance, member, period, metric } = await makeSetup("SUM");
 
