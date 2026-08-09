@@ -52,8 +52,8 @@ follow-up issue is needed — the fix is already complete.
 ## `getAllianceMemberMetricMatrix.ts` (partial — cell values only)
 
 - **Location:** `app/src/lib/reports/getAllianceMemberMetricMatrix.ts`
-- **Old implementation:** raw `SELECT DISTINCT ON ("metricId", "allianceMemberId") ...` over `MemberMetricEntry`, scoped to the current page's `memberIds`.
-- **New implementation:** `memberPeriodMetricValues(..., { onlyParticipating: true })`, filtered to the current page's `memberIds` in JS.
+- **Old implementation:** raw `SELECT DISTINCT ON ("metricId", "allianceMemberId") ...` over `MemberMetricEntry`, scoped to the current page's `memberIds` via a `WHERE ... IN (...)` clause.
+- **New implementation:** `memberPeriodMetricValues(..., { onlyParticipating: true, memberIds })` — the `memberIds` option (added in this PR after review) pushes the same page-scoping into the canonical read model's own query, so the fetch stays bounded to `pageSize × MATRIX_MAX_COLUMNS` rows regardless of alliance size, rather than cross-joining the full roster and filtering in JS.
 - **Test:** [`getAllianceMemberMetricMatrixCellsParity.integration.test.ts`](../../app/src/lib/reports/getAllianceMemberMetricMatrixCellsParity.integration.test.ts)
 
 | Input scenario | Old result summary | New result summary | Match result |

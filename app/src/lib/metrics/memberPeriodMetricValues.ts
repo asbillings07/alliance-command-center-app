@@ -114,18 +114,31 @@ function parseCivilDateToUtcMidnight(civilDate: string): Date {
  * every other invariant above is unchanged, and the default (`false`)
  * preserves the full cross join for consumers that need every member's row
  * even when empty (e.g. a report roster).
+ *
+ * `options.memberIds` (default: every alliance member) restricts both the
+ * ledger scan and the cross join to a known, bounded set of members -
+ * for a consumer that already knows exactly which members it needs (e.g.
+ * one page of a paginated roster), this keeps the query bounded by that
+ * page rather than the whole alliance, without duplicating the tenant scope
+ * already enforced by `allianceId` above (a foreign-tenant member id here
+ * is simply excluded, same as any other id that doesn't match the `am."id"
+ * IN (...)` filter - never a separate trust boundary).
  */
 export async function memberPeriodMetricValues(
   allianceId: string,
   periodId: string,
   metricIds: readonly string[],
-  options?: { onlyParticipating?: boolean },
+  options?: { onlyParticipating?: boolean; memberIds?: readonly string[] },
 ): Promise<MemberPeriodMetricValue[]> {
   const uniqueMetricIds = [...new Set(metricIds)];
   if (uniqueMetricIds.length === 0) return [];
+  if (options?.memberIds && options.memberIds.length === 0) return [];
 
   const onlyParticipatingFilter = options?.onlyParticipating
     ? Prisma.sql`WHERE apm."metricId" IS NOT NULL`
+    : Prisma.empty;
+  const memberFilter = options?.memberIds
+    ? Prisma.sql`AND am."id" IN (${Prisma.join(options.memberIds)})`
     : Prisma.empty;
 
   const rows = await prisma.$queryRaw<RawRow[]>`
@@ -137,6 +150,7 @@ export async function memberPeriodMetricValues(
       WHERE am."allianceId" = ${allianceId}
         AND mme."periodId" = ${periodId}
         AND mme."metricId" IN (${Prisma.join(uniqueMetricIds)})
+        ${memberFilter}
       ORDER BY mme."metricId", mme."allianceMemberId", mme."observedOn",
         mme."recordedAt" DESC, mme."createdAt" DESC, mme."id" DESC
     ),
@@ -169,6 +183,7 @@ export async function memberPeriodMetricValues(
       FROM requested_metrics rm
       CROSS JOIN "AllianceMember" am
       WHERE am."allianceId" = ${allianceId}
+        ${memberFilter}
     )
     SELECT
       b."metricId" AS metric_id,

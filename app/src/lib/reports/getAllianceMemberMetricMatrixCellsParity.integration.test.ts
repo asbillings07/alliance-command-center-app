@@ -43,11 +43,11 @@ async function newQueryMatrixCells(
 ): Promise<Array<{ metricId: string; memberId: string; value: number | null }>> {
   const { memberPeriodMetricValues } = await import("@/app/src/lib/metrics/memberPeriodMetricValues");
   if (metricIds.length === 0 || memberIds.length === 0) return [];
-  const memberIdSet = new Set(memberIds);
-  const values = await memberPeriodMetricValues(allianceId, periodId, metricIds, { onlyParticipating: true });
-  return values
-    .filter((row) => memberIdSet.has(row.allianceMemberId))
-    .map((row) => ({ metricId: row.metricId, memberId: row.allianceMemberId, value: row.value }));
+  const values = await memberPeriodMetricValues(allianceId, periodId, metricIds, {
+    onlyParticipating: true,
+    memberIds,
+  });
+  return values.map((row) => ({ metricId: row.metricId, memberId: row.allianceMemberId, value: row.value }));
 }
 
 function sortCells(cells: Array<{ metricId: string; memberId: string; value: number | null }>) {
