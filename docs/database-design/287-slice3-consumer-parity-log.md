@@ -49,12 +49,34 @@ follow-up issue is needed — the fix is already complete.
 
 ---
 
+## `getAllianceMemberMetricMatrix.ts` (partial — cell values only)
+
+- **Location:** `app/src/lib/reports/getAllianceMemberMetricMatrix.ts`
+- **Old implementation:** raw `SELECT DISTINCT ON ("metricId", "allianceMemberId") ...` over `MemberMetricEntry`, scoped to the current page's `memberIds`.
+- **New implementation:** `memberPeriodMetricValues(..., { onlyParticipating: true })`, filtered to the current page's `memberIds` in JS.
+- **Test:** [`getAllianceMemberMetricMatrixCellsParity.integration.test.ts`](../../app/src/lib/reports/getAllianceMemberMetricMatrixCellsParity.integration.test.ts)
+
+| Input scenario | Old result summary | New result summary | Match result |
+|---|---|---|---|
+| Single entry | Value returned | Same value | `PASS` |
+| Three corrections, same member+metric | Latest value returned | Same value (one winning slot) | `PASS` |
+| No entry at all | Absent from result set; `buildCell`'s `?? null` renders `MISSING` | Absent from result set; same `MISSING` rendering | `PASS` |
+| Voided-only entry, no other entry | Row returned with `value: null`; `buildCell` renders `MISSING` | Excluded entirely (`onlyParticipating`); `buildCell`'s `?? null` renders the same `MISSING` | `PASS` — unlike `getPeriodResultsSummary`'s participation *count*, this consumer's only observable output (cell status) is identical either way |
+| Multi-metric, multi-member fixture | 3 rows (no row for the one (member, metric) pair with no entry) | Identical 3 rows | `PASS` |
+| `DAILY_OBSERVATION + SUM` metric, three daily entries | Shows only the latest single day's raw value | Shows the true rolled-up sum | `EXPECTED_BREAKING` — see rationale below |
+
+**`EXPECTED_BREAKING` rationale:** identical in kind to `getPeriodResultsSummary`'s divergence — the old raw `DISTINCT ON` has no concept of a metric's `memberPeriodRollup`, so it always showed "whichever single row sorts first," which is only coincidentally correct for `PERIOD_VALUE + LATEST` metrics. **Inert today**: no leader can create a `DAILY_OBSERVATION` metric yet (no UI exists to select a grain/rollup at creation time — see the database design §8's `Metric` writers section). Becomes correct-by-construction once that UI ships, rather than requiring a follow-up fix to this consumer at that time.
+
+**Deliberately not migrated in this PR** (tracked as a follow-up below): `buildMatrixCte`'s `selected_values` CTE, which drives archived-member inclusion and metric-column sort tiering *before* pagination, still reads raw `MemberMetricEntry` rows directly. Migrating it requires either fetching the full alliance-wide cross join into JS to sort/paginate there, or extracting `memberPeriodMetricValues`'s CTE chain into a reusable `Prisma.sql` fragment this file's own paginated/sorted roster query can compose with — a larger architectural change than this PR's scope, and inert today for the same reason as above (no `DAILY_OBSERVATION` metric exists to sort/filter incorrectly).
+
+---
+
 ## Remaining consumers (not yet migrated)
 
 Per the database design §8 inventory, tracked here so this table stays the
 single place progress is visible:
 
-- [ ] `getAllianceMemberMetricMatrix.ts` (roster CTE + cell-value query)
+- [ ] `getAllianceMemberMetricMatrix.ts`'s `selected_values` CTE (archived-inclusion + metric-sort tiering, pre-pagination) — see follow-up above
 - [ ] `getMetricSummaryReport.ts` (`queryAggregate`, `queryVisualizationRows`, `buildRosterCte`)
 - [ ] `getAlliancePerformanceReport.ts`
 - [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`)
