@@ -4,7 +4,11 @@ import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
 import { touchAllianceSetupActivity } from "@/app/src/lib/touchAllianceSetupActivity";
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
-import { Metric_Type, MemberMetricEntryStatus } from "@/app/generated/prisma/enums";
+import {
+  Metric_Type,
+  MemberMetricEntryStatus,
+  MetricObservationGrain,
+} from "@/app/generated/prisma/enums";
 import { isValidBooleanMetricValue } from "@/app/src/lib/metrics/booleanMetricValue";
 import { revalidatePath } from "next/cache";
 
@@ -60,6 +64,18 @@ export async function recordMemberMetrics(
 
   if (!periodMetric) {
     throw new Error("Metric is not configured for this period");
+  }
+
+  // This manual-recording form collects one value per member with no way to
+  // capture an observation date, so a DAILY_OBSERVATION metric would
+  // otherwise deterministically fail the grain/observedOn CHECK constraint
+  // below with a much less useful DB-level message. Reject it here instead,
+  // before any validation or write - remove this guard once a later slice
+  // adds a daily-entry UI (#287 database design §8).
+  if (periodMetric.metric.observationGrain === MetricObservationGrain.DAILY_OBSERVATION) {
+    throw new Error(
+      "This metric records daily observations and cannot be recorded here yet - this form has no way to collect the observation date",
+    );
   }
 
   // Validate all entries have integer values; BOOLEAN metrics additionally

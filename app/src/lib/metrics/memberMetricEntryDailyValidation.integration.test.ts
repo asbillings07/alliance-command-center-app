@@ -140,6 +140,24 @@ describe.skipIf(!runDb)("MemberMetricEntry daily-observation insert validation [
     ).rejects.toThrow(/must have both start and end dates set/i);
   });
 
+  it("rejects a daily entry whose periodId does not reference any existing period, with a distinct message from the null-boundaries case", async () => {
+    const { member, metric } = await makeSetup();
+
+    await expect(
+      prisma.memberMetricEntry.create({
+        data: {
+          allianceMemberId: member.id,
+          periodId: "nonexistent-period-id",
+          metricId: metric.id,
+          observationGrain: "DAILY_OBSERVATION",
+          observedOn: new Date("2026-01-04T00:00:00.000Z"),
+          value: 10,
+          status: "ACTIVE",
+        },
+      }),
+    ).rejects.toThrow(/does not exist/i);
+  });
+
   it("rejects a daily entry when the period has no end date set", async () => {
     const { member, period, metric } = await makeSetup({ endsAt: null });
 

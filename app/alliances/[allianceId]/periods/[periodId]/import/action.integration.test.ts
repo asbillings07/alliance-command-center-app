@@ -688,4 +688,98 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             expect(entriesCount).toBe(0);
         });
     });
+
+    describe("DAILY_OBSERVATION metric rejection (#287)", () => {
+        it("rejects import against an existing attached DAILY_OBSERVATION metric with zero writes, since this importer cannot collect observedOn", async () => {
+            const { alliance, member, periodA } = await makeTestSetup();
+            const dailyMetric = await prisma.metric.create({
+                data: {
+                    allianceId: alliance.id,
+                    name: "Daily VS",
+                    type: "NUMERIC",
+                    observationGrain: "DAILY_OBSERVATION",
+                    memberPeriodRollup: "SUM",
+                },
+            });
+            await prisma.metricPeriodMetric.create({
+                data: { periodId: periodA.id, metricId: dailyMetric.id, weight: 1, required: false },
+            });
+
+            await expect(
+                importMemberMetrics({
+                    periodId: periodA.id,
+                    allianceId: alliance.id,
+                    mappings: [
+                        {
+                            sourceColumnName: "Daily VS",
+                            target: { kind: "existing", metricId: dailyMetric.id },
+                            entries: [{ memberId: member.id, rawValue: "10" }],
+                        },
+                    ],
+                }),
+            ).rejects.toThrow(/daily observations/i);
+
+            const entriesCount = await prisma.memberMetricEntry.count({
+                where: { periodId: periodA.id, metricId: dailyMetric.id },
+            });
+            expect(entriesCount).toBe(0);
+        });
+
+        it("rejects import against a DAILY_OBSERVATION metric only resolved mid-transaction (a 'create' target that name-matches an existing library metric), rolling back the mid-transaction attach", async () => {
+            const { alliance, member, periodA } = await makeTestSetup();
+            // Not attached to periodA yet — resolveMetricTargets will attach it
+            // as part of this import's transaction, so its authoritative grain
+            // is only knowable *after* resolution, not from any pre-resolution
+            // snapshot.
+            const dailyMetric = await prisma.metric.create({
+                data: {
+                    allianceId: alliance.id,
+                    name: "Daily VS",
+                    type: "NUMERIC",
+                    observationGrain: "DAILY_OBSERVATION",
+                    memberPeriodRollup: "SUM",
+                },
+            });
+
+            vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
+                user: { id: "integration-test-user", email: "test@local" },
+                permissions: {
+                    canImportMetrics: true,
+                    canConfigurePeriods: true,
+                    canConfigureMetrics: true,
+                } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["permissions"],
+                membership: { role: "ADMIN" } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>["membership"],
+            });
+
+            const initialAttachmentCount = await prisma.metricPeriodMetric.count({
+                where: { periodId: periodA.id, metricId: dailyMetric.id },
+            });
+
+            await expect(
+                importMemberMetrics({
+                    periodId: periodA.id,
+                    allianceId: alliance.id,
+                    mappings: [
+                        {
+                            // "create" intent that classifyTargets downgrades to
+                            // "attach" because the name already matches dailyMetric.
+                            sourceColumnName: "Daily VS",
+                            target: { kind: "create", name: "Daily VS" },
+                            entries: [{ memberId: member.id, rawValue: "10" }],
+                        },
+                    ],
+                }),
+            ).rejects.toThrow(/daily observations/i);
+
+            const finalAttachmentCount = await prisma.metricPeriodMetric.count({
+                where: { periodId: periodA.id, metricId: dailyMetric.id },
+            });
+            expect(finalAttachmentCount).toBe(initialAttachmentCount);
+
+            const entriesCount = await prisma.memberMetricEntry.count({
+                where: { periodId: periodA.id, metricId: dailyMetric.id },
+            });
+            expect(entriesCount).toBe(0);
+        });
+    });
 });

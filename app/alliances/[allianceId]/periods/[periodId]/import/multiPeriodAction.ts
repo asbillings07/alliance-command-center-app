@@ -21,6 +21,7 @@ import {
 } from "@/app/src/lib/import/multiPeriodImport";
 import { assertBooleanMetricValuesValid } from "@/app/src/lib/metrics/assertBooleanMetricValues";
 import {
+  assertNoDailyObservationMetrics,
   loadMetricObservationGrains,
   requireMetricObservationGrain,
 } from "@/app/src/lib/metrics/loadMetricObservationGrains";
@@ -231,9 +232,16 @@ export async function importMultiPeriodMetrics(
       // re-fetched post-resolution for this group (never a pre-resolution
       // snapshot or a hardcoded value) - see import/action.ts for the same
       // requirement and rationale. Every write here remains PERIOD_VALUE
-      // until a later slice adds per-column daily-observation import support.
+      // until a later slice adds per-column daily-observation import support
+      // - reject any DAILY_OBSERVATION-mapped column now, before writing
+      // anything for this group, with a clear message instead of letting the
+      // DB CHECK constraint reject it.
       const grainByMetricId = await loadMetricObservationGrains(
         tx,
+        plan.mappings.map((mapping) => mapping.metricId),
+      );
+      assertNoDailyObservationMetrics(
+        grainByMetricId,
         plan.mappings.map((mapping) => mapping.metricId),
       );
 

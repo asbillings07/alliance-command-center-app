@@ -1,5 +1,5 @@
 import type { Prisma } from "@/app/generated/prisma/client";
-import type { MetricObservationGrain } from "@/app/generated/prisma/enums";
+import { MetricObservationGrain } from "@/app/generated/prisma/enums";
 
 /**
  * Re-fetches authoritative observationGrain for exactly the resolved metric
@@ -45,4 +45,27 @@ export function requireMetricObservationGrain(
     throw new Error(`Could not resolve observation grain for metric ${metricId}`);
   }
   return grain;
+}
+
+/**
+ * Rejects any mapping targeting a DAILY_OBSERVATION metric.
+ *
+ * Import (single- and multi-period) has no per-row date column to collect
+ * `observedOn` yet (#287 database design §8), so writing one of these
+ * mappings would deterministically fail the grain/observedOn CHECK
+ * constraint at the DB layer with a much less useful message. Fail fast here
+ * instead, before any memberMetricEntry.createMany write - remove this guard
+ * once a later slice adds daily-observation import support.
+ */
+export function assertNoDailyObservationMetrics(
+  grainByMetricId: ReadonlyMap<string, MetricObservationGrain>,
+  metricIds: readonly string[],
+): void {
+  for (const metricId of new Set(metricIds)) {
+    if (requireMetricObservationGrain(grainByMetricId, metricId) === MetricObservationGrain.DAILY_OBSERVATION) {
+      throw new Error(
+        "One or more mapped metrics record daily observations and cannot be imported yet - this importer has no way to collect the observation date",
+      );
+    }
+  }
 }

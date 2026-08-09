@@ -61,7 +61,10 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
     }
   });
 
-  async function makeSetup(metricType: "NUMERIC" | "BOOLEAN") {
+  async function makeSetup(
+    metricType: "NUMERIC" | "BOOLEAN",
+    observationGrain: "PERIOD_VALUE" | "DAILY_OBSERVATION" = "PERIOD_VALUE",
+  ) {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const alliance = await prisma.alliance.create({
       data: { name: `Record Action Alliance ${suffix}`, server: "1001" },
@@ -77,7 +80,13 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
     });
 
     const metric = await prisma.metric.create({
-      data: { allianceId: alliance.id, name: "Metric", type: metricType },
+      data: {
+        allianceId: alliance.id,
+        name: "Metric",
+        type: metricType,
+        observationGrain,
+        memberPeriodRollup: observationGrain === "DAILY_OBSERVATION" ? "SUM" : "LATEST",
+      },
     });
 
     await prisma.metricPeriodMetric.create({
@@ -169,5 +178,23 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
     });
     expect(entry?.observationGrain).toBe("PERIOD_VALUE");
     expect(entry?.status).toBe("ACTIVE");
+  });
+
+  it("rejects recording against a DAILY_OBSERVATION metric with zero writes, since this form cannot collect observedOn (#287)", async () => {
+    const { alliance, member, period, metric } = await makeSetup("NUMERIC", "DAILY_OBSERVATION");
+
+    await expect(
+      recordMemberMetrics({
+        allianceId: alliance.id,
+        periodId: period.id,
+        metricId: metric.id,
+        entries: [{ memberId: member.id, value: 5 }],
+      }),
+    ).rejects.toThrow(/daily observations/i);
+
+    const count = await prisma.memberMetricEntry.count({
+      where: { periodId: period.id, metricId: metric.id },
+    });
+    expect(count).toBe(0);
   });
 });

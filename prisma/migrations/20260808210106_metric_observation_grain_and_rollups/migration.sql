@@ -141,6 +141,15 @@ BEGIN
     SELECT "startsAt", "endsAt" INTO period_starts_at, period_ends_at
     FROM "MetricPeriod" WHERE id = NEW."periodId" FOR SHARE;
 
+    -- A missing MetricPeriod row would otherwise fall through to the NULL-
+    -- boundaries branch below with an identical (and misleading) "must have
+    -- both start and end dates set" message. This BEFORE ROW trigger runs
+    -- before the periodId/metricId composite foreign key is validated, so
+    -- it must not rely on that FK to catch a nonexistent period first.
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Period % does not exist', NEW."periodId";
+    END IF;
+
     IF period_starts_at IS NULL OR period_ends_at IS NULL THEN
       RAISE EXCEPTION 'Period % must have both start and end dates set before recording a daily observation', NEW."periodId";
     END IF;
