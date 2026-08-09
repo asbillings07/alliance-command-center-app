@@ -307,6 +307,24 @@ async function queryAllianceMemberRoster(allianceId: string): Promise<AggregateR
  * two full-cohort reads on every request that needed both — a regression
  * from the old raw-SQL shape's 1-query-each. See
  * `docs/database-design/287-slice3-consumer-parity-log.md`.
+ *
+ * Always exactly 2 round trips, *regardless of `needsVisualizationRows`* —
+ * this is not an opportunity for a further "aggregate-only, skip the
+ * roster" path. `computeAggregateSnapshot` needs `roster`'s `archivedAt`
+ * for every summary kind, including `TRUE_RATE`/`NONE+BOOLEAN`
+ * (`currentActiveMemberCount`, `recordedActiveMemberCount`,
+ * `missingActiveMemberCount`, `archivedContributingMemberCount` are all
+ * archived-aware coverage counts, not chart-only concerns). The old
+ * `queryAggregate` got both the value and the archived flag in a single
+ * combined `AllianceMember LEFT JOIN latest` query; this one costs one
+ * extra bounded, O(alliance-size) round trip instead, because
+ * `memberPeriodMetricValues` is deliberately metric-domain-only and knows
+ * nothing about alliance membership - folding `archivedAt` into it would
+ * blur that boundary for every other consumer (`getPeriodResultsSummary.ts`,
+ * the matrix, etc.) to save one query here. Accepted as the correct,
+ * already-tested-safe cost of reusing the canonical read model (same order
+ * of magnitude validated by
+ * `memberPeriodRollupTenantIsolationAndPerformance.integration.test.ts`).
  */
 async function fetchMemberPeriodValuesAndRoster(
   allianceId: string,
