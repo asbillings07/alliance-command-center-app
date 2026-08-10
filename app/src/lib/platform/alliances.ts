@@ -109,7 +109,12 @@ const allianceReadinessSelect = {
   allianceMembers: {
     select: {
       createdAt: true,
-      _count: { select: { metricEntries: true } },
+      // #287: ACTIVE only for hasData - a VOIDED-only row isn't real
+      // evaluation data (its value is always null). The separate
+      // `metricEntries` select just below is for `lastActivity` display,
+      // which intentionally includes VOIDED rows (a correction/void is
+      // still real activity worth showing) - do not apply this filter there.
+      _count: { select: { metricEntries: { where: { status: "ACTIVE" } } } },
       metricEntries: {
         select: { recordedAt: true },
         orderBy: { recordedAt: "desc" as const },

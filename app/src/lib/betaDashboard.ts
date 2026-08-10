@@ -117,8 +117,11 @@ async function getFunnelStats(): Promise<FunnelStage[]> {
     }),
     prisma.alliance.count({
       where: {
+        // #287: ACTIVE only - a VOIDED-only row isn't real evaluation
+        // data (its value is always null; see the MemberMetricEntry
+        // status/value CHECK constraint).
         allianceMembers: {
-          some: { metricEntries: { some: {} } },
+          some: { metricEntries: { some: { status: "ACTIVE" } } },
         },
       },
     }),
@@ -155,7 +158,8 @@ async function getAllianceReadiness(): Promise<AllianceReadiness> {
       },
       allianceMembers: {
         select: {
-          _count: { select: { metricEntries: true } },
+          // #287: ACTIVE only - see getFunnelStats' identical fix above.
+          _count: { select: { metricEntries: { where: { status: "ACTIVE" } } } },
         },
       },
     },
@@ -198,8 +202,9 @@ async function getNeedsAttention(): Promise<NeedsAttentionItem[]> {
   const stuckAlliances = await prisma.alliance.findMany({
     where: {
       createdAt: { lt: weekAgo },
+      // #287: ACTIVE only - see getFunnelStats' identical fix above.
       allianceMembers: {
-        none: { metricEntries: { some: {} } },
+        none: { metricEntries: { some: { status: "ACTIVE" } } },
       },
     },
     select: {

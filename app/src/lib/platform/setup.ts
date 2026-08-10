@@ -46,8 +46,14 @@ export async function getSetupFunnel(): Promise<SetupFunnel> {
     }),
     prisma.alliance.count({
       where: {
+        // #287: ACTIVE only - a VOIDED-only row isn't real evaluation data
+        // (its value is always null; see the MemberMetricEntry status/value
+        // CHECK constraint). No period scoping here on purpose: this
+        // funnel stage means "has this alliance ever imported real data,"
+        // not "does its current target period have data" (that's
+        // allianceSetup.ts's canonical getAllianceSetupStatus check).
         allianceMembers: {
-          some: { metricEntries: { some: {} } },
+          some: { metricEntries: { some: { status: "ACTIVE" } } },
         },
       },
     }),
@@ -139,8 +145,9 @@ export async function getStalledAlliances() {
         { metricPeriods: { none: {} } },
         { allianceMembers: { none: { archivedAt: null } } },
         {
+          // #287: ACTIVE only - see getSetupFunnel's identical fix above.
           allianceMembers: {
-            none: { metricEntries: { some: {} } },
+            none: { metricEntries: { some: { status: "ACTIVE" } } },
           },
         },
       ],
