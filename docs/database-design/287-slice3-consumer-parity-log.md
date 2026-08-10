@@ -117,6 +117,23 @@ No follow-up deferred for this consumer — `getAlliancePerformanceReport.ts` ne
 
 ---
 
+## `members/page.tsx` (full — `latestMetricValueByMemberAndMetric`)
+
+- **Location:** `app/alliances/[allianceId]/members/page.tsx`
+- **Old implementation:** `prisma.memberMetricEntry.findMany(...)` ordered by `recordedAt`/`createdAt`/`id` DESC, then a JS scan that keeps the first (i.e. most recent) row per `(allianceMemberId, metricId)` key, `continue`-ing past a `value === null` row without marking the key as seen.
+- **New implementation:** `memberPeriodMetricValues(allianceId, periodId, periodMetricIds, { onlyParticipating: true, memberIds })` — bounded to the page's already-filtered roster (`memberIds`) and the selected period's active metric columns (`periodMetricIds`), matching the old query's own `WHERE` scoping exactly.
+- **Test:** [`membersMetricValuesParity.integration.test.ts`](../../app/alliances/[allianceId]/members/membersMetricValuesParity.integration.test.ts)
+
+| Input scenario | Old result summary | New result summary | Match result |
+|---|---|---|---|
+| Two corrections (same member+metric, different `recordedAt`) | Collapses to the latest value | Collapses to the latest value (one winning slot) | `PASS` |
+| A member with no entry; a member with a real entry excluded from the page's own `memberIds` (e.g. a different filter/page) | Absent from the map either way — the old query's own `allianceMemberId: { in: memberIds }` clause already bounded it | Absent from the map (same bound, pushed into `memberPeriodMetricValues`'s own SQL) | `PASS` |
+| A member's most recent event for a metric is a **VOIDED correction of a previously ACTIVE value** | **Incorrectly falls back to the stale ACTIVE value** — the scan's `continue` on the null-valued VOIDED row never marks the key "seen," so it keeps scanning into the earlier ACTIVE row | **Correctly omits the pair** — `memberPeriodMetricValues`'s `slot_winner` picks the VOIDED row as the winner (latest by `recordedAt`, regardless of status), leaving zero active winning slots | `EXPECTED_BREAKING` — see rationale below |
+
+**`EXPECTED_BREAKING` rationale:** this is a genuine pre-existing bug in the old scan, not merely a `DAILY_OBSERVATION`-only gap like the other consumers' divergences above: the old code's `if (entry.value === null) continue` was written to *skip* a void, but skipping without marking the key as resolved means a later scan iteration can still write the stale prior value for that same key. **Inert today**: no write path can create a `VOIDED` row yet (the void/correction mutation is a later, not-yet-built slice of #287), so this bug has never been observable in production. Becomes correct-by-construction the moment void support ships, rather than requiring a follow-up fix to this consumer at that time.
+
+---
+
 ## Remaining consumers (not yet migrated)
 
 Per the database design §8 inventory, tracked here so this table stays the
@@ -124,9 +141,8 @@ single place progress is visible:
 
 - [ ] `getAllianceMemberMetricMatrix.ts`'s `selected_values` CTE (archived-inclusion + metric-sort tiering, pre-pagination) — see follow-up above
 - [ ] `getMetricSummaryReport.ts`'s `buildRosterCte`/`countRosterRows`/`queryRosterRows` (paginated, ranked roster table) — see follow-up above
-- [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`)
-- [ ] `members/page.tsx` (unbounded in-memory `latestMetricValueByMemberAndMetric` reduction)
-- [ ] `members/[memberId]/page.tsx` (loads all period entries, keeps two)
+- [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`) — needs `memberPeriodMetricValues` to accept the audit's `AuditTxClient` (read-only transaction) instead of the global `prisma` client; larger change than a single-consumer swap
+- [ ] `members/[memberId]/page.tsx` (loads all period entries, keeps two — "current vs. previous correction" is a distinct concept from the canonical rollup's single value; needs design thought before migrating, not a 1:1 swap)
 - [ ] `allianceSetup.ts` (setup-checklist count, `targetEntriesCount`)
 - [ ] `betaParticipants.ts` (`has_target_period_data`, `is_complete`)
 - [ ] `platform/setup.ts` (`alliancesWithData`, `getStalledAlliances`)
