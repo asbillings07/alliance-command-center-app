@@ -10,10 +10,9 @@ import {
 import {
   buildMetricReportRow,
   buildMetricRollup,
+  computeAggregateSnapshot,
   computeRollupChange,
   computeShareAvailability,
-  mapAggregateRow,
-  type AggregateRawRow,
   type AggregateSnapshot,
   type BooleanRowStatus,
   type MetricCoverage,
@@ -26,7 +25,6 @@ import {
   memberPeriodMetricValues,
   type MemberPeriodMetricValue,
 } from "@/app/src/lib/metrics/memberPeriodMetricValues";
-import { isValidBooleanMetricValue } from "@/app/src/lib/metrics/booleanMetricValue";
 
 // Re-exported so every existing importer of these previously-local
 // names (tests, getAlliancePerformanceReport.ts) keeps working unchanged —
@@ -36,10 +34,9 @@ import { isValidBooleanMetricValue } from "@/app/src/lib/metrics/booleanMetricVa
 export {
   buildMetricReportRow,
   buildMetricRollup,
+  computeAggregateSnapshot,
   computeRollupChange,
   computeShareAvailability,
-  mapAggregateRow,
-  type AggregateRawRow,
   type AggregateSnapshot,
   type BooleanRowStatus,
   type MetricCoverage,
@@ -270,8 +267,8 @@ export function buildSearchPattern(raw: string | undefined | null): string {
 
 // AggregateSnapshot, buildMetricRollup, computeShareAvailability,
 // computeDifferenceFromAverage, computeBooleanRowStatus,
-// buildMetricReportRow, computeRollupChange, AggregateRawRow, and
-// mapAggregateRow now all live in metricRollup.ts and are re-exported above.
+// buildMetricReportRow, computeRollupChange, and computeAggregateSnapshot
+// now all live in metricRollup.ts and are re-exported above.
 
 // ---------------------------------------------------------------------------
 // Raw SQL orchestration
@@ -336,100 +333,6 @@ async function fetchMemberPeriodValuesAndRoster(
     queryAllianceMemberRoster(allianceId),
   ]);
   return { values, roster };
-}
-
-/**
- * Pure derivation of the rollup + coverage aggregate from already-fetched
- * values/roster (both active and archived contributors) — never against a
- * filtered/paginated slice.
- *
- * #287 Slice 3: sources each member's value from `memberPeriodMetricValues`
- * (ADR-018 §6) instead of a raw `DISTINCT ON` over `MemberMetricEntry`, so
- * a `DAILY_OBSERVATION` metric's total correctly aggregates each member's
- * true rolled-up period value (inert today - no leader can create one yet;
- * see `docs/database-design/287-slice3-consumer-parity-log.md`).
- *
- * Every counter below replicates its prior SQL `FILTER` clause exactly,
- * field for field, to preserve the legacy invariant: `sum`/`average` only
- * include a *valid* value (boolean-checked when relevant); `hasNegativeValues`
- * and `latestEntryCount` check raw presence only, never boolean validity;
- * `archivedContributingMemberCount` counts *any* archived value, valid or
- * not — matching `buildRosterFromWhere`'s own "archived + has a value"
- * inclusion rule elsewhere in this file.
- *
- * `sumValue`/`averageValue` are kept as exact (possibly fractional) sums,
- * not rounded to a whole number the way the old query's `::bigint` cast
- * did — safe today, since `MemberMetricEntry.value` is an integer column so
- * every legacy per-member value is already whole, but correct-by-construction
- * once a `DAILY_OBSERVATION + AVERAGE` metric's fractional per-member value
- * (e.g. 12.5) needs to contribute an exact amount to this cohort-wide total,
- * rather than being silently rounded on the way in.
- */
-function computeAggregateSnapshot(
-  values: readonly MemberPeriodMetricValue[],
-  roster: readonly AggregateRosterMember[],
-  isBooleanMetric: boolean,
-): AggregateSnapshot {
-  const valueByMember = new Map(values.map((row) => [row.allianceMemberId, row.value]));
-
-  let sumValue = 0;
-  let averageSum = 0;
-  let averageCount = 0;
-  let trueCount = 0;
-  let falseCount = 0;
-  let invalidCount = 0;
-  let hasNegativeValues = false;
-  let currentActiveMemberCount = 0;
-  let recordedActiveMemberCount = 0;
-  let invalidActiveMemberCount = 0;
-  let missingActiveMemberCount = 0;
-  let archivedContributingMemberCount = 0;
-  let latestEntryCount = 0;
-
-  for (const member of roster) {
-    const archived = member.archivedAt !== null;
-    const value = valueByMember.get(member.id) ?? null;
-    const isValid = value !== null && (!isBooleanMetric || isValidBooleanMetricValue(value));
-
-    if (!archived) currentActiveMemberCount++;
-    if (value !== null && value < 0) hasNegativeValues = true;
-    if (value !== null) latestEntryCount++;
-
-    if (isBooleanMetric && value !== null) {
-      if (value === 1) trueCount++;
-      else if (value === 0) falseCount++;
-      else invalidCount++;
-    }
-
-    if (isValid) {
-      sumValue += value;
-      averageSum += value;
-      averageCount++;
-    }
-
-    if (!archived) {
-      if (isValid) recordedActiveMemberCount++;
-      if (isBooleanMetric && value !== null && !isValid) invalidActiveMemberCount++;
-      if (value === null) missingActiveMemberCount++;
-    } else if (value !== null) {
-      archivedContributingMemberCount++;
-    }
-  }
-
-  return {
-    sumValue,
-    averageValue: averageCount > 0 ? averageSum / averageCount : null,
-    trueCount,
-    falseCount,
-    invalidCount,
-    hasNegativeValues,
-    currentActiveMemberCount,
-    recordedActiveMemberCount,
-    invalidActiveMemberCount,
-    missingActiveMemberCount,
-    archivedContributingMemberCount,
-    latestEntryCount,
-  };
 }
 
 /**

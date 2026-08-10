@@ -1,6 +1,5 @@
 import "server-only";
-import { Prisma } from "@/app/generated/prisma/client";
-import { MetricSummaryKind } from "@/app/generated/prisma/enums";
+import { Metric_Type, MetricSummaryKind } from "@/app/generated/prisma/enums";
 import { prisma } from "@/app/src/lib/prisma";
 import {
   resolveComparisonPeriodSelection,
@@ -9,9 +8,8 @@ import {
 } from "@/app/src/lib/reports/resolveComparablePeriod";
 import {
   buildMetricRollup,
+  computeAggregateSnapshot,
   computeRollupChange,
-  mapAggregateRow,
-  type AggregateRawRow,
   type AggregateSnapshot,
   type MetricCoverage,
   type MetricInfo,
@@ -20,6 +18,7 @@ import {
   type MetricRollup,
   type PeriodInfo,
 } from "@/app/src/lib/reports/getMetricSummaryReport";
+import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 
 /**
  * Bulk alliance-wide performance report read model (#264).
@@ -30,7 +29,15 @@ import {
  * number of DB round-trips regardless of how many metrics the alliance has
  * configured. It deliberately does not paginate/sort/filter/search a member
  * roster (that's the member matrix, a later PR in #264) — every number here
- * comes from full-cohort, DB-side aggregates.
+ * comes from full-cohort reads (the entire alliance roster, every
+ * configured metric).
+ *
+ * #287 Slice 3: `queryBulkAggregates` sources its per-member values from
+ * `memberPeriodMetricValues` (ADR-018 §6, the canonical member-period
+ * rollup) instead of a hand-rolled raw SQL aggregate, and derives the
+ * rollup/coverage counters via `computeAggregateSnapshot` (`metricRollup.ts`)
+ * in JS rather than SQL `FILTER` clauses — see that function's doc comment
+ * and `docs/database-design/287-slice3-consumer-parity-log.md`.
  *
  * `schemaVersion` exists so a future consumer (e.g. an AI interpretation
  * layer sitting on top of this report — see the linked follow-up issue for
@@ -222,108 +229,81 @@ export function computeOverallCoverage(
 }
 
 // ---------------------------------------------------------------------------
-// Raw SQL orchestration
+// Query orchestration
 // ---------------------------------------------------------------------------
 
-type BulkAggregateRawRow = AggregateRawRow & { metric_id: string };
-
 /**
- * One rollup+coverage aggregate per metric, in a single query, for the
- * entire cohort (active and archived contributors). Structurally the same
- * per-metric shape as `getMetricSummaryReport`'s `queryAggregate`, but
- * cross-joins every metric in the universe against every alliance member at
- * once (`metric_types` x `AllianceMember`) instead of looping one query per
- * metric — a metric with zero attachment/entries still gets a full row of
- * honest zeros/nulls via that cross join, so "not attached" and "attached
- * but empty" never need special-casing here.
+ * One rollup+coverage aggregate per metric, for the entire cohort (active
+ * and archived contributors), for one period.
  *
- * Scalability note: this is constant in DB round-trips (one query here, run
- * at most twice per request — selected period, and again for the
- * comparison period if one resolves — never once per metric), but the
- * `cells` CTE's intermediate rowset grows multiplicatively, as
- * O(metrics × members), not just linearly with either. At today's expected
- * alliance/metric-library sizes (tens of metrics, low hundreds of members)
- * that's a few thousand rows for Postgres to materialize and aggregate in
- * one scan — cheap — but it's worth being explicit that this doesn't hold
- * indefinitely as either dimension grows.
+ * #287 Slice 3: previously a single hand-rolled raw SQL query per period
+ * that cross-joined every metric against every alliance member at once
+ * (`metric_types` x `AllianceMember`) and derived every counter via SQL
+ * `FILTER` clauses. Now built from `memberPeriodMetricValues` (ADR-018 §6,
+ * ADR-018's canonical member-period rollup) grouped by `metricId`, with
+ * `computeAggregateSnapshot` (`metricRollup.ts`) doing the same per-metric
+ * derivation in JS that `getMetricSummaryReport.ts` already uses for a
+ * single metric — this is that same helper called once per metric here,
+ * not a second implementation of the aggregation rules. See
+ * `docs/database-design/287-slice3-consumer-parity-log.md`.
  *
- * If this ever needs revisiting, the concrete lever is: per-member coverage
- * counts (`current/recorded/invalid/missing_active_member_count`,
- * `archived_contributing_member_count`) are only ever consumed by the UI
- * for ACTIVE-attachment metrics (`formatCardCoverageSummary` and
- * `computeOverallCoverage` both discard them for NOT_ATTACHED/INACTIVE) —
- * so the cross join could be restricted to just that period's
- * active-attachment subset of `metricIds`, while the rollup-only aggregates
- * (sum/avg/true/false/invalid counts) stay computed from `latest` alone,
- * with no cross join, for every metric. Deferred until a real alliance/
- * metric-library size or a benchmark actually demonstrates this as a
- * bottleneck, rather than restructuring this query speculatively.
+ * `memberPeriodMetricValues` already returns one row per (metric, member)
+ * pair for *every* requested `metricId` — including a metric with zero
+ * entries in this period — via its own `requested_metrics x AllianceMember`
+ * cross join, so "not attached" and "attached but empty" still never need
+ * special-casing here; a metric with no rows in `valuesByMetric` simply
+ * derives `computeAggregateSnapshot([], roster, ...)`, which is every
+ * roster member mapped to a `null` value — identical to the old query's
+ * `LEFT JOIN latest` producing an all-`NULL` row per member.
+ *
+ * `isBooleanByMetricId` comes from the caller's already-fetched `metrics`
+ * (it needs `Metric.type` for other fields too), so this function doesn't
+ * need its own `Metric` lookup the way the old raw SQL's `metric_types` CTE
+ * did.
+ *
+ * Scalability note carried over from the prior implementation: this is
+ * constant in DB round-trips (one `memberPeriodMetricValues` call + one
+ * roster fetch here, run at most twice per request — selected period, and
+ * again for the comparison period if one resolves — never once per
+ * metric), but the intermediate rowset `memberPeriodMetricValues` returns
+ * grows multiplicatively, as O(metrics × members), not just linearly with
+ * either. At today's expected alliance/metric-library sizes (tens of
+ * metrics, low hundreds of members) that's a few thousand rows — cheap —
+ * but it's worth being explicit this doesn't hold indefinitely as either
+ * dimension grows. If this ever needs revisiting, the concrete lever is
+ * the same one noted before the #287 migration: per-member coverage counts
+ * are only ever consumed by the UI for ACTIVE-attachment metrics, so the
+ * cross join could be restricted to that period's active-attachment subset
+ * of `metricIds`. Deferred until a real alliance/metric-library size or a
+ * benchmark actually demonstrates this as a bottleneck.
  */
 async function queryBulkAggregates(
   allianceId: string,
   periodId: string,
   metricIds: string[],
+  isBooleanByMetricId: ReadonlyMap<string, boolean>,
 ): Promise<Map<string, AggregateSnapshot>> {
   if (metricIds.length === 0) return new Map();
 
-  const rows = await prisma.$queryRaw<BulkAggregateRawRow[]>`
-    WITH latest AS (
-      SELECT DISTINCT ON ("metricId", "allianceMemberId")
-        "metricId" AS metric_id, "allianceMemberId" AS member_id, value
-      FROM "MemberMetricEntry"
-      WHERE "periodId" = ${periodId} AND "metricId" IN (${Prisma.join(metricIds)})
-      ORDER BY "metricId", "allianceMemberId", "recordedAt" DESC, "createdAt" DESC, id DESC
-    ),
-    metric_types AS (
-      SELECT id AS metric_id, (type = 'BOOLEAN'::"Metric_Type") AS is_boolean
-      FROM "Metric"
-      WHERE id IN (${Prisma.join(metricIds)})
-    ),
-    cells AS (
-      SELECT
-        mt.metric_id,
-        mt.is_boolean,
-        am.id AS member_id,
-        (am."archivedAt" IS NULL) AS is_active,
-        l.value
-      FROM metric_types mt
-      CROSS JOIN "AllianceMember" am
-      LEFT JOIN latest l ON l.metric_id = mt.metric_id AND l.member_id = am.id
-      WHERE am."allianceId" = ${allianceId}
-    )
-    SELECT
-      metric_id,
-      COALESCE(SUM(value) FILTER (
-        WHERE value IS NOT NULL AND (NOT is_boolean OR value IN (0, 1))
-      ), 0)::bigint AS sum_value,
-      AVG(value) FILTER (
-        WHERE value IS NOT NULL AND (NOT is_boolean OR value IN (0, 1))
-      )::float8 AS avg_value,
-      COUNT(*) FILTER (WHERE is_boolean AND value = 1)::bigint AS true_count,
-      COUNT(*) FILTER (WHERE is_boolean AND value = 0)::bigint AS false_count,
-      COUNT(*) FILTER (
-        WHERE is_boolean AND value IS NOT NULL AND value NOT IN (0, 1)
-      )::bigint AS invalid_count,
-      COALESCE(BOOL_OR(value IS NOT NULL AND value < 0), FALSE) AS has_negative_values,
-      COUNT(*) FILTER (WHERE is_active)::bigint AS current_active_member_count,
-      COUNT(*) FILTER (
-        WHERE is_active AND value IS NOT NULL AND (NOT is_boolean OR value IN (0, 1))
-      )::bigint AS recorded_active_member_count,
-      COUNT(*) FILTER (
-        WHERE is_active AND is_boolean AND value IS NOT NULL AND value NOT IN (0, 1)
-      )::bigint AS invalid_active_member_count,
-      COUNT(*) FILTER (WHERE is_active AND value IS NULL)::bigint AS missing_active_member_count,
-      COUNT(*) FILTER (
-        WHERE NOT is_active AND value IS NOT NULL
-      )::bigint AS archived_contributing_member_count,
-      COUNT(*) FILTER (WHERE value IS NOT NULL)::bigint AS latest_entry_count
-    FROM cells
-    GROUP BY metric_id
-  `;
+  const [values, roster] = await Promise.all([
+    memberPeriodMetricValues(allianceId, periodId, metricIds),
+    prisma.allianceMember.findMany({
+      where: { allianceId },
+      select: { id: true, archivedAt: true },
+    }),
+  ]);
+
+  const valuesByMetric = new Map<string, { allianceMemberId: string; value: number | null }[]>();
+  for (const value of values) {
+    const bucket = valuesByMetric.get(value.metricId);
+    if (bucket) bucket.push(value);
+    else valuesByMetric.set(value.metricId, [value]);
+  }
 
   const map = new Map<string, AggregateSnapshot>();
-  for (const row of rows) {
-    map.set(row.metric_id, mapAggregateRow(row));
+  for (const metricId of metricIds) {
+    const isBooleanMetric = isBooleanByMetricId.get(metricId) ?? false;
+    map.set(metricId, computeAggregateSnapshot(valuesByMetric.get(metricId) ?? [], roster, isBooleanMetric));
   }
   return map;
 }
@@ -411,6 +391,7 @@ export async function getAlliancePerformanceReport(params: {
     orderBy: [{ active: "desc" }, { name: "asc" }, { id: "asc" }],
   });
   const metricIds = metrics.map((m) => m.id);
+  const isBooleanByMetricId = new Map(metrics.map((m) => [m.id, m.type === Metric_Type.BOOLEAN]));
 
   const comparisonCandidatesRaw = await prisma.metricPeriod.findMany({
     where: { allianceId, id: { not: periodId } },
@@ -433,9 +414,9 @@ export async function getAlliancePerformanceReport(params: {
 
   const [attachmentMap, selectedAggregates, comparisonAggregates] = await Promise.all([
     loadAttachmentStatuses(metricIds, attachmentPeriodIds),
-    queryBulkAggregates(allianceId, periodId, metricIds),
+    queryBulkAggregates(allianceId, periodId, metricIds, isBooleanByMetricId),
     resolvedComparePeriodId
-      ? queryBulkAggregates(allianceId, resolvedComparePeriodId, metricIds)
+      ? queryBulkAggregates(allianceId, resolvedComparePeriodId, metricIds, isBooleanByMetricId)
       : Promise.resolve(new Map<string, AggregateSnapshot>()),
   ]);
 
