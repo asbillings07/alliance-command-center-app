@@ -1,0 +1,157 @@
+import { describe, it, expect } from "vitest";
+import { buildCurrentMetricViewModels, type RawMemberMetricEntry } from "./memberPerformanceViewModel";
+
+function entry(overrides: Partial<RawMemberMetricEntry> & { metricId: string }): RawMemberMetricEntry {
+  return {
+    value: 100,
+    recordedAt: new Date("2026-01-01T00:00:00Z"),
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    id: "entry_default",
+    ...overrides,
+  };
+}
+
+const periodMetrics = [{ metricId: "met_kill", metricName: "Kill Points" }];
+
+describe("buildCurrentMetricViewModels", () => {
+  it("returns undefined current/previous/delta when there are no entries for a metric", () => {
+    const [row] = buildCurrentMetricViewModels(periodMetrics, []);
+
+    expect(row).toEqual({
+      metricId: "met_kill",
+      metricName: "Kill Points",
+      current: undefined,
+      previous: undefined,
+      delta: undefined,
+    });
+  });
+
+  it("with exactly one entry, sets current and leaves previous/delta undefined", () => {
+    const [row] = buildCurrentMetricViewModels(periodMetrics, [
+      entry({ metricId: "met_kill", value: 500, id: "e1" }),
+    ]);
+
+    expect(row.current).toEqual({ value: 500, recordedAt: new Date("2026-01-01T00:00:00Z") });
+    expect(row.previous).toBeUndefined();
+    expect(row.delta).toBeUndefined();
+  });
+
+  it("orders by recordedAt desc: the most recent entry is current, the second-most-recent is previous", () => {
+    const [row] = buildCurrentMetricViewModels(periodMetrics, [
+      entry({ metricId: "met_kill", value: 900000, recordedAt: new Date("2026-07-23T10:00:00Z"), id: "e_older" }),
+      entry({ metricId: "met_kill", value: 1250000, recordedAt: new Date("2026-07-24T10:00:00Z"), id: "e_newer" }),
+    ]);
+
+    expect(row.current?.value).toBe(1250000);
+    expect(row.previous?.value).toBe(900000);
+    expect(row.delta).toBe(1250000 - 900000);
+  });
+
+  it("only ever considers the two most recent entries, ignoring older ones entirely", () => {
+    const [row] = buildCurrentMetricViewModels(periodMetrics, [
+      entry({ metricId: "met_kill", value: 100, recordedAt: new Date("2026-01-01T00:00:00Z"), id: "e1" }),
+      entry({ metricId: "met_kill", value: 200, recordedAt: new Date("2026-01-02T00:00:00Z"), id: "e2" }),
+      entry({ metricId: "met_kill", value: 300, recordedAt: new Date("2026-01-03T00:00:00Z"), id: "e3" }),
+    ]);
+
+    expect(row.current?.value).toBe(300);
+    expect(row.previous?.value).toBe(200);
+    // The oldest entry (100) is never surfaced, in current or previous.
+    expect(row.delta).toBe(100);
+  });
+
+  // Tie-break ordering: when recordedAt is identical, fall back to
+  // createdAt, then id - the same deterministic precedence every writer
+  // uses (ADR-018 §4), so this pick can never depend on unspecified SQL
+  // result order for ties.
+  it("breaks a recordedAt tie using createdAt", () => {
+    const sameRecordedAt = new Date("2026-01-01T00:00:00Z");
+    const [row] = buildCurrentMetricViewModels(periodMetrics, [
+      entry({ metricId: "met_kill", value: 100, recordedAt: sameRecordedAt, createdAt: new Date("2026-01-01T00:00:00Z"), id: "e_first" }),
+      entry({ metricId: "met_kill", value: 200, recordedAt: sameRecordedAt, createdAt: new Date("2026-01-01T00:00:01Z"), id: "e_second" }),
+    ]);
+
+    expect(row.current?.value).toBe(200);
+    expect(row.previous?.value).toBe(100);
+  });
+
+  it("breaks a recordedAt+createdAt tie using id", () => {
+    const sameTimestamp = new Date("2026-01-01T00:00:00Z");
+    const [row] = buildCurrentMetricViewModels(periodMetrics, [
+      entry({ metricId: "met_kill", value: 100, recordedAt: sameTimestamp, createdAt: sameTimestamp, id: "aaa" }),
+      entry({ metricId: "met_kill", value: 200, recordedAt: sameTimestamp, createdAt: sameTimestamp, id: "zzz" }),
+    ]);
+
+    // Higher id wins the tie (matches every writer's own tie-break, ADR-018 §4).
+    expect(row.current?.value).toBe(200);
+    expect(row.previous?.value).toBe(100);
+  });
+
+  // Voided-latest-entry ordering: this is the bug fix. A VOIDED row (null
+  // value) that is the most recent event must NOT be skipped past in favor
+  // of an older ACTIVE value - it must correctly suppress "current"
+  // entirely, even though the UI can only show "not recorded" for it today
+  // (see module doc comment for why a distinct "voided" UI state is out of
+  // scope for this fix).
+  it("EXPECTED_BREAKING vs. the pre-fix scan: a voided row as the most recent event correctly clears current (while still surfacing the prior value as previous), instead of falling back to the stale prior active value as current", () => {
+    const [row] = buildCurrentMetricViewModels(periodMetrics, [
+      entry({ metricId: "met_kill", value: 750000, recordedAt: new Date("2026-07-23T10:00:00Z"), id: "e_active" }),
+      entry({ metricId: "met_kill", value: null, recordedAt: new Date("2026-07-24T10:00:00Z"), id: "e_voided" }),
+    ]);
+
+    // Old behavior (removed): filtering out the null value *before* picking
+    // positions would have skipped straight to e_active and shown
+    // current = 750000, previous = undefined - a stale, no-longer-current
+    // number presented as if it were live, with no sign it had since been
+    // voided.
+    expect(row.current).toBeUndefined();
+    // e_active (a real, non-null value) still correctly occupies "position
+    // 1" - the void only ever displaces what counts as *current*, not what
+    // history exists. "previous: 750000, current: not recorded" is the
+    // honest state; "current: 750000" (the old bug) is not.
+    expect(row.previous?.value).toBe(750000);
+    expect(row.delta).toBeUndefined();
+  });
+
+  it("a voided row in the second-most-recent position (not the most recent) still lets the true most recent active value show as current, with no previous", () => {
+    const [row] = buildCurrentMetricViewModels(periodMetrics, [
+      entry({ metricId: "met_kill", value: null, recordedAt: new Date("2026-07-22T10:00:00Z"), id: "e_older_void" }),
+      entry({ metricId: "met_kill", value: 1250000, recordedAt: new Date("2026-07-24T10:00:00Z"), id: "e_newest_active" }),
+    ]);
+
+    expect(row.current?.value).toBe(1250000);
+    expect(row.previous).toBeUndefined();
+    expect(row.delta).toBeUndefined();
+  });
+
+  it("handles multiple metrics independently, using each metric's own entries only", () => {
+    const rows = buildCurrentMetricViewModels(
+      [
+        { metricId: "met_kill", metricName: "Kill Points" },
+        { metricId: "met_vs", metricName: "VS Score" },
+      ],
+      [
+        entry({ metricId: "met_kill", value: 1000, id: "e_kill" }),
+        entry({ metricId: "met_vs", value: 2300, id: "e_vs" }),
+      ],
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.metricId === "met_kill")?.current?.value).toBe(1000);
+    expect(rows.find((r) => r.metricId === "met_vs")?.current?.value).toBe(2300);
+  });
+
+  it("preserves the input periodMetrics order and includes metrics with zero entries", () => {
+    const rows = buildCurrentMetricViewModels(
+      [
+        { metricId: "met_a", metricName: "A" },
+        { metricId: "met_b", metricName: "B" },
+      ],
+      [entry({ metricId: "met_b", value: 5, id: "e1" })],
+    );
+
+    expect(rows.map((r) => r.metricId)).toEqual(["met_a", "met_b"]);
+    expect(rows[0].current).toBeUndefined();
+    expect(rows[1].current?.value).toBe(5);
+  });
+});
