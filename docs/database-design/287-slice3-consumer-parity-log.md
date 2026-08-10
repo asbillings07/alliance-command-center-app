@@ -134,6 +134,23 @@ No follow-up deferred for this consumer — `getAlliancePerformanceReport.ts` ne
 
 ---
 
+## `members/[memberId]/page.tsx` — decided NOT to migrate (kept on raw `MemberMetricEntry` history), bug fixed in place
+
+- **Location:** `app/alliances/[allianceId]/members/[memberId]/page.tsx`, logic extracted to `app/alliances/[allianceId]/members/[memberId]/memberPerformanceViewModel.ts`
+- **Decision:** unlike every other consumer in this log, this one is **not** migrated to `memberPeriodMetricValues`. This page's "current vs. previous" cards answer a different question than the canonical rollup ("what were this member's last two recorded entries, and by how much did the most recent one move") — a raw entry-history contract, not a one-row-per-metric summary contract. Forcing it onto the rollup would either lose the "previous" comparison entirely or require the rollup to grow a "keep N, not just the winner" mode purely for one page's UI, which is exactly the kind of premature abstraction the rollup was designed to avoid. See the extensive module doc comment on `memberPerformanceViewModel.ts` for the full reasoning; this boundary is intentional, not a TODO.
+- **Bug fixed anyway:** the old reduction filtered out a `null`-valued (`VOIDED`) row with a bare `continue` *before* picking the "first two" entries, which meant a void that was a metric's most recent event could be skipped right past, silently letting an older, now-superseded `ACTIVE` value stand in as "current." Selection is now **positional** (pick the two most recent rows by `(recordedAt, createdAt, id)` regardless of value, *then* check each position's own value), so a voided-latest slot now correctly shows "not recorded" for `current` — while a genuinely earlier `ACTIVE` value can still surface as `previous` for context, since that position's own value is real. The query's `orderBy` also gained the `createdAt`/`id` tie-break it was previously missing (every other writer/reader in the codebase already uses the full three-key precedence per ADR-018 §4).
+- **Test:** [`memberPerformanceViewModel.test.ts`](../../app/alliances/[allianceId]/members/[memberId]/memberPerformanceViewModel.test.ts) — pure-function unit tests (no DB needed; the extracted logic has no query of its own) covering no-entries/one-entry/many-entries, recordedAt/createdAt/id tie-breaks, and the two voided-position scenarios below. Not a parity test in the old-vs-new sense used elsewhere in this log, since the "old" behavior here is the bug being fixed, not a baseline to preserve.
+
+| Input scenario | Old result summary | New result summary | Match result |
+|---|---|---|---|
+| Two entries, latest is `ACTIVE`, older is `ACTIVE` | current = latest, previous = older | Identical | `PASS` |
+| Latest event for a metric is `VOIDED`, with an older `ACTIVE` entry beneath it | **Incorrectly** shows current = the older active value (the bug) | current = not recorded; previous = the older active value (shown for context, not disguised as current) | `EXPECTED_BREAKING` — this is the bug fix |
+| An older `VOIDED` entry sits in the "previous" position, with the true latest event being `ACTIVE` | previous = undefined (old scan also filtered this out) | previous = undefined (unchanged — a voided position still shows nothing for that position) | `PASS` |
+
+No follow-up deferred for eventual migration — this consumer is intentionally staying off the rollup permanently, not temporarily. If product later wants a true "value as of last period" comparison (distinct from "last two raw entries in this period"), that's a new feature built on `memberPeriodMetricValues` across two periods, not a change to this page's existing history view.
+
+---
+
 ## Remaining consumers (not yet migrated)
 
 Per the database design §8 inventory, tracked here so this table stays the
@@ -142,7 +159,6 @@ single place progress is visible:
 - [ ] `getAllianceMemberMetricMatrix.ts`'s `selected_values` CTE (archived-inclusion + metric-sort tiering, pre-pagination) — see follow-up above
 - [ ] `getMetricSummaryReport.ts`'s `buildRosterCte`/`countRosterRows`/`queryRosterRows` (paginated, ranked roster table) — see follow-up above
 - [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`) — needs `memberPeriodMetricValues` to accept the audit's `AuditTxClient` (read-only transaction) instead of the global `prisma` client; larger change than a single-consumer swap
-- [ ] `members/[memberId]/page.tsx` (loads all period entries, keeps two — "current vs. previous correction" is a distinct concept from the canonical rollup's single value; needs design thought before migrating, not a 1:1 swap)
 - [ ] `allianceSetup.ts` (setup-checklist count, `targetEntriesCount`)
 - [ ] `betaParticipants.ts` (`has_target_period_data`, `is_complete`)
 - [ ] `platform/setup.ts` (`alliancesWithData`, `getStalledAlliances`)

@@ -6,7 +6,8 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { LeadershipNoteCard } from "./LeadershipNoteCard";
 import { MemberPerformanceSection } from "./MemberPerformanceSection";
-import type { CurrentMetricViewModel, MemberPerformanceProps } from "./MemberPerformanceSection";
+import type { MemberPerformanceProps } from "./MemberPerformanceSection";
+import { buildCurrentMetricViewModels } from "./memberPerformanceViewModel";
 import { MemberActions } from "./MemberActions";
 import { MemberAccountSection } from "./MemberAccountSection";
 import { MemberPeriodSelector } from "./MemberPeriodSelector";
@@ -77,6 +78,10 @@ export default async function MemberPage({ params, searchParams }: Params) {
         : null;
 
     const activeMetricIds = selectedPeriod?.periodMetrics.map((pm) => pm.metricId) ?? [];
+    // buildCurrentMetricViewModels (memberPerformanceViewModel.ts) explains
+    // why this stays a raw MemberMetricEntry history query rather than
+    // moving to the canonical memberPeriodMetricValues read model like other
+    // #287 Slice 3 consumers - read that module doc before changing this.
     const rawMemberEntries = selectedPeriod && activeMetricIds.length > 0
         ? await prisma.memberMetricEntry.findMany({
               where: {
@@ -88,52 +93,23 @@ export default async function MemberPage({ params, searchParams }: Params) {
                   metricId: true,
                   value: true,
                   recordedAt: true,
+                  createdAt: true,
+                  id: true,
               },
               orderBy: [
                   { metricId: "asc" },
                   { recordedAt: "desc" },
+                  { createdAt: "desc" },
+                  { id: "desc" },
               ],
           })
         : [];
-    // ADR-018 §2: a VOIDED row carries a null value; skip it here rather
-    // than surface it as a current/previous value. No write path can create
-    // one yet (the void mutation is a later #287 slice), so this is a no-op
-    // today and a safety net once it exists - this whole "keep two" reduction
-    // is superseded by the canonical read model in a later slice regardless.
-    const memberEntries = rawMemberEntries.filter(
-        (entry): entry is typeof entry & { value: number } => entry.value !== null,
-    );
 
-    const entriesByMetric = new Map<string, typeof memberEntries>();
-    for (const entry of memberEntries) {
-        const list = entriesByMetric.get(entry.metricId) || [];
-        if (list.length < 2) {
-            list.push(entry);
-            entriesByMetric.set(entry.metricId, list);
-        }
-    }
-
-    const performanceMetrics: CurrentMetricViewModel[] = selectedPeriod
-        ? selectedPeriod.periodMetrics.map((pm) => {
-              const entries = entriesByMetric.get(pm.metricId) || [];
-              const current = entries[0];
-              const previous = entries[1];
-
-              return {
-                  metricId: pm.metricId,
-                  metricName: pm.metric.name,
-                  current: current
-                      ? { value: current.value, recordedAt: current.recordedAt }
-                      : undefined,
-                  previous: previous
-                      ? { value: previous.value, recordedAt: previous.recordedAt }
-                      : undefined,
-                  delta:
-                      current && previous
-                          ? current.value - previous.value
-                          : undefined,
-              };
-          })
+    const performanceMetrics = selectedPeriod
+        ? buildCurrentMetricViewModels(
+              selectedPeriod.periodMetrics.map((pm) => ({ metricId: pm.metricId, metricName: pm.metric.name })),
+              rawMemberEntries,
+          )
         : [];
 
     const periodSelector = selectedPeriod ? (
