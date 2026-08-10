@@ -71,13 +71,36 @@ follow-up issue is needed — the fix is already complete.
 
 ---
 
+## `getMetricSummaryReport.ts` (partial — `queryAggregate` + `queryVisualizationRows`)
+
+- **Location:** `app/src/lib/reports/getMetricSummaryReport.ts`
+- **Old implementation:** two independent raw `WITH latest AS (SELECT DISTINCT ON ("allianceMemberId") ...)` queries — one computing a cohort-wide rollup+coverage aggregate (`SUM`/`AVG`/`COUNT ... FILTER`), one fetching one `{allianceMemberId, playerName, archived, value}` row per qualifying member for the chart.
+- **New implementation:** both now derive from `memberPeriodMetricValues(allianceId, periodId, [metricId])` (no `memberIds`/`onlyParticipating` filter — both are already full-cohort, unpaginated queries, same shape as the read model's own default cross join) plus a plain `prisma.allianceMember.findMany` roster fetch. Every counter in the aggregate (`sumValue`, `trueCount`, `invalidActiveMemberCount`, etc.) replicates its old SQL `FILTER` clause's exact condition field-for-field — see `computeAggregateSnapshot`'s doc comment for the full mapping.
+- **Post-review perf fix:** the initial version had `queryAggregate` and `queryVisualizationRows` each independently call `memberPeriodMetricValues` + the roster query — a regression from the old shape's 1-query-each to 2 round-trips each (4 total) for any `SUM`/`AVERAGE`/`NONE+NUMERIC` report, duplicating two full-cohort reads on every request that needed both. Fixed by splitting fetch from computation: `fetchMemberPeriodValuesAndRoster` runs once per period, and both `computeAggregateSnapshot` and `deriveVisualizationRows` are now pure functions deriving their result from that one shared fetch. The comparison period (a different `periodId`) still gets its own independent fetch via a `queryAggregate` wrapper, since it never needs visualization rows.
+- **Test:** [`getMetricSummaryReportAggregateParity.integration.test.ts`](../../app/src/lib/reports/getMetricSummaryReportAggregateParity.integration.test.ts)
+
+| Input scenario | Old result summary | New result summary | Match result |
+|---|---|---|---|
+| Mixed-sign, mixed-participation `NUMERIC` cohort (active contributor, active negative contributor, active no-entry, archived contributor, archived no-entry) | `sumValue: 1139`, `hasNegativeValues: true`, full coverage breakdown | Identical, field-for-field | `PASS` |
+| `BOOLEAN` metric: one `TRUE`, one `FALSE`, one archived `INVALID` (value `5`), one active missing | `trueCount: 1`, `falseCount: 1`, `invalidCount: 1`, `invalidActiveMemberCount: 0` (the invalid value is archived, not active) | Identical | `PASS` |
+| Three corrections (same member+metric, different `recordedAt`) | Aggregate + visualization both use only the latest value | Identical | `PASS` |
+| `DAILY_OBSERVATION + SUM` metric, three daily entries (10 each) for one member | Cohort total sums only the latest single day's raw value (`sumValue: 10`) | Cohort total correctly sums the member's true rolled-up period value (`sumValue: 30`) | `EXPECTED_BREAKING` — see rationale below |
+
+**`EXPECTED_BREAKING` rationale:** identical in kind to the other two consumers above — the old raw `DISTINCT ON` has no concept of a metric's `memberPeriodRollup`, so a cohort-wide `SUM`/`AVERAGE` report was silently adding up each member's *latest single day's* value instead of their true period rollup. **Inert today**: no leader can create a `DAILY_OBSERVATION` metric yet. Becomes correct-by-construction once that UI ships.
+
+Also newly correct-by-construction (not exercised by any parity scenario above because it requires a `DAILY_OBSERVATION + AVERAGE` metric, which — like all `DAILY_OBSERVATION` metrics — doesn't exist in production yet): `sumValue`/`averageValue` are now kept as exact, possibly-fractional sums rather than the old query's `::bigint`-cast total. Safe today because `MemberMetricEntry.value` is an integer column, so every legacy per-member value is already whole; would have silently rounded a fractional per-member `AVERAGE`-rollup value on the way into a cohort-wide `SUM` report otherwise.
+
+**Deliberately not migrated in this PR** (tracked as a follow-up below): `buildRosterCte`/`countRosterRows`/`queryRosterRows` — the paginated, filtered, searched roster table — still reads raw `MemberMetricEntry` rows directly, including a `RANK() OVER (...)` window function computed over the *whole* (unfiltered, unpaginated) cohort before pagination. This is the exact same "value needed at the SQL level across every candidate row, not just the current page" tension deferred for the matrix's `selected_values` CTE above, and inert today for the identical reason.
+
+---
+
 ## Remaining consumers (not yet migrated)
 
 Per the database design §8 inventory, tracked here so this table stays the
 single place progress is visible:
 
 - [ ] `getAllianceMemberMetricMatrix.ts`'s `selected_values` CTE (archived-inclusion + metric-sort tiering, pre-pagination) — see follow-up above
-- [ ] `getMetricSummaryReport.ts` (`queryAggregate`, `queryVisualizationRows`, `buildRosterCte`)
+- [ ] `getMetricSummaryReport.ts`'s `buildRosterCte`/`countRosterRows`/`queryRosterRows` (paginated, ranked roster table) — see follow-up above
 - [ ] `getAlliancePerformanceReport.ts`
 - [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`)
 - [ ] `members/page.tsx` (unbounded in-memory `latestMetricValueByMemberAndMetric` reduction)
