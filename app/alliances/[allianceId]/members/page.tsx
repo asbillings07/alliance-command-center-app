@@ -4,6 +4,7 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 import { metricPeriodChronologicalOrderBy } from "@/app/src/lib/metricPeriodOrdering";
+import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 import Link from "next/link";
 import { MembersFilter } from "./MembersFilter";
 import { MembersPeriodSelector } from "./MembersPeriodSelector";
@@ -119,44 +120,32 @@ export default async function MembersPage({ params, searchParams }: Params) {
 
     const periodMetricIds = periodMetricColumns.map((metric) => metric.metricId);
     const memberIds = allianceMembers.map((member) => member.id);
-    const periodMetricEntries =
+    // #287 Slice 3: sources each member's value from the canonical
+    // member-period rollup (ADR-018 §6) instead of a raw "keep the newest
+    // MemberMetricEntry row" reduction, so a DAILY_OBSERVATION metric's
+    // column correctly shows each member's rolled-up period value (inert
+    // today - no leader can create one yet). `onlyParticipating: true`
+    // pushes the "has at least one active winning slot" filter into SQL,
+    // since every row here is either shown as a value or omitted entirely
+    // (see `MembersTable`'s `?? undefined` cell rendering) - there's no
+    // "show an explicit missing row" case to preserve, unlike a full-cohort
+    // report. `memberIds` bounds the read to this page's already-filtered
+    // roster rather than the whole alliance.
+    const periodMetricValues =
         selectedPeriod && periodMetricIds.length > 0 && memberIds.length > 0
-            ? await prisma.memberMetricEntry.findMany({
-                where: {
-                    periodId: selectedPeriod.id,
-                    metricId: { in: periodMetricIds },
-                    allianceMemberId: { in: memberIds },
-                    allianceMember: { allianceId },
-                },
-                select: {
-                    allianceMemberId: true,
-                    metricId: true,
-                    value: true,
-                    recordedAt: true,
-                    createdAt: true,
-                    id: true,
-                },
-                orderBy: [
-                    { recordedAt: "desc" },
-                    { createdAt: "desc" },
-                    { id: "desc" },
-                ],
+            ? await memberPeriodMetricValues(allianceId, selectedPeriod.id, periodMetricIds, {
+                onlyParticipating: true,
+                memberIds,
             })
             : [];
 
     const latestMetricValueByMemberAndMetric = new Map<string, number>();
-    for (const entry of periodMetricEntries) {
-        // ADR-018 §2: a VOIDED row carries a null value; skip it here rather
-        // than surface it as a member's latest value. No write path can
-        // create one yet (the void mutation is a later #287 slice), so this
-        // is a no-op today and a safety net once it exists - this whole
-        // reduction is superseded by the canonical read model in a later
-        // slice regardless.
-        if (entry.value === null) continue;
-        const key = `${entry.allianceMemberId}:${entry.metricId}`;
-        if (!latestMetricValueByMemberAndMetric.has(key)) {
-            latestMetricValueByMemberAndMetric.set(key, entry.value);
-        }
+    for (const row of periodMetricValues) {
+        // `onlyParticipating: true` guarantees at least one active winning
+        // slot, so `value` is never null here for LATEST/SUM/AVERAGE - this
+        // check is defensive, not load-bearing.
+        if (row.value === null) continue;
+        latestMetricValueByMemberAndMetric.set(`${row.allianceMemberId}:${row.metricId}`, row.value);
     }
     // MembersTable is a Client Component — pass a plain object across the
     // Server/Client boundary rather than a Map.

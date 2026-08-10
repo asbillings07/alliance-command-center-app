@@ -49,16 +49,30 @@ vi.mock("@/app/src/lib/prisma", () => ({
       findFirst: vi.fn(),
       findMany: vi.fn().mockResolvedValue([]),
     },
-    memberMetricEntry: {
-      findMany: vi.fn(),
-    },
   },
 }));
 
+vi.mock("@/app/src/lib/metrics/memberPeriodMetricValues", () => ({
+  memberPeriodMetricValues: vi.fn().mockResolvedValue([]),
+}));
+
 import { prisma } from "@/app/src/lib/prisma";
+import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 import MembersPage from "./page";
+
+/** Builds one `memberPeriodMetricValues` row from a legacy-test-style {allianceMemberId, metricId, value} triple. */
+function rollupRow(allianceMemberId: string, metricId: string, value: number) {
+  return {
+    metricId,
+    allianceMemberId,
+    value,
+    observationCount: 1,
+    lastObservedOn: null,
+    provenance: "Source period value" as const,
+  };
+}
 
 function mockSetupStatus(overrides: Partial<Awaited<ReturnType<typeof getAllianceSetupStatus>>> = {}) {
   vi.mocked(getAllianceSetupStatus).mockResolvedValue({
@@ -81,6 +95,7 @@ describe("MembersPage", () => {
     vi.clearAllMocks();
     mockSetupStatus();
     vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([]);
+    vi.mocked(memberPeriodMetricValues).mockResolvedValue([]);
   });
 
   it("renders actionable empty state CTAs for Admins/Owners when no active members exist", async () => {
@@ -246,32 +261,15 @@ describe("MembersPage", () => {
       ],
     } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findFirst>>);
 
-    vi.mocked(prisma.memberMetricEntry.findMany).mockResolvedValue([
-      {
-        id: "entry_newer",
-        allianceMemberId: "mem_1",
-        metricId: "met_kill",
-        value: 1250000,
-        recordedAt: new Date("2026-07-24T10:00:00Z"),
-        createdAt: new Date("2026-07-24T10:00:00Z"),
-      },
-      {
-        id: "entry_older",
-        allianceMemberId: "mem_1",
-        metricId: "met_kill",
-        value: 900000,
-        recordedAt: new Date("2026-07-23T10:00:00Z"),
-        createdAt: new Date("2026-07-23T10:00:00Z"),
-      },
-      {
-        id: "entry_vs",
-        allianceMemberId: "mem_2",
-        metricId: "met_vs",
-        value: 2300,
-        recordedAt: new Date("2026-07-24T10:00:00Z"),
-        createdAt: new Date("2026-07-24T10:00:00Z"),
-      },
-    ] as unknown as Awaited<ReturnType<typeof prisma.memberMetricEntry.findMany>>);
+    // The "keep the newest of two corrections" case is now resolved inside
+    // memberPeriodMetricValues (real coverage lives in that module's own
+    // rollup-algebra integration tests) - the mock here returns the already-
+    // resolved value directly, matching what the real function would return
+    // for mem_1's two corrections.
+    vi.mocked(memberPeriodMetricValues).mockResolvedValue([
+      rollupRow("mem_1", "met_kill", 1250000),
+      rollupRow("mem_2", "met_vs", 2300),
+    ]);
 
     vi.mocked(prisma.allianceMember.count)
       .mockResolvedValueOnce(2)
@@ -370,16 +368,7 @@ describe("MembersPage", () => {
         },
       ],
     } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findFirst>>);
-    vi.mocked(prisma.memberMetricEntry.findMany).mockResolvedValue([
-      {
-        id: "entry_1",
-        allianceMemberId: "mem_1",
-        metricId: "met_archived",
-        value: 850000,
-        recordedAt: new Date("2026-01-01T00:00:00Z"),
-        createdAt: new Date("2026-01-01T00:00:00Z"),
-      },
-    ] as unknown as Awaited<ReturnType<typeof prisma.memberMetricEntry.findMany>>);
+    vi.mocked(memberPeriodMetricValues).mockResolvedValue([rollupRow("mem_1", "met_archived", 850000)]);
     vi.mocked(prisma.allianceMember.count)
       .mockResolvedValueOnce(1)
       .mockResolvedValueOnce(0);
@@ -499,7 +488,6 @@ describe("MembersPage", () => {
         { metricId: "met_kill", metric: { id: "met_kill", name: "Kill Points" } },
       ],
     } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findFirst>>);
-    vi.mocked(prisma.memberMetricEntry.findMany).mockResolvedValue([]);
     vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
       { id: "per_1", name: "Week 28 Evaluation", active: true },
     ] as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findMany>>);
@@ -534,7 +522,6 @@ describe("MembersPage", () => {
         { metricId: "met_kill", metric: { id: "met_kill", name: "Kill Points" } },
       ],
     } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findFirst>>);
-    vi.mocked(prisma.memberMetricEntry.findMany).mockResolvedValue([]);
     vi.mocked(prisma.allianceMember.count)
       .mockResolvedValueOnce(0)
       .mockResolvedValueOnce(1);
