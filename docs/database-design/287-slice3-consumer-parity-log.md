@@ -215,5 +215,7 @@ single place progress is visible:
 - [ ] `getAllianceMemberMetricMatrix.ts`'s `selected_values` CTE (archived-inclusion + metric-sort tiering, pre-pagination) — see follow-up above
 - [ ] `getMetricSummaryReport.ts`'s `buildRosterCte`/`countRosterRows`/`queryRosterRows` (paginated, ranked roster table) — see follow-up above
 - [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`) — needs `memberPeriodMetricValues` to accept the audit's `AuditTxClient` (read-only transaction) instead of the global `prisma` client; larger change than a single-consumer swap
-- [ ] `platform/alliances.ts` (`hasData` readiness check)
-- [ ] `betaDashboard.ts` (`alliancesWithData`, `getAllianceReadiness`, `getNeedsAttention`)
+
+Closed out (not a `memberPeriodMetricValues` migration — a narrower `status:
+"ACTIVE"` predicate fix instead; see the sections above for each): `platform/setup.ts`,
+`platform/alliances.ts`, `betaDashboard.ts`, `betaParticipants.ts`.
