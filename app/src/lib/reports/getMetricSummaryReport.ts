@@ -23,6 +23,7 @@ import { buildMetricVisualModel, type MetricVisualModel, type VisualCohortRow } 
 import { buildMetricInterpretationSummary } from "@/app/src/lib/reports/metricInterpretationSummary";
 import {
   memberPeriodMetricValues,
+  buildMemberPeriodValueCte,
   type MemberPeriodMetricValue,
 } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 
@@ -65,24 +66,24 @@ export type { MetricVisualModel } from "@/app/src/lib/reports/metricVisualModel"
  *      display filter/search/sort/pagination) — the "total" a leader sees
  *      must never silently change because they searched for a name.
  *   2. A paginated/filtered/sorted roster query for the visible table rows.
- * (2) still runs its own raw SQL, sharing a `latest`-per-member
- * `DISTINCT ON` CTE with itself across pagination/count/rank; (1) now
- * sources its per-member values from the canonical read model instead
- * (#287 Slice 3 — see the partial-migration note below).
+ * Both now source their per-member values from the canonical read model
+ * (ADR-018 §6) rather than their own hand-rolled `DISTINCT ON` (#287
+ * Slice 3 — see below).
  *
- * #287 Slice 3 (partial): `queryAggregate` and `queryVisualizationRows` —
- * both full-cohort, *unpaginated* queries — migrated to
- * `memberPeriodMetricValues` (ADR-018 §6), so a `DAILY_OBSERVATION`
- * metric's cohort total correctly aggregates each member's true rolled-up
- * period value instead of their latest single day's raw entry. The
- * paginated/sorted/searched roster query below (2) did not: its
- * competition ranking is a SQL window function computed over the *whole*
- * (unfiltered, unpaginated) cohort before pagination — the same "value
- * needed at the SQL level across every candidate row, not just the current
- * page" tension deferred for `getAllianceMemberMetricMatrix.ts`'s
- * `selected_values` CTE, and deferred here for the identical reason (see
- * `docs/database-design/287-slice3-consumer-parity-log.md`): inert today,
- * since no leader can create a `DAILY_OBSERVATION` metric yet.
+ * #287 Slice 3: `queryAggregate` and `queryVisualizationRows` (full-cohort,
+ * unpaginated) migrated to `memberPeriodMetricValues` directly. The
+ * paginated/sorted/searched roster query (2) instead composes
+ * `buildMemberPeriodValueCte`'s reusable `WITH`-chain fragment into its own
+ * larger query, since its competition ranking is a SQL window function
+ * that must be computed over the *whole* (unfiltered, unpaginated) cohort
+ * before pagination — the same "value needed at the SQL level across every
+ * candidate row, not just the current page" shape as
+ * `getAllianceMemberMetricMatrix.ts`'s `selected_values` CTE, migrated the
+ * same way. Both closed a real (if previously inert) gap: a
+ * `DAILY_OBSERVATION` metric's cohort total, and now its roster ranking/
+ * sort/archived-inclusion too, correctly use each member's true rolled-up
+ * period value instead of their latest single day's raw entry — see
+ * `docs/database-design/287-slice3-consumer-parity-log.md`.
  */
 
 export type MetricReportSort = "value_desc" | "value_asc" | "name_asc";
@@ -413,15 +414,22 @@ type RosterQueryParams = {
  * filtered/paginated query below would let search or roster filters
  * silently renumber members. `rankMetricRows.ts` is a pure test oracle for
  * this exact ranking semantics (ties, exclusions), not called from here.
+ *
+ * `latest` composes `buildMemberPeriodValueCte` (ADR-018 §6) rather than a
+ * hand-rolled `DISTINCT ON` over raw `MemberMetricEntry` rows, so its
+ * `value` is the true LATEST/SUM/AVERAGE rollup - not just the latest
+ * single day's raw entry - for a `DAILY_OBSERVATION` metric. `latest`'s own
+ * column names (`member_id`, `value`) are kept identical to the pre-#287
+ * shape so `buildRosterFromWhere`/`buildRosterOrderBy` below need no
+ * changes.
  */
 function buildRosterCte(params: RosterQueryParams): Prisma.Sql {
-  const { periodId, metricId, isBooleanMetric } = params;
+  const { allianceId, periodId, metricId, isBooleanMetric } = params;
   return Prisma.sql`
-    WITH latest AS (
-      SELECT DISTINCT ON ("allianceMemberId") "allianceMemberId" AS member_id, value
-      FROM "MemberMetricEntry"
-      WHERE "periodId" = ${periodId} AND "metricId" = ${metricId}
-      ORDER BY "allianceMemberId", "recordedAt" DESC, "createdAt" DESC, id DESC
+    WITH ${buildMemberPeriodValueCte(allianceId, periodId, [metricId])},
+    latest AS (
+      SELECT alliance_member_id AS member_id, value
+      FROM resolved_member_period_values
     ),
     ranked AS (
       SELECT member_id, RANK() OVER (ORDER BY value DESC) AS rank
