@@ -94,6 +94,29 @@ Also newly correct-by-construction (not exercised by any parity scenario above b
 
 ---
 
+## `getAlliancePerformanceReport.ts` (full — `queryBulkAggregates`)
+
+- **Location:** `app/src/lib/reports/getAlliancePerformanceReport.ts`
+- **Old implementation:** one raw `WITH latest AS (SELECT DISTINCT ON ("metricId", "allianceMemberId") ...)` query per request, cross-joining *every* requested metric against *every* alliance member at once (`metric_types` x `AllianceMember`), grouped by `metric_id`, with the same `SUM`/`AVG`/`COUNT ... FILTER` shape as `getMetricSummaryReport.ts`'s old per-metric `queryAggregate` but computed for the whole metric universe in one query.
+- **New implementation:** one multi-metric `memberPeriodMetricValues(allianceId, periodId, metricIds)` call (the read model's own `requested_metrics x AllianceMember` cross join already covers every requested metric, matching the old query's cross join one-for-one) plus one `prisma.allianceMember.findMany` roster fetch, grouped by `metricId` in JS and passed through the **same shared `computeAggregateSnapshot`** (`metricRollup.ts`) that `getMetricSummaryReport.ts` uses — extracted there in this PR specifically so this file's per-metric aggregation rules can never drift from that file's, rather than re-implementing the same boolean-validity/coverage-counting logic a second time. `isBooleanByMetricId` is derived from the caller's already-fetched `metrics` (it needs `Metric.type` for other fields anyway), replacing the old query's own `metric_types` CTE.
+- **Test:** [`getAlliancePerformanceReportBulkAggregateParity.integration.test.ts`](../../app/src/lib/reports/getAlliancePerformanceReportBulkAggregateParity.integration.test.ts) (new parity test) plus the pre-existing [`getAlliancePerformanceReport.integration.test.ts`](../../app/src/lib/reports/getAlliancePerformanceReport.integration.test.ts) (22 tests, unmodified, all passing against the new implementation — proof this migration didn't need to touch the file's own behavioral test suite at all).
+
+| Input scenario | Old result summary | New result summary | Match result |
+|---|---|---|---|
+| Multi-metric batch: `SUM` metric (active + archived contributor), `BOOLEAN` metric (true/false), and a never-attached metric, all in one call | Three independent, correctly isolated per-metric aggregates; the unattached metric still gets a full all-`NULL` cross-join row per member | Identical, field-for-field, for every metric in the batch | `PASS` |
+| `SUM`, `AVERAGE`, `TRUE_RATE`, `NONE` metrics plus one never-attached metric, in the full pre-existing integration suite | Full alliance-wide report body | Identical (all 22 pre-existing tests pass unmodified) | `PASS` |
+| Three corrections (same member+metric, different `recordedAt`) | Collapses to the latest value | Collapses to the latest value (one winning slot) | `PASS` |
+| Invalid legacy `BOOLEAN` value (neither 0 nor 1) | Counted in `expectedCells`/`invalidCount`, excluded from `validCells`/`trueCount`/`falseCount` | Identical | `PASS` |
+| Within a multi-metric batch, one `DAILY_OBSERVATION + SUM` metric alongside one ordinary `PERIOD_VALUE + LATEST` metric, three daily entries (10 each) for one member | Cohort total sums only the latest single day's raw value (`sumValue: 10`); the sibling metric in the same batch is unaffected | Cohort total correctly sums the member's true rolled-up period value (`sumValue: 30`); the sibling metric is identical to old | `EXPECTED_BREAKING` — see rationale below |
+
+**`EXPECTED_BREAKING` rationale:** identical in kind and cause to the three prior consumers' divergences above — the old raw `DISTINCT ON` has no concept of a metric's `memberPeriodRollup`, so an alliance-wide `SUM`/`AVERAGE` metric total was silently adding up each member's *latest single day's* value instead of their true period rollup. **Inert today**: no leader can create a `DAILY_OBSERVATION` metric yet. Becomes correct-by-construction once that UI ships. This migration additionally demonstrates the divergence is *isolated per metric* within a multi-metric batch — an ordinary `PERIOD_VALUE + LATEST` metric queried in the same call as a `DAILY_OBSERVATION + SUM` metric is completely unaffected, since `computeAggregateSnapshot` is derived and grouped independently per `metricId`.
+
+Also newly correct-by-construction, for the same reason noted under `getMetricSummaryReport.ts` above and not separately re-tested here (same shared `computeAggregateSnapshot`, same underlying fix): `sumValue`/`averageValue` are now exact, possibly-fractional sums rather than the old query's `::bigint`-cast total.
+
+No follow-up deferred for this consumer — `getAlliancePerformanceReport.ts` never paginates, sorts, filters, or searches a member roster (that's the member matrix, per its own module doc comment), so it has no paginated/pre-pagination-ranked query analogous to the matrix's `selected_values` CTE or `getMetricSummaryReport.ts`'s roster table left to migrate.
+
+---
+
 ## Remaining consumers (not yet migrated)
 
 Per the database design §8 inventory, tracked here so this table stays the
@@ -101,7 +124,6 @@ single place progress is visible:
 
 - [ ] `getAllianceMemberMetricMatrix.ts`'s `selected_values` CTE (archived-inclusion + metric-sort tiering, pre-pagination) — see follow-up above
 - [ ] `getMetricSummaryReport.ts`'s `buildRosterCte`/`countRosterRows`/`queryRosterRows` (paginated, ranked roster table) — see follow-up above
-- [ ] `getAlliancePerformanceReport.ts`
 - [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`)
 - [ ] `members/page.tsx` (unbounded in-memory `latestMetricValueByMemberAndMetric` reduction)
 - [ ] `members/[memberId]/page.tsx` (loads all period entries, keeps two)

@@ -59,39 +59,115 @@ export type AggregateSnapshot = {
   latestEntryCount: number;
 };
 
-// Exported so the bulk alliance-wide read model (getAlliancePerformanceReport.ts,
-// #264) can map its own per-metric grouped aggregate rows — same column
-// shape plus a `metric_id` discriminator — through identical logic, rather
-// than re-deriving these Number()/mapping rules a second time.
-export type AggregateRawRow = {
-  sum_value: bigint;
-  avg_value: number | null;
-  true_count: bigint;
-  false_count: bigint;
-  invalid_count: bigint;
-  has_negative_values: boolean;
-  current_active_member_count: bigint;
-  recorded_active_member_count: bigint;
-  invalid_active_member_count: bigint;
-  missing_active_member_count: bigint;
-  archived_contributing_member_count: bigint;
-  latest_entry_count: bigint;
-};
+/**
+ * Structural, minimal input shapes for `computeAggregateSnapshot` —
+ * deliberately not `MemberPeriodMetricValue`/the roster query's own return
+ * type, so this file keeps its no-server-only-dependency guarantee (see the
+ * module doc comment) without importing `memberPeriodMetricValues.ts` or
+ * `prisma` at all. Both real call sites' richer types are structural
+ * supersets of these, so no conversion is needed at either.
+ */
+export type AggregateValueInput = { allianceMemberId: string; value: number | null };
+export type AggregateRosterInput = { id: string; archivedAt: Date | null };
 
-export function mapAggregateRow(row: AggregateRawRow): AggregateSnapshot {
+/**
+ * Derives the rollup + coverage aggregate for one metric from its
+ * already-fetched per-member values (`memberPeriodMetricValues`, ADR-018
+ * §6) and the alliance's member roster (both active and archived
+ * contributors) — never against a filtered/paginated slice.
+ *
+ * #287 Slice 3: shared by `getMetricSummaryReport.ts` (one metric per call)
+ * and `getAlliancePerformanceReport.ts` (called once per metric, grouping
+ * a single multi-metric `memberPeriodMetricValues` call by `metricId`
+ * first) — extracted here rather than duplicated, since the
+ * boolean-validity/coverage-counting rules below are exactly the kind of
+ * business logic AGENTS.md warns against hiding in two places that could
+ * silently drift apart. Replaces both files' pre-#287 raw SQL
+ * `DISTINCT ON` + `COUNT(*) FILTER (...)` aggregate queries, so a
+ * `DAILY_OBSERVATION` metric's total correctly aggregates each member's
+ * true rolled-up period value instead of their latest single day's raw
+ * entry (inert today - no leader can create one yet; see
+ * `docs/database-design/287-slice3-consumer-parity-log.md`).
+ *
+ * Every counter below replicates the old SQL's `FILTER` clause exactly,
+ * field for field, to preserve the legacy invariant: `sum`/`average` only
+ * include a *valid* value (boolean-checked when relevant); `hasNegativeValues`
+ * and `latestEntryCount` check raw presence only, never boolean validity;
+ * `archivedContributingMemberCount` counts *any* archived value, valid or
+ * not.
+ *
+ * `sumValue`/`averageValue` are kept as exact (possibly fractional) sums,
+ * not rounded to a whole number the way the old queries' `::bigint` cast
+ * did — safe today, since `MemberMetricEntry.value` is an integer column so
+ * every legacy per-member value is already whole, but correct-by-construction
+ * once a `DAILY_OBSERVATION + AVERAGE` metric's fractional per-member value
+ * (e.g. 12.5) needs to contribute an exact amount to a cohort-wide total,
+ * rather than being silently rounded on the way in.
+ */
+export function computeAggregateSnapshot(
+  values: readonly AggregateValueInput[],
+  roster: readonly AggregateRosterInput[],
+  isBooleanMetric: boolean,
+): AggregateSnapshot {
+  const valueByMember = new Map(values.map((row) => [row.allianceMemberId, row.value]));
+
+  let sumValue = 0;
+  let averageSum = 0;
+  let averageCount = 0;
+  let trueCount = 0;
+  let falseCount = 0;
+  let invalidCount = 0;
+  let hasNegativeValues = false;
+  let currentActiveMemberCount = 0;
+  let recordedActiveMemberCount = 0;
+  let invalidActiveMemberCount = 0;
+  let missingActiveMemberCount = 0;
+  let archivedContributingMemberCount = 0;
+  let latestEntryCount = 0;
+
+  for (const member of roster) {
+    const archived = member.archivedAt !== null;
+    const value = valueByMember.get(member.id) ?? null;
+    const isValid = value !== null && (!isBooleanMetric || isValidBooleanMetricValue(value));
+
+    if (!archived) currentActiveMemberCount++;
+    if (value !== null && value < 0) hasNegativeValues = true;
+    if (value !== null) latestEntryCount++;
+
+    if (isBooleanMetric && value !== null) {
+      if (value === 1) trueCount++;
+      else if (value === 0) falseCount++;
+      else invalidCount++;
+    }
+
+    if (isValid) {
+      sumValue += value;
+      averageSum += value;
+      averageCount++;
+    }
+
+    if (!archived) {
+      if (isValid) recordedActiveMemberCount++;
+      if (isBooleanMetric && value !== null && !isValid) invalidActiveMemberCount++;
+      if (value === null) missingActiveMemberCount++;
+    } else if (value !== null) {
+      archivedContributingMemberCount++;
+    }
+  }
+
   return {
-    sumValue: Number(row.sum_value),
-    averageValue: row.avg_value,
-    trueCount: Number(row.true_count),
-    falseCount: Number(row.false_count),
-    invalidCount: Number(row.invalid_count),
-    hasNegativeValues: row.has_negative_values,
-    currentActiveMemberCount: Number(row.current_active_member_count),
-    recordedActiveMemberCount: Number(row.recorded_active_member_count),
-    invalidActiveMemberCount: Number(row.invalid_active_member_count),
-    missingActiveMemberCount: Number(row.missing_active_member_count),
-    archivedContributingMemberCount: Number(row.archived_contributing_member_count),
-    latestEntryCount: Number(row.latest_entry_count),
+    sumValue,
+    averageValue: averageCount > 0 ? averageSum / averageCount : null,
+    trueCount,
+    falseCount,
+    invalidCount,
+    hasNegativeValues,
+    currentActiveMemberCount,
+    recordedActiveMemberCount,
+    invalidActiveMemberCount,
+    missingActiveMemberCount,
+    archivedContributingMemberCount,
+    latestEntryCount,
   };
 }
 
