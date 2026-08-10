@@ -804,6 +804,11 @@ export async function getMetricSummaryReport(params: {
     metric.summaryKind === MetricSummaryKind.AVERAGE ||
     (metric.summaryKind === MetricSummaryKind.NONE && !isBooleanMetric);
 
+  // Not gated on `needsVisualizationRows`: the roster half of this fetch is
+  // just as required for `computeAggregateSnapshot`'s coverage counts (every
+  // summary kind, including TRUE_RATE/NONE+BOOLEAN) as it is for the chart —
+  // see `fetchMemberPeriodValuesAndRoster`'s doc comment for the full
+  // rationale.
   const [{ values: primaryValues, roster: primaryRoster }, totalRowCount] = await Promise.all([
     fetchMemberPeriodValuesAndRoster(allianceId, periodId, metricId),
     countRosterRows(rosterParams),
