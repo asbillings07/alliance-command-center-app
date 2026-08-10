@@ -433,6 +433,19 @@ export function betaParticipantsDerivationCte(now: Date): Prisma.Sql {
           AND mpm.active = TRUE
           AND m.active = TRUE
       ) AS has_attached_metrics,
+      -- #287 Slice 3 note: this EXISTS treats ANY MemberMetricEntry row
+      -- (status ACTIVE or VOIDED) as "the leader has data," the same bug
+      -- getAllianceSetupStatus's own equivalent check had until it was
+      -- migrated to memberPeriodMetricValues(..., {onlyParticipating:
+      -- true}) (ADR-018 §6) - see docs/database-design/287-slice3-consumer
+      -- -parity-log.md. NOT migrated here yet: this is one EXISTS inside a
+      -- single all-participants CTE, not a per-alliance call the read
+      -- model's current (allianceId, periodId, metricIds) signature can
+      -- drop into directly - fixing this needs either a batched/multi
+      -- -alliance read-model variant or a documented reason this file stays
+      -- on its own SQL, not a one-line swap. Inert today regardless (no
+      -- write path can create a VOIDED row yet); tracked as a Slice 4/5
+      -- follow-up, not silently forgotten.
       EXISTS (
         SELECT 1
         FROM "MemberMetricEntry" mme
@@ -466,6 +479,8 @@ export function betaParticipantsDerivationCte(now: Date): Prisma.Sql {
           WHERE am."allianceId" = ra.alliance_id
             AND am."archivedAt" IS NULL
         )
+        -- Same has_target_period_data EXISTS, inlined - same #287 Slice 3
+        -- gap noted above applies here too.
         AND EXISTS (
           SELECT 1
           FROM "MemberMetricEntry" mme

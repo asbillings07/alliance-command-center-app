@@ -44,13 +44,15 @@ vi.mock("@/app/src/lib/prisma", () => ({
     allianceMember: {
       count: vi.fn().mockResolvedValue(5),
     },
-    memberMetricEntry: {
-      count: vi.fn().mockResolvedValue(0),
-    },
   },
 }));
 
+vi.mock("@/app/src/lib/metrics/memberPeriodMetricValues", () => ({
+  memberPeriodMetricValues: vi.fn().mockResolvedValue([]),
+}));
+
 import { prisma } from "@/app/src/lib/prisma";
+import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { isFeatureEnabled } from "@/app/src/lib/features";
 import AlliancePage from "./page";
@@ -82,7 +84,7 @@ describe("AllianceDashboardPage", () => {
     vi.mocked(prisma.allianceMember.count).mockResolvedValue(5);
     vi.mocked(prisma.allianceMembership.count).mockResolvedValue(1);
     vi.mocked(prisma.invitation.count).mockResolvedValue(0);
-    vi.mocked(prisma.memberMetricEntry.count).mockResolvedValue(0);
+    vi.mocked(memberPeriodMetricValues).mockResolvedValue([]);
     vi.mocked(isFeatureEnabled).mockReturnValue(false);
   });
 

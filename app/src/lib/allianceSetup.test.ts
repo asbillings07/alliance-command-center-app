@@ -24,13 +24,15 @@ vi.mock("./prisma", () => ({
     allianceMember: {
       count: vi.fn(),
     },
-    memberMetricEntry: {
-      count: vi.fn(),
-    },
   },
 }));
 
+vi.mock("./metrics/memberPeriodMetricValues", () => ({
+  memberPeriodMetricValues: vi.fn(),
+}));
+
 import { prisma } from "./prisma";
+import { memberPeriodMetricValues } from "./metrics/memberPeriodMetricValues";
 import { metricPeriodChronologicalOrderBy } from "./metricPeriodOrdering";
 
 const mockPrisma = prisma as unknown as {
@@ -42,8 +44,21 @@ const mockPrisma = prisma as unknown as {
   allianceMembership: { count: ReturnType<typeof vi.fn> };
   invitation: { count: ReturnType<typeof vi.fn> };
   allianceMember: { count: ReturnType<typeof vi.fn> };
-  memberMetricEntry: { count: ReturnType<typeof vi.fn> };
 };
+
+const mockMemberPeriodMetricValues = vi.mocked(memberPeriodMetricValues);
+
+/** One minimal `memberPeriodMetricValues` row - only `.length > 0` matters to this file's own logic. */
+function participatingRow() {
+  return {
+    metricId: "m-1",
+    allianceMemberId: "member-1",
+    value: 1,
+    observationCount: 1,
+    lastObservedOn: null,
+    provenance: "Source period value" as const,
+  };
+}
 
 const defaultTargetPeriod = {
   id: "period-123",
@@ -57,18 +72,14 @@ function mockFullyCompleteCounts() {
   mockPrisma.allianceMembership.count.mockResolvedValue(4);
   mockPrisma.invitation.count.mockResolvedValue(2);
   mockPrisma.allianceMember.count.mockResolvedValue(50);
-  mockPrisma.memberMetricEntry.count.mockImplementation(async (args?: { where?: { periodId?: string } }) => {
-    if (args?.where?.periodId === defaultTargetPeriod.id) {
-      return 150;
-    }
-    return 150;
-  });
+  mockMemberPeriodMetricValues.mockResolvedValue([participatingRow()]);
   mockPrisma.metricPeriod.findFirst.mockResolvedValue(defaultTargetPeriod);
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockPrisma.metricPeriod.findFirst.mockResolvedValue(null);
+  mockMemberPeriodMetricValues.mockResolvedValue([]);
 });
 
 describe("SETUP_TASKS", () => {
@@ -147,7 +158,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
     const status = await getAllianceSetupStatus("alliance-1");
 
@@ -179,7 +189,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.findFirst.mockResolvedValue(defaultTargetPeriod);
 
     const status = await getAllianceSetupStatus("alliance-1");
@@ -198,7 +207,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
     const status = await getAllianceSetupStatus("alliance-1");
     const teamTask = status.tasks.find((t) => t.id === "team");
@@ -221,7 +229,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
     const status = await getAllianceSetupStatus("alliance-1");
 
@@ -243,7 +250,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.findFirst.mockResolvedValue(defaultTargetPeriod);
 
     const leaderPermissions = {
@@ -281,7 +287,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.findFirst.mockResolvedValue(defaultTargetPeriod);
 
     const adminPermissions = {
@@ -315,7 +320,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.findFirst.mockResolvedValue(defaultTargetPeriod);
 
     const status = await getAllianceSetupStatus("alliance-1");
@@ -332,7 +336,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.findFirst.mockResolvedValue(null);
 
     const status = await getAllianceSetupStatus("alliance-1");
@@ -352,7 +355,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
     const leaderPermissions = {
       canViewAlliance: true,
@@ -385,7 +387,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
     const status = await getAllianceSetupStatus("alliance-1");
 
@@ -399,7 +400,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
     const status = await getAllianceSetupStatus("alliance-1");
 
@@ -412,7 +412,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.findFirst.mockResolvedValue(defaultTargetPeriod);
 
     const status = await getAllianceSetupStatus("alliance-1");
@@ -434,7 +433,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
     const leaderPermissions = {
       canViewAlliance: true,
@@ -463,7 +461,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
     const viewerPermissions = {
       canViewAlliance: true,
@@ -520,7 +517,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.findFirst.mockResolvedValue({
       id: "period-attach",
       name: "Season 7",
@@ -541,7 +537,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(5);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.findFirst.mockResolvedValue(defaultTargetPeriod);
 
     const status = await getAllianceSetupStatus("alliance-1");
@@ -556,7 +551,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(5);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
     mockPrisma.metricPeriod.findFirst.mockResolvedValue({
       id: "period-empty",
@@ -592,7 +586,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(0);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
     mockPrisma.metricPeriod.findFirst.mockResolvedValue({
       id: "period-no-metrics",
       name: "Season 7",
@@ -605,18 +598,16 @@ describe("getAllianceSetupStatus", () => {
     expect(metricsTask?.completed).toBe(false);
   });
 
-  it("evaluates data setup task as incomplete when historical entries exist but active target period is empty", async () => {
+  it("evaluates data setup task as incomplete when the active target period itself has no participating entries", async () => {
     mockPrisma.metric.count.mockResolvedValue(2);
     mockPrisma.metricPeriod.count.mockResolvedValue(2);
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(5);
-    mockPrisma.memberMetricEntry.count.mockImplementation(async (args?: { where?: { periodId?: string } }) => {
-      if (args?.where?.periodId === "period-active-empty") {
-        return 0;
-      }
-      return 150;
-    });
+    // memberPeriodMetricValues is only ever called scoped to the target
+    // period's own id (it's a required positional arg, not inferred) - a
+    // never-empty result for some *other*, historical period can't leak in.
+    mockMemberPeriodMetricValues.mockResolvedValue([]);
 
     mockPrisma.metricPeriod.findFirst.mockResolvedValue({
       id: "period-active-empty",
@@ -628,6 +619,12 @@ describe("getAllianceSetupStatus", () => {
     const dataTask = status.tasks.find((t) => t.id === "data");
 
     expect(dataTask?.completed).toBe(false);
+    expect(mockMemberPeriodMetricValues).toHaveBeenCalledWith(
+      "alliance-1",
+      "period-active-empty",
+      ["m-1"],
+      { onlyParticipating: true },
+    );
   });
 
   it("selects active period deterministically when multiple active periods exist", async () => {
@@ -636,7 +633,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(5);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
     mockPrisma.metricPeriod.findFirst.mockResolvedValue({
       id: "period-latest-active",
@@ -663,7 +659,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(5);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(0);
 
     mockPrisma.metricPeriod.findFirst.mockResolvedValue({
       id: "period-inactive-attachment",
@@ -699,7 +694,6 @@ describe("getAllianceSetupStatus", () => {
     mockPrisma.allianceMembership.count.mockResolvedValue(1);
     mockPrisma.invitation.count.mockResolvedValue(0);
     mockPrisma.allianceMember.count.mockResolvedValue(5);
-    mockPrisma.memberMetricEntry.count.mockResolvedValue(50);
 
     mockPrisma.metricPeriod.findFirst.mockResolvedValue({
       id: "period-with-inactive-entries",
