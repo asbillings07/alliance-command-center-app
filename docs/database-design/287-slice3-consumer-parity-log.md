@@ -172,6 +172,26 @@ No follow-up deferred for eventual migration — this consumer is intentionally 
 
 ---
 
+## `platform/setup.ts`, `platform/alliances.ts`, `betaDashboard.ts` (predicate fix, not a `memberPeriodMetricValues` migration)
+
+- **Location:** `app/src/lib/platform/setup.ts` (`getSetupFunnel`'s `alliancesWithData`, `getStalledAlliances`), `app/src/lib/platform/alliances.ts` (`getAllianceReadiness`'s `hasData` via `allianceReadinessSelect`'s `_count.metricEntries`), `app/src/lib/betaDashboard.ts` (`getFunnelStats`'s `alliancesWithData`, `getAllianceReadiness`'s `hasData`, `getNeedsAttention`'s stuck-alliance check).
+- **Why this isn't a `memberPeriodMetricValues` migration:** these ask a coarser "has this alliance *ever* had real evaluation data, in any period" question, with no period scoping and no latest-wins semantics — a fundamentally different shape than the canonical read model's `(allianceId, periodId, metricIds)` signature. The fix is narrowing the Prisma relation filter/count from "any row" to `status: "ACTIVE"` only, not swapping in the read model.
+- **Old implementation:** `allianceMembers: { some: { metricEntries: { some: {} } } }` (or `none: {...}` for the inverse), and `_count: { select: { metricEntries: true } }` for the JS-side `hasData` boolean — all counted `VOIDED` rows as "has data."
+- **New implementation:** the same shapes with `status: "ACTIVE"` added to each `metricEntries` filter/count.
+- **Explicitly left untouched (by design, same reasoning as `members/[memberId]/page.tsx`):** every activity-timeline/recent-activity read in these same three files — `getAllianceHealth`'s/`getAllianceStats`'s `activeToday`, `getAllianceReadiness`'s (both files) `lastActivity`, `getAllianceTimeline`'s `firstDataset`/`lastActivity` events, and `getRecentActivity`'s recent-entries feed. These intentionally surface historical context, including `VOIDED` rows — a correction/void is still a real activity event worth showing an operator, and "first dataset" is a historical milestone, not a current-state completeness check.
+- **Tests:** [`platform/setup.integration.test.ts`](../../app/src/lib/platform/setup.integration.test.ts), [`platform/alliances.integration.test.ts`](../../app/src/lib/platform/alliances.integration.test.ts), [`betaDashboard.integration.test.ts`](../../app/src/lib/betaDashboard.integration.test.ts) (all new, real Postgres)
+
+| Input scenario | Old result summary | New result summary | Match result |
+|---|---|---|---|
+| A real `ACTIVE` entry exists, anywhere, for the alliance | Counted as "has data" / ready / not stuck | Identical | `PASS` |
+| Zero entries at all for the alliance | Not "has data" / stalled / stuck | Identical | `PASS` |
+| The alliance's *only* entry, anywhere, is `VOIDED` | **Incorrectly** counted as "has data" / ready / not stuck (a row exists) | Correctly not "has data" / stalled / stuck (zero `ACTIVE` rows) | `EXPECTED_BREAKING` — see rationale below |
+| A `VOIDED` entry's timestamp for `lastActivity`/`firstDataset`/recent-activity | Surfaced | Still surfaced (unchanged, by design) | `PASS` |
+
+**`EXPECTED_BREAKING` rationale:** identical in kind to `allianceSetup.ts`'s divergence above — "a row exists" isn't the same question as "real, currently-active data exists." **Inert today**: no write path can create a `VOIDED` row yet. This is Platform Console/beta-ops telemetry (ADR-010: operational tooling, not the core leadership-facing surface), so treated as a P3/P4-priority correctness fix rather than a blocking one.
+
+---
+
 ## Remaining consumers (not yet migrated)
 
 Per the database design §8 inventory, tracked here so this table stays the
@@ -181,8 +201,5 @@ single place progress is visible:
 - [ ] `getMetricSummaryReport.ts`'s `buildRosterCte`/`countRosterRows`/`queryRosterRows` (paginated, ranked roster table) — see follow-up above
 - [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`) — needs `memberPeriodMetricValues` to accept the audit's `AuditTxClient` (read-only transaction) instead of the global `prisma` client; larger change than a single-consumer swap
 - [ ] `betaParticipants.ts` (`has_target_period_data`, `is_complete`) — same bug as `allianceSetup.ts` above, now documented in-line and via a dedicated latent-parity test; needs a batched/multi-alliance read-model variant (it's one `EXISTS` inside a single all-participants CTE, not a per-alliance call)
-- [ ] `allianceSetup.ts` (setup-checklist count, `targetEntriesCount`)
-- [ ] `betaParticipants.ts` (`has_target_period_data`, `is_complete`)
-- [ ] `platform/setup.ts` (`alliancesWithData`, `getStalledAlliances`)
 - [ ] `platform/alliances.ts` (`hasData` readiness check)
 - [ ] `betaDashboard.ts` (`alliancesWithData`, `getAllianceReadiness`, `getNeedsAttention`)
