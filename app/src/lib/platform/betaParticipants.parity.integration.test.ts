@@ -399,23 +399,21 @@ describeIntegration("betaParticipants SQL/TS parity [integration]", () => {
     );
   });
 
-  // #287 Slice 3: getAllianceSetupStatus's "data" task now sources
-  // targetPeriodHasEntries from memberPeriodMetricValues(...,
-  // {onlyParticipating: true}) (ADR-018 §6), which correctly ignores a
-  // VOIDED row. This CTE's own has_target_period_data/is_complete
-  // (betaParticipants.ts) were NOT migrated in the same PR (see the
-  // module-doc comment beside them) - they're still a bare EXISTS over any
-  // MemberMetricEntry row regardless of status, so the two independently-
-  // computed values this file's own parity test asserts stay equal above
-  // WILL diverge once a VOIDED row exists. Documented here, not silently
-  // left to surprise a future test run - EXPECTED_BREAKING, and inert today
-  // (no write path can create a VOIDED row yet).
-  it("EXPECTED_BREAKING (latent, inert today): a voided-only target-period entry would make this CTE's is_complete diverge from getAllianceSetupStatus's isComplete", async () => {
-    const user = await makeUser("parity-voided-latent");
+  // #287 Slice 3 follow-up: has_target_period_data/is_complete
+  // (betaParticipants.ts) now require mme.status = 'ACTIVE', the same
+  // bare predicate as platform/setup.ts's, platform/alliances.ts's, and
+  // betaDashboard.ts's "has data" checks (not allianceSetup.ts's full
+  // memberPeriodMetricValues slot-winner semantics - see the module-doc
+  // comment beside the SQL). This closes the latent divergence the
+  // previous version of this test documented: getAllianceSetupStatus's
+  // isComplete and this CTE's isComplete stay in parity for a voided-only
+  // target period, same as every other scenario in this file.
+  async function makeVoidedOnlyAllianceSetup(label: string) {
+    const user = await makeUser(label);
     const invitation = await trackInvitation(user.email);
     await acceptBetaInvitation(invitation.id, user.id);
 
-    const alliance = await makeAlliance("Voided Latent");
+    const alliance = await makeAlliance(label);
     const membership = await prisma.allianceMembership.create({
       data: { allianceId: alliance.id, userId: user.id, role: "OWNER" },
     });
@@ -439,9 +437,16 @@ describeIntegration("betaParticipants SQL/TS parity [integration]", () => {
     });
 
     const member = await prisma.allianceMember.create({
-      data: { allianceId: alliance.id, playerName: "VoidedLatentPlayer" },
+      data: { allianceId: alliance.id, playerName: `${label}Player` },
     });
     createdMemberIds.push(member.id);
+
+    return { alliance, invitation, period, metric, member };
+  }
+
+  it("EXPECTED_BREAKING vs. the pre-fix EXISTS: a voided-only target-period entry does not count toward is_complete, and matches getAllianceSetupStatus's isComplete", async () => {
+    const { alliance, invitation, period, metric, member } =
+      await makeVoidedOnlyAllianceSetup("parity-voided-fixed");
 
     // The member's ONLY entry for the target period is a void - no write
     // path can create this today (the void mutation is a later #287
@@ -454,12 +459,53 @@ describeIntegration("betaParticipants SQL/TS parity [integration]", () => {
     const setupStatus = await getAllianceSetupStatus(alliance.id);
     const cteRow = await getCteRow(invitation.participantId);
 
-    // getAllianceSetupStatus (fixed): a voided-only period correctly has NO
-    // participating entries, so "data" stays incomplete.
+    // Old behavior (removed): a bare EXISTS over any MemberMetricEntry
+    // row would have counted this VOIDED row, incorrectly reporting the
+    // alliance as fully set up (is_complete: true).
+    expect(cteRow.isComplete).toBe(false);
+    expect(cteRow.hasTargetPeriodData).toBe(false);
+    // Parity restored: both independently-computed values agree again.
+    expect(cteRow.isComplete).toBe(setupStatus.isComplete);
+  });
+
+  it("marks is_complete/hasTargetPeriodData true, in parity with getAllianceSetupStatus, once a real ACTIVE entry exists", async () => {
+    const { alliance, invitation, period, metric, member } =
+      await makeVoidedOnlyAllianceSetup("parity-active-fixed");
+
+    await prisma.memberMetricEntry.create({
+      data: { allianceMemberId: member.id, periodId: period.id, metricId: metric.id, value: 100 },
+    });
+
+    const setupStatus = await getAllianceSetupStatus(alliance.id);
+    const cteRow = await getCteRow(invitation.participantId);
+
+    expect(cteRow.isComplete).toBe(true);
+    expect(cteRow.hasTargetPeriodData).toBe(true);
+    expect(cteRow.isComplete).toBe(setupStatus.isComplete);
+  });
+
+  it("KNOWN GAP (doubly inert - needs a VOIDED row AND a same-slot ACTIVE predecessor, neither writable today): an ACTIVE entry later voided for the same slot still diverges from getAllianceSetupStatus", async () => {
+    const { alliance, invitation, period, metric, member } =
+      await makeVoidedOnlyAllianceSetup("parity-active-then-voided-gap");
+
+    // Same (metric, member, observedOn) slot: an ACTIVE row, then a later
+    // VOIDED correction. getAllianceSetupStatus's memberPeriodMetricValues
+    // re-derives the CURRENT winner per slot (ADR-018 §1) and correctly
+    // returns to "no data." This CTE's bare EXISTS only asks "did an
+    // ACTIVE row ever exist here" and does not re-check the later void -
+    // this is the one gap the module-doc comment beside the SQL calls out
+    // as intentionally not closed by this follow-up.
+    await prisma.memberMetricEntry.create({
+      data: { allianceMemberId: member.id, periodId: period.id, metricId: metric.id, value: 50, recordedAt: new Date("2026-07-01T10:00:00Z") },
+    });
+    await prisma.memberMetricEntry.create({
+      data: { allianceMemberId: member.id, periodId: period.id, metricId: metric.id, value: null, status: "VOIDED", recordedAt: new Date("2026-07-02T10:00:00Z") },
+    });
+
+    const setupStatus = await getAllianceSetupStatus(alliance.id);
+    const cteRow = await getCteRow(invitation.participantId);
+
     expect(setupStatus.isComplete).toBe(false);
-    // This CTE (not yet migrated): its EXISTS only checks "a row exists,"
-    // which a VOIDED row satisfies just as well as an ACTIVE one - so it
-    // incorrectly reports the alliance as fully set up.
     expect(cteRow.isComplete).toBe(true);
     expect(cteRow.isComplete).not.toBe(setupStatus.isComplete);
   });

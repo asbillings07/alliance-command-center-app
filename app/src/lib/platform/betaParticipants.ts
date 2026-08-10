@@ -433,19 +433,27 @@ export function betaParticipantsDerivationCte(now: Date): Prisma.Sql {
           AND mpm.active = TRUE
           AND m.active = TRUE
       ) AS has_attached_metrics,
-      -- #287 Slice 3 note: this EXISTS treats ANY MemberMetricEntry row
-      -- (status ACTIVE or VOIDED) as "the leader has data," the same bug
-      -- getAllianceSetupStatus's own equivalent check had until it was
-      -- migrated to memberPeriodMetricValues(..., {onlyParticipating:
-      -- true}) (ADR-018 §6) - see docs/database-design/287-slice3-consumer
-      -- -parity-log.md. NOT migrated here yet: this is one EXISTS inside a
-      -- single all-participants CTE, not a per-alliance call the read
-      -- model's current (allianceId, periodId, metricIds) signature can
-      -- drop into directly - fixing this needs either a batched/multi
-      -- -alliance read-model variant or a documented reason this file stays
-      -- on its own SQL, not a one-line swap. Inert today regardless (no
-      -- write path can create a VOIDED row yet); tracked as a Slice 4/5
-      -- follow-up, not silently forgotten.
+      -- #287 Slice 3 follow-up: ACTIVE-only, same fix and same reasoning
+      -- as platform/setup.ts's, platform/alliances.ts's, and
+      -- betaDashboard.ts's "has data" checks - a VOIDED row's value is
+      -- always null, so it isn't real evaluation data (see the
+      -- MemberMetricEntry status/value CHECK constraint). See
+      -- docs/database-design/287-slice3-consumer-parity-log.md.
+      --
+      -- This is the same bare status = 'ACTIVE' predicate as those three
+      -- files, NOT allianceSetup.ts's full memberPeriodMetricValues
+      -- slot-winner semantics (ADR-018 §6) - it doesn't re-derive "the
+      -- CURRENT winner for this (metric, member, observedOn) slot," only
+      -- "did an ACTIVE row ever exist here." The one case that still
+      -- diverges from allianceSetup.ts: an ACTIVE entry later voided as a
+      -- correction for the exact same slot would still satisfy this
+      -- EXISTS. Reproducing full slot-winner logic here would mean
+      -- reimplementing memberPeriodMetricValues' DISTINCT ON inline in
+      -- this already-large all-participants CTE, which isn't warranted
+      -- for this Platform Console signal (ADR-010: operational tooling,
+      -- not the core leadership-facing surface). Doubly inert today: it
+      -- needs a VOIDED row at all (no write path yet) AND a same-slot
+      -- ACTIVE row preceding it.
       EXISTS (
         SELECT 1
         FROM "MemberMetricEntry" mme
@@ -455,6 +463,7 @@ export function betaParticipantsDerivationCte(now: Date): Prisma.Sql {
         JOIN "Metric" m ON m.id = mme."metricId"
         WHERE tp.period_id IS NOT NULL
           AND mme."periodId" = tp.period_id
+          AND mme."status" = 'ACTIVE'
           AND mpm.active = TRUE
           AND m.active = TRUE
           AND mme."allianceMemberId" IN (
@@ -480,7 +489,7 @@ export function betaParticipantsDerivationCte(now: Date): Prisma.Sql {
             AND am."archivedAt" IS NULL
         )
         -- Same has_target_period_data EXISTS, inlined - same #287 Slice 3
-        -- gap noted above applies here too.
+        -- follow-up (ACTIVE-only) noted above applies here too.
         AND EXISTS (
           SELECT 1
           FROM "MemberMetricEntry" mme
@@ -489,6 +498,7 @@ export function betaParticipantsDerivationCte(now: Date): Prisma.Sql {
            AND mpm."metricId" = mme."metricId"
           JOIN "Metric" m ON m.id = mme."metricId"
           WHERE mme."periodId" = tp.period_id
+            AND mme."status" = 'ACTIVE'
             AND mpm.active = TRUE
             AND m.active = TRUE
             AND mme."allianceMemberId" IN (
