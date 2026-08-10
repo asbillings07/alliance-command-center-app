@@ -5,6 +5,7 @@ import {
   resolveTargetPeriod,
   type TargetPeriod,
 } from "./periods/resolveTargetPeriod";
+import { memberPeriodMetricValues } from "./metrics/memberPeriodMetricValues";
 
 /**
  * Alliance setup represents the readiness of the alliance,
@@ -88,7 +89,6 @@ type SetupCounts = {
   memberships: number;
   invitations: number;
   members: number;
-  metricEntries: number;
 };
 
 const DATA_BLOCKED_BY_MEMBERS_REASON =
@@ -106,7 +106,7 @@ function getMembersImportHref(allianceId: string): string {
  * This avoids N+1 queries when checking setup status.
  */
 async function getSetupCounts(allianceId: string): Promise<SetupCounts> {
-  const [metrics, periods, memberships, invitations, members, metricEntries] =
+  const [metrics, periods, memberships, invitations, members] =
     await Promise.all([
       prisma.metric.count({ where: { allianceId } }),
       prisma.metricPeriod.count({ where: { allianceId } }),
@@ -121,12 +121,9 @@ async function getSetupCounts(allianceId: string): Promise<SetupCounts> {
         },
       }),
       prisma.allianceMember.count({ where: { allianceId, archivedAt: null } }),
-      prisma.memberMetricEntry.count({
-        where: { allianceMember: { allianceId } },
-      }),
     ]);
 
-  return { metrics, periods, memberships, invitations, members, metricEntries };
+  return { metrics, periods, memberships, invitations, members };
 }
 
 function buildCompletionByTask(
@@ -264,14 +261,19 @@ export async function getAllianceSetupStatus(
   if (targetPeriod) {
     const activeMetricIds = targetPeriod.periodMetrics.map((pm) => pm.metricId);
     if (activeMetricIds.length > 0) {
-      const targetEntriesCount = await prisma.memberMetricEntry.count({
-        where: {
-          periodId: targetPeriod.id,
-          metricId: { in: activeMetricIds },
-          allianceMember: { allianceId },
-        },
-      });
-      targetPeriodHasEntries = targetEntriesCount > 0;
+      // #287 Slice 3: sources this from the canonical member-period rollup
+      // (ADR-018 §6) rather than a raw MemberMetricEntry row count, so a
+      // period whose only rows have since been voided doesn't falsely mark
+      // "Import Evaluation Results" complete - onlyParticipating narrows to
+      // members with at least one active winning slot, exactly the
+      // "has anyone's data actually landed here" question this task asks.
+      const participatingValues = await memberPeriodMetricValues(
+        allianceId,
+        targetPeriod.id,
+        activeMetricIds,
+        { onlyParticipating: true },
+      );
+      targetPeriodHasEntries = participatingValues.length > 0;
     }
   }
 

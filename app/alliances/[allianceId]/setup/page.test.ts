@@ -40,9 +40,6 @@ vi.mock("@/app/src/lib/prisma", () => ({
     allianceMember: {
       count: vi.fn(),
     },
-    memberMetricEntry: {
-      count: vi.fn(),
-    },
   },
 }));
 
@@ -56,7 +53,9 @@ function mockFreshAllianceCounts() {
   vi.mocked(prisma.allianceMembership.count).mockResolvedValue(1);
   vi.mocked(prisma.invitation.count).mockResolvedValue(0);
   vi.mocked(prisma.allianceMember.count).mockResolvedValue(0);
-  vi.mocked(prisma.memberMetricEntry.count).mockResolvedValue(0);
+  // Every test in this file leaves the target period null (see below), so
+  // getAllianceSetupStatus's "data" task never reaches its
+  // memberPeriodMetricValues call - no mock needed for it here.
   vi.mocked(prisma.metricPeriod.findFirst).mockResolvedValue(null);
 }
 

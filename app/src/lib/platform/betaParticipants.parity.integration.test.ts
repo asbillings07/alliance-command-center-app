@@ -398,4 +398,69 @@ describeIntegration("betaParticipants SQL/TS parity [integration]", () => {
       attention.since?.toISOString() ?? undefined,
     );
   });
+
+  // #287 Slice 3: getAllianceSetupStatus's "data" task now sources
+  // targetPeriodHasEntries from memberPeriodMetricValues(...,
+  // {onlyParticipating: true}) (ADR-018 §6), which correctly ignores a
+  // VOIDED row. This CTE's own has_target_period_data/is_complete
+  // (betaParticipants.ts) were NOT migrated in the same PR (see the
+  // module-doc comment beside them) - they're still a bare EXISTS over any
+  // MemberMetricEntry row regardless of status, so the two independently-
+  // computed values this file's own parity test asserts stay equal above
+  // WILL diverge once a VOIDED row exists. Documented here, not silently
+  // left to surprise a future test run - EXPECTED_BREAKING, and inert today
+  // (no write path can create a VOIDED row yet).
+  it("EXPECTED_BREAKING (latent, inert today): a voided-only target-period entry would make this CTE's is_complete diverge from getAllianceSetupStatus's isComplete", async () => {
+    const user = await makeUser("parity-voided-latent");
+    const invitation = await trackInvitation(user.email);
+    await acceptBetaInvitation(invitation.id, user.id);
+
+    const alliance = await makeAlliance("Voided Latent");
+    const membership = await prisma.allianceMembership.create({
+      data: { allianceId: alliance.id, userId: user.id, role: "OWNER" },
+    });
+    createdMembershipIds.push(membership.id);
+    await prisma.betaInvitation.update({
+      where: { id: invitation.id },
+      data: { allianceId: alliance.id },
+    });
+
+    const period = await prisma.metricPeriod.create({
+      data: { allianceId: alliance.id, name: "P1", active: true, startsAt: new Date("2026-07-01T00:00:00Z") },
+    });
+    createdPeriodIds.push(period.id);
+
+    const metric = await prisma.metric.create({
+      data: { allianceId: alliance.id, name: "VS", type: "NUMERIC", active: true },
+    });
+    createdMetricIds.push(metric.id);
+    await prisma.metricPeriodMetric.create({
+      data: { periodId: period.id, metricId: metric.id, weight: 1, required: true, active: true },
+    });
+
+    const member = await prisma.allianceMember.create({
+      data: { allianceId: alliance.id, playerName: "VoidedLatentPlayer" },
+    });
+    createdMemberIds.push(member.id);
+
+    // The member's ONLY entry for the target period is a void - no write
+    // path can create this today (the void mutation is a later #287
+    // slice), but nothing in the schema itself prevents constructing one
+    // directly for this test.
+    await prisma.memberMetricEntry.create({
+      data: { allianceMemberId: member.id, periodId: period.id, metricId: metric.id, value: null, status: "VOIDED" },
+    });
+
+    const setupStatus = await getAllianceSetupStatus(alliance.id);
+    const cteRow = await getCteRow(invitation.participantId);
+
+    // getAllianceSetupStatus (fixed): a voided-only period correctly has NO
+    // participating entries, so "data" stays incomplete.
+    expect(setupStatus.isComplete).toBe(false);
+    // This CTE (not yet migrated): its EXISTS only checks "a row exists,"
+    // which a VOIDED row satisfies just as well as an ACTIVE one - so it
+    // incorrectly reports the alliance as fully set up.
+    expect(cteRow.isComplete).toBe(true);
+    expect(cteRow.isComplete).not.toBe(setupStatus.isComplete);
+  });
 });

@@ -151,6 +151,27 @@ No follow-up deferred for eventual migration — this consumer is intentionally 
 
 ---
 
+## `allianceSetup.ts` (full — `targetPeriodHasEntries`, the "data" setup task)
+
+- **Location:** `app/src/lib/allianceSetup.ts`
+- **Old implementation:** `prisma.memberMetricEntry.count({ where: { periodId, metricId: { in: activeMetricIds }, allianceMember: { allianceId } } }) > 0`.
+- **New implementation:** `memberPeriodMetricValues(allianceId, targetPeriod.id, activeMetricIds, { onlyParticipating: true }).length > 0`.
+- **Incidental cleanup:** `getSetupCounts`'s alliance-wide `metricEntries` count (`prisma.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })`) was dead code — fetched every call, read by nothing downstream — and was removed alongside this migration since it lived in the same function.
+- **Test:** [`allianceSetup.integration.test.ts`](../../app/src/lib/allianceSetup.integration.test.ts) (new, real Postgres)
+
+| Input scenario | Old result summary | New result summary | Match result |
+|---|---|---|---|
+| A real `ACTIVE` entry exists for the target period | "data" task complete | Identical | `PASS` |
+| Zero entries for the target period | "data" task incomplete | Identical | `PASS` |
+| The target period's *only* entry is `VOIDED` | **Incorrectly** marks "data" complete (a row exists, regardless of status) | Correctly stays incomplete (zero active winning slots) | `EXPECTED_BREAKING` — see rationale below |
+| An `ACTIVE` entry is later `VOIDED` for the same slot | **Incorrectly** stays complete forever once any row ever existed | Correctly re-derives the slot's current winner and returns to incomplete | `EXPECTED_BREAKING` — see rationale below |
+
+**`EXPECTED_BREAKING` rationale:** identical in kind to `members/page.tsx`'s divergence above — a raw row-count can't distinguish "a value was recorded" from "a value was recorded and then voided." **Inert today**: no write path can create a `VOIDED` row yet. Becomes correct-by-construction once void support ships, rather than letting a leader's setup checklist falsely claim "Import Evaluation Results" is done for a period with no real data.
+
+**Cross-consumer parity note:** `betaParticipants.ts`'s own `has_target_period_data`/`is_complete` CTE fields (used by the Platform Console beta dashboard) compute the *exact same concept* independently, via a bare `EXISTS (SELECT 1 FROM "MemberMetricEntry" ...)` — the identical bug, not yet fixed there. `betaParticipants.parity.integration.test.ts` explicitly asserts `cteRow.isComplete === setupStatus.isComplete` across scenarios; a new test in that file (`EXPECTED_BREAKING (latent, inert today): ...`) now documents that this equality will start failing the moment a `VOIDED` row exists, until `betaParticipants.ts` is migrated too (tracked below — it's a bare `EXISTS` inside one large all-participants CTE, not a per-alliance call this migration's `memberPeriodMetricValues` signature drops into directly, so it needs its own migration design, not a copy-paste of this PR's fix).
+
+---
+
 ## Remaining consumers (not yet migrated)
 
 Per the database design §8 inventory, tracked here so this table stays the
@@ -159,6 +180,7 @@ single place progress is visible:
 - [ ] `getAllianceMemberMetricMatrix.ts`'s `selected_values` CTE (archived-inclusion + metric-sort tiering, pre-pagination) — see follow-up above
 - [ ] `getMetricSummaryReport.ts`'s `buildRosterCte`/`countRosterRows`/`queryRosterRows` (paginated, ranked roster table) — see follow-up above
 - [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`) — needs `memberPeriodMetricValues` to accept the audit's `AuditTxClient` (read-only transaction) instead of the global `prisma` client; larger change than a single-consumer swap
+- [ ] `betaParticipants.ts` (`has_target_period_data`, `is_complete`) — same bug as `allianceSetup.ts` above, now documented in-line and via a dedicated latent-parity test; needs a batched/multi-alliance read-model variant (it's one `EXISTS` inside a single all-participants CTE, not a per-alliance call)
 - [ ] `allianceSetup.ts` (setup-checklist count, `targetEntriesCount`)
 - [ ] `betaParticipants.ts` (`has_target_period_data`, `is_complete`)
 - [ ] `platform/setup.ts` (`alliancesWithData`, `getStalledAlliances`)
