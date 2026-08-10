@@ -192,6 +192,21 @@ No follow-up deferred for eventual migration — this consumer is intentionally 
 
 ---
 
+## `betaParticipants.ts` (predicate fix, closes the `allianceSetup.ts` cross-consumer parity gap)
+
+- **Location:** `app/src/lib/platform/betaParticipants.ts`'s `has_target_period_data`/`is_complete` CTE fields.
+- **Same fix shape as `platform/setup.ts`/`platform/alliances.ts`/`betaDashboard.ts` above:** `mme.status = 'ACTIVE'` added to both `EXISTS (SELECT 1 FROM "MemberMetricEntry" mme ...)` clauses — **not** a `memberPeriodMetricValues` migration (it's one `EXISTS` inside a single all-participants CTE, not a per-alliance call the read model's `(allianceId, periodId, metricIds)` signature drops into) and **not** `allianceSetup.ts`'s full slot-winner semantics.
+- **Test:** [`betaParticipants.parity.integration.test.ts`](../../app/src/lib/platform/betaParticipants.parity.integration.test.ts) — the SQL/TS parity suite between this CTE and `getAllianceSetupStatus`.
+- **No timeline/activity feed to test here:** unlike the three files above, this CTE has no `MemberMetricEntry`-derived timestamp field at all (its `lastSetupActivityAt` comes from the independently-maintained `Alliance.setupActivityAt` column, untouched by this fix). The "voided entries still appear in activity views" guarantee is fully covered by the sibling tests in `platform/alliances.integration.test.ts` and `betaDashboard.integration.test.ts` above.
+
+| Input scenario | Old result summary | New result summary | Match result |
+|---|---|---|---|
+| A real `ACTIVE` entry exists for the target period | `is_complete`/`hasTargetPeriodData` true, matches `getAllianceSetupStatus` | Identical | `PASS` |
+| The target period's *only* entry is `VOIDED` | **Incorrectly** true (parity gap opened by the `allianceSetup.ts` fix) | Correctly false, parity with `getAllianceSetupStatus` restored | `EXPECTED_BREAKING` (closes the gap opened above) |
+| An `ACTIVE` entry is later `VOIDED` for the *same slot* | Incorrectly stays true | **Still** incorrectly stays true | `KNOWN GAP` — doubly inert (needs a `VOIDED` row *and* a same-slot `ACTIVE` predecessor; neither is writable today), not closed by this fix, called out in-line in the SQL comment and asserted by a dedicated test so it isn't silently forgotten |
+
+---
+
 ## Remaining consumers (not yet migrated)
 
 Per the database design §8 inventory, tracked here so this table stays the
@@ -200,6 +215,5 @@ single place progress is visible:
 - [ ] `getAllianceMemberMetricMatrix.ts`'s `selected_values` CTE (archived-inclusion + metric-sort tiering, pre-pagination) — see follow-up above
 - [ ] `getMetricSummaryReport.ts`'s `buildRosterCte`/`countRosterRows`/`queryRosterRows` (paginated, ranked roster table) — see follow-up above
 - [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`) — needs `memberPeriodMetricValues` to accept the audit's `AuditTxClient` (read-only transaction) instead of the global `prisma` client; larger change than a single-consumer swap
-- [ ] `betaParticipants.ts` (`has_target_period_data`, `is_complete`) — same bug as `allianceSetup.ts` above, now documented in-line and via a dedicated latent-parity test; needs a batched/multi-alliance read-model variant (it's one `EXISTS` inside a single all-participants CTE, not a per-alliance call)
 - [ ] `platform/alliances.ts` (`hasData` readiness check)
 - [ ] `betaDashboard.ts` (`alliancesWithData`, `getAllianceReadiness`, `getNeedsAttention`)
