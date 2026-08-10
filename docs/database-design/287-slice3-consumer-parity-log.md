@@ -49,7 +49,7 @@ follow-up issue is needed — the fix is already complete.
 
 ---
 
-## `getAllianceMemberMetricMatrix.ts` (partial — cell values only)
+## `getAllianceMemberMetricMatrix.ts` (full)
 
 - **Location:** `app/src/lib/reports/getAllianceMemberMetricMatrix.ts`
 - **Old implementation:** raw `SELECT DISTINCT ON ("metricId", "allianceMemberId") ...` over `MemberMetricEntry`, scoped to the current page's `memberIds` via a `WHERE ... IN (...)` clause.
@@ -67,7 +67,19 @@ follow-up issue is needed — the fix is already complete.
 
 **`EXPECTED_BREAKING` rationale:** identical in kind to `getPeriodResultsSummary`'s divergence — the old raw `DISTINCT ON` has no concept of a metric's `memberPeriodRollup`, so it always showed "whichever single row sorts first," which is only coincidentally correct for `PERIOD_VALUE + LATEST` metrics. **Inert today**: no leader can create a `DAILY_OBSERVATION` metric yet (no UI exists to select a grain/rollup at creation time — see the database design §8's `Metric` writers section). Becomes correct-by-construction once that UI ships, rather than requiring a follow-up fix to this consumer at that time.
 
-**Deliberately not migrated in this PR** (tracked as a follow-up below): `buildMatrixCte`'s `selected_values` CTE, which drives archived-member inclusion and metric-column sort tiering *before* pagination, still reads raw `MemberMetricEntry` rows directly. Migrating it requires either fetching the full alliance-wide cross join into JS to sort/paginate there, or extracting `memberPeriodMetricValues`'s CTE chain into a reusable `Prisma.sql` fragment this file's own paginated/sorted roster query can compose with — a larger architectural change than this PR's scope, and inert today for the same reason as above (no `DAILY_OBSERVATION` metric exists to sort/filter incorrectly).
+### `buildMatrixCte`'s `selected_values` CTE (archived-inclusion + metric-sort tiering) — follow-up closed
+
+- **Old implementation:** a second, independent raw `DISTINCT ON ("metricId", "allianceMemberId")` over `MemberMetricEntry`, scoped to the current page's selected columns via `WHERE "metricId" IN (...)` — feeding a `member_has_selected_value` archived-inclusion check and a metric-based sort's value/tier, both computed over the *whole* roster before pagination.
+- **New implementation:** `buildMemberPeriodValueCte` (extracted from `memberPeriodMetricValues.ts` in this PR as a reusable, composable `Prisma.Sql` fragment — a pure refactor of that function's internals, verified against its full existing test suite with zero behavior change) is now composed directly into `buildMatrixCte`'s own `WITH` clause, replacing the second hand-rolled `DISTINCT ON`. `selected_values`/`member_has_selected_value`'s own column names and semantics are unchanged, so `buildMatrixFromWhere`/`buildMatrixOrderBy` needed no changes at all.
+- **Test:** [`getAllianceMemberMetricMatrixRosterParity.integration.test.ts`](../../app/src/lib/reports/getAllianceMemberMetricMatrixRosterParity.integration.test.ts)
+
+| Input scenario | Old result summary | New result summary | Match result |
+|---|---|---|---|
+| Archived member with a real value for the selected column, vs. archived member with only a voided entry, under `filter: "all"` sorted by that metric | Voided-only archived member excluded; real-value archived member included, ranked by value | Identical | `PASS` |
+| Name sort, active-only filter | Alphabetical roster | Identical | `PASS` |
+| `DAILY_OBSERVATION + SUM` metric: one member with three daily entries (true sum 15) outranked, under the old latest-day-only value, by a member with one higher single-day entry (10) | Sorts by the latest single day's raw value only (10 above 15) | Sorts by the true rolled-up sum (15 above 10) | `EXPECTED_BREAKING` — see rationale below |
+
+**`EXPECTED_BREAKING` rationale:** identical in kind to this file's own cell-value divergence above, now closed for the roster-level archived-inclusion/sort path too. **Inert today**: no leader can create a `DAILY_OBSERVATION` metric yet. This closes the follow-up this PR's predecessor deliberately deferred (see `docs/database-design/287-metric-observations-and-member-period-rollups.md` §8) — `getAllianceMemberMetricMatrix.ts` has no remaining unmigrated query.
 
 ---
 
@@ -212,8 +224,7 @@ No follow-up deferred for eventual migration — this consumer is intentionally 
 Per the database design §8 inventory, tracked here so this table stays the
 single place progress is visible:
 
-- [ ] `getAllianceMemberMetricMatrix.ts`'s `selected_values` CTE (archived-inclusion + metric-sort tiering, pre-pagination) — see follow-up above
-- [ ] `getMetricSummaryReport.ts`'s `buildRosterCte`/`countRosterRows`/`queryRosterRows` (paginated, ranked roster table) — see follow-up above
+- [ ] `getMetricSummaryReport.ts`'s `buildRosterCte`/`countRosterRows`/`queryRosterRows` (paginated, ranked roster table) — see follow-up above; can now reuse `buildMemberPeriodValueCte` the same way `getAllianceMemberMetricMatrix.ts`'s roster query just did
 - [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`) — needs `memberPeriodMetricValues` to accept the audit's `AuditTxClient` (read-only transaction) instead of the global `prisma` client; larger change than a single-consumer swap
 
 Closed out (not a `memberPeriodMetricValues` migration — a narrower `status:

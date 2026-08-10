@@ -70,13 +70,15 @@ function parseCivilDateToUtcMidnight(civilDate: string): Date {
 }
 
 /**
- * ADR-018 §6's single canonical read model - per (member, metric): the
- * derived value, active-slot `observationCount`, `lastObservedOn`, and a
- * static provenance label. This is the one place "latest wins" /
- * "member-period rollup" is computed; every consumer listed in the #287
- * database design §8 migrates to this function rather than re-implementing
- * its own `DISTINCT ON` query (see that section for the exhaustive list and
- * per-query migration status).
+ * ADR-018 §6's single canonical read model, factored as a *composable SQL
+ * fragment* (a `WITH`-chain, no leading `WITH` keyword) rather than a full
+ * query, so a caller with its own paginated/sorted/filtered roster query
+ * (e.g. `getAllianceMemberMetricMatrix.ts`, `getMetricSummaryReport.ts`'s
+ * roster) can compose this in as one `WITH` clause among several, instead
+ * of calling `memberPeriodMetricValues` (below) and re-deriving per-member
+ * values itself, or shipping the whole cross join to Node to sort/paginate
+ * there. `memberPeriodMetricValues` itself is a thin wrapper around this
+ * fragment for the common "just give me the array" case.
  *
  * Two-phase computation, matching ADR-018 §1 exactly:
  *   Phase 1 (`slot_winner`) - within each `(metricId, allianceMemberId,
@@ -87,9 +89,12 @@ function parseCivilDateToUtcMidnight(civilDate: string): Date {
  *     to LATEST/SUM/AVERAGE; a voided or missing date contributes to
  *     neither (never treated as 0).
  *
- * Every requested (metric, alliance member) pair is returned via the `base`
- * cross join, even one with zero active winning slots - `value` is `NULL`,
- * never absent from the result set and never coerced to 0.
+ * Ends in `resolved_member_period_values(metric_id, alliance_member_id,
+ * value, observation_count, last_observed_on, observation_grain,
+ * member_period_rollup)` - one row per requested (metric, alliance member)
+ * pair via the `base` cross join, even one with zero active winning slots
+ * (`value` is `NULL`, never absent from the result set and never coerced
+ * to 0).
  *
  * Tenant-scoped twice, independently: `metricIds` is filtered down to
  * metrics that actually belong to `allianceId` inside `requested_metrics`
@@ -97,59 +102,43 @@ function parseCivilDateToUtcMidnight(civilDate: string): Date {
  * join below), and the member roster (`base`'s `CROSS JOIN`) is separately
  * scoped to the same `allianceId`. Callers must already have verified the
  * acting user has access to `allianceId`, matching every other
- * alliance-scoped read model in the app (e.g. `getMetricSummaryReport.ts`).
+ * alliance-scoped read model in the app.
  *
- * No separate "drill-down handle" is returned: a caller already has
- * `periodId` (an input) plus each row's `metricId`/`allianceMemberId`,
- * which is exactly what a bounded, paginated drill-down query into the raw
- * `MemberMetricEntry` ledger needs - inventing a synthetic token here would
- * duplicate that identity for no benefit.
- *
- * `options.onlyParticipating` (default `false`) restricts the result to
- * rows with at least one active winning slot (`observationCount > 0`),
- * pushing a consumer's own "I only care who participated" filter into SQL
- * instead of shipping the full (metrics × roster) cross join to Node just
- * to throw most of it away (e.g. `getPeriodResultsSummary.ts`). This is
- * one additional `WHERE` on the same query, not a second implementation -
- * every other invariant above is unchanged, and the default (`false`)
- * preserves the full cross join for consumers that need every member's row
- * even when empty (e.g. a report roster).
- *
- * `options.memberIds` (default: every alliance member) restricts both the
- * ledger scan and the cross join to a known, bounded set of members -
- * for a consumer that already knows exactly which members it needs (e.g.
- * one page of a paginated roster), this keeps the query bounded by that
- * page rather than the whole alliance, without duplicating the tenant scope
+ * `memberIds` (default: every alliance member) restricts both the ledger
+ * scan and the cross join to a known, bounded set of members - for a
+ * consumer that already knows exactly which members it needs (e.g. one
+ * page of a paginated roster), this keeps the query bounded by that page
+ * rather than the whole alliance, without duplicating the tenant scope
  * already enforced by `allianceId` above (a foreign-tenant member id here
  * is simply excluded, same as any other id that doesn't match the `am."id"
  * IN (...)` filter - never a separate trust boundary).
+ *
+ * Precondition: `metricIds` must be non-empty (`Prisma.join([])` throws) -
+ * unlike `memberPeriodMetricValues` below, this fragment builder does not
+ * repeat that function's empty-array short-circuit, since a caller
+ * composing its own larger query is expected to guard that itself (e.g.
+ * `getAllianceMemberMetricMatrix.ts` already never reaches this point with
+ * zero selected columns).
  */
-export async function memberPeriodMetricValues(
+export function buildMemberPeriodValueCte(
   allianceId: string,
   periodId: string,
   metricIds: readonly string[],
-  options?: { onlyParticipating?: boolean; memberIds?: readonly string[] },
-): Promise<MemberPeriodMetricValue[]> {
-  const uniqueMetricIds = [...new Set(metricIds)];
-  if (uniqueMetricIds.length === 0) return [];
-  if (options?.memberIds && options.memberIds.length === 0) return [];
-
-  const onlyParticipatingFilter = options?.onlyParticipating
-    ? Prisma.sql`WHERE apm."metricId" IS NOT NULL`
-    : Prisma.empty;
-  const memberFilter = options?.memberIds
-    ? Prisma.sql`AND am."id" IN (${Prisma.join(options.memberIds)})`
+  memberIds?: readonly string[],
+): Prisma.Sql {
+  const memberFilter = memberIds
+    ? Prisma.sql`AND am."id" IN (${Prisma.join(memberIds)})`
     : Prisma.empty;
 
-  const rows = await prisma.$queryRaw<RawRow[]>`
-    WITH slot_winner AS (
+  return Prisma.sql`
+    slot_winner AS (
       SELECT DISTINCT ON (mme."metricId", mme."allianceMemberId", mme."observedOn")
         mme."metricId", mme."allianceMemberId", mme."observedOn", mme."value", mme."status"
       FROM "MemberMetricEntry" mme
       JOIN "AllianceMember" am ON am.id = mme."allianceMemberId"
       WHERE am."allianceId" = ${allianceId}
         AND mme."periodId" = ${periodId}
-        AND mme."metricId" IN (${Prisma.join(uniqueMetricIds)})
+        AND mme."metricId" IN (${Prisma.join(metricIds)})
         ${memberFilter}
       ORDER BY mme."metricId", mme."allianceMemberId", mme."observedOn",
         mme."recordedAt" DESC, mme."createdAt" DESC, mme."id" DESC
@@ -175,7 +164,7 @@ export async function memberPeriodMetricValues(
     requested_metrics AS (
       SELECT "id", "observationGrain", "memberPeriodRollup"
       FROM "Metric"
-      WHERE "allianceId" = ${allianceId} AND "id" IN (${Prisma.join(uniqueMetricIds)})
+      WHERE "allianceId" = ${allianceId} AND "id" IN (${Prisma.join(metricIds)})
     ),
     base AS (
       SELECT rm."id" AS "metricId", am."id" AS "allianceMemberId",
@@ -184,26 +173,77 @@ export async function memberPeriodMetricValues(
       CROSS JOIN "AllianceMember" am
       WHERE am."allianceId" = ${allianceId}
         ${memberFilter}
+    ),
+    resolved_member_period_values AS (
+      SELECT
+        b."metricId" AS metric_id,
+        b."allianceMemberId" AS alliance_member_id,
+        CASE b."memberPeriodRollup"
+          WHEN 'LATEST' THEN lpm."value"::float8
+          WHEN 'SUM' THEN apm.sum_value
+          WHEN 'AVERAGE' THEN apm.avg_value
+        END AS value,
+        COALESCE(apm.observation_count, 0)::bigint AS observation_count,
+        apm.last_observed_on AS last_observed_on,
+        b."observationGrain" AS observation_grain,
+        b."memberPeriodRollup" AS member_period_rollup
+      FROM base b
+      LEFT JOIN latest_per_member lpm
+        ON lpm."metricId" = b."metricId" AND lpm."allianceMemberId" = b."allianceMemberId"
+      LEFT JOIN aggregated_per_member apm
+        ON apm."metricId" = b."metricId" AND apm."allianceMemberId" = b."allianceMemberId"
     )
-    SELECT
-      b."metricId" AS metric_id,
-      b."allianceMemberId" AS alliance_member_id,
-      CASE b."memberPeriodRollup"
-        WHEN 'LATEST' THEN lpm."value"::float8
-        WHEN 'SUM' THEN apm.sum_value
-        WHEN 'AVERAGE' THEN apm.avg_value
-      END AS value,
-      COALESCE(apm.observation_count, 0)::bigint AS observation_count,
-      apm.last_observed_on AS last_observed_on,
-      b."observationGrain" AS observation_grain,
-      b."memberPeriodRollup" AS member_period_rollup
-    FROM base b
-    LEFT JOIN latest_per_member lpm
-      ON lpm."metricId" = b."metricId" AND lpm."allianceMemberId" = b."allianceMemberId"
-    LEFT JOIN aggregated_per_member apm
-      ON apm."metricId" = b."metricId" AND apm."allianceMemberId" = b."allianceMemberId"
+  `;
+}
+
+/**
+ * ADR-018 §6's single canonical read model - per (member, metric): the
+ * derived value, active-slot `observationCount`, `lastObservedOn`, and a
+ * static provenance label. This is the one place "latest wins" /
+ * "member-period rollup" is computed; every consumer listed in the #287
+ * database design §8 migrates to this function (or, for a consumer with
+ * its own larger paginated/sorted query, to `buildMemberPeriodValueCte`
+ * above) rather than re-implementing its own `DISTINCT ON` query (see that
+ * section for the exhaustive list and per-query migration status).
+ *
+ * No separate "drill-down handle" is returned: a caller already has
+ * `periodId` (an input) plus each row's `metricId`/`allianceMemberId`,
+ * which is exactly what a bounded, paginated drill-down query into the raw
+ * `MemberMetricEntry` ledger needs - inventing a synthetic token here would
+ * duplicate that identity for no benefit.
+ *
+ * `options.onlyParticipating` (default `false`) restricts the result to
+ * rows with at least one active winning slot (`observationCount > 0`),
+ * pushing a consumer's own "I only care who participated" filter into SQL
+ * instead of shipping the full (metrics × roster) cross join to Node just
+ * to throw most of it away (e.g. `getPeriodResultsSummary.ts`). This is
+ * one additional `WHERE` on the same query, not a second implementation -
+ * every other invariant above is unchanged, and the default (`false`)
+ * preserves the full cross join for consumers that need every member's row
+ * even when empty (e.g. a report roster).
+ *
+ * `options.memberIds` - see `buildMemberPeriodValueCte`'s doc comment
+ * above; forwarded as-is.
+ */
+export async function memberPeriodMetricValues(
+  allianceId: string,
+  periodId: string,
+  metricIds: readonly string[],
+  options?: { onlyParticipating?: boolean; memberIds?: readonly string[] },
+): Promise<MemberPeriodMetricValue[]> {
+  const uniqueMetricIds = [...new Set(metricIds)];
+  if (uniqueMetricIds.length === 0) return [];
+  if (options?.memberIds && options.memberIds.length === 0) return [];
+
+  const onlyParticipatingFilter = options?.onlyParticipating
+    ? Prisma.sql`WHERE observation_count > 0`
+    : Prisma.empty;
+
+  const rows = await prisma.$queryRaw<RawRow[]>`
+    WITH ${buildMemberPeriodValueCte(allianceId, periodId, uniqueMetricIds, options?.memberIds)}
+    SELECT * FROM resolved_member_period_values
     ${onlyParticipatingFilter}
-    ORDER BY b."metricId", b."allianceMemberId"
+    ORDER BY metric_id, alliance_member_id
   `;
 
   return rows.map((row) => ({
