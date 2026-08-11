@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildCurrentMetricViewModels, type RawMemberMetricEntry } from "./memberPerformanceViewModel";
+import {
+  buildCurrentMetricViewModels,
+  buildPeriodTrendViewModels,
+  type RawMemberMetricEntry,
+  type RollupMetricValue,
+} from "./memberPerformanceViewModel";
 
 function entry(overrides: Partial<RawMemberMetricEntry> & { metricId: string }): RawMemberMetricEntry {
   return {
@@ -153,5 +158,118 @@ describe("buildCurrentMetricViewModels", () => {
     expect(rows.map((r) => r.metricId)).toEqual(["met_a", "met_b"]);
     expect(rows[0].current).toBeUndefined();
     expect(rows[1].current?.value).toBe(5);
+  });
+});
+
+// #321's locked scope: `new` = no prior period exists in the alliance's
+// history at all (a period-level fact, applied uniformly); `no-baseline` =
+// a prior period exists but this specific metric has no comparable value
+// there, collapsing every sub-reason (not attached, member wasn't active,
+// voided/absent) into one leader-facing state by design.
+describe("buildPeriodTrendViewModels", () => {
+  const periodMetrics = [
+    { metricId: "met_kill", metricName: "Kill Points" },
+    { metricId: "met_vs", metricName: "VS Score" },
+  ];
+
+  function rollup(metricId: string, value: number | null): RollupMetricValue {
+    return { metricId, value };
+  }
+
+  it("marks every metric 'new' when there is no prior period at all, regardless of current-period data", () => {
+    const trends = buildPeriodTrendViewModels(
+      periodMetrics,
+      [rollup("met_kill", 900), rollup("met_vs", 2300)],
+      null,
+    );
+
+    expect(trends.get("met_kill")).toEqual({ status: "new" });
+    expect(trends.get("met_vs")).toEqual({ status: "new" });
+  });
+
+  it("reports 'comparable' with an 'up' direction when the current value exceeds the prior period's", () => {
+    const trends = buildPeriodTrendViewModels(
+      periodMetrics,
+      [rollup("met_kill", 900), rollup("met_vs", 100)],
+      [rollup("met_kill", 850), rollup("met_vs", 100)],
+    );
+
+    expect(trends.get("met_kill")).toEqual({
+      status: "comparable",
+      currentValue: 900,
+      previousValue: 850,
+      delta: 50,
+      direction: "up",
+    });
+  });
+
+  it("reports 'down' when the current value is lower than the prior period's", () => {
+    const trends = buildPeriodTrendViewModels(
+      periodMetrics,
+      [rollup("met_kill", 800)],
+      [rollup("met_kill", 900)],
+    );
+
+    expect(trends.get("met_kill")).toEqual({
+      status: "comparable",
+      currentValue: 800,
+      previousValue: 900,
+      delta: -100,
+      direction: "down",
+    });
+  });
+
+  it("reports 'flat' when the current value exactly equals the prior period's", () => {
+    const trends = buildPeriodTrendViewModels(
+      periodMetrics,
+      [rollup("met_kill", 900)],
+      [rollup("met_kill", 900)],
+    );
+
+    expect(trends.get("met_kill")).toEqual({
+      status: "comparable",
+      currentValue: 900,
+      previousValue: 900,
+      delta: 0,
+      direction: "flat",
+    });
+  });
+
+  it("reports 'no-baseline' when the prior period exists but this metric has no value there (not attached, inactive membership, or voided)", () => {
+    const trends = buildPeriodTrendViewModels(
+      periodMetrics,
+      [rollup("met_kill", 900)],
+      [rollup("met_kill", null)],
+    );
+
+    expect(trends.get("met_kill")).toEqual({ status: "no-baseline" });
+  });
+
+  it("reports 'no-baseline' (not 'comparable') when the current period's rollup value is itself null", () => {
+    const trends = buildPeriodTrendViewModels(
+      periodMetrics,
+      [rollup("met_kill", null)],
+      [rollup("met_kill", 900)],
+    );
+
+    expect(trends.get("met_kill")).toEqual({ status: "no-baseline" });
+  });
+
+  it("treats a metric missing entirely from either period's rollup array the same as an explicit null value", () => {
+    const trends = buildPeriodTrendViewModels(periodMetrics, [], [rollup("met_kill", 900)]);
+
+    expect(trends.get("met_kill")).toEqual({ status: "no-baseline" });
+    expect(trends.get("met_vs")).toEqual({ status: "no-baseline" });
+  });
+
+  it("resolves each metric independently within the same call", () => {
+    const trends = buildPeriodTrendViewModels(
+      periodMetrics,
+      [rollup("met_kill", 900), rollup("met_vs", 50)],
+      [rollup("met_kill", 850), rollup("met_vs", null)],
+    );
+
+    expect(trends.get("met_kill")).toMatchObject({ status: "comparable", direction: "up" });
+    expect(trends.get("met_vs")).toEqual({ status: "no-baseline" });
   });
 });

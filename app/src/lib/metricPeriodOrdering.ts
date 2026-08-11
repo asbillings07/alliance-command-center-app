@@ -49,3 +49,28 @@ export function pickCurrentMetricPeriod<T extends MetricPeriodOrderingFields>(
   }
   return [...periods].sort(compareMetricPeriodsForCurrent)[0] ?? null;
 }
+
+/**
+ * The period immediately preceding `selectedPeriodId` in the same
+ * chronological total order `pickCurrentMetricPeriod` uses - i.e. "one
+ * position older," not "the last period with any data." Used by the
+ * member-detail page's period-over-period trend (#321/#322): a genuinely
+ * adjacent-period comparison, never ad hoc date math.
+ *
+ * Returns `null` for two distinct reasons a caller must not conflate:
+ * `selectedPeriodId` is the oldest period in `periods` (there is no prior
+ * period - the alliance's first-ever period), or `selectedPeriodId` isn't
+ * present in `periods` at all (a defensive case; callers are expected to
+ * pass the same period list a selected period was drawn from).
+ */
+export function findPriorMetricPeriod<T extends MetricPeriodOrderingFields>(
+  periods: readonly T[],
+  selectedPeriodId: string,
+): T | null {
+  const sorted = [...periods].sort(compareMetricPeriodsForCurrent);
+  const selectedIndex = sorted.findIndex((p) => p.id === selectedPeriodId);
+  if (selectedIndex === -1) {
+    return null;
+  }
+  return sorted[selectedIndex + 1] ?? null;
+}
