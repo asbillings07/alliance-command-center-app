@@ -134,6 +134,11 @@ Use a managed PostgreSQL provider:
 - `docs/operations/rollback.md` - Rollback procedures
 - `docs/operations/backups.md` - Backup and restore
 
+## Changelog
+
+User-facing changes are logged in `docs/changelog.md` - written for
+leaders using the app, distinct from the ADRs (which record *why*).
+
 ## Contributing
 
 See `AGENTS.md` for engineering guidelines and `docs/` for detailed documentation.
