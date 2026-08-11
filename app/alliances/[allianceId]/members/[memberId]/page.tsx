@@ -1,13 +1,18 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
-import { metricPeriodChronologicalOrderBy, pickCurrentMetricPeriod } from "@/app/src/lib/metricPeriodOrdering";
+import {
+    metricPeriodChronologicalOrderBy,
+    pickCurrentMetricPeriod,
+    findPriorMetricPeriod,
+} from "@/app/src/lib/metricPeriodOrdering";
+import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 import { formatPower } from "@/app/src/lib/formatPower";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { LeadershipNoteCard } from "./LeadershipNoteCard";
 import { MemberPerformanceSection } from "./MemberPerformanceSection";
 import type { MemberPerformanceProps } from "./MemberPerformanceSection";
-import { buildCurrentMetricViewModels } from "./memberPerformanceViewModel";
+import { buildCurrentMetricViewModels, buildPeriodTrendViewModels } from "./memberPerformanceViewModel";
 import { MemberActions } from "./MemberActions";
 import { MemberAccountSection } from "./MemberAccountSection";
 import { MemberPeriodSelector } from "./MemberPeriodSelector";
@@ -105,11 +110,48 @@ export default async function MemberPage({ params, searchParams }: Params) {
           })
         : [];
 
+    // #321/#322: the prior-period trend is sourced entirely from the
+    // canonical memberPeriodMetricValues read model (ADR-018 §6), not from
+    // rawMemberEntries above - see buildPeriodTrendViewModels' doc comment
+    // for why mixing the two sources for one card's arithmetic would be a
+    // correctness trap. `priorPeriodHeader` null (vs. an empty rollup
+    // result) is what distinguishes "New" from "N/A" - see
+    // findPriorMetricPeriod's doc comment.
+    const priorPeriodHeader = selectedPeriod
+        ? findPriorMetricPeriod(allPeriods, selectedPeriod.id)
+        : null;
+
+    const [currentPeriodRollup, priorPeriodRollup] = selectedPeriod && activeMetricIds.length > 0
+        ? await Promise.all([
+              memberPeriodMetricValues(allianceId, selectedPeriod.id, activeMetricIds, {
+                  memberIds: [allianceMember.id],
+              }),
+              priorPeriodHeader
+                  ? memberPeriodMetricValues(allianceId, priorPeriodHeader.id, activeMetricIds, {
+                        memberIds: [allianceMember.id],
+                    })
+                  : Promise.resolve(null),
+          ])
+        : [[], null];
+
+    const periodTrends = selectedPeriod
+        ? buildPeriodTrendViewModels(
+              selectedPeriod.periodMetrics.map((pm) => ({ metricId: pm.metricId, metricName: pm.metric.name })),
+              currentPeriodRollup,
+              priorPeriodRollup,
+          )
+        : new Map();
+
     const performanceMetrics = selectedPeriod
         ? buildCurrentMetricViewModels(
               selectedPeriod.periodMetrics.map((pm) => ({ metricId: pm.metricId, metricName: pm.metric.name })),
               rawMemberEntries,
-          )
+          ).map((metric) => ({
+              ...metric,
+              // A void/never-recorded current has no trend to show - see
+              // buildPeriodTrendViewModels' doc comment.
+              periodTrend: metric.current !== undefined ? periodTrends.get(metric.metricId) : undefined,
+          }))
         : [];
 
     const periodSelector = selectedPeriod ? (

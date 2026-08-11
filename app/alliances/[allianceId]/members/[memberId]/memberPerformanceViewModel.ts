@@ -1,4 +1,4 @@
-import type { CurrentMetricViewModel } from "./MemberPerformanceSection";
+import type { CurrentMetricViewModel, PeriodTrendViewModel } from "./MemberPerformanceSection";
 
 /**
  * The two things this view model needs from each `MemberMetricEntry` row.
@@ -97,4 +97,67 @@ export function buildCurrentMetricViewModels(
       delta: current && previous ? current.value - previous.value : undefined,
     };
   });
+}
+
+/** One metric's derived value for a single period - deliberately the same
+ * minimal shape whether it came from the selected period or the prior one,
+ * since `buildPeriodTrendViewModels` treats both symmetrically. */
+export type RollupMetricValue = { metricId: string; value: number | null };
+
+/**
+ * #321/#322's period-over-period trend - a deliberately separate concept
+ * from `buildCurrentMetricViewModels` above, not a replacement or extension
+ * of it. Sources both periods' values from the canonical
+ * `memberPeriodMetricValues` read model (ADR-018 Sec6), not from the raw
+ * `MemberMetricEntry` history that function reads - see #321's scope
+ * comment for why mixing those two sources for one card's arithmetic would
+ * be a subtle correctness trap, and why it's fine to source `current`'s
+ * *display* value from the correction view while this function computes
+ * its own trend arithmetic entirely from rollup values.
+ *
+ * `priorPeriodValues === null` means "no prior period exists in the
+ * alliance's history at all" (this is the earliest period), which is a
+ * period-level fact applying uniformly to every metric - not "the prior
+ * period has no data for any metric," which would still be a per-metric
+ * `no-baseline`. Callers resolve `null` via
+ * `findPriorMetricPeriod` (`metricPeriodOrdering.ts`) returning `null`.
+ *
+ * Callers are responsible for not attaching a `PeriodTrendViewModel` onto a
+ * metric whose `buildCurrentMetricViewModels` `current` is itself
+ * `undefined` (e.g. the latest event this period was a void) - this
+ * function has no visibility into that raw-entry state and would otherwise
+ * report a stale `comparable`/`no-baseline` trend for a metric the page is
+ * simultaneously showing as "Not recorded."
+ */
+export function buildPeriodTrendViewModels(
+  periodMetrics: readonly PeriodMetricInput[],
+  currentPeriodValues: readonly RollupMetricValue[],
+  priorPeriodValues: readonly RollupMetricValue[] | null,
+): Map<string, PeriodTrendViewModel> {
+  if (priorPeriodValues === null) {
+    const newEntries: [string, PeriodTrendViewModel][] = periodMetrics.map((pm) => [
+      pm.metricId,
+      { status: "new" },
+    ]);
+    return new Map(newEntries);
+  }
+
+  const currentByMetric = new Map(currentPeriodValues.map((v) => [v.metricId, v.value]));
+  const priorByMetric = new Map(priorPeriodValues.map((v) => [v.metricId, v.value]));
+
+  const entries: [string, PeriodTrendViewModel][] = periodMetrics.map((pm) => {
+    const currentValue = currentByMetric.get(pm.metricId) ?? null;
+    const previousValue = priorByMetric.get(pm.metricId) ?? null;
+
+    if (currentValue === null || previousValue === null) {
+      return [pm.metricId, { status: "no-baseline" }];
+    }
+
+    const delta = currentValue - previousValue;
+    const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+
+    return [pm.metricId, { status: "comparable", currentValue, previousValue, delta, direction }];
+  });
+
+  return new Map(entries);
 }

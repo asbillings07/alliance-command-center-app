@@ -6,12 +6,32 @@ export type MetricEntryViewModel = {
     recordedAt: Date;
 };
 
+/**
+ * #321's period-over-period trend - visually and semantically distinct from
+ * `delta` above (a same-period correction). `new`/`no-baseline` are the two
+ * "nothing to compare" states locked in #321's scope comment: `new` means
+ * the alliance has no period before this one at all; `no-baseline`
+ * collapses every other missing-comparison case (metric not attached to
+ * the prior period, member wasn't active yet, prior value voided/absent)
+ * into one leader-facing state, deliberately not distinguishing why.
+ */
+export type PeriodTrendViewModel =
+    | { status: "new" }
+    | { status: "no-baseline" }
+    | { status: "comparable"; currentValue: number; previousValue: number; delta: number; direction: "up" | "down" | "flat" };
+
 export type CurrentMetricViewModel = {
     metricId: string;
     metricName: string;
     current?: MetricEntryViewModel;
     previous?: MetricEntryViewModel;
     delta?: number;
+    /**
+     * Absent (not just an "n/a" status) whenever `current` above is itself
+     * undefined - see `buildPeriodTrendViewModels`'s doc comment for why a
+     * void/never-recorded current period has no trend to show at all.
+     */
+    periodTrend?: PeriodTrendViewModel;
 };
 
 export type MemberPerformanceProps = {
