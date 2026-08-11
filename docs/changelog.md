@@ -51,18 +51,48 @@ actually trending up or down period over period. #321-#324 designed and
 shipped that missing comparison as a clearly-labeled second signal,
 additive to the existing correction behavior, which is otherwise unchanged.
 
-**Manual QA before this reaches beta users** (complements the automated
-test suite - see #324):
+**Post-release verification** (checked 2026-08-11, ~20:30 UTC): the trend UI
+shipped to production in #327 (merged 17:55 UTC) - `main` deploys on every
+merge (ADR-011) - roughly two hours *before* this checklist was drafted, so
+it was never a pre-release gate a reviewer could act on; it's recorded here
+as evidence the shipped behavior was actually re-verified, not merely
+planned. Confirmed production (`alliancehqapp.com/api/health`) is running
+`0679893` at verification time, which includes #327 and #328. No production
+login was available in this session, so each scenario below was verified by
+re-running the exact automated test against the code confirmed live above,
+immediately before recording the result - not by a fresh manual
+click-through:
 
-- [ ] Member with two entries in the *same* period (a correction) - both
+- [x] Member with two entries in the *same* period (a correction) - both
       "since last entry" and "vs. last period" show, with visibly
       different numbers and copy.
-- [ ] Metric trending up on a "higher is better" metric - green badge.
-- [ ] Metric trending up on a "lower is better" metric (e.g. an infraction
+      `MemberPerformanceSection.test.tsx` > "renders both the correction
+      delta and the period trend badge together on the same card, with
+      distinguishable copy" - pass.
+- [x] Metric trending up on a "higher is better" metric - green badge.
+      `MemberPerformanceSection.test.tsx` > "renders a comparable favorable
+      trend in the success color..." - pass.
+- [x] Metric trending up on a "lower is better" metric (e.g. an infraction
       count) - red badge, *not* green.
-- [ ] Metric with no prior period at all (first period in the alliance) -
+      `MemberPerformanceSection.test.tsx` > "renders a comparable adverse
+      trend in the danger color, e.g. a LOWER_IS_BETTER metric trending
+      up" - pass. Also verified end to end (real `Metric.trendDirection` ->
+      computed favorability) in `page.test.ts` > "classifies an increase on
+      a LOWER_IS_BETTER metric as adverse, not favorable..." - pass.
+- [x] Metric with no prior period at all (first period in the alliance) -
       "New" badge, not "N/A".
-- [ ] Metric present this period but absent/voided in the prior period -
+      `MemberPerformanceSection.test.tsx` > "renders 'New' when there is no
+      prior period at all - distinct from 'N/A'" - pass.
+- [x] Metric present this period but absent/voided in the prior period -
       "N/A vs. last period" badge.
+      `MemberPerformanceSection.test.tsx` > "renders 'N/A vs. last period'
+      when a prior period exists but this metric has no comparable
+      baseline" - pass.
+
+A genuine manual click-through in production against a real alliance is
+still worth doing opportunistically (e.g. the next time someone with
+leadership access is in the app) - if that surfaces anything the automated
+suite missed, record it as a **new** entry below, not an edit to this one
+(see this file's append-only note above).
 
 Issues: #319, #320, #321, #322, #323, #324, #325.

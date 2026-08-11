@@ -96,7 +96,9 @@ const FAVORABILITY_BADGE_VARIANT: Record<TrendFavorability, BadgeVariant> = {
  *
  * #325 documented this exact copy (both this badge's and the correction
  * `delta` line's) in `docs/changelog.md` for a leader-facing audience -
- * update that entry's wording too if either changes materially.
+ * if either changes materially, add a **new** changelog entry describing
+ * the change (that file is append-only release history, never edited to
+ * match current behavior after the fact).
  */
 function PeriodTrendBadge({ trend, periodName }: { trend: PeriodTrendViewModel; periodName?: string }) {
     if (trend.status === "new") {
