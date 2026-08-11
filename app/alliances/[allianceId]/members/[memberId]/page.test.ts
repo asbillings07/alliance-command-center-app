@@ -255,7 +255,7 @@ describe("MemberPage (Server Page)", () => {
       } as unknown as Awaited<ReturnType<typeof prisma.allianceMember.findFirst>>);
     }
 
-    function mockSelectedPeriod(id: string, name: string) {
+    function mockSelectedPeriod(id: string, name: string, trendDirection: string = "NEUTRAL") {
       vi.mocked(prisma.metricPeriod.findUnique).mockResolvedValue({
         id,
         name,
@@ -265,7 +265,7 @@ describe("MemberPage (Server Page)", () => {
         endsAt: new Date("2026-04-13"),
         createdAt: new Date("2026-04-06"),
         updatedAt: new Date(),
-        periodMetrics: [{ metricId: "met_kill", metric: { id: "met_kill", name: "Kill Points" } }],
+        periodMetrics: [{ metricId: "met_kill", metric: { id: "met_kill", name: "Kill Points", trendDirection } }],
       } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findUnique>>);
     }
 
@@ -306,6 +306,7 @@ describe("MemberPage (Server Page)", () => {
         previousValue: 850,
         delta: 50,
         direction: "up",
+        favorability: "neutral",
       });
 
       // Both calls are single-member and scoped to the exact adjacent period ids.
@@ -369,6 +370,37 @@ describe("MemberPage (Server Page)", () => {
       const [metric] = performanceMetrics(result.props);
       expect(metric?.current).toBeUndefined();
       expect(metric?.periodTrend).toBeUndefined();
+    });
+
+    // #323: the whole reason this coloring isn't "up is always green" -
+    // wired end to end from the Metric row's own trendDirection config
+    // through to the computed favorability, not just unit-tested on the
+    // pure function in isolation.
+    it("classifies an increase on a LOWER_IS_BETTER metric as adverse, not favorable - a naive up=green would be wrong here", async () => {
+      mockAllianceMember();
+      vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
+        { id: "per_current", name: "Week 20", active: true, startsAt: new Date("2026-04-13"), createdAt: new Date("2026-04-06") },
+        { id: "per_prior", name: "Week 19", active: false, startsAt: new Date("2026-04-06"), createdAt: new Date("2026-03-30") },
+      ] as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findMany>>);
+      mockSelectedPeriod("per_current", "Week 20", "LOWER_IS_BETTER");
+      vi.mocked(prisma.memberMetricEntry.findMany).mockResolvedValue([
+        { metricId: "met_kill", value: 5, recordedAt: new Date("2026-04-10"), createdAt: new Date("2026-04-10"), id: "e1" },
+      ] as unknown as Awaited<ReturnType<typeof prisma.memberMetricEntry.findMany>>);
+      vi.mocked(prisma.leadershipNote.findMany).mockResolvedValue([]);
+
+      vi.mocked(memberPeriodMetricValues).mockImplementation(async (_allianceId, periodId) =>
+        periodId === "per_current"
+          ? [{ metricId: "met_kill", allianceMemberId: "mem_1", value: 5, observationCount: 1, lastObservedOn: null, provenance: "Source period value" }]
+          : [{ metricId: "met_kill", allianceMemberId: "mem_1", value: 2, observationCount: 1, lastObservedOn: null, provenance: "Source period value" }],
+      );
+
+      const result = await MemberPage({
+        params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+        searchParams: Promise.resolve({ periodId: "per_current" }),
+      });
+
+      const [metric] = performanceMetrics(result.props);
+      expect(metric?.periodTrend).toMatchObject({ direction: "up", favorability: "adverse" });
     });
   });
 });

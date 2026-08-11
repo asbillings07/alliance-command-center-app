@@ -83,6 +83,15 @@ export default async function MemberPage({ params, searchParams }: Params) {
         : null;
 
     const activeMetricIds = selectedPeriod?.periodMetrics.map((pm) => pm.metricId) ?? [];
+    // Shared by both buildCurrentMetricViewModels (ignores trendDirection)
+    // and buildPeriodTrendViewModels (uses it for favorable/adverse
+    // coloring, #323) - one Metric-joined row per period metric already
+    // has everything either function needs.
+    const periodMetricInputs = selectedPeriod?.periodMetrics.map((pm) => ({
+        metricId: pm.metricId,
+        metricName: pm.metric.name,
+        trendDirection: pm.metric.trendDirection,
+    })) ?? [];
     // buildCurrentMetricViewModels (memberPerformanceViewModel.ts) explains
     // why this stays a raw MemberMetricEntry history query rather than
     // moving to the canonical memberPeriodMetricValues read model like other
@@ -135,18 +144,11 @@ export default async function MemberPage({ params, searchParams }: Params) {
         : [[], null];
 
     const periodTrends = selectedPeriod
-        ? buildPeriodTrendViewModels(
-              selectedPeriod.periodMetrics.map((pm) => ({ metricId: pm.metricId, metricName: pm.metric.name })),
-              currentPeriodRollup,
-              priorPeriodRollup,
-          )
+        ? buildPeriodTrendViewModels(periodMetricInputs, currentPeriodRollup, priorPeriodRollup)
         : new Map();
 
     const performanceMetrics = selectedPeriod
-        ? buildCurrentMetricViewModels(
-              selectedPeriod.periodMetrics.map((pm) => ({ metricId: pm.metricId, metricName: pm.metric.name })),
-              rawMemberEntries,
-          ).map((metric) => ({
+        ? buildCurrentMetricViewModels(periodMetricInputs, rawMemberEntries).map((metric) => ({
               ...metric,
               // A void/never-recorded current has no trend to show - see
               // buildPeriodTrendViewModels' doc comment.
@@ -217,6 +219,7 @@ export default async function MemberPage({ params, searchParams }: Params) {
                   emptyState: "has-metrics",
                   periodName: selectedPeriod.name,
                   metrics: performanceMetrics,
+                  previousPeriodName: priorPeriodHeader?.name,
                   periodSelector,
                   periodStatusLabel,
                   unrecordedNotice: allUnrecorded

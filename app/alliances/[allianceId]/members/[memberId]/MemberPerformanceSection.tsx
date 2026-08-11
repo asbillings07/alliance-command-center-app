@@ -1,10 +1,18 @@
 import { formatPower } from "@/app/src/lib/formatPower";
-import { Card, EmptyState } from "@/app/src/components";
+import { Card, EmptyState, Badge, type BadgeVariant } from "@/app/src/components";
 
 export type MetricEntryViewModel = {
     value: number;
     recordedAt: Date;
 };
+
+/**
+ * Whether a `comparable` trend's `direction` is good or bad news, per the
+ * metric's own `trendDirection` config (`metricTrendDirection.ts`) - see
+ * `classifyTrendFavorability`'s doc comment in `memberPerformanceViewModel.ts`
+ * for why this must not be inferred from `direction` alone.
+ */
+export type TrendFavorability = "favorable" | "adverse" | "neutral";
 
 /**
  * #321's period-over-period trend - visually and semantically distinct from
@@ -18,7 +26,14 @@ export type MetricEntryViewModel = {
 export type PeriodTrendViewModel =
     | { status: "new" }
     | { status: "no-baseline" }
-    | { status: "comparable"; currentValue: number; previousValue: number; delta: number; direction: "up" | "down" | "flat" };
+    | {
+          status: "comparable";
+          currentValue: number;
+          previousValue: number;
+          delta: number;
+          direction: "up" | "down" | "flat";
+          favorability: TrendFavorability;
+      };
 
 export type CurrentMetricViewModel = {
     metricId: string;
@@ -42,23 +57,89 @@ export type MemberPerformanceProps = {
 } & (
     | { emptyState: "no-period" }
     | { emptyState: "no-metrics"; periodName: string }
-    | { emptyState: "has-metrics"; periodName: string; metrics: CurrentMetricViewModel[] }
+    | {
+          emptyState: "has-metrics";
+          periodName: string;
+          metrics: CurrentMetricViewModel[];
+          /** Name of the period `periodTrend`'s "vs. last period" compares against - purely for tooltip copy, absent for "New". */
+          previousPeriodName?: string;
+      }
 );
 
-function MetricCard({ metric }: { metric: CurrentMetricViewModel }) {
+function formatSignedPower(value: number): string {
+    const sign = value > 0 ? "+" : "";
+    return `${sign}${formatPower(value)}`;
+}
+
+const TREND_ARROW: Record<"up" | "down" | "flat", string> = {
+    up: "▲",
+    down: "▼",
+    flat: "–",
+};
+
+const FAVORABILITY_BADGE_VARIANT: Record<TrendFavorability, BadgeVariant> = {
+    favorable: "success",
+    adverse: "danger",
+    neutral: "neutral",
+};
+
+/**
+ * Deliberately a `Badge`, not the plain muted text `delta` above renders as
+ * - the whole point of #323 is that a leader can tell "this changed because
+ * of a correction" (`delta`, same-period, always neutral gray text) apart
+ * from "this changed period over period" (this badge, color-coded by
+ * whether the change is good or bad news for *this* metric) at a glance,
+ * not just by reading the copy closely. The `title` attribute is this
+ * project's existing lightweight tooltip convention (see
+ * `ImportForm.tsx`'s truncated-column-name tooltip) - no new dependency for
+ * one sentence of disambiguation.
+ */
+function PeriodTrendBadge({ trend, periodName }: { trend: PeriodTrendViewModel; periodName?: string }) {
+    if (trend.status === "new") {
+        return (
+            <span title="No earlier evaluation period exists yet to compare against.">
+                <Badge variant="info" size="sm">
+                    New
+                </Badge>
+            </span>
+        );
+    }
+
+    if (trend.status === "no-baseline") {
+        return (
+            <span title="No comparable value was recorded for this metric in the previous evaluation period.">
+                <Badge variant="neutral" size="sm">
+                    N/A vs. last period
+                </Badge>
+            </span>
+        );
+    }
+
+    return (
+        <span
+            title={`Trend vs. ${periodName ? `the previous period (${periodName})` : "the previous evaluation period"} - not a same-period correction.`}
+        >
+            <Badge variant={FAVORABILITY_BADGE_VARIANT[trend.favorability]} size="sm">
+                {TREND_ARROW[trend.direction]} {formatSignedPower(trend.delta)} vs. last period
+            </Badge>
+        </span>
+    );
+}
+
+function MetricCard({ metric, previousPeriodName }: { metric: CurrentMetricViewModel; previousPeriodName?: string }) {
     const hasCurrent = metric.current !== undefined;
     const hasDelta = metric.delta !== undefined && metric.delta !== 0;
-
-    const formatDelta = (delta: number) => {
-        const sign = delta > 0 ? "+" : "";
-        return `${sign}${formatPower(delta)}`;
-    };
 
     return (
         <Card>
             <Card.Body className="p-4">
-                <div className="text-sm font-medium text-text-secondary mb-1">
-                    {metric.metricName}
+                <div className="flex items-start justify-between gap-2 mb-1">
+                    <div className="text-sm font-medium text-text-secondary">
+                        {metric.metricName}
+                    </div>
+                    {metric.periodTrend && (
+                        <PeriodTrendBadge trend={metric.periodTrend} periodName={previousPeriodName} />
+                    )}
                 </div>
                 {hasCurrent ? (
                     <>
@@ -66,8 +147,11 @@ function MetricCard({ metric }: { metric: CurrentMetricViewModel }) {
                             {formatPower(metric.current!.value)}
                         </div>
                         {hasDelta && (
-                            <div className="text-sm text-text-muted mt-1">
-                                {formatDelta(metric.delta!)} since last entry
+                            <div
+                                className="text-sm text-text-muted mt-1"
+                                title="Change from the previous entry recorded in this same evaluation period (e.g. a correction) - not a period-over-period trend."
+                            >
+                                {formatSignedPower(metric.delta!)} since last entry
                             </div>
                         )}
                     </>
@@ -137,7 +221,7 @@ export function MemberPerformanceSection(props: MemberPerformanceProps) {
             )}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {props.metrics.map((metric) => (
-                    <MetricCard key={metric.metricId} metric={metric} />
+                    <MetricCard key={metric.metricId} metric={metric} previousPeriodName={props.previousPeriodName} />
                 ))}
             </div>
         </section>

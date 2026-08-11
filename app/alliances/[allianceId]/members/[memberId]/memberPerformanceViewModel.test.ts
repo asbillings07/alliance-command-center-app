@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
+import { MetricTrendDirection } from "@/app/generated/prisma/enums";
 import {
   buildCurrentMetricViewModels,
   buildPeriodTrendViewModels,
   type RawMemberMetricEntry,
   type RollupMetricValue,
+  type PeriodMetricInput,
 } from "./memberPerformanceViewModel";
 
 function entry(overrides: Partial<RawMemberMetricEntry> & { metricId: string }): RawMemberMetricEntry {
@@ -16,7 +18,19 @@ function entry(overrides: Partial<RawMemberMetricEntry> & { metricId: string }):
   };
 }
 
-const periodMetrics = [{ metricId: "met_kill", metricName: "Kill Points" }];
+// buildCurrentMetricViewModels ignores trendDirection entirely (it's
+// buildPeriodTrendViewModels' concern) - NEUTRAL here is an arbitrary,
+// irrelevant-to-this-describe-block default, not a claim about what these
+// metrics are configured as in reality.
+function metricInput(
+  metricId: string,
+  metricName: string,
+  trendDirection: MetricTrendDirection = MetricTrendDirection.NEUTRAL,
+): PeriodMetricInput {
+  return { metricId, metricName, trendDirection };
+}
+
+const periodMetrics = [metricInput("met_kill", "Kill Points")];
 
 describe("buildCurrentMetricViewModels", () => {
   it("returns undefined current/previous/delta when there are no entries for a metric", () => {
@@ -131,10 +145,7 @@ describe("buildCurrentMetricViewModels", () => {
 
   it("handles multiple metrics independently, using each metric's own entries only", () => {
     const rows = buildCurrentMetricViewModels(
-      [
-        { metricId: "met_kill", metricName: "Kill Points" },
-        { metricId: "met_vs", metricName: "VS Score" },
-      ],
+      [metricInput("met_kill", "Kill Points"), metricInput("met_vs", "VS Score")],
       [
         entry({ metricId: "met_kill", value: 1000, id: "e_kill" }),
         entry({ metricId: "met_vs", value: 2300, id: "e_vs" }),
@@ -148,10 +159,7 @@ describe("buildCurrentMetricViewModels", () => {
 
   it("preserves the input periodMetrics order and includes metrics with zero entries", () => {
     const rows = buildCurrentMetricViewModels(
-      [
-        { metricId: "met_a", metricName: "A" },
-        { metricId: "met_b", metricName: "B" },
-      ],
+      [metricInput("met_a", "A"), metricInput("met_b", "B")],
       [entry({ metricId: "met_b", value: 5, id: "e1" })],
     );
 
@@ -167,10 +175,11 @@ describe("buildCurrentMetricViewModels", () => {
 // there, collapsing every sub-reason (not attached, member wasn't active,
 // voided/absent) into one leader-facing state by design.
 describe("buildPeriodTrendViewModels", () => {
-  const periodMetrics = [
-    { metricId: "met_kill", metricName: "Kill Points" },
-    { metricId: "met_vs", metricName: "VS Score" },
-  ];
+  // NEUTRAL here (see metricInput's own comment) means every "comparable"
+  // assertion in this top section expects favorability: "neutral" - the
+  // dedicated "favorability" describe block below is what actually
+  // exercises HIGHER_IS_BETTER/LOWER_IS_BETTER.
+  const periodMetrics = [metricInput("met_kill", "Kill Points"), metricInput("met_vs", "VS Score")];
 
   function rollup(metricId: string, value: number | null): RollupMetricValue {
     return { metricId, value };
@@ -200,6 +209,7 @@ describe("buildPeriodTrendViewModels", () => {
       previousValue: 850,
       delta: 50,
       direction: "up",
+      favorability: "neutral",
     });
   });
 
@@ -216,6 +226,7 @@ describe("buildPeriodTrendViewModels", () => {
       previousValue: 900,
       delta: -100,
       direction: "down",
+      favorability: "neutral",
     });
   });
 
@@ -232,6 +243,7 @@ describe("buildPeriodTrendViewModels", () => {
       previousValue: 900,
       delta: 0,
       direction: "flat",
+      favorability: "neutral",
     });
   });
 
@@ -271,5 +283,57 @@ describe("buildPeriodTrendViewModels", () => {
 
     expect(trends.get("met_kill")).toMatchObject({ status: "comparable", direction: "up" });
     expect(trends.get("met_vs")).toEqual({ status: "no-baseline" });
+  });
+});
+
+// #323: whether a `comparable` trend's `direction` is good or bad news is a
+// leadership judgment the metric's own `trendDirection` config already
+// encodes (`metricTrendDirection.ts`) - not something inferable from
+// `direction` alone. A naive "up is always green" would be actively
+// misleading for a LOWER_IS_BETTER metric (e.g. infractions).
+describe("buildPeriodTrendViewModels favorability (#323)", () => {
+  function rollup(metricId: string, value: number | null): RollupMetricValue {
+    return { metricId, value };
+  }
+
+  it("HIGHER_IS_BETTER: an increase is favorable, a decrease is adverse", () => {
+    const metrics = [metricInput("met_kill", "Kill Points", MetricTrendDirection.HIGHER_IS_BETTER)];
+
+    const up = buildPeriodTrendViewModels(metrics, [rollup("met_kill", 900)], [rollup("met_kill", 850)]);
+    expect(up.get("met_kill")).toMatchObject({ direction: "up", favorability: "favorable" });
+
+    const down = buildPeriodTrendViewModels(metrics, [rollup("met_kill", 800)], [rollup("met_kill", 900)]);
+    expect(down.get("met_kill")).toMatchObject({ direction: "down", favorability: "adverse" });
+  });
+
+  it("LOWER_IS_BETTER: an increase is adverse, a decrease is favorable (the inverse of HIGHER_IS_BETTER)", () => {
+    const metrics = [metricInput("met_infractions", "Infractions", MetricTrendDirection.LOWER_IS_BETTER)];
+
+    const up = buildPeriodTrendViewModels(metrics, [rollup("met_infractions", 5)], [rollup("met_infractions", 2)]);
+    expect(up.get("met_infractions")).toMatchObject({ direction: "up", favorability: "adverse" });
+
+    const down = buildPeriodTrendViewModels(metrics, [rollup("met_infractions", 1)], [rollup("met_infractions", 5)]);
+    expect(down.get("met_infractions")).toMatchObject({ direction: "down", favorability: "favorable" });
+  });
+
+  it("NEUTRAL: never favorable or adverse regardless of direction - always neutral", () => {
+    const metrics = [metricInput("met_misc", "Misc", MetricTrendDirection.NEUTRAL)];
+
+    const up = buildPeriodTrendViewModels(metrics, [rollup("met_misc", 900)], [rollup("met_misc", 850)]);
+    expect(up.get("met_misc")).toMatchObject({ direction: "up", favorability: "neutral" });
+
+    const down = buildPeriodTrendViewModels(metrics, [rollup("met_misc", 800)], [rollup("met_misc", 900)]);
+    expect(down.get("met_misc")).toMatchObject({ direction: "down", favorability: "neutral" });
+  });
+
+  it("a zero-change (flat) trend is always neutral, even for a HIGHER_IS_BETTER/LOWER_IS_BETTER metric", () => {
+    const higherIsBetter = [metricInput("met_kill", "Kill Points", MetricTrendDirection.HIGHER_IS_BETTER)];
+    const lowerIsBetter = [metricInput("met_infractions", "Infractions", MetricTrendDirection.LOWER_IS_BETTER)];
+
+    const flatHigher = buildPeriodTrendViewModels(higherIsBetter, [rollup("met_kill", 900)], [rollup("met_kill", 900)]);
+    expect(flatHigher.get("met_kill")).toMatchObject({ direction: "flat", favorability: "neutral" });
+
+    const flatLower = buildPeriodTrendViewModels(lowerIsBetter, [rollup("met_infractions", 3)], [rollup("met_infractions", 3)]);
+    expect(flatLower.get("met_infractions")).toMatchObject({ direction: "flat", favorability: "neutral" });
   });
 });

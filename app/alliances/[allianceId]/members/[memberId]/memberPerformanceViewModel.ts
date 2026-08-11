@@ -1,4 +1,6 @@
-import type { CurrentMetricViewModel, PeriodTrendViewModel } from "./MemberPerformanceSection";
+import { MetricTrendDirection } from "@/app/generated/prisma/enums";
+import { isAdverseComparisonChange } from "@/app/src/lib/metrics/metricTrendDirection";
+import type { CurrentMetricViewModel, PeriodTrendViewModel, TrendFavorability } from "./MemberPerformanceSection";
 
 /**
  * The two things this view model needs from each `MemberMetricEntry` row.
@@ -13,7 +15,18 @@ export type RawMemberMetricEntry = {
   id: string;
 };
 
-export type PeriodMetricInput = { metricId: string; metricName: string };
+export type PeriodMetricInput = {
+  metricId: string;
+  metricName: string;
+  /**
+   * Only consumed by `buildPeriodTrendViewModels` below (for the trend
+   * badge's favorable/adverse coloring) - `buildCurrentMetricViewModels`
+   * ignores it entirely. Carried on the shared input type rather than a
+   * second parallel array because every caller already has one
+   * `Metric`-joined row per period metric to build this from.
+   */
+  trendDirection: MetricTrendDirection;
+};
 
 /**
  * `MemberPage`'s "current vs. previous entry" cards are a raw
@@ -113,6 +126,30 @@ export function buildCurrentMetricViewModels(
 export type RollupMetricValue = { metricId: string; value: number | null };
 
 /**
+ * A `comparable` trend's numeric `direction` ("up"/"down"/"flat") is a
+ * plain fact about the two values, computed once in #322 and never
+ * reinterpreted here. Whether that fact is good or bad news is a *separate*
+ * leadership judgment the metric's own `trendDirection` config already
+ * encodes (`metricTrendDirection.ts`, #264 PR2 - the same enum
+ * `allianceFindings.ts`'s deterministic findings engine already uses for
+ * "is this period-over-period change adverse"). Reusing
+ * `isAdverseComparisonChange` here, rather than a naive "up is always
+ * green," is what makes a `LOWER_IS_BETTER` metric (e.g. an infraction
+ * count) trending up correctly render as adverse (red), not favorable
+ * (green) - a naive direction-only color would be actively misleading for
+ * exactly the metrics where a leader cares most.
+ */
+function classifyTrendFavorability(
+  trendDirection: MetricTrendDirection,
+  delta: number,
+): TrendFavorability {
+  if (delta === 0 || trendDirection === MetricTrendDirection.NEUTRAL) {
+    return "neutral";
+  }
+  return isAdverseComparisonChange(trendDirection, delta) ? "adverse" : "favorable";
+}
+
+/**
  * #321/#322's period-over-period trend - a deliberately separate concept
  * from `buildCurrentMetricViewModels` above, not a replacement or extension
  * of it. Sources both periods' values from the canonical
@@ -163,8 +200,9 @@ export function buildPeriodTrendViewModels(
 
     const delta = currentValue - previousValue;
     const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+    const favorability = classifyTrendFavorability(pm.trendDirection, delta);
 
-    return [pm.metricId, { status: "comparable", currentValue, previousValue, delta, direction }];
+    return [pm.metricId, { status: "comparable", currentValue, previousValue, delta, direction, favorability }];
   });
 
   return new Map(entries);
