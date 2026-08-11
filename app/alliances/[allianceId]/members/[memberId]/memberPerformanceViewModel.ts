@@ -54,6 +54,14 @@ export type PeriodMetricInput = { metricId: string; metricName: string };
  * for `PERIOD_VALUE` grain, which this page's single-value-per-entry
  * "current/previous" model only makes sense for anyway), so reading it
  * would be redundant, not additional signal.
+ *
+ * Issue #319 asked for an explicit product decision locking in this
+ * "current/previous" definition (as opposed to a period-over-period trend -
+ * see that issue's decision-lock comment for the full rationale). The
+ * decision: keep this behavior exactly as implemented here. A true
+ * "this period's value vs. last period's value" trend was deliberately
+ * scoped out as a separate future feature, not a redefinition of this
+ * function.
  */
 export function buildCurrentMetricViewModels(
   periodMetrics: readonly PeriodMetricInput[],
