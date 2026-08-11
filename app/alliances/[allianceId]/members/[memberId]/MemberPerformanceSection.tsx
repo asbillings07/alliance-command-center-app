@@ -93,6 +93,10 @@ const FAVORABILITY_BADGE_VARIANT: Record<TrendFavorability, BadgeVariant> = {
  * project's existing lightweight tooltip convention (see
  * `ImportForm.tsx`'s truncated-column-name tooltip) - no new dependency for
  * one sentence of disambiguation.
+ *
+ * #325 documented this exact copy (both this badge's and the correction
+ * `delta` line's) in `docs/changelog.md` for a leader-facing audience -
+ * update that entry's wording too if either changes materially.
  */
 function PeriodTrendBadge({ trend, periodName }: { trend: PeriodTrendViewModel; periodName?: string }) {
     if (trend.status === "new") {
