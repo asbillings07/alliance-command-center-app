@@ -15,12 +15,22 @@
  * the *input* allowlist itself as sensitive too — never log it verbatim
  * alongside the report.
  *
- * Coverage and distribution stats are computed DB-side (a single
- * `DISTINCT ON` + aggregate query per alliance, mirroring
- * `getAlliancePerformanceReport.ts`'s `queryBulkAggregates`), not by
- * pulling every historical row into JS and deduplicating in memory — this
- * keeps the audit's per-alliance cost bounded by (metrics x members), not
- * by the alliance's total entry history.
+ * Coverage and distribution stats are computed DB-side, per alliance,
+ * against ADR-018 §6's canonical read model (`buildMemberPeriodValueCte` —
+ * see `memberPeriodMetricValues.ts`), not by pulling every historical row
+ * into JS and deduplicating in memory — this keeps the audit's per-alliance
+ * cost bounded by (metrics x members), not by the alliance's total entry
+ * history. Sourcing from the canonical fragment (rather than this module's
+ * own `DISTINCT ON`, as it did pre-#287) is not a void-handling bug fix for
+ * today's `PERIOD_VALUE` metrics — the DB `CHECK` constraint already makes
+ * "value IS NULL" a reliable proxy for "not the active row" in a
+ * single-slot-per-period world, so this module's old raw-value pick and the
+ * canonical model's active-slot resolution always agreed. What this
+ * migration buys: a future `DAILY_OBSERVATION` metric's coverage/
+ * distribution reflect its true rolled-up (sum/average) value across every
+ * observed day, not just whichever single day's raw entry happened to have
+ * the newest `recordedAt` — and one fewer independent implementation of the
+ * slot-resolution tie-break to keep in sync.
  *
  * This module answers the "production-derived aggregates" third of the
  * three-part evidence package described in ADR-017; it deliberately does
@@ -30,6 +40,7 @@
 import { Prisma } from "@/app/generated/prisma/client";
 import { Metric_Type, MetricSummaryKind, MetricTrendDirection } from "@/app/generated/prisma/enums";
 import { pickCurrentMetricPeriod } from "@/app/src/lib/metricPeriodOrdering";
+import { buildMemberPeriodValueCte } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 import type { AuditTxClient } from "./apsAuditTransaction";
 import { validateAllianceAllowlist } from "./apsAuditAllowlist";
 import {
@@ -283,16 +294,21 @@ export function mapCoverageDistributionRow(row: CoverageDistributionRawRow): Cov
 
 /**
  * One coverage+distribution aggregate row per (active-attached) metric, for
- * one alliance's current period, computed entirely in PostgreSQL: latest
- * value per member via `DISTINCT ON` (same technique as
- * `getAlliancePerformanceReport.ts`), cross-joined against the roster so
- * "missing" is a real count rather than an absence, with percentiles and
- * the Tukey-fence outlier count derived from a `PERCENTILE_CONT` CTE.
+ * one alliance's current period, computed entirely in PostgreSQL: each
+ * member's resolved value comes from ADR-018 §6's canonical
+ * `buildMemberPeriodValueCte` fragment (latest-wins / sum / average per the
+ * metric's own configuration, tombstoned-void entries already excluded —
+ * see this module's doc comment for why that specific exclusion is a
+ * no-op for today's metrics, not a bug fix), cross-joined against the
+ * roster so "missing" is a real count rather than an absence, with
+ * percentiles and the Tukey-fence outlier count derived from a
+ * `PERCENTILE_CONT` CTE.
  *
  * `MemberMetricEntry.value` is a Postgres `INTEGER` column (see
  * `prisma/schema.prisma`), which cannot represent `NaN` or `+/-Infinity` --
- * unlike a floating-point column, every non-null value here is already a
- * finite integer, so no separate finite-value validation is needed.
+ * unlike a floating-point column, every non-null resolved value here is
+ * already finite (an integer, or a `SUM`/`AVERAGE` of finite integers), so
+ * no separate finite-value validation is needed.
  */
 async function queryCoverageAndDistribution(
   tx: AuditTxClient,
@@ -303,13 +319,7 @@ async function queryCoverageAndDistribution(
   if (metricIds.length === 0) return new Map();
 
   const rows = await tx.$queryRaw<CoverageDistributionRawRow[]>`
-    WITH latest AS (
-      SELECT DISTINCT ON ("metricId", "allianceMemberId")
-        "metricId" AS metric_id, "allianceMemberId" AS member_id, value
-      FROM "MemberMetricEntry"
-      WHERE "periodId" = ${periodId} AND "metricId" IN (${Prisma.join(metricIds)})
-      ORDER BY "metricId", "allianceMemberId", "recordedAt" DESC, "createdAt" DESC, id DESC
-    ),
+    WITH ${buildMemberPeriodValueCte(allianceId, periodId, metricIds)},
     metric_types AS (
       SELECT id AS metric_id, (type = 'BOOLEAN'::"Metric_Type") AS is_boolean
       FROM "Metric"
@@ -317,16 +327,15 @@ async function queryCoverageAndDistribution(
     ),
     cells AS (
       SELECT
-        mt.metric_id,
+        rmpv.metric_id,
         mt.is_boolean,
-        am.id AS member_id,
+        rmpv.alliance_member_id AS member_id,
         (am."archivedAt" IS NULL) AS is_active,
-        l.value,
-        (l.value IS NOT NULL AND (NOT mt.is_boolean OR l.value IN (0, 1))) AS is_valid
-      FROM metric_types mt
-      CROSS JOIN "AllianceMember" am
-      LEFT JOIN latest l ON l.metric_id = mt.metric_id AND l.member_id = am.id
-      WHERE am."allianceId" = ${allianceId}
+        rmpv.value,
+        (rmpv.value IS NOT NULL AND (NOT mt.is_boolean OR rmpv.value IN (0, 1))) AS is_valid
+      FROM resolved_member_period_values rmpv
+      JOIN metric_types mt ON mt.metric_id = rmpv.metric_id
+      JOIN "AllianceMember" am ON am.id = rmpv.alliance_member_id
     ),
     percentiles AS (
       SELECT
@@ -380,6 +389,42 @@ async function queryCoverageAndDistribution(
 
 type PeriodsWithValidDataRawRow = { metric_id: string; periods_with_valid_data_count: bigint };
 
+/**
+ * Spans every period a metric is actively attached to (not just the current
+ * one), so — unlike `queryCoverageAndDistribution` above — this can't
+ * compose `buildMemberPeriodValueCte`, which is deliberately scoped to a
+ * single caller-supplied `periodId` (ADR-018 §6). Instead, this reproduces
+ * that fragment's own two-phase resolution inline, generalized to resolve
+ * per `(period, metric, member)` instead of per `(metric, member)`:
+ *   Phase 1 (`slot_winner`) - within each `(periodId, metricId,
+ *     allianceMemberId, observedOn)` slot, `(recordedAt, createdAt, id)`
+ *     DESC picks the one winning row regardless of status.
+ *   Phase 2 (`active_slots`/`latest`) - only ACTIVE winning slots are
+ *     eligible, and each member's latest-`observedOn` active slot per
+ *     (period, metric) is what "did this member record something" checks.
+ *
+ * For today's single-slot-per-period metrics this is a no-op (the DB
+ * `CHECK` constraint already ties VOIDED to a null value, so the old plain
+ * `DISTINCT ON (period, metric, member)` always agreed with this). What
+ * this buys is `DAILY_OBSERVATION` correctness: partitioning by
+ * `observedOn` *before* resolving status means voiding one day's slot
+ * can no longer hide an EARLIER day's still-active, still-valid data for
+ * the same period/metric/member - the old query's single
+ * `DISTINCT ON (period, metric, member)` had no per-day concept, so a void
+ * tombstone (having the single latest `recordedAt` across every row in
+ * the period) could make the whole period look like it had no valid data
+ * at all. If this tie-break logic ever changes, `buildMemberPeriodValueCte`
+ * must change the same way.
+ *
+ * Every join below is also explicitly re-scoped to `allianceId` -- `Metric`,
+ * `MetricPeriod`, and `AllianceMember` each carry their own `allianceId`
+ * column, but nothing at the FK level stops a `MetricPeriodMetric` or
+ * `MemberMetricEntry` row from pairing an in-allowlist metric with an
+ * out-of-scope period/member (whether from a bug, a bad migration, or
+ * inconsistent data). Re-checking `allianceId` at every join is
+ * defense-in-depth against exactly that (ADR-002: never assume a single
+ * alliance), independent of whether such a row could exist today.
+ */
 async function queryPeriodsWithValidDataCounts(
   tx: AuditTxClient,
   allianceId: string,
@@ -387,14 +432,6 @@ async function queryPeriodsWithValidDataCounts(
 ): Promise<Map<string, number>> {
   if (metricIds.length === 0) return new Map();
 
-  // Every join below is explicitly re-scoped to `allianceId` -- `Metric`,
-  // `MetricPeriod`, and `AllianceMember` each carry their own `allianceId`
-  // column, but nothing at the FK level stops a `MetricPeriodMetric` or
-  // `MemberMetricEntry` row from pairing an in-allowlist metric with an
-  // out-of-scope period/member (whether from a bug, a bad migration, or
-  // inconsistent data). Re-checking `allianceId` at every join is
-  // defense-in-depth against exactly that (ADR-002: never assume a single
-  // alliance), independent of whether such a row could exist today.
   const rows = await tx.$queryRaw<PeriodsWithValidDataRawRow[]>`
     WITH attached_periods AS (
       SELECT DISTINCT mpm."periodId" AS period_id, mpm."metricId" AS metric_id
@@ -402,13 +439,24 @@ async function queryPeriodsWithValidDataCounts(
       JOIN "MetricPeriod" mp ON mp.id = mpm."periodId" AND mp."allianceId" = ${allianceId}
       WHERE mpm."metricId" IN (${Prisma.join(metricIds)}) AND mpm.active = true
     ),
-    latest AS (
-      SELECT DISTINCT ON (mme."periodId", mme."metricId", mme."allianceMemberId")
-        mme."periodId" AS period_id, mme."metricId" AS metric_id, mme.value
+    slot_winner AS (
+      SELECT DISTINCT ON (mme."periodId", mme."metricId", mme."allianceMemberId", mme."observedOn")
+        mme."periodId" AS period_id, mme."metricId" AS metric_id, mme."allianceMemberId" AS member_id,
+        mme."observedOn", mme."value", mme."status"
       FROM "MemberMetricEntry" mme
       JOIN attached_periods ap ON ap.period_id = mme."periodId" AND ap.metric_id = mme."metricId"
       JOIN "AllianceMember" am ON am.id = mme."allianceMemberId" AND am."allianceId" = ${allianceId}
-      ORDER BY mme."periodId", mme."metricId", mme."allianceMemberId", mme."recordedAt" DESC, mme."createdAt" DESC, mme.id DESC
+      ORDER BY mme."periodId", mme."metricId", mme."allianceMemberId", mme."observedOn",
+        mme."recordedAt" DESC, mme."createdAt" DESC, mme."id" DESC
+    ),
+    active_slots AS (
+      SELECT * FROM slot_winner WHERE "status" = 'ACTIVE'
+    ),
+    latest AS (
+      SELECT DISTINCT ON (period_id, metric_id, member_id)
+        period_id, metric_id, value
+      FROM active_slots
+      ORDER BY period_id, metric_id, member_id, "observedOn" DESC NULLS LAST
     ),
     metric_types AS (
       SELECT id AS metric_id, (type = 'BOOLEAN'::"Metric_Type") AS is_boolean

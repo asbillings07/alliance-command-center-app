@@ -231,12 +231,36 @@ No follow-up deferred for eventual migration — this consumer is intentionally 
 
 ---
 
+## `apsDataReadinessAudit.ts` (full — `queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`)
+
+- **Location:** `app/src/lib/operations/apsDataReadinessAudit.ts`
+- **Clarification vs. the earlier "needs `AuditTxClient` support" note:** `buildMemberPeriodValueCte` never took a Prisma client at all — it's a pure `Prisma.Sql` fragment builder, executed by whatever client the *caller's* own `$queryRaw` uses. This module already calls `tx.$queryRaw` directly (never the global `prisma`), so composing the fragment into that same call needed no signature change anywhere.
+- **`queryCoverageAndDistribution` (single-period):**
+  - **Old implementation:** its own `WITH latest AS (SELECT DISTINCT ON ("metricId", "allianceMemberId") ...)` over the current period's `MemberMetricEntry` rows, cross-joined against the roster.
+  - **New implementation:** composes `buildMemberPeriodValueCte(allianceId, periodId, metricIds)` — the same fragment used by the matrix and summary-report roster migrations — for `cells`'s per-member resolved value, keeping every downstream `FILTER`/`PERCENTILE_CONT` clause unchanged.
+  - **Not a void-handling bug fix for today's metrics:** the DB `CHECK` constraint already ties a `VOIDED` row to a null value, so for a single-slot-per-period `PERIOD_VALUE` metric, "value IS NULL" was already a reliable proxy for "not the active row" — the old raw pick and the new active-slot resolution always agreed. See rationale below for what this migration actually buys.
+- **`queryPeriodsWithValidDataCounts` (spans every attached period — can't compose the single-`periodId`-scoped fragment):**
+  - **Old implementation:** a single `WITH latest AS (SELECT DISTINCT ON ("periodId", "metricId", "allianceMemberId") ...)` ordered by `recordedAt` DESC only — no `observedOn` partitioning at all.
+  - **New implementation:** reproduces `buildMemberPeriodValueCte`'s own two-phase resolution inline (`slot_winner` partitioned by `observedOn` too, then `active_slots`/`latest` picks each member's latest-`observedOn` active slot per period) — see the module's doc comment for why this couldn't just call the shared fragment, and the explicit warning that this duplicated tie-break must move in lockstep with `buildMemberPeriodValueCte`'s if either ever changes.
+- **Test:** [`apsDataReadinessAuditParity.integration.test.ts`](../../app/src/lib/operations/apsDataReadinessAuditParity.integration.test.ts) (new), plus the pre-existing [`apsDataReadinessAudit.integration.test.ts`](../../app/src/lib/operations/apsDataReadinessAudit.integration.test.ts) (18 tests, unmodified, all passing against the new implementation).
+
+| Input scenario | Old result summary | New result summary | Match result |
+|---|---|---|---|
+| A member submitted a value, then voided it, and never corrected (`queryCoverageAndDistribution`) | Missing (the DB `CHECK` constraint already makes this agree with the new implementation) | Identical | `PASS` |
+| `DAILY_OBSERVATION + SUM` metric, three daily entries (5 each) per member, several members | Distribution reflects only the latest single day's raw value (`min`/`max` 5) | Distribution reflects the true rolled-up sum (`min`/`max` 15) | `EXPECTED_BREAKING` — see rationale below |
+| Dogfood readiness: an EARLIER day's entry stays `ACTIVE` and valid, while a LATER day in the same period was recorded and then `VOIDED` | **Incorrectly** sees the whole period as having no valid data — the void tombstone has the single latest `recordedAt` across every row in the period/metric/member, and the old query has no per-day concept to look past it to the still-valid earlier day | Correctly still sees the period as having valid data, via the earlier day's untouched slot | `EXPECTED_BREAKING` — see rationale below |
+
+**`EXPECTED_BREAKING` rationale:** both divergences require a `DAILY_OBSERVATION` metric (multiple slots per period/metric/member) to manifest at all — a single-slot `PERIOD_VALUE` metric can never exhibit either, per the `CHECK`-constraint argument above. The first is the same "true rollup vs. one arbitrary raw row" class of fix as every other consumer in this log. The second is a real, if narrower, correctness property specific to this module's multi-period dogfood-readiness query: partitioning by `observedOn` *before* resolving status means voiding one day's slot can no longer make an entirely different, still-active day's data invisible. **Inert today**: no leader can create a `DAILY_OBSERVATION` metric yet, and no write path can create a `VOIDED` row yet either — this migration requires *both* to ever be observable in production. Becomes correct-by-construction the moment either ships.
+
+`apsDataReadinessAudit.ts` now has no remaining unmigrated query.
+
+---
+
 ## Remaining consumers (not yet migrated)
 
-Per the database design §8 inventory, tracked here so this table stays the
-single place progress is visible:
-
-- [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`) — needs `memberPeriodMetricValues`/`buildMemberPeriodValueCte` to accept the audit's `AuditTxClient` (read-only transaction) instead of the global `prisma` client; larger change than a single-consumer swap
+None — every consumer in the database design §8 inventory has been migrated
+or given an explicit narrower fix (see each section above), and this table's
+exit criteria (§ intro) are met.
 
 Closed out (not a `memberPeriodMetricValues` migration — a narrower `status:
 "ACTIVE"` predicate fix instead; see the sections above for each): `platform/setup.ts`,
