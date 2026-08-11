@@ -20,7 +20,10 @@ import {
   type MatrixRow,
   type AllianceMemberMetricMatrix,
 } from "@/app/src/lib/reports/allianceMemberMatrix";
-import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
+import {
+  memberPeriodMetricValues,
+  buildMemberPeriodValueCte,
+} from "@/app/src/lib/metrics/memberPeriodMetricValues";
 
 /**
  * Bounded member-by-metric matrix read model (#264 PR3).
@@ -55,20 +58,17 @@ import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetr
  * so client components (the column chooser/controls) can import the pure
  * side without pulling Prisma/`pg` into the browser bundle.
  *
- * #287 Slice 3 (partial): only round-trip 3 above has migrated to
- * `memberPeriodMetricValues` (ADR-018 §6). Round-trips 1-2's
- * `selected_values` CTE (archived-inclusion + metric-sort tiering, computed
- * over the *whole* roster before pagination) still reads raw
- * `MemberMetricEntry` rows directly - migrating it requires either fetching
- * every member's cross-joined value into JS to sort/paginate there (the
- * unbounded-in-memory anti-pattern this project is otherwise eliminating)
- * or extracting `memberPeriodMetricValues`' CTE chain into a reusable SQL
- * fragment this file's own paginated/sorted query can compose with. Both
- * are deliberately deferred (see
- * `docs/database-design/287-slice3-consumer-parity-log.md`): this gap is
- * inert today, since no leader can create a `DAILY_OBSERVATION` metric yet,
- * so archived-inclusion and metric-sort already agree with the canonical
- * model for every metric that exists in production.
+ * #287 Slice 3: all three round-trips now compose the canonical read
+ * model. Round-trip 3 calls `memberPeriodMetricValues` directly;
+ * round-trips 1-2's `selected_values` CTE (archived-inclusion +
+ * metric-sort tiering, computed over the *whole* roster before pagination)
+ * composes `buildMemberPeriodValueCte`'s reusable `WITH`-chain fragment
+ * into its own paginated/sorted/searched query, rather than re-implementing
+ * a second `DISTINCT ON` over raw `MemberMetricEntry` rows - see
+ * `docs/database-design/287-slice3-consumer-parity-log.md` for the parity
+ * diff (this closed a real, if previously-inert, gap: a
+ * `DAILY_OBSERVATION + SUM/AVERAGE` metric column now sorts/filters by its
+ * true rolled-up value instead of only its latest single day's raw entry).
  */
 
 // Re-exported for convenience so most callers only need one import path.
@@ -96,23 +96,30 @@ type MatrixRosterQueryParams = {
 };
 
 /**
- * `selected_values`: latest value per (metric, member) across only the
- * *selected* columns — shared by the archived-inclusion check below and by
- * a metric-based sort's value/tier. `member_has_selected_value` backs the
- * "archived member is only included if they contributed to a *currently
- * visible* column" rule (#264 PR3) — a contribution to some other metric in
- * the library that isn't a selected column shouldn't pull an otherwise
- * irrelevant archived row into view.
+ * `selected_values`: canonical member-period rollup value per (metric,
+ * member) across only the *selected* columns — shared by the
+ * archived-inclusion check below and by a metric-based sort's value/tier.
+ * `member_has_selected_value` backs the "archived member is only included
+ * if they contributed to a *currently visible* column" rule (#264 PR3) — a
+ * contribution to some other metric in the library that isn't a selected
+ * column shouldn't pull an otherwise irrelevant archived row into view.
+ *
+ * Composes `buildMemberPeriodValueCte` (ADR-018 §6) rather than a
+ * hand-rolled `DISTINCT ON` over raw `MemberMetricEntry` rows, so
+ * `selected_values.value` is the true LATEST/SUM/AVERAGE rollup - not just
+ * the latest single day's raw entry - for a `DAILY_OBSERVATION` metric.
+ * `selected_values`/`member_has_selected_value`'s own column names
+ * (`metric_id`, `member_id`, `value`) are kept identical to the pre-#287
+ * shape so `buildMatrixFromWhere`/`buildMatrixOrderBy` below need no
+ * changes.
  */
 function buildMatrixCte(params: MatrixRosterQueryParams): Prisma.Sql {
-  const { periodId, columnIds } = params;
+  const { allianceId, periodId, columnIds } = params;
   return Prisma.sql`
-    WITH selected_values AS (
-      SELECT DISTINCT ON ("metricId", "allianceMemberId")
-        "metricId" AS metric_id, "allianceMemberId" AS member_id, value
-      FROM "MemberMetricEntry"
-      WHERE "periodId" = ${periodId} AND "metricId" IN (${Prisma.join(columnIds)})
-      ORDER BY "metricId", "allianceMemberId", "recordedAt" DESC, "createdAt" DESC, id DESC
+    WITH ${buildMemberPeriodValueCte(allianceId, periodId, columnIds)},
+    selected_values AS (
+      SELECT metric_id, alliance_member_id AS member_id, value
+      FROM resolved_member_period_values
     ),
     member_has_selected_value AS (
       SELECT DISTINCT member_id FROM selected_values WHERE value IS NOT NULL
