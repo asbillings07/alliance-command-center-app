@@ -152,3 +152,182 @@ describe("MemberPerformanceSection MetricCard rendering", () => {
     expect(html).not.toContain("since last entry");
   });
 });
+
+// #323: the period-over-period trend badge, deliberately distinct copy and
+// color from the correction `delta` line above (#319/#320's semantics,
+// untouched here). "success"/"danger" Badge variants render as
+// bg-success/... and bg-danger-dark ... - asserting on those classes (not
+// just text) is how these tests actually lock in "favorable is green,
+// adverse is red," not merely "the right words appear."
+describe("MemberPerformanceSection period trend badge (#323)", () => {
+  it("renders a comparable favorable trend in the success color with an up arrow and 'vs. last period' copy distinct from 'since last entry'", () => {
+    const html = renderToStaticMarkup(
+      <MemberPerformanceSection
+        emptyState="has-metrics"
+        periodName="Week 20"
+        previousPeriodName="Week 19"
+        metrics={[
+          {
+            metricId: "m1",
+            metricName: "Kill Points",
+            current: { value: 900, recordedAt: new Date("2026-04-10") },
+            periodTrend: {
+              status: "comparable",
+              currentValue: 900,
+              previousValue: 850,
+              delta: 50,
+              direction: "up",
+              favorability: "favorable",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("bg-success");
+    expect(html).toContain("+50 vs. last period");
+    expect(html).not.toContain("since last entry");
+    expect(html).toContain("Week 19");
+  });
+
+  it("renders a comparable adverse trend in the danger color, e.g. a LOWER_IS_BETTER metric trending up", () => {
+    const html = renderToStaticMarkup(
+      <MemberPerformanceSection
+        emptyState="has-metrics"
+        periodName="Week 20"
+        metrics={[
+          {
+            metricId: "m1",
+            metricName: "Infractions",
+            current: { value: 5, recordedAt: new Date("2026-04-10") },
+            periodTrend: {
+              status: "comparable",
+              currentValue: 5,
+              previousValue: 2,
+              delta: 3,
+              direction: "up",
+              favorability: "adverse",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("bg-danger");
+    expect(html).toContain("+3 vs. last period");
+  });
+
+  it("renders a neutral-favorability comparable trend without success/danger coloring", () => {
+    const html = renderToStaticMarkup(
+      <MemberPerformanceSection
+        emptyState="has-metrics"
+        periodName="Week 20"
+        metrics={[
+          {
+            metricId: "m1",
+            metricName: "Misc",
+            current: { value: 900, recordedAt: new Date("2026-04-10") },
+            periodTrend: {
+              status: "comparable",
+              currentValue: 900,
+              previousValue: 850,
+              delta: 50,
+              direction: "up",
+              favorability: "neutral",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(html).not.toContain("bg-success");
+    expect(html).not.toContain("bg-danger");
+    expect(html).toContain("+50 vs. last period");
+  });
+
+  it("renders 'New' when there is no prior period at all - distinct from 'N/A'", () => {
+    const html = renderToStaticMarkup(
+      <MemberPerformanceSection
+        emptyState="has-metrics"
+        periodName="Week 1"
+        metrics={[
+          {
+            metricId: "m1",
+            metricName: "Kill Points",
+            current: { value: 500, recordedAt: new Date("2026-01-06") },
+            periodTrend: { status: "new" },
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("New");
+    expect(html).not.toContain("N/A");
+  });
+
+  it("renders 'N/A vs. last period' when a prior period exists but this metric has no comparable baseline", () => {
+    const html = renderToStaticMarkup(
+      <MemberPerformanceSection
+        emptyState="has-metrics"
+        periodName="Week 20"
+        metrics={[
+          {
+            metricId: "m1",
+            metricName: "Kill Points",
+            current: { value: 900, recordedAt: new Date("2026-04-10") },
+            periodTrend: { status: "no-baseline" },
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("N/A vs. last period");
+  });
+
+  it("renders no trend badge at all when periodTrend is absent (e.g. current is void/never-recorded)", () => {
+    const html = renderToStaticMarkup(
+      <MemberPerformanceSection
+        emptyState="has-metrics"
+        periodName="Week 20"
+        metrics={[{ metricId: "m1", metricName: "Kill Points" }]}
+      />,
+    );
+
+    expect(html).not.toContain("vs. last period");
+    expect(html).not.toContain(">New<");
+  });
+
+  // The acceptance-critical mixed case: both the same-period correction
+  // delta AND the period trend badge render simultaneously, with distinct
+  // copy, on one card - proving #323 didn't regress #319/#320's existing
+  // correction behavior while adding the new trend concept alongside it.
+  it("renders both the correction delta and the period trend badge together on the same card, with distinguishable copy", () => {
+    const html = renderToStaticMarkup(
+      <MemberPerformanceSection
+        emptyState="has-metrics"
+        periodName="Week 20"
+        previousPeriodName="Week 19"
+        metrics={[
+          {
+            metricId: "m1",
+            metricName: "Kill Points",
+            current: { value: 900, recordedAt: new Date("2026-04-10") },
+            previous: { value: 880, recordedAt: new Date("2026-04-08") },
+            delta: 20,
+            periodTrend: {
+              status: "comparable",
+              currentValue: 900,
+              previousValue: 850,
+              delta: 50,
+              direction: "up",
+              favorability: "favorable",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("+20 since last entry");
+    expect(html).toContain("+50 vs. last period");
+  });
+});
