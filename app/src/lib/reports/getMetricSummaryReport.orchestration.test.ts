@@ -16,9 +16,17 @@ vi.mock("@/app/src/lib/prisma", () => ({
 // rather than reconstructing memberPeriodMetricValues' own internal SQL
 // shape here, which is that module's own concern (see
 // memberPeriodRollupAlgebra.integration.test.ts for its real behavior).
-vi.mock("@/app/src/lib/metrics/memberPeriodMetricValues", () => ({
-  memberPeriodMetricValues: vi.fn(),
-}));
+vi.mock("@/app/src/lib/metrics/memberPeriodMetricValues", async (importOriginal) => {
+  // buildMemberPeriodValueCte is a pure SQL-fragment builder (no DB call) -
+  // keep the real implementation so buildRosterCte's mocked-$queryRaw path
+  // below still gets a real Prisma.Sql to interpolate, and only mock the
+  // actual DB-calling function.
+  const actual = await importOriginal<typeof import("@/app/src/lib/metrics/memberPeriodMetricValues")>();
+  return {
+    ...actual,
+    memberPeriodMetricValues: vi.fn(),
+  };
+});
 
 import { prisma } from "@/app/src/lib/prisma";
 import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";

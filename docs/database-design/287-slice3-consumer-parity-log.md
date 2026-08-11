@@ -83,7 +83,7 @@ follow-up issue is needed — the fix is already complete.
 
 ---
 
-## `getMetricSummaryReport.ts` (partial — `queryAggregate` + `queryVisualizationRows`)
+## `getMetricSummaryReport.ts` (full)
 
 - **Location:** `app/src/lib/reports/getMetricSummaryReport.ts`
 - **Old implementation:** two independent raw `WITH latest AS (SELECT DISTINCT ON ("allianceMemberId") ...)` queries — one computing a cohort-wide rollup+coverage aggregate (`SUM`/`AVG`/`COUNT ... FILTER`), one fetching one `{allianceMemberId, playerName, archived, value}` row per qualifying member for the chart.
@@ -102,7 +102,19 @@ follow-up issue is needed — the fix is already complete.
 
 Also newly correct-by-construction (not exercised by any parity scenario above because it requires a `DAILY_OBSERVATION + AVERAGE` metric, which — like all `DAILY_OBSERVATION` metrics — doesn't exist in production yet): `sumValue`/`averageValue` are now kept as exact, possibly-fractional sums rather than the old query's `::bigint`-cast total. Safe today because `MemberMetricEntry.value` is an integer column, so every legacy per-member value is already whole; would have silently rounded a fractional per-member `AVERAGE`-rollup value on the way into a cohort-wide `SUM` report otherwise.
 
-**Deliberately not migrated in this PR** (tracked as a follow-up below): `buildRosterCte`/`countRosterRows`/`queryRosterRows` — the paginated, filtered, searched roster table — still reads raw `MemberMetricEntry` rows directly, including a `RANK() OVER (...)` window function computed over the *whole* (unfiltered, unpaginated) cohort before pagination. This is the exact same "value needed at the SQL level across every candidate row, not just the current page" tension deferred for the matrix's `selected_values` CTE above, and inert today for the identical reason.
+### `buildRosterCte`/`countRosterRows`/`queryRosterRows` (paginated, ranked roster table) — follow-up closed
+
+- **Old implementation:** a second, independent raw `DISTINCT ON ("allianceMemberId")` over `MemberMetricEntry`, feeding a `ranked` CTE (`RANK() OVER (ORDER BY value DESC)`) computed over the *whole* (unfiltered, unpaginated) cohort before the page's own filter/search/sort/`LIMIT`/`OFFSET`.
+- **New implementation:** `latest` now composes `buildMemberPeriodValueCte` (the same reusable fragment extracted for `getAllianceMemberMetricMatrix.ts`'s roster migration) instead of its own `DISTINCT ON`. `latest`'s column names (`member_id`, `value`) are unchanged, so `ranked`, `buildRosterFromWhere`, and `buildRosterOrderBy` needed no changes.
+- **Test:** [`getMetricSummaryReportRosterParity.integration.test.ts`](../../app/src/lib/reports/getMetricSummaryReportRosterParity.integration.test.ts)
+
+| Input scenario | Old result summary | New result summary | Match result |
+|---|---|---|---|
+| Ranking + archived-inclusion (with a voided-only entry), `value_desc` sort | Voided-only archived member excluded; two contributors ranked by value | Identical | `PASS` |
+| Name sort, active-only filter | Alphabetical roster | Identical | `PASS` |
+| `DAILY_OBSERVATION + SUM` metric: one member with three daily entries (true sum 15) outranked, under the old latest-day-only value, by a member with one higher single-day entry (10) | Ranks/sorts by the latest single day's raw value only (10 above 15, rank 1 vs. 2) | Ranks/sorts by the true rolled-up sum (15 above 10, rank 1 vs. 2) | `EXPECTED_BREAKING` — see rationale below |
+
+**`EXPECTED_BREAKING` rationale:** identical in kind to this file's own aggregate divergence above, now closed for the paginated roster's ranking/sort/archived-inclusion too. **Inert today**: no leader can create a `DAILY_OBSERVATION` metric yet. This closes the follow-up this PR's predecessor deliberately deferred — `getMetricSummaryReport.ts` has no remaining unmigrated query.
 
 ---
 
@@ -224,8 +236,7 @@ No follow-up deferred for eventual migration — this consumer is intentionally 
 Per the database design §8 inventory, tracked here so this table stays the
 single place progress is visible:
 
-- [ ] `getMetricSummaryReport.ts`'s `buildRosterCte`/`countRosterRows`/`queryRosterRows` (paginated, ranked roster table) — see follow-up above; can now reuse `buildMemberPeriodValueCte` the same way `getAllianceMemberMetricMatrix.ts`'s roster query just did
-- [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`) — needs `memberPeriodMetricValues` to accept the audit's `AuditTxClient` (read-only transaction) instead of the global `prisma` client; larger change than a single-consumer swap
+- [ ] `apsDataReadinessAudit.ts` (`queryCoverageAndDistribution`, `queryPeriodsWithValidDataCounts`) — needs `memberPeriodMetricValues`/`buildMemberPeriodValueCte` to accept the audit's `AuditTxClient` (read-only transaction) instead of the global `prisma` client; larger change than a single-consumer swap
 
 Closed out (not a `memberPeriodMetricValues` migration — a narrower `status:
 "ACTIVE"` predicate fix instead; see the sections above for each): `platform/setup.ts`,
