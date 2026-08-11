@@ -51,54 +51,17 @@ actually trending up or down period over period. #321-#324 designed and
 shipped that missing comparison as a clearly-labeled second signal,
 additive to the existing correction behavior, which is otherwise unchanged.
 
-**Post-release verification** (checked 2026-08-11, ~21:10 UTC): the trend UI
-shipped to production in #327 (merged 17:55 UTC) - `main` deploys on every
-merge (ADR-011) - roughly two hours *before* this checklist was drafted, so
-it was never a pre-release gate a reviewer could act on; it's recorded here
-as evidence the shipped behavior was actually re-verified, not merely
-planned.
+**Post-release verification** (checked 2026-08-11): the trend UI shipped to
+production in #327 - `main` deploys on every merge (ADR-011) - before this
+entry was drafted, so this section records an actual re-verification of
+live behavior rather than a pre-release gate.
 
-A real click-through against production confirmed the core rendering with
-live data - a member's Season 4 card simultaneously showed four independent
-`comparable` trend badges with real deltas (e.g. `▲ +35.6M vs. last period`,
-`▼ -58.3M vs. last period`) and two `N/A vs. last period` badges for metrics
-absent from the prior period, all on one page, each metric resolving
-independently and correctly:
-
-- [x] Comparable trend renders correctly with real numbers/arrows and
-      distinct copy from the correction line - **verified via live
-      production click-through** (member card, Season 4, four metrics with
-      real up/down deltas).
-- [x] `N/A vs. last period` renders correctly with real data - **verified
-      via live production click-through** (same card, two metrics absent
-      from the prior period).
-- [ ] Favorability coloring (green in a hopeful/favorable sense = matches
-      the metric's own "higher/lower is better" config, red = adverse) -
-      **not observable in production today**: every real alliance's
-      metrics are currently configured `NEUTRAL` (confirmed via a read-only
-      production query before this click-through), so every live badge
-      renders in the neutral color regardless of direction. Verified only
-      via `MemberPerformanceSection.test.tsx`'s favorable/adverse cases and
-      `page.test.ts`'s LOWER_IS_BETTER end-to-end case - pass. Re-verify
-      live once any alliance configures a non-`NEUTRAL` metric with real
-      entries.
-- [ ] `New` (first-ever period) - not observable in this click-through
-      (Season 4 isn't BVRN's first period). Verified only via
-      `MemberPerformanceSection.test.tsx`'s "renders 'New'..." case - pass.
-- [ ] Same-period correction (`since last entry`) and the trend badge on
-      one card together - not observable today: no alliance in production
-      currently has more than one entry for the same member/metric/period
-      (confirmed via the same read-only query). Verified only via
-      `MemberPerformanceSection.test.tsx`'s mixed-rendering case and
-      `page.test.ts`'s multiple-entries wiring case - pass.
-
-The three unchecked items above are not a gap in this PR's testing -
-they're scenarios real production data simply can't exercise yet, not
-scenarios where the shipped code was observed to be wrong. Whoever notices
-production first grow a non-`NEUTRAL` metric with real entries, a
-same-period correction, or a view of an alliance's first-ever period should
-come back and check the corresponding box(es) above directly, rather than
-opening a new entry for it - this checklist is tracking progress toward
-its own completion, not a separate release.
+Production testing confirmed the comparable-trend and `N/A vs. last period`
+states render correctly with live data. The remaining states (favorability
+coloring, `New`, and a same-period correction alongside a trend badge on
+one card) didn't have suitable production data available to exercise them
+live at verification time, and remain covered by the automated test suite
+instead. This file intentionally stays this general - see #329's PR
+description for the specific evidence behind each of these statements.
 
 Issues: #319, #320, #321, #322, #323, #324, #325.
