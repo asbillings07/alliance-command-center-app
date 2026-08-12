@@ -12,7 +12,7 @@
 
 **Reconciliation with existing ADRs, up front, because both are load-bearing for every decision below:**
 
-- **[ADR-006](../../AGENTS.md)** (authorization is always enforced on the server; hidden UI is not security): a feature flag is a *release* control, never an *authorization* control. Every decision in this ADR keeps those two concerns independent — a flag can withhold a capability from everyone, but it never grants one to someone authorization would otherwise deny, and authorization is checked unconditionally regardless of flag state (§6).
+- **[ADR-006](../../AGENTS.md)** (authorization is always enforced on the server; hidden UI is not security): a feature flag is a *release* control, never an *authorization* control. The one rule this ADR applies consistently everywhere (§2, §6): **authorization must succeed before protected content, data, or side effects are provided. A context-free disabled flag may deny the request earlier, but an enabled flag can never bypass authorization.**
 - **[ADR-011](011-continuous-delivery.md)** (every merge to `main` is deployable; "feature flags control user-facing changes"): this ADR is the mechanism that promise already assumed existed. Preview remains ACC's staging substitute (ADR-011, ADR-016) and gets its own independent flag configuration (§4).
 
 ## Decision
@@ -81,7 +81,7 @@ A resolved flag value is never carried across independent execution boundaries. 
 | Temporary release flag | Use the resolved value as-is | Falls back to the declared `defaultValue`: **disabled** — matches #330's "Production must fail closed for unreleased features" |
 | Operational kill switch | Use the resolved value as-is | Falls back to the declared `defaultValue`: **not killed** (normal operation continues) — the switch protects already-vetted, stable functionality; failing an unrelated provider outage to "killed" would be a disproportionate, self-inflicted incident |
 
-- **Emergency disable when Vercel Flags itself is unreachable:** the fallback is a code-level revert and redeploy — already a fast, exercised path per ADR-011's deploy-on-merge model, not a second flag mechanism. (A redeploy also re-embeds a fresh build-time snapshot, so it is a real lever, not merely "wait for the provider to recover.")
+- **Emergency disable when Vercel Flags itself is unreachable:** the fallback is a code-level revert and redeploy that restores or forces the stable path directly in code — already a fast, exercised path per ADR-011's deploy-on-merge model, not a second flag mechanism. This deliberately does not depend on the provider recovering or on a build being able to fetch fresh definitions during the same outage (a build-time embed is only as fresh as whatever the provider could return at that moment); the revert removes the dependency on the provider entirely rather than hoping for a better-timed read from it.
 - **Strict live-read-only evaluation** (distrusting the embedded snapshot too, for a flag whose staleness tolerance must be near zero) is an explicit, opt-in escape hatch for a specific flag, not the default policy. Reaching for it requires proving the SDK can expose per-result freshness/reason data for that flag and disabling embedding (`VERCEL_FLAGS_DISABLE_DEFINITION_EMBEDDING=1`) — an implementation-time decision for whichever flag actually needs it, not something #331 should invent globally.
 
 ### 5. Disabled behavior is explicit per surface
@@ -98,7 +98,7 @@ A resolved flag value is never carried across independent execution boundaries. 
 
 One evaluation (§3) gates whichever of the following are relevant to a given flag: navigation/discovery links, direct pages/routes, server components and data reads, server actions/APIs, and background/queued work. Client components receive only the already-resolved value (§3) — a flag never ships provider credentials or trusts a client-side evaluation.
 
-**Hiding UI is never sufficient for a protected mutation or an unreleased direct route** — the same principle ADR-006 already states for authorization applies identically here. A flag and an authorization check are always both present and always independently enforced on the server; neither is a substitute for the other, and a flag is never the only thing standing between an unauthorized user and a protected action.
+**Hiding UI is never sufficient for a protected mutation or an unreleased direct route** — the same principle ADR-006 already states for authorization applies identically here. The consistent rule, restated from the Context section: **authorization must succeed before protected content, data, or side effects are provided.** A context-free disabled flag (§2) may deny a request earlier than that — before authorization even runs, exactly as `reports` does today — but an *enabled* flag never bypasses authorization, and a flag is never the only thing standing between an unauthorized user and a protected action.
 
 ### 7. Data and migration rules
 
