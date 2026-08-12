@@ -170,9 +170,9 @@ Mirrors [#331](https://github.com/asbillings07/alliance-command-center-app/issue
 
 - On, off, missing configuration, and provider-fallback-chain-exhausted cases each resolve exactly as §4's tables specify, for both flag categories.
 - Alliance-targeted and operator-only evaluation is covered for a targeted alliance/operator, an untargeted one, and a wrong-user/wrong-cohort case — all denied or granted per the resolved `FeatureContext`, never per client-supplied input.
-- A single request exercises `evaluateFeature` at more than one execution boundary (e.g. a page render followed by a server action) and each call is shown to evaluate independently, per §3 — including a flag-flip-between-boundaries case where the later boundary's evaluation, not the earlier one, is authoritative.
+- A single user workflow or test sequence exercises `evaluateFeature` at more than one independent execution boundary (e.g. a page render followed by a subsequent server action request) and each call is shown to evaluate independently, per §3 — including a flag-flip-between-boundaries case where the later boundary's evaluation, not the earlier one, is authoritative.
 - `reports`' current production behavior (fail-closed `notFound()` before authorization, discovery hidden, client components receive only a resolved boolean) is unchanged after migration — a parity test against `isFeatureEnabled("reports")`'s existing test suite.
-- No flag path bypasses `requireAllianceAccess` or an equivalent authorization check, for any flag state.
+- No *enabled* flag permits protected content, data, or side effects without the applicable authorization check. A disabled context-free flag may deny the request before authorization even runs (§2, §6).
 
 ## Related work
 
