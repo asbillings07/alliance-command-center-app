@@ -48,7 +48,7 @@ import { evaluateFeature } from "@/app/src/lib/featureFlags/evaluateFeature";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import MetricReportPage from "./page";
 
-describe("MetricReportPage (Server Page) — FEATURE_REPORTS gate (#190)", () => {
+describe("MetricReportPage (Server Page) — reports flag gate (#190)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });

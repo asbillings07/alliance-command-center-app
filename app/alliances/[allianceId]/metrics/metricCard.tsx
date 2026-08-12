@@ -26,9 +26,9 @@ type MetricCardProps = {
   metric?: MetricData;
   returnTo?: string;
   targetPeriodId?: string | null;
-  // FEATURE_REPORTS ships dark (#190): this is a client component, so the
-  // env-backed flag can't be read here directly — the server parent resolves
-  // it once and passes the result down.
+  // reports ships dark (#190): this is a client component, so the flag can't
+  // be evaluated here directly — the server parent resolves it once and
+  // passes the result down.
   showReportLink?: boolean;
 };
 

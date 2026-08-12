@@ -88,7 +88,6 @@ See `.env.example` for all available configuration options.
 | `RESEND_API_KEY` | Resend API key for transactional email (with `EMAIL_FROM`) |
 | `EMAIL_FROM` | Sender address for transactional email; emails are logged instead of sent when unset |
 | `SENTRY_DSN` | Sentry DSN for error tracking |
-| `FEATURE_*` | Legacy env-boolean feature flags (`app/src/lib/features.ts`), being superseded by the typed evaluator below (ADR-019) |
 | `FLAGS` | Vercel Flags SDK key; requires an explicit `vercel flags sdk-keys add` per environment (creating a flag only auto-provisions `FLAGS_SECRET`, a distinct override-encryption secret) |
 | `FEATURE_FLAG_TEST_OVERRIDES` | Test-only; JSON map of flag key -> boolean bypassing the real provider. Never honored in a Vercel-managed environment. Set it yourself before `npm run test:e2e` (e.g. `FEATURE_FLAG_TEST_OVERRIDES='{"reports":false}'`) to override the default any registered flag can be forced to for a run - `dotenv` never clobbers an already-set value, so your shell's value wins over `.env.test`'s |
 | `ACC_E2E_MODE` | Test-only; required alongside `FEATURE_FLAG_TEST_OVERRIDES` for a locally built-and-started app (Playwright E2E) to use overrides |

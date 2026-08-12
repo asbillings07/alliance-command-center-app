@@ -269,7 +269,7 @@ describe("AllianceDashboardPage", () => {
     });
   });
 
-  describe("Reports module card — FEATURE_REPORTS gate (#190)", () => {
+  describe("Reports module card — reports flag gate (#190)", () => {
     async function renderWithViewMembers() {
       vi.mocked(requireAllianceAccess).mockResolvedValue({
         membership: { role: "ADMIN" },
