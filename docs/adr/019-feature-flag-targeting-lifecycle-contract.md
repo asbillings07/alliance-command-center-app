@@ -1,6 +1,6 @@
 # ADR-019: Feature Flag Targeting, Trust Boundary, and Lifecycle Contract
 
-**Status:** Draft
+**Status:** Accepted
 
 **Date:** 2026-08-11
 
@@ -56,7 +56,7 @@ A resolved flag value is never carried across independent execution boundaries. 
 - **Page / server component render** — evaluates for rendering that request.
 - **Server action / API route** — evaluates again, after authorization, immediately before any side effect. A page's earlier render-time evaluation never substitutes for this.
 - **Background / queued job** — evaluates at execution time, not at enqueue time. The job persists only **stable identifiers** (e.g. `allianceId`) alongside its payload — never mutable attributes such as cohort/segment membership, which are re-resolved fresh from their source of truth at execution time. Persisting a snapshot of mutable context would let an otherwise-fresh evaluation act on membership that was already stale by the time the job ran.
-- **Client components** receive only an already-resolved `boolean`/variant from their server parent — never a flag key, provider credential, or the ability to influence evaluation. A client-supplied value is never accepted as evaluation input, in either direction.
+- **Client components** receive only an already-resolved `boolean` from their server parent — never a flag key, provider credential, or the ability to influence evaluation. A client-supplied value is never accepted as evaluation input, in either direction.
 
 **Consequence:** if a flag changes between an earlier page render and a later mutation triggered from that same page, the mutation's own evaluation is authoritative and must reject the now-disabled action safely — a typed unavailable result, no partial side effect (§5) — rather than treating the render's earlier "on" as a promise the mutation must honor. Within one boundary, evaluation is resolved once and does not change mid-boundary; a workflow cannot "disappear" partway through rendering a single page.
 
@@ -72,14 +72,14 @@ A resolved flag value is never carried across independent execution boundaries. 
 | CI | Disabled by default; tests inject deterministic values through a test adapter that bypasses the real provider entirely |
 | Missing/invalid provider configuration | Disabled |
 
-**Failure behavior is implemented through the SDK's own fallback chain, not a second ACC-level cache.** The Vercel Flags SDK resolves a value through, in order: a real-time stream, interval polling, an optional provided datafile, and — if all of those are unavailable — a **build-time embedded-definitions snapshot** bundled into the deployment specifically as a runtime-resilience fallback ([Vercel Flags](https://vercel.com/docs/flags/vercel-flags), [core library docs](https://vercel.com/docs/flags/vercel-flags/sdks/core#embedded-definitions)). Vercel Flags is a distinct product from Edge Config; it is not backed by it. A value resolved through **any** stage of that chain — including the embedded snapshot — is a legitimate resolved value exactly as Vercel intends, not something ACC treats as stale or a "cache" requiring a separate distrust policy. ACC does not build its own caching/staleness layer on top of it.
+**Failure behavior is implemented through the chosen SDK's own fallback chain, not a second ACC-level cache.** ACC's provider boundary (§9) is the **Flags SDK** (`flags/next`), which declares each flag as `flag({ key, decide, defaultValue, adapter, identify })` — the `adapter` (`@flags-sdk/vercel`) supplies `decide`, and that adapter is itself backed by Vercel Flags' resolution path: a real-time stream, interval polling, an optional provided datafile, and — if all of those are unavailable — a **build-time embedded-definitions snapshot** bundled into the deployment specifically as a runtime-resilience fallback ([Vercel Flags](https://vercel.com/docs/flags/vercel-flags), [core evaluation engine docs](https://vercel.com/docs/flags/vercel-flags/sdks/core#embedded-definitions) — the lower-level engine the Vercel adapter is built on; ACC does not call this core library directly). Vercel Flags is a distinct product from Edge Config; it is not backed by it. A value resolved through **any** stage of that chain — including the embedded snapshot — is a legitimate resolved value exactly as Vercel intends, not something ACC treats as stale or a "cache" requiring a separate distrust policy. ACC does not build its own caching/staleness layer on top of it.
 
-The SDK's `evaluate(flag, defaultValue, context)` call already returns `defaultValue` whenever its entire fallback chain is exhausted (`reason === Reason.ERROR`, or no data source at all). ACC's category default is implemented as exactly that parameter — no separate "is the provider reachable" branch in ACC's own code:
+**The registry supplies the category-specific `defaultValue`. The Vercel adapter owns its provider fallback chain. If the adapter cannot resolve a value, the Flags SDK returns the declared default.** ACC's category default is implemented as exactly that `defaultValue` parameter on each flag's `flag(...)` declaration — no separate "is the provider reachable" branch in ACC's own code. Exactly how a resolution failure surfaces through the adapter (a thrown error inside `decide`, or a value passed through from the underlying engine) and exactly how trusted `FeatureContext` is threaded in via `identify` are #331's implementation-time wiring — this ADR fixes only the resulting behavior:
 
-| Flag category | SDK resolves a value (stream, poll, datafile, or embedded snapshot) | SDK's fallback chain fully exhausted (`Reason.ERROR`) |
+| Flag category | Adapter resolves a value (stream, poll, datafile, or embedded snapshot) | Adapter's resolution fails entirely |
 |---|---|---|
-| Temporary release flag | Use the resolved value as-is | **Disabled** — matches #330's "Production must fail closed for unreleased features" |
-| Operational kill switch | Use the resolved value as-is | **Not killed** (normal operation continues) — the switch protects already-vetted, stable functionality; failing an unrelated provider outage to "killed" would be a disproportionate, self-inflicted incident |
+| Temporary release flag | Use the resolved value as-is | Falls back to the declared `defaultValue`: **disabled** — matches #330's "Production must fail closed for unreleased features" |
+| Operational kill switch | Use the resolved value as-is | Falls back to the declared `defaultValue`: **not killed** (normal operation continues) — the switch protects already-vetted, stable functionality; failing an unrelated provider outage to "killed" would be a disproportionate, self-inflicted incident |
 
 - **Emergency disable when Vercel Flags itself is unreachable:** the fallback is a code-level revert and redeploy — already a fast, exercised path per ADR-011's deploy-on-merge model, not a second flag mechanism. (A redeploy also re-embeds a fresh build-time snapshot, so it is a real lever, not merely "wait for the provider to recover.")
 - **Strict live-read-only evaluation** (distrusting the embedded snapshot too, for a flag whose staleness tolerance must be near zero) is an explicit, opt-in escape hatch for a specific flag, not the default policy. Reaching for it requires proving the SDK can expose per-result freshness/reason data for that flag and disabling embedding (`VERCEL_FLAGS_DISABLE_DEFINITION_EMBEDDING=1`) — an implementation-time decision for whichever flag actually needs it, not something #331 should invent globally.
@@ -116,7 +116,7 @@ Every flag is defined once, in one server-only typed registry, with:
 - Production default.
 - **Targeting dimension/strategy** — `global`, `alliance-targeted`, or `operator-only` — describing *how* the flag can be targeted, never the live alliance list or segment membership itself. That list is exclusively Vercel Flags configuration (dashboard targeting rules/segments); the registry recording it too would create a second, driftable source of truth for the same fact.
 - Expiration/review date.
-- A removal issue — required before broad/general-availability enablement, not merely before deletion. [#333](https://github.com/asbillings07/alliance-command-center-app/issues/333) owns the operational runbook (rollout sequencing, who may change Production configuration, observability, retirement) built on top of this registry; this ADR only fixes the registry's shape.
+- **A removal issue — required when the registry entry is introduced, not merely before broad enablement or deletion.** This is the stronger of the two options and the one this ADR requires: §1 already establishes every flag as temporary from day one, so the registry entry that creates a flag and the removal issue that will eventually retire it are opened together, in the same PR. [#333](https://github.com/asbillings07/alliance-command-center-app/issues/333) owns the operational runbook (rollout sequencing, who may change Production configuration, observability, retirement) built on top of this registry; this ADR only fixes the registry's shape.
 
 Referencing an undefined flag key is a compile-time error, not a runtime surprise.
 
