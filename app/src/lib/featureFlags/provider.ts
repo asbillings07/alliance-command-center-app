@@ -16,15 +16,23 @@ export interface FlagDecisionProvider {
 
 type FlagEntities = {
   alliance?: { id: string; cohort?: string };
-  user?: { id: string };
-  platformAdmin?: boolean;
+  // `isPlatformAdmin` lives on the `user` entity, not as a sibling top-level
+  // boolean: Vercel targeting rules match against attributes of a declared
+  // entity object, and the authenticated user is the entity this attribute
+  // actually describes. A top-level `platformAdmin` boolean isn't a
+  // targetable entity at all, so operator-only targeting (Slice A's
+  // `"operator-only"` targeting strategy) could never actually be
+  // configured against it in the Vercel dashboard.
+  user?: { id?: string; isPlatformAdmin?: boolean };
 };
 
 function toEntities(context: FeatureContext): FlagEntities {
   return {
     alliance: context.alliance,
-    user: context.userId ? { id: context.userId } : undefined,
-    platformAdmin: context.isPlatformAdmin,
+    user: {
+      id: context.userId,
+      isPlatformAdmin: context.isPlatformAdmin,
+    },
   };
 }
 

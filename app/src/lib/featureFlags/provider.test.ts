@@ -47,8 +47,7 @@ describe("vercelDecisionProvider", () => {
     const call = decideMock.mock.calls[0]![0];
     expect(call.entities).toEqual({
       alliance: { id: "alliance-a" },
-      user: undefined,
-      platformAdmin: undefined,
+      user: { id: undefined, isPlatformAdmin: undefined },
     });
   });
 
@@ -91,13 +90,29 @@ describe("vercelDecisionProvider", () => {
     expect(decideMock).toHaveBeenCalledTimes(2);
     expect(decideMock.mock.calls[0]![0].entities).toEqual({
       alliance: { id: "alliance-a" },
-      user: { id: "user-1" },
-      platformAdmin: undefined,
+      user: { id: "user-1", isPlatformAdmin: undefined },
     });
     expect(decideMock.mock.calls[1]![0].entities).toEqual({
       alliance: undefined,
-      user: undefined,
-      platformAdmin: undefined,
+      user: { id: undefined, isPlatformAdmin: undefined },
+    });
+  });
+
+  it("models operator-only targeting as a `user.isPlatformAdmin` attribute, not a separate top-level entity - the exact `identify` payload Slice A's operator-only targeting strategy depends on", async () => {
+    decideMock.mockImplementation(({ entities }) => entities?.user?.isPlatformAdmin === true);
+    const { vercelDecisionProvider } = await import("./provider");
+
+    const result = await vercelDecisionProvider.resolve(definition, {
+      environment: "production",
+      userId: "user-1",
+      isPlatformAdmin: true,
+    });
+
+    expect(result).toBe(true);
+    expect(decideMock).toHaveBeenCalledTimes(1);
+    expect(decideMock.mock.calls[0]![0].entities).toEqual({
+      alliance: undefined,
+      user: { id: "user-1", isPlatformAdmin: true },
     });
   });
 
