@@ -16,6 +16,13 @@ const webServerEnv = {
   // Feature flags (#331): forces `reports` on deterministically via the
   // test-override seam instead of the live Vercel Flags provider. Both vars
   // are unconditionally rejected in any Vercel-managed environment.
+  //
+  // The `?? default` here (rather than a hardcoded value) is the escape
+  // hatch: dotenv.config() above never overwrites an already-set
+  // process.env value, so exporting these yourself before `npm run test:e2e`
+  // (or via `npm run test:e2e:reports-off`) overrides this default for that
+  // run - the only way to exercise `reports`-disabled E2E behavior, since
+  // the suite otherwise always forces it on.
   ACC_E2E_MODE: process.env.ACC_E2E_MODE ?? "1",
   FEATURE_FLAG_TEST_OVERRIDES: process.env.FEATURE_FLAG_TEST_OVERRIDES ?? '{"reports":true}',
 };
