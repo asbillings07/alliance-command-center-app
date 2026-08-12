@@ -30,11 +30,6 @@ const optionalVars = [
   "RESEND_API_KEY",
   "EMAIL_FROM",
   "SENTRY_DSN",
-  "FEATURE_PLATFORM_CONSOLE",
-  "FEATURE_RECOGNITION",
-  "FEATURE_DISCORD",
-  "FEATURE_ANALYTICS",
-  "FEATURE_REPORTS",
 ] as const;
 
 type RequiredVar = (typeof requiredVars)[number];

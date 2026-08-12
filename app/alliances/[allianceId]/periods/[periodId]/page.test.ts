@@ -125,7 +125,7 @@ describe("Period detail page", () => {
     expect(html).toContain("Import Evaluation Results");
   });
 
-  describe("metric coverage 'View Report' link — FEATURE_REPORTS gate (#190)", () => {
+  describe("metric coverage 'View Report' link — reports flag gate (#190)", () => {
     beforeEach(() => {
       vi.mocked(getPeriodResultsSummary).mockResolvedValue({
         participatingMemberCount: 3,

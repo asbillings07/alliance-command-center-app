@@ -130,7 +130,7 @@ describe("MetricCard create flow", () => {
   });
 });
 
-describe("MetricCard view mode — FEATURE_REPORTS gate (#190)", () => {
+describe("MetricCard view mode — reports flag gate (#190)", () => {
   const metric = {
     id: "met_1",
     name: "VS Points",
