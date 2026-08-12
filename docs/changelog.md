@@ -12,6 +12,13 @@ leadership decision-making, challenge whether it belongs" for the same bar
 applied here: a purely internal refactor with no visible behavior change
 does not get an entry.
 
+**If a change ships behind a feature flag** (see
+[docs/operations/feature-flags.md](./operations/feature-flags.md)), its
+entry is written when the flag is actually **enabled** for the audience the
+entry describes - never at merge time, since the code may ship dark for a
+while first. An entry announcing something not yet visible to anyone is
+inaccurate regardless of good intentions.
+
 ---
 
 ## 2026-08-11 - Period-over-period trend on member metric cards

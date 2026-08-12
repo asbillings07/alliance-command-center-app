@@ -1,4 +1,5 @@
 import "server-only";
+import * as Sentry from "@sentry/nextjs";
 import { featureFlagRegistry, type FeatureFlagKey } from "./registry";
 import type { FeatureContext } from "./context";
 import { vercelDecisionProvider } from "./provider";
@@ -35,6 +36,11 @@ const productionEvaluator = createEvaluator(featureFlagRegistry, vercelDecisionP
  *   allowed to use overrides, since that process otherwise runs with
  *   `NODE_ENV=production` and would be indistinguishable from a real
  *   production process.
+ *
+ * Every call records a Sentry breadcrumb (flag key + resolved boolean only
+ * - never `context`) so an incident can be correlated with flag state
+ * without a new logging system - see `recordEvaluation` below and
+ * docs/operations/feature-flags.md §4 (#333).
  */
 export async function evaluateFeature(
   flag: FeatureFlagKey,
@@ -47,8 +53,29 @@ export async function evaluateFeature(
     accE2eMode: process.env.ACC_E2E_MODE,
   });
   if (override !== undefined) {
+    recordEvaluation(flag, override);
     return override;
   }
 
-  return productionEvaluator(flag, context);
+  const result = await productionEvaluator(flag, context);
+  recordEvaluation(flag, result);
+  return result;
+}
+
+/**
+ * Correlates a resolved flag with Sentry's runtime diagnostics (#333) - a
+ * breadcrumb attached to whatever error, if any, gets captured next.
+ *
+ * Deliberately records only `flag` and `result`. Never `context` - no
+ * alliance id, user id, or cohort. See
+ * docs/operations/feature-flags.md §4 for the policy this enforces, and the
+ * "never leaks FeatureContext" test in evaluateFeature.test.ts for the
+ * regression guard.
+ */
+function recordEvaluation(flag: FeatureFlagKey, result: boolean): void {
+  Sentry.addBreadcrumb({
+    category: "feature-flag",
+    message: flag,
+    data: { result },
+  });
 }

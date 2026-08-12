@@ -19,6 +19,12 @@ environment.
 - [ ] PR reviewed and scoped to a single vertical slice
 - [ ] New env vars documented in `.env.example` and set in Vercel (all environments that need them)
 - [ ] Any new database migration is forward-only and safe to apply to production data
+- [ ] If this PR adds or changes a feature flag, it also satisfies [feature-flag-review-checklist.md](../feature-flag-review-checklist.md)
+
+Note: for a flag-gated change, "Manual verification in production" below
+applies once the flag is actually **enabled** for the audience being
+verified - not at merge time, since the code may ship dark per
+[feature-flags.md](./feature-flags.md)'s rollout runbook.
 
 ## On merge to `main` (automated)
 
