@@ -18,8 +18,8 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-vi.mock("@/app/src/lib/features", () => ({
-  isFeatureEnabled: vi.fn(),
+vi.mock("@/app/src/lib/featureFlags/evaluateFeature", () => ({
+  evaluateFeature: vi.fn(),
 }));
 
 vi.mock("@/app/src/lib/auth/requireAllianceAccess", () => ({
@@ -45,7 +45,7 @@ vi.mock("@/app/src/lib/reports/getAllianceMemberMetricMatrix", () => ({
 }));
 
 import { notFound } from "next/navigation";
-import { isFeatureEnabled } from "@/app/src/lib/features";
+import { evaluateFeature } from "@/app/src/lib/featureFlags/evaluateFeature";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { listAlliancePeriodOptions } from "@/app/src/lib/reports/listAlliancePeriodOptions";
 import {
@@ -103,7 +103,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("fails closed with notFound() when the reports feature flag is off, before any auth/DB work happens", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(false);
+    vi.mocked(evaluateFeature).mockResolvedValue(false);
 
     await expect(
       ReportsIndexPage({ params: Promise.resolve({ allianceId: "all_1" }), searchParams: Promise.resolve({}) }),
@@ -114,7 +114,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("shows a 'no evaluation periods' empty state and never queries the report when the alliance has none", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(evaluateFeature).mockResolvedValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([]);
 
     const page = await ReportsIndexPage({
@@ -128,7 +128,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("falls back to the newest configured period when there's no active one", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(evaluateFeature).mockResolvedValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_archived", name: "Old Period", active: false }]);
     vi.mocked(getAlliancePerformanceReport).mockResolvedValue(emptyReport());
 
@@ -140,7 +140,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("defaults to the active period when one exists, even if a chronologically newer (but inactive) period sorts first", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(evaluateFeature).mockResolvedValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([
       { id: "per_newest", name: "Newest (inactive)", active: false },
       { id: "per_active", name: "Currently Active", active: true },
@@ -155,7 +155,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("shows a 'no metrics configured' empty state when the metric universe is empty for this period", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(evaluateFeature).mockResolvedValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
     vi.mocked(getAlliancePerformanceReport).mockResolvedValue(emptyReport());
 
@@ -169,7 +169,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("fails closed with notFound() when an explicit periodId in the URL doesn't belong to this alliance", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(evaluateFeature).mockResolvedValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
     vi.mocked(getAlliancePerformanceReport).mockRejectedValue(new AlliancePerformanceReportNotFoundError());
 
@@ -184,7 +184,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("renders the at-a-glance cards and one performance card per metric in the returned order", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(evaluateFeature).mockResolvedValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
     vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
       emptyReport({
@@ -259,7 +259,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("renders the healthy empty state when no metric's data triggers a finding", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(evaluateFeature).mockResolvedValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
     vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
       emptyReport({
@@ -302,7 +302,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("renders a deterministic finding when a metric has no results recorded yet, linking to its drill-down", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(evaluateFeature).mockResolvedValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
     vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
       emptyReport({
@@ -349,7 +349,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("carries the resolved shared comparison period into every card's drill-down link, so it isn't silently re-resolved differently there", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(evaluateFeature).mockResolvedValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
     vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
       emptyReport({
@@ -394,7 +394,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("flags a metric whose explicitly selected comparison period lacks an attachment, is inactive, or has no data — never when no comparison is selected at all", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(evaluateFeature).mockResolvedValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
     vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
       emptyReport({
@@ -437,7 +437,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("builds the matrix from the report's own metric universe/order and renders the member matrix section", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(evaluateFeature).mockResolvedValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
     vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
       emptyReport({
@@ -502,7 +502,7 @@ describe("ReportsIndexPage (Server Page) — alliance performance overview (#264
   });
 
   it("carries the metric's own archived state into the matrix candidates, independent of attachmentStatus", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(true);
+    vi.mocked(evaluateFeature).mockResolvedValue(true);
     vi.mocked(listAlliancePeriodOptions).mockResolvedValue([{ id: "per_1", name: "Week 1", active: true }]);
     vi.mocked(getAlliancePerformanceReport).mockResolvedValue(
       emptyReport({

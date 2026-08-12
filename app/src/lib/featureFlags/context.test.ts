@@ -46,4 +46,17 @@ describe("toFeatureContext", () => {
     const context = toFeatureContext({ environment: "production", isPlatformAdmin: true });
     expect(context.isPlatformAdmin).toBe(true);
   });
+
+  it("never throws on a partially-shaped authorization value (e.g. a test double missing user/allianceId)", () => {
+    const context = toFeatureContext({
+      environment: "production",
+      authorization: { membership: { role: "ADMIN" } } as never,
+    });
+    expect(context).toEqual({
+      environment: "production",
+      alliance: undefined,
+      userId: undefined,
+      isPlatformAdmin: undefined,
+    });
+  });
 });

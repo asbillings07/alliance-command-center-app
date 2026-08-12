@@ -13,6 +13,11 @@ const prodSmokeBaseUrl = process.env.PROD_SMOKE_BASE_URL;
 
 const webServerEnv = {
   FEEDBACK_INBOX_TEST_HOOKS: process.env.FEEDBACK_INBOX_TEST_HOOKS ?? "true",
+  // Feature flags (#331): forces `reports` on deterministically via the
+  // test-override seam instead of the live Vercel Flags provider. Both vars
+  // are unconditionally rejected in any Vercel-managed environment.
+  ACC_E2E_MODE: process.env.ACC_E2E_MODE ?? "1",
+  FEATURE_FLAG_TEST_OVERRIDES: process.env.FEATURE_FLAG_TEST_OVERRIDES ?? '{"reports":true}',
 };
 
 export default defineConfig({

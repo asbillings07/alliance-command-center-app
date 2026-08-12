@@ -88,7 +88,7 @@ See `.env.example` for all available configuration options.
 | `EMAIL_FROM` | Sender address for transactional email; emails are logged instead of sent when unset |
 | `SENTRY_DSN` | Sentry DSN for error tracking |
 | `FEATURE_*` | Legacy env-boolean feature flags (`app/src/lib/features.ts`), being superseded by the typed evaluator below (ADR-019) |
-| `FLAGS` | Vercel Flags SDK key; auto-provisioned/injected once a flag exists in the dashboard - never set manually |
+| `FLAGS` | Vercel Flags SDK key; requires an explicit `vercel flags sdk-keys add` per environment (creating a flag only auto-provisions `FLAGS_SECRET`, a distinct override-encryption secret) |
 | `FEATURE_FLAG_TEST_OVERRIDES` | Test-only; JSON map of flag key -> boolean bypassing the real provider. Never honored in a Vercel-managed environment |
 | `ACC_E2E_MODE` | Test-only; required alongside `FEATURE_FLAG_TEST_OVERRIDES` for a locally built-and-started app (Playwright E2E) to use overrides |
 

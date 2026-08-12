@@ -461,8 +461,13 @@ EMAIL_FROM=
 # Simulated inbox query failures for feedback inbox retry E2E (#176)
 FEEDBACK_INBOX_TEST_HOOKS=true
 
-# Metric Summary Reports ship dark by default (#190); enabled for E2E only.
-FEATURE_REPORTS=true
+# Feature flags (#331): the built app resolves flags via the Vercel Flags
+# provider, which E2E must not depend on. ACC_E2E_MODE marks this as a
+# recognized test context; FEATURE_FLAG_TEST_OVERRIDES then forces \`reports\`
+# on deterministically, without touching the real provider. Both are rejected
+# outright in any Vercel-managed environment (see featureFlags/testOverrides.ts).
+ACC_E2E_MODE=1
+FEATURE_FLAG_TEST_OVERRIDES={"reports":true}
 `;
 
   if (WRITE_ENV_FILE) {

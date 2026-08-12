@@ -59,10 +59,14 @@ export function toFeatureContext(options: {
 }): FeatureContext {
   return {
     environment: options.environment,
-    alliance: options.authorization
+    // Optional-chained all the way through: a real `AuthorizationContext`
+    // (from `requireAllianceAccess`) always has both, but callers pass this
+    // through unmodified, and this must never throw on a partially-shaped
+    // value.
+    alliance: options.authorization?.membership?.allianceId
       ? { id: options.authorization.membership.allianceId }
       : undefined,
-    userId: options.authorization?.user.id,
+    userId: options.authorization?.user?.id,
     isPlatformAdmin: options.isPlatformAdmin,
   };
 }

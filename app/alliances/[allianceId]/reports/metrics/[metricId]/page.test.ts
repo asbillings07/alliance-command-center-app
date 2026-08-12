@@ -12,8 +12,8 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-vi.mock("@/app/src/lib/features", () => ({
-  isFeatureEnabled: vi.fn(),
+vi.mock("@/app/src/lib/featureFlags/evaluateFeature", () => ({
+  evaluateFeature: vi.fn(),
 }));
 
 vi.mock("@/app/src/lib/auth/requireAllianceAccess", () => ({
@@ -44,7 +44,7 @@ vi.mock("@/app/src/lib/reports/listReportPeriodOptions", () => ({
 }));
 
 import { notFound } from "next/navigation";
-import { isFeatureEnabled } from "@/app/src/lib/features";
+import { evaluateFeature } from "@/app/src/lib/featureFlags/evaluateFeature";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import MetricReportPage from "./page";
 
@@ -54,7 +54,7 @@ describe("MetricReportPage (Server Page) — FEATURE_REPORTS gate (#190)", () =>
   });
 
   it("fails closed with notFound() when the reports feature flag is off, before any auth/DB work happens", async () => {
-    vi.mocked(isFeatureEnabled).mockReturnValue(false);
+    vi.mocked(evaluateFeature).mockResolvedValue(false);
 
     await expect(
       MetricReportPage({

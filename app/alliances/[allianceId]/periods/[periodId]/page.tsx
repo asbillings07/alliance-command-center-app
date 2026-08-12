@@ -7,7 +7,8 @@ import { PageLayout, Card } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { getPeriodResultsSummary } from "@/app/src/lib/reports/getPeriodResultsSummary";
 import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvisionMetricsForPeriod";
-import { isFeatureEnabled } from "@/app/src/lib/features";
+import { evaluateFeature } from "@/app/src/lib/featureFlags/evaluateFeature";
+import { resolveEnvironment, toFeatureContext } from "@/app/src/lib/featureFlags/context";
 
 type Params = {
     params: Promise<{
@@ -24,6 +25,11 @@ export default async function PeriodPage({ params }: Params) {
         requiredPermission: Permissions.VIEW_ALLIANCE,
     });
     const { permissions } = auth;
+
+    const reportsEnabled = await evaluateFeature(
+        "reports",
+        toFeatureContext({ environment: resolveEnvironment(), authorization: auth })
+    );
 
     const period = await prisma.metricPeriod.findFirst({
         where: { id: periodId, allianceId },
@@ -173,7 +179,7 @@ export default async function PeriodPage({ params }: Params) {
                                                         </span>
                                                     )}
                                                 </span>
-                                                {permissions.canViewMembers && isFeatureEnabled("reports") && (
+                                                {permissions.canViewMembers && reportsEnabled && (
                                                     <Button
                                                         href={`/alliances/${allianceId}/reports/metrics/${m.metricId}?periodId=${periodId}`}
                                                         variant="link"

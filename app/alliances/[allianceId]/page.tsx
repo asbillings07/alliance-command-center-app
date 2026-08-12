@@ -4,7 +4,8 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
 import { resolveTargetPeriod } from "@/app/src/lib/periods/resolveTargetPeriod";
 import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvisionMetricsForPeriod";
-import { isFeatureEnabled } from "@/app/src/lib/features";
+import { evaluateFeature } from "@/app/src/lib/featureFlags/evaluateFeature";
+import { resolveEnvironment, toFeatureContext } from "@/app/src/lib/featureFlags/context";
 import { PageLayout, Card, Badge, SetupProgressCard } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 
@@ -47,6 +48,11 @@ export default async function AlliancePage({ params }: Params) {
   }
 
   const setupStatus = await getAllianceSetupStatus(allianceId, permissions);
+
+  const reportsEnabled = await evaluateFeature(
+    "reports",
+    toFeatureContext({ environment: resolveEnvironment(), authorization: auth })
+  );
 
   const activePeriod = permissions.canImportMetrics
     ? await resolveTargetPeriod(allianceId)
@@ -105,7 +111,7 @@ export default async function AlliancePage({ params }: Params) {
               </Card.Body>
             </Card>
 
-            {permissions.canViewMembers && isFeatureEnabled("reports") && (
+            {permissions.canViewMembers && reportsEnabled && (
               <Card>
                 <Card.Body>
                   <h3 className="font-medium text-primary mb-2">Reports</h3>

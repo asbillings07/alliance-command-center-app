@@ -19,8 +19,8 @@ vi.mock("@/app/src/lib/auth/requireAllianceAccess", () => ({
   requireAllianceAccess: vi.fn(),
 }));
 
-vi.mock("@/app/src/lib/features", () => ({
-  isFeatureEnabled: vi.fn().mockReturnValue(false),
+vi.mock("@/app/src/lib/featureFlags/evaluateFeature", () => ({
+  evaluateFeature: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("@/app/src/lib/prisma", () => ({
@@ -54,7 +54,7 @@ vi.mock("@/app/src/lib/metrics/memberPeriodMetricValues", () => ({
 import { prisma } from "@/app/src/lib/prisma";
 import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
-import { isFeatureEnabled } from "@/app/src/lib/features";
+import { evaluateFeature } from "@/app/src/lib/featureFlags/evaluateFeature";
 import AlliancePage from "./page";
 import { metricPeriodChronologicalOrderBy } from "@/app/src/lib/metricPeriodOrdering";
 
@@ -85,7 +85,7 @@ describe("AllianceDashboardPage", () => {
     vi.mocked(prisma.allianceMembership.count).mockResolvedValue(1);
     vi.mocked(prisma.invitation.count).mockResolvedValue(0);
     vi.mocked(memberPeriodMetricValues).mockResolvedValue([]);
-    vi.mocked(isFeatureEnabled).mockReturnValue(false);
+    vi.mocked(evaluateFeature).mockResolvedValue(false);
   });
 
   it("renders Record Now and Import Evaluation Results when prerequisites are met", async () => {
@@ -283,13 +283,13 @@ describe("AllianceDashboardPage", () => {
     }
 
     it("hides the Reports card for a permitted viewer when the flag is off", async () => {
-      vi.mocked(isFeatureEnabled).mockReturnValue(false);
+      vi.mocked(evaluateFeature).mockResolvedValue(false);
       const html = await renderWithViewMembers();
       expect(html).not.toContain("View Reports");
     });
 
     it("shows the Reports card for a permitted viewer once the flag is on", async () => {
-      vi.mocked(isFeatureEnabled).mockReturnValue(true);
+      vi.mocked(evaluateFeature).mockResolvedValue(true);
       const html = await renderWithViewMembers();
       expect(html).toContain("View Reports");
       expect(html).toContain("/alliances/all_1/reports");
