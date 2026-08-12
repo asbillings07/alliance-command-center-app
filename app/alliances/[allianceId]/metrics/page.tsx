@@ -3,7 +3,8 @@ import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess"
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { validateSetupPeriodReturnTo } from "@/app/src/lib/setup/validateSetupPeriodReturnTo";
 import { resolveTargetPeriod } from "@/app/src/lib/periods/resolveTargetPeriod";
-import { isFeatureEnabled } from "@/app/src/lib/features";
+import { evaluateFeature } from "@/app/src/lib/featureFlags/evaluateFeature";
+import { resolveEnvironment, toFeatureContext } from "@/app/src/lib/featureFlags/context";
 import { MetricCard } from "./metricCard";
 import { PageLayout, EmptyState } from "@/app/src/components";
 
@@ -19,13 +20,16 @@ type Params = {
 export default async function MetricsPage({ params, searchParams }: Params) {
     const { allianceId } = await params;
     const { returnTo: rawReturnTo } = await searchParams;
-    await requireAllianceAccess({
+    const auth = await requireAllianceAccess({
         allianceId,
         requiredPermission: Permissions.CONFIGURE_METRICS,
     });
     const returnTo = validateSetupPeriodReturnTo(rawReturnTo, allianceId);
     const targetPeriod = await resolveTargetPeriod(allianceId);
-    const showReportLink = isFeatureEnabled("reports");
+    const showReportLink = await evaluateFeature(
+        "reports",
+        toFeatureContext({ environment: resolveEnvironment(), authorization: auth })
+    );
     const metrics = await prisma.metric.findMany({
         where: {
             allianceId: allianceId,

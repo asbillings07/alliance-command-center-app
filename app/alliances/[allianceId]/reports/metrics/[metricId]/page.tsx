@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
-import { isFeatureEnabled } from "@/app/src/lib/features";
+import { evaluateFeature } from "@/app/src/lib/featureFlags/evaluateFeature";
+import { resolveEnvironment } from "@/app/src/lib/featureFlags/context";
 import { prisma } from "@/app/src/lib/prisma";
 import { MetricSummaryKind } from "@/app/generated/prisma/enums";
 import {
@@ -43,7 +44,11 @@ const SUMMARY_KIND_DESCRIPTION: Record<MetricSummaryKind, string> = {
 };
 
 export default async function MetricReportPage({ params, searchParams }: Params) {
-  if (!isFeatureEnabled("reports")) {
+  // Context-free evaluation, intentionally before requireAllianceAccess
+  // (ADR-019 §2's exemption for flags that don't depend on alliance/user
+  // context) — `reports` is `global`-targeted, so no authorization result
+  // could change this decision anyway.
+  if (!(await evaluateFeature("reports", { environment: resolveEnvironment() }))) {
     notFound();
   }
 

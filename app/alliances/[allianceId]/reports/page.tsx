@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
-import { isFeatureEnabled } from "@/app/src/lib/features";
+import { evaluateFeature } from "@/app/src/lib/featureFlags/evaluateFeature";
+import { resolveEnvironment } from "@/app/src/lib/featureFlags/context";
 import {
   getAlliancePerformanceReport,
   AlliancePerformanceReportNotFoundError,
@@ -49,7 +50,11 @@ const breadcrumbFor = (allianceId: string) => [
  * contributed what."
  */
 export default async function ReportsIndexPage({ params, searchParams }: Params) {
-  if (!isFeatureEnabled("reports")) {
+  // Context-free evaluation, intentionally before requireAllianceAccess
+  // (ADR-019 §2's exemption for flags that don't depend on alliance/user
+  // context) — `reports` is `global`-targeted, so no authorization result
+  // could change this decision anyway.
+  if (!(await evaluateFeature("reports", { environment: resolveEnvironment() }))) {
     notFound();
   }
 

@@ -23,8 +23,8 @@ vi.mock("@/app/src/lib/reports/getPeriodResultsSummary", () => ({
   getPeriodResultsSummary: vi.fn(),
 }));
 
-vi.mock("@/app/src/lib/features", () => ({
-  isFeatureEnabled: vi.fn().mockReturnValue(false),
+vi.mock("@/app/src/lib/featureFlags/evaluateFeature", () => ({
+  evaluateFeature: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("@/app/src/lib/prisma", () => ({
@@ -42,7 +42,7 @@ vi.mock("@/app/src/lib/prisma", () => ({
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { getPeriodResultsSummary } from "@/app/src/lib/reports/getPeriodResultsSummary";
-import { isFeatureEnabled } from "@/app/src/lib/features";
+import { evaluateFeature } from "@/app/src/lib/featureFlags/evaluateFeature";
 import PeriodPage from "./page";
 
 const adminPermissions = {
@@ -74,7 +74,7 @@ describe("Period detail page", () => {
       metrics: [],
     });
     vi.mocked(prisma.metric.count).mockResolvedValue(0);
-    vi.mocked(isFeatureEnabled).mockReturnValue(false);
+    vi.mocked(evaluateFeature).mockResolvedValue(false);
   });
 
   it("shows Record and Import when prerequisites are met", async () => {
@@ -136,7 +136,7 @@ describe("Period detail page", () => {
     });
 
     it("hides the link when the flag is off, even though the viewer can view members", async () => {
-      vi.mocked(isFeatureEnabled).mockReturnValue(false);
+      vi.mocked(evaluateFeature).mockResolvedValue(false);
 
       const page = await PeriodPage({
         params: Promise.resolve({ allianceId: "all_1", periodId: "per_1" }),
@@ -147,7 +147,7 @@ describe("Period detail page", () => {
     });
 
     it("shows the link once the flag is on", async () => {
-      vi.mocked(isFeatureEnabled).mockReturnValue(true);
+      vi.mocked(evaluateFeature).mockResolvedValue(true);
 
       const page = await PeriodPage({
         params: Promise.resolve({ allianceId: "all_1", periodId: "per_1" }),
