@@ -37,8 +37,9 @@ test.describe("Dashboard Workflow Groups (enabled)", () => {
     await expect(page.getByRole("heading", { name: "Roster health" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Participation and evaluation" })).toBeVisible();
 
-    // Role now surfaces as a header badge, not a standalone "Your Role" card.
-    await expect(page.getByText("OWNER", { exact: true })).toBeVisible();
+    // Role now surfaces as a header badge, not a standalone "Your Role" card -
+    // labeled "Role: X" so the badge alone doesn't read as something else.
+    await expect(page.getByText("Role: OWNER", { exact: true })).toBeVisible();
     await expect(page.getByText(/your role/i)).not.toBeVisible();
 
     await expect(page.getByRole("link", { name: "Manage Team" })).toBeVisible();
