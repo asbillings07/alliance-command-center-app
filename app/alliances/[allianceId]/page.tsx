@@ -174,7 +174,7 @@ export default async function AlliancePage({ params }: Params) {
     <PageLayout
       title={alliance.name}
       description={`Server: ${alliance.server}`}
-      action={<Badge variant="info">{auth.membership.role}</Badge>}
+      action={<Badge variant="info">Role: {auth.membership.role}</Badge>}
     >
       <WorkflowDashboard allianceId={allianceId} viewModel={viewModel} setupProgressCard={setupProgressCard} />
     </PageLayout>

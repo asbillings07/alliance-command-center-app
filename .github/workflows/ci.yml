@@ -218,6 +218,74 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+  # Quality Gate: Playwright E2E (dashboard-workflow-groups on)
+  # The default e2e-tests job above always runs with `dashboard-workflow-groups`
+  # off (matching real off-by-default production), so it never exercises the
+  # enabled dashboard - e2e/dashboard/dashboard-workflow-groups.spec.ts skips
+  # itself unless TEST_DASHBOARD_WORKFLOW_GROUPS_ENABLED is set. This job runs
+  # that one spec with the flag forced on via npm run
+  # test:e2e:dashboard-workflow-groups-on, so a green PR actually guards the
+  # enabled layout (e.g. the "Role: OWNER" badge), not just the legacy one.
+  e2e-tests-dashboard-workflow-groups-on:
+    name: Playwright E2E (dashboard-workflow-groups on)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: acc_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+      
+      - name: Generate Prisma Client
+        run: npx prisma generate
+      
+      - name: Run database migrations
+        run: npx prisma migrate deploy
+      
+      - name: Seed test data
+        run: npx tsx prisma/seed.ts --write-env
+      
+      - name: Build app
+        run: npm run build
+      
+      - name: Run Playwright tests (dashboard-workflow-groups on)
+        run: npm run test:e2e:dashboard-workflow-groups-on
+        env:
+          CI: true
+          FEEDBACK_INBOX_TEST_HOOKS: "true"
+      
+      - name: Upload Playwright Report
+        uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report-dashboard-workflow-groups-on
+          path: playwright-report/
+          retention-days: 7
+
   # Quality Gate: Accessibility
   accessibility:
     name: Accessibility
