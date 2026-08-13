@@ -47,7 +47,7 @@ export type FeatureFlagDefinition = {
   removalIssue: string;
 };
 
-export type FeatureFlagKey = "reports";
+export type FeatureFlagKey = "reports" | "dashboard-workflow-groups";
 
 export const featureFlagRegistry: Record<FeatureFlagKey, FeatureFlagDefinition> = {
   reports: {
@@ -64,5 +64,23 @@ export const featureFlagRegistry: Record<FeatureFlagKey, FeatureFlagDefinition> 
     targetingStrategy: "global",
     expiresOn: "2026-11-11",
     removalIssue: "#336",
+  },
+  "dashboard-workflow-groups": {
+    key: "dashboard-workflow-groups",
+    description:
+      "Grouped alliance dashboard (#192): reorganizes the dashboard into " +
+      "leader-workflow groups (Setup and data freshness, Roster health, " +
+      "Participation and evaluation) instead of a flat module grid. ACC's " +
+      "first alliance-targeted flag (#332) - proves selected-alliance " +
+      "rollout of a substantial user-facing redesign. Ships dark - while " +
+      "disabled, the existing dashboard renders unchanged and no route or " +
+      "action unique to the new layout is discoverable.",
+    category: "temporary-release",
+    owner: "Engineering",
+    issue: "#192",
+    productionDefault: false,
+    targetingStrategy: "alliance-targeted",
+    expiresOn: "2026-12-01",
+    removalIssue: "#342",
   },
 };

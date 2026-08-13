@@ -463,11 +463,19 @@ FEEDBACK_INBOX_TEST_HOOKS=true
 
 # Feature flags (#331): the built app resolves flags via the Vercel Flags
 # provider, which E2E must not depend on. ACC_E2E_MODE marks this as a
-# recognized test context; FEATURE_FLAG_TEST_OVERRIDES then forces \`reports\`
-# on deterministically, without touching the real provider. Both are rejected
-# outright in any Vercel-managed environment (see featureFlags/testOverrides.ts).
+# recognized test context; FEATURE_FLAG_TEST_OVERRIDES then forces flag
+# values deterministically, without touching the real provider. Both are
+# rejected outright in any Vercel-managed environment (see
+# featureFlags/testOverrides.ts).
+#
+# \`reports\` defaults to true here (it is already fully released - #331
+# Slice B). \`dashboard-workflow-groups\` defaults to false, matching its
+# real off-by-default production state (#332): every pre-existing dashboard
+# spec keeps exercising the unchanged legacy layout by default, and only
+# \`test:e2e:dashboard-workflow-groups-on\` overrides it to exercise the new
+# grouped layout.
 ACC_E2E_MODE=1
-FEATURE_FLAG_TEST_OVERRIDES={"reports":true}
+FEATURE_FLAG_TEST_OVERRIDES={"reports":true,"dashboard-workflow-groups":false}
 `;
 
   if (WRITE_ENV_FILE) {
