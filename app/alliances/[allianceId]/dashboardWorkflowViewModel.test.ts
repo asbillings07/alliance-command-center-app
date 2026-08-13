@@ -181,13 +181,68 @@ describe("buildDashboardWorkflowViewModel", () => {
       ).toBe(false);
     });
 
-    it("passes actionableFindingCount and degraded through unchanged", () => {
+    it("passes actionableFindingCount and degraded through unchanged when Reports is reachable", () => {
       expect(
-        buildDashboardWorkflowViewModel(input({ actionableFindingCount: 3, findingsDegraded: false })).participation,
+        buildDashboardWorkflowViewModel(
+          input({
+            actionableFindingCount: 3,
+            findingsDegraded: false,
+            permissions: { ...input().permissions, canViewMembers: true },
+            reportsEnabled: true,
+          }),
+        ).participation,
       ).toMatchObject({ actionableFindingCount: 3, degraded: false });
       expect(
-        buildDashboardWorkflowViewModel(input({ actionableFindingCount: null, findingsDegraded: true })).participation,
+        buildDashboardWorkflowViewModel(
+          input({
+            actionableFindingCount: null,
+            findingsDegraded: true,
+            permissions: { ...input().permissions, canViewMembers: true },
+            reportsEnabled: true,
+          }),
+        ).participation,
       ).toMatchObject({ actionableFindingCount: null, degraded: true });
+    });
+
+    it("suppresses a real finding count when Reports itself is unavailable (reports flag off), so nothing renders with no destination", () => {
+      const vm = buildDashboardWorkflowViewModel(
+        input({
+          actionableFindingCount: 6,
+          findingsDegraded: false,
+          permissions: { ...input().permissions, canViewMembers: true },
+          reportsEnabled: false,
+        }),
+      );
+
+      expect(vm.participation.showReportsCard).toBe(false);
+      expect(vm.participation.actionableFindingCount).toBeNull();
+      expect(vm.participation.degraded).toBe(false);
+    });
+
+    it("suppresses a real finding count when the user lacks canViewMembers, even if reports is enabled", () => {
+      const vm = buildDashboardWorkflowViewModel(
+        input({
+          actionableFindingCount: 6,
+          findingsDegraded: false,
+          permissions: { ...input().permissions, canViewMembers: false },
+          reportsEnabled: true,
+        }),
+      );
+
+      expect(vm.participation.showReportsCard).toBe(false);
+      expect(vm.participation.actionableFindingCount).toBeNull();
+    });
+
+    it("suppresses the degraded message too when Reports is unavailable", () => {
+      const vm = buildDashboardWorkflowViewModel(
+        input({
+          findingsDegraded: true,
+          permissions: { ...input().permissions, canViewMembers: true },
+          reportsEnabled: false,
+        }),
+      );
+
+      expect(vm.participation.degraded).toBe(false);
     });
   });
 });

@@ -169,6 +169,15 @@ function ParticipationEvaluationGroup({
                     </Button>
                   </div>
 
+                  {/*
+                    Both `actionableFindingCount` and `degraded` are already
+                    null/false-forced by the view model whenever
+                    `showReportsCard` is false (#332 Preview feedback: a
+                    leader must never see "N items need attention" with
+                    nothing to click - Reports is this signal's only
+                    destination today). No `showReportsCard` check needed
+                    here - see dashboardWorkflowViewModel.ts.
+                  */}
                   {degraded ? (
                     <p className="text-sm text-text-secondary mt-4">
                       Coverage status is temporarily unavailable.
@@ -176,15 +185,10 @@ function ParticipationEvaluationGroup({
                   ) : actionableFindingCount !== null && actionableFindingCount > 0 ? (
                     <p className="text-sm text-warning mt-4">
                       {actionableFindingCount} item{actionableFindingCount === 1 ? "" : "s"} need
-                      {actionableFindingCount === 1 ? "s" : ""} attention
-                      {showReportsCard && (
-                        <>
-                          {" — "}
-                          <Button href={`/alliances/${allianceId}/reports`} variant="link" size="sm">
-                            view in Reports
-                          </Button>
-                        </>
-                      )}
+                      {actionableFindingCount === 1 ? "s" : ""} attention{" — "}
+                      <Button href={`/alliances/${allianceId}/reports`} variant="link" size="sm">
+                        view in Reports
+                      </Button>
                     </p>
                   ) : null}
                 </>
