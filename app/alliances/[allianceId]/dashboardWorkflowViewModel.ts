@@ -47,10 +47,13 @@ export type WorkflowParticipationGroupViewModel = {
   /**
    * Null when there's nothing to count yet (no active period, or the
    * period has no attached metrics - the setup/participation CTAs above
-   * already cover that gap) or when the count could not be computed
-   * (`degraded`).
+   * already cover that gap), when the count could not be computed
+   * (`degraded`), or whenever `showReportsCard` is false - Reports is this
+   * signal's only destination today, so it's never surfaced without
+   * somewhere to act on it.
    */
   actionableFindingCount: number | null;
+  /** Always false when `showReportsCard` is false, for the same reason. */
   degraded: boolean;
 };
 
@@ -128,8 +131,7 @@ function resolveParticipationCardState(
 export function buildDashboardWorkflowViewModel(
   input: DashboardWorkflowViewModelInput,
 ): DashboardWorkflowViewModel {
-  const { permissions, reportsEnabled, rosterHealth, rosterHealthDegraded, actionableFindingCount, findingsDegraded } =
-    input;
+  const { permissions, rosterHealth, rosterHealthDegraded } = input;
 
   return {
     setup: {
@@ -140,13 +142,27 @@ export function buildDashboardWorkflowViewModel(
       health: rosterHealth,
       degraded: rosterHealthDegraded,
     },
-    participation: {
-      cardState: resolveParticipationCardState(input),
-      showMetricsLibraryCard: permissions.canConfigureMetrics,
-      showPeriodsCard: permissions.canConfigurePeriods,
-      showReportsCard: permissions.canViewMembers && reportsEnabled,
-      actionableFindingCount,
-      degraded: findingsDegraded,
-    },
+    participation: buildParticipationGroup(input),
+  };
+}
+
+function buildParticipationGroup(
+  input: DashboardWorkflowViewModelInput,
+): WorkflowParticipationGroupViewModel {
+  const showReportsCard = input.permissions.canViewMembers && input.reportsEnabled;
+
+  // Reports is this signal's only destination today - never surface a
+  // count or a "temporarily unavailable" message a leader can't act on
+  // (#332 Preview feedback: the count showed with nothing to click when
+  // `reports` itself was disabled). Suppressing it here, once, keeps every
+  // consumer (WorkflowDashboard.tsx today, anything else later) correct by
+  // construction instead of each having to remember this rule.
+  return {
+    cardState: resolveParticipationCardState(input),
+    showMetricsLibraryCard: input.permissions.canConfigureMetrics,
+    showPeriodsCard: input.permissions.canConfigurePeriods,
+    showReportsCard,
+    actionableFindingCount: showReportsCard ? input.actionableFindingCount : null,
+    degraded: showReportsCard ? input.findingsDegraded : false,
   };
 }
