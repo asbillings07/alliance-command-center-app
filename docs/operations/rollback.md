@@ -2,6 +2,17 @@
 
 This document describes how to recover from failed deployments or database issues.
 
+## Feature Flag Rollback
+
+If the failing behavior is behind a feature flag, flip the flag off first -
+see [feature-flags.md §5](./feature-flags.md#5-emergency-disable). This is
+faster than an application rollback (no deploy) and doesn't affect any other
+in-flight change that happened to merge around the same time.
+
+Fall back to a full application rollback (below) only when the flag itself
+isn't the cause - e.g. the regression is in code that ships unconditionally,
+or Vercel Flags itself is unreachable (ADR-019 §4).
+
 ## Application Rollback
 
 If a deployment causes application issues (errors, broken pages, etc.):
