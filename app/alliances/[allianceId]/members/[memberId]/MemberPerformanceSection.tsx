@@ -61,7 +61,13 @@ export type MemberPerformanceProps = {
           emptyState: "has-metrics";
           periodName: string;
           metrics: CurrentMetricViewModel[];
-          /** Name of the period `periodTrend`'s "vs. last period" compares against - purely for tooltip copy, absent for "New". */
+          /**
+           * Name of the period `periodTrend`'s "comparable" badges compare
+           * against - rendered directly in each badge's visible text
+           * ("vs. Week 18"), not just its tooltip, so the baseline is
+           * readable without hovering. Absent for "New" (no prior period
+           * exists at all, so there is nothing to name).
+           */
           previousPeriodName?: string;
       }
 );
@@ -91,8 +97,13 @@ const FAVORABILITY_BADGE_VARIANT: Record<TrendFavorability, BadgeVariant> = {
  * whether the change is good or bad news for *this* metric) at a glance,
  * not just by reading the copy closely. The `title` attribute is this
  * project's existing lightweight tooltip convention (see
- * `ImportForm.tsx`'s truncated-column-name tooltip) - no new dependency for
- * one sentence of disambiguation.
+ * `ImportForm.tsx`'s truncated-column-name tooltip) - kept as reinforcement
+ * for mouse users, but never the *only* place the baseline period is named:
+ * an owner found (production, #332 internal-stabilization pass) that a
+ * hover-only tooltip is inaccessible on touch devices, so the comparable
+ * badge's visible text below names the period directly ("vs. Week 18"),
+ * not just "vs. last period" - "last period" alone doesn't say which one
+ * without the tooltip.
  *
  * #325 documented this exact copy (both this badge's and the correction
  * `delta` line's) in `docs/changelog.md` for a leader-facing audience -
@@ -121,12 +132,17 @@ function PeriodTrendBadge({ trend, periodName }: { trend: PeriodTrendViewModel; 
         );
     }
 
+    // `periodName` is expected whenever a "comparable" trend exists (the
+    // page only builds one when a prior period was actually found - see
+    // `buildPeriodTrendViewModels`'s doc comment) - the generic fallback
+    // below exists only for defensive completeness, e.g. a caller passing
+    // this component a hand-built view model without it.
+    const comparisonLabel = periodName ?? "last period";
+
     return (
-        <span
-            title={`Trend vs. ${periodName ? `the previous period (${periodName})` : "the previous evaluation period"} - not a same-period correction.`}
-        >
+        <span title={`Trend vs. the previous evaluation period (${comparisonLabel}) - not a same-period correction.`}>
             <Badge variant={FAVORABILITY_BADGE_VARIANT[trend.favorability]} size="sm">
-                {TREND_ARROW[trend.direction]} {formatSignedPower(trend.delta)} vs. last period
+                {TREND_ARROW[trend.direction]} {formatSignedPower(trend.delta)} vs. {comparisonLabel}
             </Badge>
         </span>
     );

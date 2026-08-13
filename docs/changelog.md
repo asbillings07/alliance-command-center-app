@@ -21,6 +21,23 @@ inaccurate regardless of good intentions.
 
 ---
 
+## 2026-08-13 - Period-over-period trend badge now names its comparison period
+
+A small follow-up to the period-over-period trend badge shipped below: the
+comparable badge now shows **which** period it's comparing against directly
+in its text - e.g. `▲ +100M vs. Week 18` - instead of the generic
+`vs. last period`. Hovering the badge still shows the same detail in a
+tooltip, but a leader no longer has to hover (or guess) to know the
+baseline; this matters most on touch devices, where a hover-only tooltip
+isn't reachable at all.
+
+Nothing about *what* is compared, or the favorability coloring, changed -
+only how the existing comparison names its baseline period.
+
+Issues: #321, #323.
+
+---
+
 ## 2026-08-11 - Period-over-period trend on member metric cards
 
 Member detail metric cards now show **two distinct comparisons** where
