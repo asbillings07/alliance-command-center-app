@@ -98,6 +98,18 @@ describe.skipIf(!runDb)("getRosterHealthSummary [integration]", () => {
     });
   });
 
+  it("breaks a createdAt tie deterministically by id, matching the schema's composite index order", async () => {
+    const alliance = await makeAlliance();
+    const sameInstant = new Date("2026-03-01T00:00:00Z");
+    const first = await makeImport(alliance.id, { createdCount: 1, createdAt: sameInstant });
+    const second = await makeImport(alliance.id, { createdCount: 2, createdAt: sameInstant });
+    const expectedLatestId = [first.id, second.id].sort().reverse()[0];
+
+    const summary = await getRosterHealthSummary(alliance.id);
+
+    expect(summary.latestImport?.id).toBe(expectedLatestId);
+  });
+
   it("marks the latest import as rolled back exactly when a MemberImportRollback exists for it", async () => {
     const alliance = await makeAlliance();
     const memberImport = await makeImport(alliance.id, { createdCount: 1 });

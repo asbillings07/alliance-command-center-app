@@ -40,7 +40,11 @@ export async function getRosterHealthSummary(allianceId: string): Promise<Roster
     prisma.allianceMember.count({ where: { allianceId, archivedAt: { not: null } } }),
     prisma.memberImport.findFirst({
       where: { allianceId },
-      orderBy: { createdAt: "desc" },
+      // `id` is a tiebreaker for imports sharing the same `createdAt` -
+      // matches the composite index comment on MemberImport in schema.prisma
+      // - so "latest" stays deterministic rather than depending on
+      // whatever order Postgres happens to return equal-timestamp rows in.
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: {
         id: true,
         createdAt: true,
