@@ -14,16 +14,24 @@ provider configuration - both are linked to, never copied.
 
 ## 1. Flag inventory
 
-| Key | Description | Category | Owner | Issue | Production default | Targeting strategy | Review date | Removal issue | Date introduced |
+| Key | Description | Category | Owner | Issue | Production default | Targeting strategy | Review date (governance checkpoint) | Removal issue | Date introduced |
 |---|---|---|---|---|---|---|---|---|---|
 | `reports` | Metric Summary Reports (#190): per-metric alliance rollups, rankings, and member breakdowns. Ships dark - both report routes fail closed (`notFound`) while disabled, and all discovery touchpoints hide their links too. | `temporary-release` | Engineering | #190 | `false` | `global` | 2026-11-11 | [#336](https://github.com/asbillings07/alliance-command-center-app/issues/336) | 2026-08-12 (#336 opened) |
 
 This table is a **human-readable index**, not a second source of truth. If it
 ever looks stale, `registry.ts` wins - update the table to match the code,
-never the other way around. "Date introduced" is the creation date of the
-flag's removal issue, since ADR-019 §8 requires that issue to be opened in the
-same PR as the registry entry - there is no separate field for this in the
-registry, and there doesn't need to be.
+never the other way around. Two column notes:
+
+- **"Review date"** is this table's name for the registry's `expiresOn`
+  field - a **governance checkpoint** ("has this flag been reconsidered
+  recently"), not a hard expiration and not a field distinct from
+  `expiresOn`. Passing it doesn't disable anything by itself; it's what the
+  drift check below (and the flag's owner) uses to ask "should this still be
+  live?"
+- **"Date introduced"** is the creation date of the flag's removal issue,
+  since ADR-019 §8 requires that issue to be opened in the same PR as the
+  registry entry - there is no separate field for this in the registry, and
+  there doesn't need to be.
 
 ### Checking live state
 

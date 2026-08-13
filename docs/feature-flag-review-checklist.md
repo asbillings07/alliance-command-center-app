@@ -51,10 +51,14 @@ instead.
 
 ## Rollout readiness
 
-- [ ] **Vercel flag created, Production default matches the registry** -
-      before merge, or immediately after and before the PR is considered
-      done. `vercel flags inspect <key>` confirms Production/Preview/
-      Development state.
+- [ ] **Vercel flag created; production configuration matches the
+      documented rollout intention** - before merge, or immediately after
+      and before the PR is considered done. This is a check against what
+      the flag's issue/runbook step says Production *should* currently
+      serve (e.g. "off globally" at this stage) - not against the
+      registry's `productionDefault`, which is the provider-failure
+      fallback value, never a rollout setting. `vercel flags inspect <key>`
+      confirms actual Production/Preview/Development state.
 - [ ] **Feature-specific success/error signal is stated on the flag's
       issue** - before any real cohort is targeted (see
       [feature-flags.md §4](./operations/feature-flags.md#4-observability)),
