@@ -7,11 +7,19 @@ import { test, expect } from "../shared/fixtures";
  * E2E run (`npm run test:e2e`) keeps this flag off - matching real
  * off-by-default production - so every test here is skipped unless the
  * suite was started via `npm run test:e2e:dashboard-workflow-groups-on`
- * (see prisma/seed.ts and package.json).
+ * (see prisma/seed.ts and package.json). CI runs that script as its own
+ * job (`.github/workflows/ci.yml` - "Playwright E2E (dashboard-workflow-
+ * groups on)"), so a green PR actually exercises this file, not just a
+ * local-only escape hatch.
  *
- * `dashboard-navigation.spec.ts` and `dashboard-prerequisite-gating.spec.ts`
- * continue to cover the disabled (legacy) path unconditionally, since that
- * is what the default suite exercises.
+ * That script targets *only this file*, not the full `npm run test:e2e`
+ * suite - `dashboard-navigation.spec.ts`, `dashboard-prerequisite-gating.
+ * spec.ts`, and several journey/authorization specs assert legacy-only
+ * dashboard content (e.g. a "Your Role" card) and are not flag-aware, so
+ * forcing the flag on for the whole suite would fail them. If a future
+ * change makes those specs flag-aware too, this can be widened - but
+ * don't widen the script without auditing every spec that navigates to
+ * `/alliances/:id` first.
  */
 test.describe("Dashboard Workflow Groups (enabled)", () => {
   test.beforeEach(() => {
