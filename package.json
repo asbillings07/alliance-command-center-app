@@ -19,6 +19,7 @@
     "test:integration": "vitest run --dir app --testNamePattern integration",
     "test:e2e": "tsx ./node_modules/@playwright/test/cli.js test --project=application --grep-invert \"@visual|@a11y\"",
     "test:e2e:reports-off": "ACC_E2E_MODE=1 FEATURE_FLAG_TEST_OVERRIDES='{\"reports\":false}' npm run test:e2e",
+    "test:e2e:dashboard-workflow-groups-on": "ACC_E2E_MODE=1 FEATURE_FLAG_TEST_OVERRIDES='{\"reports\":true,\"dashboard-workflow-groups\":true}' TEST_DASHBOARD_WORKFLOW_GROUPS_ENABLED=1 npm run test:e2e",
     "test:e2e:bootstrap": "prisma migrate reset --force --skip-seed && tsx ./node_modules/@playwright/test/cli.js test --project=bootstrap",
     "test:a11y": "tsx ./node_modules/@playwright/test/cli.js test --project=application --grep @a11y",
     "test:visual": "tsx ./node_modules/@playwright/test/cli.js test --project=application --grep @visual",

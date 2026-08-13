@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { getAllianceSetupStatus } from "@/app/src/lib/allianceSetup";
@@ -6,8 +7,12 @@ import { resolveTargetPeriod } from "@/app/src/lib/periods/resolveTargetPeriod";
 import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvisionMetricsForPeriod";
 import { evaluateFeature } from "@/app/src/lib/featureFlags/evaluateFeature";
 import { resolveEnvironment, toFeatureContext } from "@/app/src/lib/featureFlags/context";
-import { PageLayout, Card, Badge, SetupProgressCard } from "@/app/src/components";
-import { Button } from "@/app/src/components/client";
+import { getRosterHealthSummary, type RosterHealthSummary } from "@/app/src/lib/dashboard/getRosterHealthSummary";
+import { getDashboardFindingsSummary } from "@/app/src/lib/dashboard/getDashboardFindingsSummary";
+import { buildDashboardWorkflowViewModel } from "./dashboardWorkflowViewModel";
+import { LegacyDashboard } from "./LegacyDashboard";
+import { WorkflowDashboard } from "./WorkflowDashboard";
+import { PageLayout, Badge, SetupProgressCard } from "@/app/src/components";
 
 type Params = {
   params: Promise<{
@@ -30,12 +35,47 @@ async function getAttachableLibraryMetricCount(
   });
 }
 
+/**
+ * Non-critical dashboard additions (roster recency, needs-attention count)
+ * degrade independently of the page itself (#332 §4 launch contract): a
+ * failure here omits that one section instead of failing the whole
+ * dashboard. Tagged `dashboard.section.degraded` so the failure count is a
+ * concrete rollout-observability metric, not just an unlabeled exception.
+ */
+async function loadRosterHealthOrDegrade(allianceId: string): Promise<{
+  health: RosterHealthSummary | null;
+  degraded: boolean;
+}> {
+  try {
+    return { health: await getRosterHealthSummary(allianceId), degraded: false };
+  } catch (error) {
+    Sentry.captureException(error, { tags: { "dashboard.section.degraded": "roster-health" } });
+    return { health: null, degraded: true };
+  }
+}
+
+async function loadFindingsSummaryOrDegrade(
+  allianceId: string,
+  periodId: string,
+): Promise<{ actionableFindingCount: number | null; degraded: boolean }> {
+  try {
+    const summary = await getDashboardFindingsSummary({ allianceId, periodId });
+    return { actionableFindingCount: summary.actionableFindingCount, degraded: false };
+  } catch (error) {
+    Sentry.captureException(error, { tags: { "dashboard.section.degraded": "findings-summary" } });
+    return { actionableFindingCount: null, degraded: true };
+  }
+}
+
 export default async function AlliancePage({ params }: Params) {
   const { allianceId } = await params;
   if (!allianceId) {
     redirect("/app");
   }
 
+  // Authorization runs before anything else - including flag evaluation -
+  // so a wrong-alliance or unauthorized request is denied regardless of
+  // flag state (#332 AC).
   const auth = await requireAllianceAccess({ allianceId });
   const { permissions } = auth;
 
@@ -71,215 +111,72 @@ export default async function AlliancePage({ params }: Params) {
     attachableLibraryMetricCount,
   });
 
+  // Evaluated once, at this page boundary, using trusted alliance/user
+  // context (#332 implementation constraint) - never re-evaluated per
+  // card, and never passed a raw route param.
+  const workflowGroupsEnabled = await evaluateFeature(
+    "dashboard-workflow-groups",
+    toFeatureContext({ environment: resolveEnvironment(), authorization: auth }),
+  );
+
+  const setupProgressCard = (
+    <SetupProgressCard
+      allianceId={allianceId}
+      completedCount={setupStatus.completedCount}
+      totalCount={setupStatus.totalCount}
+      recommendedTask={setupStatus.recommendedTask}
+    />
+  );
+
+  if (!workflowGroupsEnabled) {
+    return (
+      <PageLayout title={alliance.name} description={`Server: ${alliance.server}`}>
+        <LegacyDashboard
+          allianceId={allianceId}
+          role={auth.membership.role}
+          permissions={permissions}
+          setupStatus={setupStatus}
+          activePeriod={activePeriod}
+          hasPeriodMetrics={hasPeriodMetrics}
+          hasActiveMembers={hasActiveMembers}
+          canProvision={canProvision}
+          reportsEnabled={reportsEnabled}
+        />
+      </PageLayout>
+    );
+  }
+
+  // Only fetched for the enabled variant - the disabled path above never
+  // pays for these additional reads (#332: no route/action/cost unique to
+  // the new variant leaks while disabled).
+  const { health: rosterHealth, degraded: rosterHealthDegraded } = await loadRosterHealthOrDegrade(allianceId);
+  const { actionableFindingCount, degraded: findingsDegraded } =
+    activePeriod && hasPeriodMetrics
+      ? await loadFindingsSummaryOrDegrade(allianceId, activePeriod.id)
+      : { actionableFindingCount: null, degraded: false };
+
+  const viewModel = buildDashboardWorkflowViewModel({
+    role: auth.membership.role,
+    permissions,
+    hasArchivedPeriodsOnly: setupStatus.hasArchivedPeriodsOnly,
+    activePeriod: activePeriod ? { id: activePeriod.id, name: activePeriod.name } : null,
+    hasActiveMembers,
+    hasPeriodMetrics,
+    canProvision,
+    reportsEnabled,
+    rosterHealth,
+    rosterHealthDegraded,
+    actionableFindingCount,
+    findingsDegraded,
+  });
+
   return (
     <PageLayout
       title={alliance.name}
       description={`Server: ${alliance.server}`}
+      action={<Badge variant="info">{auth.membership.role}</Badge>}
     >
-      <div className="flex flex-col gap-6">
-        <SetupProgressCard
-          allianceId={allianceId}
-          completedCount={setupStatus.completedCount}
-          totalCount={setupStatus.totalCount}
-          recommendedTask={setupStatus.recommendedTask}
-        />
-
-        <Card>
-          <Card.Body>
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-primary">Your Role</h2>
-                <p className="text-text-secondary mt-1">Access level for this alliance</p>
-              </div>
-              <Badge variant="info">{auth.membership.role}</Badge>
-            </div>
-          </Card.Body>
-        </Card>
-
-        <div>
-          <h2 className="text-lg font-semibold text-primary mb-4">Modules</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Card>
-              <Card.Body>
-                <h3 className="font-medium text-primary mb-2">Members</h3>
-                <p className="text-sm text-text-secondary mb-4">
-                  Manage your alliance members and player data.
-                </p>
-                <Button href={`/alliances/${allianceId}/members`} variant="primary" size="sm">
-                  View Members
-                </Button>
-              </Card.Body>
-            </Card>
-
-            {permissions.canViewMembers && reportsEnabled && (
-              <Card>
-                <Card.Body>
-                  <h3 className="font-medium text-primary mb-2">Reports</h3>
-                  <p className="text-sm text-text-secondary mb-4">
-                    Metric summaries, rankings, and period-over-period change.
-                  </p>
-                  <Button href={`/alliances/${allianceId}/reports`} variant="primary" size="sm">
-                    View Reports
-                  </Button>
-                </Card.Body>
-              </Card>
-            )}
-
-            {permissions.canImportMetrics && !activePeriod && (
-              <Card>
-                <Card.Body>
-                  <h3 className="font-medium text-primary mb-2">Evaluation Results</h3>
-                  <p className="text-sm text-text-secondary mb-4">
-                    {setupStatus.hasArchivedPeriodsOnly
-                      ? "Only inactive evaluation periods exist. Restore one or create a new period before recording or importing results."
-                      : "No evaluation periods yet. Create one before recording or importing member results."}
-                  </p>
-                  {permissions.canConfigurePeriods ? (
-                    <Button href={`/alliances/${allianceId}/periods`} variant="primary" size="sm">
-                      Go to Evaluation Periods
-                    </Button>
-                  ) : (
-                    <p className="text-sm text-text-secondary">
-                      Ask an Admin or Owner to create or restore an evaluation period.
-                    </p>
-                  )}
-                </Card.Body>
-              </Card>
-            )}
-
-            {permissions.canImportMetrics && activePeriod && (
-              <Card>
-                <Card.Body>
-                  <h3 className="font-medium text-primary mb-2">Evaluation Results</h3>
-                  {!hasActiveMembers ? (
-                    <>
-                      <p className="text-sm text-text-secondary mb-4">
-                        Import members before recording or importing evaluation results for{" "}
-                        <strong>{activePeriod.name}</strong>.
-                      </p>
-                      {permissions.canImportMembers ? (
-                        <Button
-                          href={`/alliances/${allianceId}/members/import`}
-                          variant="primary"
-                          size="sm"
-                        >
-                          Import Members
-                        </Button>
-                      ) : (
-                        <p className="text-sm text-text-secondary">
-                          Ask an Admin or Owner to import members.
-                        </p>
-                      )}
-                    </>
-                  ) : !hasPeriodMetrics && !canProvision ? (
-                    <>
-                      <p className="text-sm text-text-secondary mb-4">
-                        Active period <strong>{activePeriod.name}</strong> has no assigned metrics yet.
-                        Configure period metrics before recording results.
-                      </p>
-                      {permissions.canConfigurePeriods ? (
-                        <Button
-                          href={`/alliances/${allianceId}/periods/${activePeriod.id}`}
-                          variant="primary"
-                          size="sm"
-                        >
-                          Manage Period Metrics
-                        </Button>
-                      ) : (
-                        <Button
-                          href={`/alliances/${allianceId}/periods/${activePeriod.id}`}
-                          variant="secondary"
-                          size="sm"
-                        >
-                          View Period
-                        </Button>
-                      )}
-                    </>
-                  ) : !hasPeriodMetrics && canProvision ? (
-                    <>
-                      <p className="text-sm text-text-secondary mb-4">
-                        Active period <strong>{activePeriod.name}</strong> has no assigned metrics yet.
-                        Import a spreadsheet to attach metrics and add results.
-                      </p>
-                      <Button
-                        href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`}
-                        variant="primary"
-                        size="sm"
-                      >
-                        Import Evaluation Results
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm text-text-secondary mb-4">
-                        Record or import performance data for <strong>{activePeriod.name}</strong>.
-                      </p>
-                      <div className="flex gap-2">
-                        <Button
-                          href={`/alliances/${allianceId}/periods/${activePeriod.id}/record`}
-                          variant="primary"
-                          size="sm"
-                        >
-                          Record Now
-                        </Button>
-                        <Button
-                          href={`/alliances/${allianceId}/periods/${activePeriod.id}/import`}
-                          variant="secondary"
-                          size="sm"
-                        >
-                          Import Evaluation Results
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                </Card.Body>
-              </Card>
-            )}
-
-            {permissions.canConfigureMetrics && (
-              <Card>
-                <Card.Body>
-                  <h3 className="font-medium text-primary mb-2">Metrics Library</h3>
-                  <p className="text-sm text-text-secondary mb-4">
-                    Define the metrics you track for your alliance.
-                  </p>
-                  <Button href={`/alliances/${allianceId}/metrics`} variant="primary" size="sm">
-                    Manage Metrics
-                  </Button>
-                </Card.Body>
-              </Card>
-            )}
-
-            {permissions.canConfigurePeriods && (
-              <Card>
-                <Card.Body>
-                  <h3 className="font-medium text-primary mb-2">Evaluation Periods</h3>
-                  <p className="text-sm text-text-secondary mb-4">
-                    Create and manage evaluation periods for tracking.
-                  </p>
-                  <Button href={`/alliances/${allianceId}/periods`} variant="primary" size="sm">
-                    Manage Periods
-                  </Button>
-                </Card.Body>
-              </Card>
-            )}
-
-            {permissions.canInviteCollaborators && (
-              <Card>
-                <Card.Body>
-                  <h3 className="font-medium text-primary mb-2">Leadership Team</h3>
-                  <p className="text-sm text-text-secondary mb-4">
-                    Invite collaborators to help manage your alliance.
-                  </p>
-                  <Button href={`/alliances/${allianceId}/settings/invitations`} variant="primary" size="sm">
-                    Manage Team
-                  </Button>
-                </Card.Body>
-              </Card>
-            )}
-          </div>
-        </div>
-      </div>
+      <WorkflowDashboard allianceId={allianceId} viewModel={viewModel} setupProgressCard={setupProgressCard} />
     </PageLayout>
   );
 }

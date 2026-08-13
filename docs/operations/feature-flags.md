@@ -17,6 +17,7 @@ provider configuration - both are linked to, never copied.
 | Key | Description | Category | Owner | Issue | Production default | Targeting strategy | Review date (governance checkpoint) | Removal issue | Date introduced |
 |---|---|---|---|---|---|---|---|---|---|
 | `reports` | Metric Summary Reports (#190): per-metric alliance rollups, rankings, and member breakdowns. Ships dark - both report routes fail closed (`notFound`) while disabled, and all discovery touchpoints hide their links too. | `temporary-release` | Engineering | #190 | `false` | `global` | 2026-11-11 | [#336](https://github.com/asbillings07/alliance-command-center-app/issues/336) | 2026-08-12 (#336 opened) |
+| `dashboard-workflow-groups` | Grouped alliance dashboard (#192): reorganizes the dashboard into leader-workflow groups (Setup, Roster health, Participation and evaluation) instead of a flat module grid. ACC's first alliance-targeted flag (#332). Ships dark - disabled renders the existing dashboard unchanged. | `temporary-release` | Engineering | #192 | `false` | `alliance-targeted` | 2026-12-01 | [#342](https://github.com/asbillings07/alliance-command-center-app/issues/342) | 2026-08-12 (#342 opened) |
 
 This table is a **human-readable index**, not a second source of truth. If it
 ever looks stale, `registry.ts` wins - update the table to match the code,
