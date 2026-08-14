@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   resolveComparePeriodSelection,
   formatComparePeriodLabel,
+  formatComparePeriodLabels,
   type ComparePeriodHeader,
 } from "./comparePeriodSelection";
 
@@ -137,5 +138,65 @@ describe("formatComparePeriodLabel", () => {
     const first = header("a", "Week 18", null, null, new Date("2026-01-01"));
     const second = header("b", "Week 18", null, null, new Date("2026-02-01"));
     expect(formatComparePeriodLabel(first)).not.toBe(formatComparePeriodLabel(second));
+  });
+
+  // toLocaleDateString() collapses to day precision, and none of name,
+  // startsAt, endsAt, or day-precision createdAt are actually unique - so
+  // formatComparePeriodLabel alone can still collide on genuinely identical
+  // records. formatComparePeriodLabels below is what guarantees uniqueness.
+  it("still collides on two same-named, fully undated periods created the same day", () => {
+    const first = header("a", "Week 18", null, null, new Date("2026-01-01T09:00:00Z"));
+    const second = header("b", "Week 18", null, null, new Date("2026-01-01T17:00:00Z"));
+    expect(formatComparePeriodLabel(first)).toBe(formatComparePeriodLabel(second));
+  });
+
+  it("still collides on two same-named periods with identical date ranges", () => {
+    const first = header("a", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
+    const second = header("b", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
+    expect(formatComparePeriodLabel(first)).toBe(formatComparePeriodLabel(second));
+  });
+});
+
+describe("formatComparePeriodLabels", () => {
+  it("leaves already-distinguishable labels untouched (no id suffix when nothing collides)", () => {
+    const periods = [week18, week17];
+    const labels = formatComparePeriodLabels(periods);
+    expect(labels.get("week-18")).toBe(formatComparePeriodLabel(week18));
+    expect(labels.get("week-17")).toBe(formatComparePeriodLabel(week17));
+  });
+
+  it("guarantees distinguishable labels for two same-named periods with identical date ranges", () => {
+    const first = header("a", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
+    const second = header("b", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
+    const labels = formatComparePeriodLabels([first, second]);
+    expect(labels.get("a")).not.toBe(labels.get("b"));
+    // The un-colliding common case reads clean; disambiguation only appends
+    // when actually needed, so both entries here carry the suffix.
+    expect(labels.get("a")).toContain("a");
+    expect(labels.get("b")).toContain("b");
+  });
+
+  it("guarantees distinguishable labels for two same-named, fully undated periods created the same day", () => {
+    const first = header("period-aaa111", "Week 18", null, null, new Date("2026-01-01T09:00:00Z"));
+    const second = header("period-bbb222", "Week 18", null, null, new Date("2026-01-01T17:00:00Z"));
+    const labels = formatComparePeriodLabels([first, second]);
+    expect(labels.get("period-aaa111")).not.toBe(labels.get("period-bbb222"));
+  });
+
+  it("is deterministic - the same input always produces the same output", () => {
+    const first = header("a", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
+    const second = header("b", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
+    const labelsRunOne = formatComparePeriodLabels([first, second]);
+    const labelsRunTwo = formatComparePeriodLabels([first, second]);
+    expect(labelsRunOne).toEqual(labelsRunTwo);
+  });
+
+  it("only disambiguates the colliding subset, leaving unrelated periods alone", () => {
+    const collidingA = header("a", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
+    const collidingB = header("b", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
+    const unrelated = week17;
+    const labels = formatComparePeriodLabels([collidingA, collidingB, unrelated]);
+    expect(labels.get("week-17")).toBe(formatComparePeriodLabel(week17));
+    expect(labels.get("a")).not.toBe(labels.get("b"));
   });
 });

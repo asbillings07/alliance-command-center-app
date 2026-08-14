@@ -83,20 +83,28 @@ export function resolveComparePeriodSelection(params: {
 }
 
 /**
- * Disambiguated label for a comparison period, used by both the "Compare
- * with" dropdown's options and the trend pill's visible text. `MetricPeriod`
- * has no uniqueness constraint on `name` (see `schema.prisma`), so the bare
- * name alone can't be trusted to identify a specific period - e.g. two
- * periods named "Week 18" would otherwise be indistinguishable in the UI.
+ * Best-effort human-readable label for a single comparison period.
+ * `MetricPeriod` has no uniqueness constraint on `name` (see
+ * `schema.prisma`), so the bare name alone can't be trusted to identify a
+ * specific period - e.g. two periods named "Week 18" would otherwise be
+ * indistinguishable in the UI.
  *
  * `startsAt`/`endsAt` are independently nullable, so this uses whichever of
- * the two is actually set rather than requiring both. When *neither* is
- * set, falls back to `createdAt` - unlike the date fields, every period has
- * one, so two same-named undated periods still get distinguishable labels
- * (this mirrors `compareMetricPeriodsForCurrent`'s own tie-break chain:
- * `startsAt`, then `createdAt`). Reuses this codebase's existing
- * `toLocaleDateString()` convention (see `periods/[periodId]/page.tsx`,
- * `metricPeriodCard.tsx`) rather than introducing a new date formatter.
+ * the two is actually set rather than requiring both, falling back to
+ * `createdAt` when neither is set (mirroring `compareMetricPeriodsForCurrent`'s
+ * own tie-break chain). Reuses this codebase's existing `toLocaleDateString()`
+ * convention (see `periods/[periodId]/page.tsx`, `metricPeriodCard.tsx`)
+ * rather than introducing a new date formatter.
+ *
+ * **Not guaranteed unique in isolation** - `toLocaleDateString()` collapses
+ * `createdAt` to day precision, so two same-named periods created the same
+ * day, or two same-named periods with identical `startsAt`/`endsAt`, still
+ * produce identical output from this function alone. None of `name`,
+ * `startsAt`, `endsAt`, or day-precision `createdAt` are actually unique -
+ * only `id` is. Callers that need a *guaranteed* distinguishable label
+ * across a set of periods (the compare dropdown's options, and the trend
+ * pill naming whichever period was chosen from that same set) must use
+ * `formatComparePeriodLabels` below instead.
  */
 export function formatComparePeriodLabel(period: ComparePeriodHeader): string {
   const { name, startsAt, endsAt, createdAt } = period;
@@ -111,4 +119,40 @@ export function formatComparePeriodLabel(period: ComparePeriodHeader): string {
     return `${name} (through ${endsAt.toLocaleDateString()})`;
   }
   return `${name} (created ${createdAt.toLocaleDateString()})`;
+}
+
+/**
+ * Guaranteed-distinguishable labels for a set of periods, keyed by `id`.
+ * Runs `formatComparePeriodLabel` on every period, then appends a short,
+ * stable suffix derived from `id` - the one field actually guaranteed
+ * unique - *only* to the entries that still collide after that. The common
+ * case (every period already reads differently) never shows a raw id
+ * fragment; a genuine collision (identical name, identical date range or
+ * identical creation day) still can never produce two indistinguishable
+ * options, because appending each period's own id can never collide with
+ * another period's.
+ *
+ * Callers (the compare dropdown, and the trend pill looking up whichever
+ * period was chosen) should call this once per render over the same
+ * `eligiblePeriods` list, rather than calling `formatComparePeriodLabel`
+ * directly, whenever the result is shown to a leader who needs to tell
+ * periods apart.
+ */
+export function formatComparePeriodLabels(
+  periods: readonly ComparePeriodHeader[],
+): Map<string, string> {
+  const baseLabelsById = new Map(periods.map((period) => [period.id, formatComparePeriodLabel(period)] as const));
+
+  const occurrences = new Map<string, number>();
+  for (const label of baseLabelsById.values()) {
+    occurrences.set(label, (occurrences.get(label) ?? 0) + 1);
+  }
+
+  const result = new Map<string, string>();
+  for (const period of periods) {
+    const baseLabel = baseLabelsById.get(period.id)!;
+    const isColliding = (occurrences.get(baseLabel) ?? 0) > 1;
+    result.set(period.id, isColliding ? `${baseLabel} \u00b7 ${period.id.slice(-6)}` : baseLabel);
+  }
+  return result;
 }
