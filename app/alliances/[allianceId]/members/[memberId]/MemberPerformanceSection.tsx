@@ -62,9 +62,9 @@ export type MemberPerformanceProps = {
           periodName: string;
           metrics: CurrentMetricViewModel[];
           /**
-           * Name of the period `periodTrend`'s "comparable" badges compare
-           * against - rendered directly in each badge's visible text
-           * ("vs. Week 18"), not just its tooltip, so the baseline is
+           * Name of the period `periodTrend`'s badges compare against -
+           * rendered as visible muted text next to each badge
+           * ("[+50] vs. Week 18"), not just its tooltip, so the baseline is
            * readable without hovering. Absent for "New" (no prior period
            * exists at all, so there is nothing to name).
            */
@@ -95,15 +95,28 @@ const FAVORABILITY_BADGE_VARIANT: Record<TrendFavorability, BadgeVariant> = {
  * of a correction" (`delta`, same-period, always neutral gray text) apart
  * from "this changed period over period" (this badge, color-coded by
  * whether the change is good or bad news for *this* metric) at a glance,
- * not just by reading the copy closely. The `title` attribute is this
- * project's existing lightweight tooltip convention (see
- * `ImportForm.tsx`'s truncated-column-name tooltip) - kept as reinforcement
- * for mouse users, but never the *only* place the baseline period is named:
- * an owner found (production, #332 internal-stabilization pass) that a
- * hover-only tooltip is inaccessible on touch devices, so the comparable
- * badge's visible text below names the period directly ("vs. Week 18"),
- * not just "vs. last period" - "last period" alone doesn't say which one
- * without the tooltip.
+ * not just by reading the copy closely.
+ *
+ * The pill itself carries only the status (arrow + delta, or "N/A") - the
+ * comparison period's name renders as adjacent muted text, not crammed
+ * inside the pill. An earlier version put the whole sentence ("+50 vs. Week
+ * 18 (4/6/2026 – 4/13/2026)") inside the badge itself; once #349 started
+ * passing the full collision-safe label (which can include a date range or
+ * an id suffix, not just a short name) as that comparison text, the pill
+ * stopped reading as a pill at all and started reading as a run-on
+ * sentence. Splitting them lets the pill stay a fixed-size status chip
+ * while the comparison text wraps freely beside it. `min-w-0` on the outer
+ * wrapper is required, not decorative: without it, a flex item won't
+ * shrink below its content's intrinsic width, so long comparison text would
+ * push the metric name out of the card instead of wrapping.
+ *
+ * The `title` attribute is this project's existing lightweight tooltip
+ * convention (see `ImportForm.tsx`'s truncated-column-name tooltip) - kept
+ * as reinforcement for mouse users, but never the *only* place the full
+ * baseline is named: an owner found (production, #332 internal-
+ * stabilization pass) that a hover-only tooltip is inaccessible on touch
+ * devices, so the comparison text below is always visible on its own,
+ * never tooltip-only.
  *
  * #325 documented this exact copy (both this badge's and the correction
  * `delta` line's) in `docs/changelog.md` for a leader-facing audience -
@@ -128,22 +141,21 @@ function PeriodTrendBadge({ trend, periodName }: { trend: PeriodTrendViewModel; 
     // generic fallback below exists only for defensive completeness, e.g. a
     // caller passing this component a hand-built view model without it.
     const comparisonLabel = periodName ?? "last period";
+    const isNoBaseline = trend.status === "no-baseline";
 
-    if (trend.status === "no-baseline") {
-        return (
-            <span title="No comparable value was recorded for this metric in the previous evaluation period.">
-                <Badge variant="neutral" size="sm">
-                    N/A vs. {comparisonLabel}
-                </Badge>
-            </span>
-        );
-    }
+    const tooltip = isNoBaseline
+        ? `No comparable value was recorded for this metric in the previous evaluation period (${comparisonLabel}).`
+        : `Trend vs. the previous evaluation period (${comparisonLabel}) - not a same-period correction.`;
 
     return (
-        <span title={`Trend vs. the previous evaluation period (${comparisonLabel}) - not a same-period correction.`}>
-            <Badge variant={FAVORABILITY_BADGE_VARIANT[trend.favorability]} size="sm">
-                {TREND_ARROW[trend.direction]} {formatSignedPower(trend.delta)} vs. {comparisonLabel}
+        <span
+            className="inline-flex min-w-0 flex-wrap items-baseline justify-end gap-x-1.5 gap-y-0.5 text-right"
+            title={tooltip}
+        >
+            <Badge variant={isNoBaseline ? "neutral" : FAVORABILITY_BADGE_VARIANT[trend.favorability]} size="sm">
+                {isNoBaseline ? "N/A" : `${TREND_ARROW[trend.direction]} ${formatSignedPower(trend.delta)}`}
             </Badge>
+            <span className="text-xs text-text-muted">vs. {comparisonLabel}</span>
         </span>
     );
 }
