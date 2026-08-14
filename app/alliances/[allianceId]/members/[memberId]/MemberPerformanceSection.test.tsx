@@ -160,7 +160,7 @@ describe("MemberPerformanceSection MetricCard rendering", () => {
 // just text) is how these tests actually lock in "favorable is green,
 // adverse is red," not merely "the right words appear."
 describe("MemberPerformanceSection period trend badge (#323)", () => {
-  it("renders a comparable favorable trend in the success color with an up arrow and 'vs. last period' copy distinct from 'since last entry'", () => {
+  it("renders a comparable favorable trend in the success color with an up arrow and 'vs. <period name>' copy distinct from 'since last entry'", () => {
     const html = renderToStaticMarkup(
       <MemberPerformanceSection
         emptyState="has-metrics"
@@ -185,9 +185,12 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
     );
 
     expect(html).toContain("bg-success");
-    expect(html).toContain("+50 vs. last period");
+    // The prior period's name renders in the badge's own visible text, not
+    // just its hover tooltip - "vs. last period" alone doesn't say *which*
+    // period without hovering (production feedback, #332 stabilization).
+    expect(html).toContain("+50 vs. Week 19");
+    expect(html).not.toContain("vs. last period");
     expect(html).not.toContain("since last entry");
-    expect(html).toContain("Week 19");
   });
 
   it("renders a comparable adverse trend in the danger color, e.g. a LOWER_IS_BETTER metric trending up", () => {
@@ -195,6 +198,7 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
       <MemberPerformanceSection
         emptyState="has-metrics"
         periodName="Week 20"
+        previousPeriodName="Week 19"
         metrics={[
           {
             metricId: "m1",
@@ -214,7 +218,7 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
     );
 
     expect(html).toContain("bg-danger");
-    expect(html).toContain("+3 vs. last period");
+    expect(html).toContain("+3 vs. Week 19");
   });
 
   it("renders a neutral-favorability comparable trend without success/danger coloring", () => {
@@ -222,6 +226,7 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
       <MemberPerformanceSection
         emptyState="has-metrics"
         periodName="Week 20"
+        previousPeriodName="Week 19"
         metrics={[
           {
             metricId: "m1",
@@ -242,6 +247,32 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
 
     expect(html).not.toContain("bg-success");
     expect(html).not.toContain("bg-danger");
+    expect(html).toContain("+50 vs. Week 19");
+  });
+
+  it("falls back to the generic 'vs. last period' copy if previousPeriodName is ever missing for a comparable trend (defensive - the real page always supplies it)", () => {
+    const html = renderToStaticMarkup(
+      <MemberPerformanceSection
+        emptyState="has-metrics"
+        periodName="Week 20"
+        metrics={[
+          {
+            metricId: "m1",
+            metricName: "Kill Points",
+            current: { value: 900, recordedAt: new Date("2026-04-10") },
+            periodTrend: {
+              status: "comparable",
+              currentValue: 900,
+              previousValue: 850,
+              delta: 50,
+              direction: "up",
+              favorability: "favorable",
+            },
+          },
+        ]}
+      />,
+    );
+
     expect(html).toContain("+50 vs. last period");
   });
 
@@ -328,6 +359,6 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
     );
 
     expect(html).toContain("+20 since last entry");
-    expect(html).toContain("+50 vs. last period");
+    expect(html).toContain("+50 vs. Week 19");
   });
 });
