@@ -21,6 +21,19 @@ inaccurate regardless of good intentions.
 
 ---
 
+## 2026-08-13 - "N/A" trend badge now names its comparison period too
+
+A small correction to the entry directly below: that change only updated the
+badge shown when a comparable trend exists. The `N/A` badge - shown when a
+prior period exists but this metric has no comparable value in it - still
+read `N/A vs. last period` and was just as ambiguous as before. It now reads
+`N/A vs. Week 18` (or whichever period is being compared against), matching
+the comparable badge's copy.
+
+Issues: #321, #323.
+
+---
+
 ## 2026-08-13 - Period-over-period trend badge now names its comparison period
 
 A small follow-up to the period-over-period trend badge shipped below: the

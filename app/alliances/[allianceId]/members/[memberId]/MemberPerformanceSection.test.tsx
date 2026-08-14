@@ -296,7 +296,32 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
     expect(html).not.toContain("N/A");
   });
 
-  it("renders 'N/A vs. last period' when a prior period exists but this metric has no comparable baseline", () => {
+  it("renders 'N/A vs. <period name>' when a prior period exists but this metric has no comparable baseline", () => {
+    const html = renderToStaticMarkup(
+      <MemberPerformanceSection
+        emptyState="has-metrics"
+        periodName="Week 20"
+        previousPeriodName="Week 19"
+        metrics={[
+          {
+            metricId: "m1",
+            metricName: "Kill Points",
+            current: { value: 900, recordedAt: new Date("2026-04-10") },
+            periodTrend: { status: "no-baseline" },
+          },
+        ]}
+      />,
+    );
+
+    // Same "name the baseline directly, don't rely on the hover tooltip"
+    // rule as the comparable badge above - PR #348 fixed that badge but
+    // missed this one, leaving "N/A vs. last period" just as ambiguous as
+    // before on this branch.
+    expect(html).toContain("N/A vs. Week 19");
+    expect(html).not.toContain("N/A vs. last period");
+  });
+
+  it("falls back to the generic 'vs. last period' copy if previousPeriodName is ever missing for a no-baseline trend (defensive - the real page always supplies it)", () => {
     const html = renderToStaticMarkup(
       <MemberPerformanceSection
         emptyState="has-metrics"

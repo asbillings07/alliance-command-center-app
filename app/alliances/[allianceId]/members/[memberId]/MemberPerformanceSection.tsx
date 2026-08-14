@@ -122,22 +122,22 @@ function PeriodTrendBadge({ trend, periodName }: { trend: PeriodTrendViewModel; 
         );
     }
 
+    // `periodName` is expected whenever a "no-baseline" or "comparable"
+    // trend exists (the page only builds either when a prior period was
+    // actually found - see `buildPeriodTrendViewModels`'s doc comment) - the
+    // generic fallback below exists only for defensive completeness, e.g. a
+    // caller passing this component a hand-built view model without it.
+    const comparisonLabel = periodName ?? "last period";
+
     if (trend.status === "no-baseline") {
         return (
             <span title="No comparable value was recorded for this metric in the previous evaluation period.">
                 <Badge variant="neutral" size="sm">
-                    N/A vs. last period
+                    N/A vs. {comparisonLabel}
                 </Badge>
             </span>
         );
     }
-
-    // `periodName` is expected whenever a "comparable" trend exists (the
-    // page only builds one when a prior period was actually found - see
-    // `buildPeriodTrendViewModels`'s doc comment) - the generic fallback
-    // below exists only for defensive completeness, e.g. a caller passing
-    // this component a hand-built view model without it.
-    const comparisonLabel = periodName ?? "last period";
 
     return (
         <span title={`Trend vs. the previous evaluation period (${comparisonLabel}) - not a same-period correction.`}>
