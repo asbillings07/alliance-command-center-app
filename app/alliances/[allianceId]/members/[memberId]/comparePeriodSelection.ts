@@ -123,14 +123,18 @@ export function formatComparePeriodLabel(period: ComparePeriodHeader): string {
 
 /**
  * Guaranteed-distinguishable labels for a set of periods, keyed by `id`.
- * Runs `formatComparePeriodLabel` on every period, then appends a short,
- * stable suffix derived from `id` - the one field actually guaranteed
- * unique - *only* to the entries that still collide after that. The common
- * case (every period already reads differently) never shows a raw id
- * fragment; a genuine collision (identical name, identical date range or
- * identical creation day) still can never produce two indistinguishable
- * options, because appending each period's own id can never collide with
- * another period's.
+ * Runs `formatComparePeriodLabel` on every period, then appends the
+ * period's **full** `id` - the one field actually guaranteed unique - only
+ * to the entries that still collide after that. The common case (every
+ * period already reads differently) never shows an id at all; a genuine
+ * collision (identical name, identical date range, or identical creation
+ * day) still can never produce two indistinguishable options, because two
+ * distinct periods can never share an id.
+ *
+ * Deliberately the *full* id, not a truncated fragment: two distinct ids
+ * can share any fixed-length suffix (or prefix), so truncating would only
+ * shrink the odds of a residual collision, not eliminate them - which
+ * would silently break the one guarantee this function exists to make.
  *
  * Callers (the compare dropdown, and the trend pill looking up whichever
  * period was chosen) should call this once per render over the same
@@ -152,7 +156,7 @@ export function formatComparePeriodLabels(
   for (const period of periods) {
     const baseLabel = baseLabelsById.get(period.id)!;
     const isColliding = (occurrences.get(baseLabel) ?? 0) > 1;
-    result.set(period.id, isColliding ? `${baseLabel} \u00b7 ${period.id.slice(-6)}` : baseLabel);
+    result.set(period.id, isColliding ? `${baseLabel} \u00b7 ${period.id}` : baseLabel);
   }
   return result;
 }

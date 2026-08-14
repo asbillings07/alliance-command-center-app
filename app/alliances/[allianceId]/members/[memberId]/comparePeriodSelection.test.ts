@@ -191,6 +191,16 @@ describe("formatComparePeriodLabels", () => {
     expect(labelsRunOne).toEqual(labelsRunTwo);
   });
 
+  it("still disambiguates two distinct ids that happen to share the same trailing characters", () => {
+    // Guards against a truncated-suffix disambiguator (e.g. a fixed-length
+    // slice of id): two distinct ids can share any fixed-length suffix, so
+    // only the full id actually guarantees no residual collision.
+    const first = header("cabc000000aaaaaa", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
+    const second = header("cxyz999999aaaaaa", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
+    const labels = formatComparePeriodLabels([first, second]);
+    expect(labels.get("cabc000000aaaaaa")).not.toBe(labels.get("cxyz999999aaaaaa"));
+  });
+
   it("only disambiguates the colliding subset, leaving unrelated periods alone", () => {
     const collidingA = header("a", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
     const collidingB = header("b", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
