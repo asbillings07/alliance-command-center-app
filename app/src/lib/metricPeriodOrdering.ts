@@ -51,26 +51,40 @@ export function pickCurrentMetricPeriod<T extends MetricPeriodOrderingFields>(
 }
 
 /**
- * The period immediately preceding `selectedPeriodId` in the same
- * chronological total order `pickCurrentMetricPeriod` uses - i.e. "one
- * position older," not "the last period with any data." Used by the
- * member-detail page's period-over-period trend (#321/#322): a genuinely
- * adjacent-period comparison, never ad hoc date math.
+ * Every period strictly older than `selectedPeriodId` in the same
+ * chronological total order `pickCurrentMetricPeriod` uses, nearest-first.
+ * Used by the member-detail page's explicit "Compare with" selector (#349)
+ * to build its eligible-options list, and by `findPriorMetricPeriod` below
+ * (the first entry of this list *is* "the immediately preceding period").
  *
- * Returns `null` for two distinct reasons a caller must not conflate:
- * `selectedPeriodId` is the oldest period in `periods` (there is no prior
- * period - the alliance's first-ever period), or `selectedPeriodId` isn't
+ * Returns `[]` for two distinct reasons a caller must not conflate:
+ * `selectedPeriodId` is the oldest period in `periods` (there is nothing
+ * older - the alliance's first-ever period), or `selectedPeriodId` isn't
  * present in `periods` at all (a defensive case; callers are expected to
  * pass the same period list a selected period was drawn from).
+ */
+export function findOlderMetricPeriods<T extends MetricPeriodOrderingFields>(
+  periods: readonly T[],
+  selectedPeriodId: string,
+): T[] {
+  const sorted = [...periods].sort(compareMetricPeriodsForCurrent);
+  const selectedIndex = sorted.findIndex((p) => p.id === selectedPeriodId);
+  if (selectedIndex === -1) {
+    return [];
+  }
+  return sorted.slice(selectedIndex + 1);
+}
+
+/**
+ * The period immediately preceding `selectedPeriodId` - i.e. "one position
+ * older," not "the last period with any data." Used by the member-detail
+ * page's period-over-period trend (#321/#322): a genuinely adjacent-period
+ * comparison, never ad hoc date math. See `findOlderMetricPeriods` above for
+ * why `null`/`[]` covers two distinct cases callers must not conflate.
  */
 export function findPriorMetricPeriod<T extends MetricPeriodOrderingFields>(
   periods: readonly T[],
   selectedPeriodId: string,
 ): T | null {
-  const sorted = [...periods].sort(compareMetricPeriodsForCurrent);
-  const selectedIndex = sorted.findIndex((p) => p.id === selectedPeriodId);
-  if (selectedIndex === -1) {
-    return null;
-  }
-  return sorted[selectedIndex + 1] ?? null;
+  return findOlderMetricPeriods(periods, selectedPeriodId)[0] ?? null;
 }

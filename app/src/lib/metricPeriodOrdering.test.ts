@@ -3,6 +3,7 @@ import {
   compareMetricPeriodsForCurrent,
   pickCurrentMetricPeriod,
   findPriorMetricPeriod,
+  findOlderMetricPeriods,
 } from "./metricPeriodOrdering";
 
 function period(
@@ -86,5 +87,48 @@ describe("findPriorMetricPeriod", () => {
     // dated period right before it, and nothing is prior *to* undated.
     expect(findPriorMetricPeriod([oldest, middle, newest, undated], "undated")).toBeNull();
     expect(findPriorMetricPeriod([oldest, middle, newest, undated], "newest")?.id).toBe("middle");
+  });
+});
+
+describe("findOlderMetricPeriods", () => {
+  const oldest = period("oldest", new Date("2026-01-01"), new Date("2026-01-01"));
+  const middle = period("middle", new Date("2026-02-01"), new Date("2026-01-01"));
+  const newest = period("newest", new Date("2026-03-01"), new Date("2026-01-01"));
+
+  it("returns every strictly-older period, nearest-first", () => {
+    expect(findOlderMetricPeriods([oldest, middle, newest], "newest").map((p) => p.id)).toEqual([
+      "middle",
+      "oldest",
+    ]);
+    expect(findOlderMetricPeriods([oldest, middle, newest], "middle").map((p) => p.id)).toEqual([
+      "oldest",
+    ]);
+  });
+
+  it("returns [] for the oldest period in history - nothing is older", () => {
+    expect(findOlderMetricPeriods([oldest, middle, newest], "oldest")).toEqual([]);
+  });
+
+  it("returns [] for a single-period alliance", () => {
+    expect(findOlderMetricPeriods([oldest], "oldest")).toEqual([]);
+  });
+
+  it("returns [] when the selected period id isn't in the list (defensive)", () => {
+    expect(findOlderMetricPeriods([oldest, middle], "unknown")).toEqual([]);
+  });
+
+  it("is order-independent - callers don't need to pre-sort", () => {
+    expect(findOlderMetricPeriods([newest, oldest, middle], "newest").map((p) => p.id)).toEqual([
+      "middle",
+      "oldest",
+    ]);
+  });
+
+  it("its first entry always matches findPriorMetricPeriod", () => {
+    for (const id of ["oldest", "middle", "newest"]) {
+      const older = findOlderMetricPeriods([oldest, middle, newest], id);
+      const prior = findPriorMetricPeriod([oldest, middle, newest], id);
+      expect(older[0] ?? null).toEqual(prior);
+    }
   });
 });
