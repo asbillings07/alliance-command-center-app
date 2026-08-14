@@ -6,6 +6,13 @@ vi.mock("next/navigation", () => ({
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
+  // Mirrors Next.js' own contract: redirect() throws to halt rendering
+  // immediately, so callers below assert against `.rejects` and inspect
+  // the mock's call args for the canonical URL, exactly as real client
+  // navigation would follow it.
+  redirect: vi.fn((url: string) => {
+    throw new Error(`NEXT_REDIRECT:${url}`);
+  }),
 }));
 
 vi.mock("@/app/src/lib/auth/requireAllianceAccess", () => ({
@@ -49,6 +56,7 @@ vi.mock("@/app/src/lib/metrics/memberPeriodMetricValues", () => ({
   memberPeriodMetricValues: vi.fn(),
 }));
 
+import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 import MemberPage from "./page";
@@ -102,7 +110,11 @@ describe("MemberPage (Server Page)", () => {
 
     const result = await MemberPage({
       params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
-      searchParams: Promise.resolve({ periodId: "per_older" }),
+      // per_older is the oldest period in this fixture, so "no-prior" is
+      // its only canonical comparePeriodId - supplied explicitly here so
+      // this test (about periodStatusLabel/breadcrumb) doesn't trip the
+      // #349 canonicalization redirect covered by its own tests below.
+      searchParams: Promise.resolve({ periodId: "per_older", comparePeriodId: "no-prior" }),
     });
 
     const props = result.props;
@@ -125,7 +137,16 @@ describe("MemberPage (Server Page)", () => {
     expect(performanceSection?.props?.periodStatusLabel).toBe("Inactive Period");
   });
 
-  it("labels auto-fallback latest inactive period as 'Latest Period · Not active'", async () => {
+  it("labels the newest period 'Latest Period · Not active' (data-driven, not URL-presence-driven) when no active period exists", async () => {
+    // #349: this used to rely on `periodId` being *omitted* from the URL to
+    // distinguish "the system fell back here" from "the leader explicitly
+    // picked it." Canonicalization now makes `periodId` explicit on every
+    // render past the first hop, so that signal no longer exists - this
+    // label is purely data-driven now (see page.tsx's comment on
+    // `isAutoFallbackToLatestInactive`). Supplying both params explicitly
+    // here (rather than omitting them, as the pre-#349 version of this
+    // test did) proves the label survives on a canonical, shareable link,
+    // not just on the very first implicit visit.
     vi.mocked(prisma.allianceMember.findFirst).mockResolvedValue({
       id: "mem_1",
       allianceId: "all_1",
@@ -161,7 +182,7 @@ describe("MemberPage (Server Page)", () => {
 
     const result = await MemberPage({
       params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
-      searchParams: Promise.resolve({}),
+      searchParams: Promise.resolve({ periodId: "per_latest_inactive", comparePeriodId: "no-prior" }),
     });
 
     const props = result.props;
@@ -174,7 +195,14 @@ describe("MemberPage (Server Page)", () => {
     expect(performanceSection?.props?.periodStatusLabel).toBe("Latest Period · Not active");
   });
 
-  it("auto-selects the chronologically current active period instead of the newest createdAt", async () => {
+  // #349: this used to assert auto-selection by checking which period
+  // `prisma.metricPeriod.findUnique` was called with. Canonicalization now
+  // means an omitted `periodId` *always* redirects before that fetch ever
+  // runs (see the "canonicalization" describe block below) - so the
+  // correct place to observe auto-selection now is the redirect's own
+  // target URL, which doubles as proof the expensive fetch never happens
+  // on this first hop.
+  it("auto-selects the chronologically current active period instead of the newest createdAt, and redirects to it before fetching it", async () => {
     vi.mocked(prisma.allianceMember.findFirst).mockResolvedValue({
       id: "mem_1",
       allianceId: "all_1",
@@ -220,17 +248,61 @@ describe("MemberPage (Server Page)", () => {
 
     vi.mocked(prisma.leadershipNote.findMany).mockResolvedValue([]);
 
-    await MemberPage({
-      params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
-      searchParams: Promise.resolve({}),
-    });
-
-    expect(prisma.metricPeriod.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "per_current" },
+    await expect(
+      MemberPage({
+        params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+        searchParams: Promise.resolve({}),
       }),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    // per_imported is the only (and therefore immediate-predecessor)
+    // eligible comparison for the auto-selected per_current.
+    expect(redirect).toHaveBeenCalledWith(
+      "/alliances/all_1/members/mem_1?periodId=per_current&comparePeriodId=per_imported",
     );
+    expect(prisma.metricPeriod.findUnique).not.toHaveBeenCalled();
+    expect(memberPeriodMetricValues).not.toHaveBeenCalled();
   });
+
+  // Shared fixtures/helpers reused by the "trend wiring" and
+  // "canonicalization / explicit comparison period" describe blocks below.
+  function mockAllianceMember(overrides: Partial<Record<string, unknown>> = {}) {
+    vi.mocked(prisma.allianceMember.findFirst).mockResolvedValue({
+      id: "mem_1",
+      allianceId: "all_1",
+      playerName: "Valkyrie",
+      userId: null,
+      role: null,
+      thp: null,
+      squadPower: null,
+      joinedAt: null,
+      archivedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides,
+    } as unknown as Awaited<ReturnType<typeof prisma.allianceMember.findFirst>>);
+  }
+
+  function mockSelectedPeriod(id: string, name: string, trendDirection: string = "NEUTRAL") {
+    vi.mocked(prisma.metricPeriod.findUnique).mockResolvedValue({
+      id,
+      name,
+      active: true,
+      allianceId: "all_1",
+      startsAt: new Date("2026-04-06"),
+      endsAt: new Date("2026-04-13"),
+      createdAt: new Date("2026-04-06"),
+      updatedAt: new Date(),
+      periodMetrics: [{ metricId: "met_kill", metric: { id: "met_kill", name: "Kill Points", trendDirection } }],
+    } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findUnique>>);
+  }
+
+  function performanceMetrics(props: { children: { props: { children: ChildElement[] } } }) {
+    const performanceSection = props.children.props.children.find(
+      (c) => c && c.type && c.type.name === "MemberPerformanceSection",
+    );
+    return performanceSection?.props?.metrics ?? [];
+  }
 
   // #321/#322: the period-over-period trend, wired end to end (period
   // resolution -> two memberPeriodMetricValues calls -> merge into the
@@ -238,44 +310,6 @@ describe("MemberPage (Server Page)", () => {
   // from - covering the gating rule (#3 in #321's scope comment) that a
   // unit test on either pure function alone can't exercise.
   describe("period-over-period trend wiring (#321/#322)", () => {
-    function mockAllianceMember(overrides: Partial<Record<string, unknown>> = {}) {
-      vi.mocked(prisma.allianceMember.findFirst).mockResolvedValue({
-        id: "mem_1",
-        allianceId: "all_1",
-        playerName: "Valkyrie",
-        userId: null,
-        role: null,
-        thp: null,
-        squadPower: null,
-        joinedAt: null,
-        archivedAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        ...overrides,
-      } as unknown as Awaited<ReturnType<typeof prisma.allianceMember.findFirst>>);
-    }
-
-    function mockSelectedPeriod(id: string, name: string, trendDirection: string = "NEUTRAL") {
-      vi.mocked(prisma.metricPeriod.findUnique).mockResolvedValue({
-        id,
-        name,
-        active: true,
-        allianceId: "all_1",
-        startsAt: new Date("2026-04-06"),
-        endsAt: new Date("2026-04-13"),
-        createdAt: new Date("2026-04-06"),
-        updatedAt: new Date(),
-        periodMetrics: [{ metricId: "met_kill", metric: { id: "met_kill", name: "Kill Points", trendDirection } }],
-      } as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findUnique>>);
-    }
-
-    function performanceMetrics(props: { children: { props: { children: ChildElement[] } } }) {
-      const performanceSection = props.children.props.children.find(
-        (c) => c && c.type && c.type.name === "MemberPerformanceSection",
-      );
-      return performanceSection?.props?.metrics ?? [];
-    }
-
     it("attaches a comparable trend when both the selected and adjacent prior period have active baselines", async () => {
       mockAllianceMember();
       vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
@@ -296,7 +330,7 @@ describe("MemberPage (Server Page)", () => {
 
       const result = await MemberPage({
         params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
-        searchParams: Promise.resolve({ periodId: "per_current" }),
+        searchParams: Promise.resolve({ periodId: "per_current", comparePeriodId: "per_prior" }),
       });
 
       const [metric] = performanceMetrics(result.props);
@@ -335,7 +369,7 @@ describe("MemberPage (Server Page)", () => {
 
       const result = await MemberPage({
         params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
-        searchParams: Promise.resolve({ periodId: "per_only" }),
+        searchParams: Promise.resolve({ periodId: "per_only", comparePeriodId: "no-prior" }),
       });
 
       const [metric] = performanceMetrics(result.props);
@@ -370,7 +404,7 @@ describe("MemberPage (Server Page)", () => {
 
       const result = await MemberPage({
         params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
-        searchParams: Promise.resolve({ periodId: "per_current" }),
+        searchParams: Promise.resolve({ periodId: "per_current", comparePeriodId: "per_prior" }),
       });
 
       const [metric] = performanceMetrics(result.props);
@@ -408,7 +442,7 @@ describe("MemberPage (Server Page)", () => {
 
       const result = await MemberPage({
         params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
-        searchParams: Promise.resolve({ periodId: "per_current" }),
+        searchParams: Promise.resolve({ periodId: "per_current", comparePeriodId: "per_prior" }),
       });
 
       const [metric] = performanceMetrics(result.props);
@@ -440,7 +474,7 @@ describe("MemberPage (Server Page)", () => {
 
       const result = await MemberPage({
         params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
-        searchParams: Promise.resolve({ periodId: "per_current" }),
+        searchParams: Promise.resolve({ periodId: "per_current", comparePeriodId: "per_prior" }),
       });
 
       const [metric] = performanceMetrics(result.props);
@@ -480,7 +514,7 @@ describe("MemberPage (Server Page)", () => {
 
       const result = await MemberPage({
         params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
-        searchParams: Promise.resolve({ periodId: "per_current" }),
+        searchParams: Promise.resolve({ periodId: "per_current", comparePeriodId: "per_prior" }),
       });
 
       const [metric] = performanceMetrics(result.props);
@@ -516,7 +550,7 @@ describe("MemberPage (Server Page)", () => {
 
       const result = await MemberPage({
         params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
-        searchParams: Promise.resolve({ periodId: "per_current" }),
+        searchParams: Promise.resolve({ periodId: "per_current", comparePeriodId: "per_prior" }),
       });
 
       const [metric] = performanceMetrics(result.props);
@@ -550,7 +584,7 @@ describe("MemberPage (Server Page)", () => {
 
       const result = await MemberPage({
         params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
-        searchParams: Promise.resolve({ periodId: "per_current" }),
+        searchParams: Promise.resolve({ periodId: "per_current", comparePeriodId: "per_prior" }),
       });
 
       const [metric] = performanceMetrics(result.props);
@@ -584,11 +618,208 @@ describe("MemberPage (Server Page)", () => {
 
       const result = await MemberPage({
         params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
-        searchParams: Promise.resolve({ periodId: "per_current" }),
+        searchParams: Promise.resolve({ periodId: "per_current", comparePeriodId: "per_prior" }),
       });
 
       const [metric] = performanceMetrics(result.props);
       expect(metric?.periodTrend).toMatchObject({ direction: "up", favorability: "adverse" });
+    });
+  });
+
+  // #349: the explicit "Compare with" selector - canonicalization
+  // (redirecting to make both `periodId`/`comparePeriodId` explicit),
+  // notFound() for anything resolveComparePeriodSelection rejects, and the
+  // trend-suppression rule for an active "No comparison" opt-out. The pure
+  // resolution rules themselves are unit-tested in
+  // comparePeriodSelection.test.ts - this block only covers the wiring
+  // that can't be exercised there: DB-scoped eligibility, notFound()/
+  // redirect() call sites, and read-order.
+  describe("canonicalization / explicit comparison period (#349)", () => {
+    function mockThreePeriods() {
+      // Chronological order (newest first): per_20 -> per_19 -> per_18.
+      vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
+        { id: "per_20", name: "Week 20", active: true, startsAt: new Date("2026-04-13"), endsAt: new Date("2026-04-20"), createdAt: new Date("2026-04-13") },
+        { id: "per_19", name: "Week 19", active: false, startsAt: new Date("2026-04-06"), endsAt: new Date("2026-04-13"), createdAt: new Date("2026-04-06") },
+        { id: "per_18", name: "Week 18", active: false, startsAt: new Date("2026-03-30"), endsAt: new Date("2026-04-06"), createdAt: new Date("2026-03-30") },
+      ] as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findMany>>);
+    }
+
+    beforeEach(() => {
+      mockAllianceMember();
+      vi.mocked(prisma.leadershipNote.findMany).mockResolvedValue([]);
+    });
+
+    describe("redirects to canonicalize implicit query params", () => {
+      it("omitted periodId + explicit valid comparePeriodId -> redirects, canonicalizing both", async () => {
+        mockThreePeriods();
+
+        await expect(
+          MemberPage({
+            params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+            searchParams: Promise.resolve({ comparePeriodId: "per_18" }),
+          }),
+        ).rejects.toThrow("NEXT_REDIRECT");
+
+        expect(redirect).toHaveBeenCalledWith(
+          "/alliances/all_1/members/mem_1?periodId=per_20&comparePeriodId=per_18",
+        );
+        expect(prisma.metricPeriod.findUnique).not.toHaveBeenCalled();
+      });
+
+      it("omitted periodId + explicit 'none' -> redirects, canonicalizing the primary period only", async () => {
+        mockThreePeriods();
+
+        await expect(
+          MemberPage({
+            params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+            searchParams: Promise.resolve({ comparePeriodId: "none" }),
+          }),
+        ).rejects.toThrow("NEXT_REDIRECT");
+
+        expect(redirect).toHaveBeenCalledWith(
+          "/alliances/all_1/members/mem_1?periodId=per_20&comparePeriodId=none",
+        );
+      });
+
+      it("first-ever period (no eligible periods), omitted comparePeriodId -> redirects to comparePeriodId=no-prior", async () => {
+        vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([
+          { id: "per_only", name: "Week 1", active: true, startsAt: new Date("2026-01-05"), endsAt: new Date("2026-01-12"), createdAt: new Date("2026-01-01") },
+        ] as unknown as Awaited<ReturnType<typeof prisma.metricPeriod.findMany>>);
+
+        await expect(
+          MemberPage({
+            params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+            searchParams: Promise.resolve({ periodId: "per_only" }),
+          }),
+        ).rejects.toThrow("NEXT_REDIRECT");
+
+        expect(redirect).toHaveBeenCalledWith(
+          "/alliances/all_1/members/mem_1?periodId=per_only&comparePeriodId=no-prior",
+        );
+      });
+
+      it("does not redirect when both params are already explicit and valid", async () => {
+        mockThreePeriods();
+        mockSelectedPeriod("per_20", "Week 20");
+        vi.mocked(prisma.memberMetricEntry.findMany).mockResolvedValue([]);
+        vi.mocked(memberPeriodMetricValues).mockResolvedValue([]);
+
+        await MemberPage({
+          params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+          searchParams: Promise.resolve({ periodId: "per_20", comparePeriodId: "per_19" }),
+        });
+
+        expect(redirect).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("notFound() for anything the resolver rejects", () => {
+      it("comparePeriodId equal to the selected period itself -> notFound()", async () => {
+        mockThreePeriods();
+
+        await expect(
+          MemberPage({
+            params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+            searchParams: Promise.resolve({ periodId: "per_20", comparePeriodId: "per_20" }),
+          }),
+        ).rejects.toThrow("NEXT_NOT_FOUND");
+      });
+
+      it("comparePeriodId newer than the selected period -> notFound()", async () => {
+        mockThreePeriods();
+
+        await expect(
+          MemberPage({
+            params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+            searchParams: Promise.resolve({ periodId: "per_19", comparePeriodId: "per_20" }),
+          }),
+        ).rejects.toThrow("NEXT_NOT_FOUND");
+      });
+
+      it("nonexistent comparePeriodId -> notFound()", async () => {
+        mockThreePeriods();
+
+        await expect(
+          MemberPage({
+            params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+            searchParams: Promise.resolve({ periodId: "per_20", comparePeriodId: "per_does_not_exist" }),
+          }),
+        ).rejects.toThrow("NEXT_NOT_FOUND");
+      });
+
+      it("a real period id belonging to a different alliance -> notFound(), same as a nonexistent id (allPeriods is already alliance-scoped)", async () => {
+        mockThreePeriods();
+
+        await expect(
+          MemberPage({
+            params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+            // "per_other_alliance" never appears in this alliance's
+            // findMany result, so it's rejected exactly like a nonexistent
+            // id - there is no separate cross-tenant check to bypass.
+            searchParams: Promise.resolve({ periodId: "per_20", comparePeriodId: "per_other_alliance" }),
+          }),
+        ).rejects.toThrow("NEXT_NOT_FOUND");
+      });
+
+      it("comparePeriodId supplied with no resolvable primary period -> notFound()", async () => {
+        vi.mocked(prisma.metricPeriod.findMany).mockResolvedValue([]);
+
+        await expect(
+          MemberPage({
+            params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+            searchParams: Promise.resolve({ comparePeriodId: "none" }),
+          }),
+        ).rejects.toThrow("NEXT_NOT_FOUND");
+      });
+    });
+
+    describe("rendering effects of the resolved comparison", () => {
+      it("renders a non-adjacent explicit comparison period as the trend baseline, not the immediate predecessor", async () => {
+        mockThreePeriods();
+        mockSelectedPeriod("per_20", "Week 20");
+        vi.mocked(prisma.memberMetricEntry.findMany).mockResolvedValue([
+          { metricId: "met_kill", value: 900, recordedAt: new Date("2026-04-15"), createdAt: new Date("2026-04-15"), id: "e1" },
+        ] as unknown as Awaited<ReturnType<typeof prisma.memberMetricEntry.findMany>>);
+
+        vi.mocked(memberPeriodMetricValues).mockImplementation(async (_allianceId, periodId) =>
+          periodId === "per_20"
+            ? [{ metricId: "met_kill", allianceMemberId: "mem_1", value: 900, observationCount: 1, lastObservedOn: null, provenance: "Source period value" }]
+            // per_18 is two positions older, not the adjacent per_19.
+            : [{ metricId: "met_kill", allianceMemberId: "mem_1", value: 400, observationCount: 1, lastObservedOn: null, provenance: "Source period value" }],
+        );
+
+        const result = await MemberPage({
+          params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+          searchParams: Promise.resolve({ periodId: "per_20", comparePeriodId: "per_18" }),
+        });
+
+        const [metric] = performanceMetrics(result.props);
+        expect(metric?.periodTrend).toMatchObject({ status: "comparable", currentValue: 900, previousValue: 400 });
+        expect(memberPeriodMetricValues).toHaveBeenCalledWith("all_1", "per_18", ["met_kill"], { memberIds: ["mem_1"] });
+        // Never fetches the period the leader didn't ask to compare against.
+        expect(memberPeriodMetricValues).not.toHaveBeenCalledWith("all_1", "per_19", expect.anything(), expect.anything());
+      });
+
+      it("comparePeriodId=none suppresses the trend badge entirely - not the same as 'New'", async () => {
+        mockThreePeriods();
+        mockSelectedPeriod("per_20", "Week 20");
+        vi.mocked(prisma.memberMetricEntry.findMany).mockResolvedValue([
+          { metricId: "met_kill", value: 900, recordedAt: new Date("2026-04-15"), createdAt: new Date("2026-04-15"), id: "e1" },
+        ] as unknown as Awaited<ReturnType<typeof prisma.memberMetricEntry.findMany>>);
+
+        const result = await MemberPage({
+          params: Promise.resolve({ allianceId: "all_1", memberId: "mem_1" }),
+          searchParams: Promise.resolve({ periodId: "per_20", comparePeriodId: "none" }),
+        });
+
+        const [metric] = performanceMetrics(result.props);
+        // An active opt-out has no badge at all - it must not be
+        // indistinguishable from (nor render as) the "New" status.
+        expect(metric?.periodTrend).toBeUndefined();
+        // The opt-out skips the second rollup call entirely - there is no
+        // prior period to fetch a baseline for.
+        expect(memberPeriodMetricValues).toHaveBeenCalledTimes(1);
+      });
     });
   });
 });
