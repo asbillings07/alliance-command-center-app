@@ -25,6 +25,7 @@ export type ComparePeriodHeader = {
   name: string;
   startsAt: Date | null;
   endsAt: Date | null;
+  createdAt: Date;
 };
 
 export type ComparePeriodSelection =
@@ -87,14 +88,27 @@ export function resolveComparePeriodSelection(params: {
  * has no uniqueness constraint on `name` (see `schema.prisma`), so the bare
  * name alone can't be trusted to identify a specific period - e.g. two
  * periods named "Week 18" would otherwise be indistinguishable in the UI.
- * Falls back to the bare name when dates aren't set, and reuses this
- * codebase's existing `toLocaleDateString()` convention (see
- * `periods/[periodId]/page.tsx`, `metricPeriodCard.tsx`) rather than
- * introducing a new date formatter.
+ *
+ * `startsAt`/`endsAt` are independently nullable, so this uses whichever of
+ * the two is actually set rather than requiring both. When *neither* is
+ * set, falls back to `createdAt` - unlike the date fields, every period has
+ * one, so two same-named undated periods still get distinguishable labels
+ * (this mirrors `compareMetricPeriodsForCurrent`'s own tie-break chain:
+ * `startsAt`, then `createdAt`). Reuses this codebase's existing
+ * `toLocaleDateString()` convention (see `periods/[periodId]/page.tsx`,
+ * `metricPeriodCard.tsx`) rather than introducing a new date formatter.
  */
 export function formatComparePeriodLabel(period: ComparePeriodHeader): string {
-  if (!period.startsAt || !period.endsAt) {
-    return period.name;
+  const { name, startsAt, endsAt, createdAt } = period;
+
+  if (startsAt && endsAt) {
+    return `${name} (${startsAt.toLocaleDateString()} \u2013 ${endsAt.toLocaleDateString()})`;
   }
-  return `${period.name} (${period.startsAt.toLocaleDateString()} \u2013 ${period.endsAt.toLocaleDateString()})`;
+  if (startsAt) {
+    return `${name} (from ${startsAt.toLocaleDateString()})`;
+  }
+  if (endsAt) {
+    return `${name} (through ${endsAt.toLocaleDateString()})`;
+  }
+  return `${name} (created ${createdAt.toLocaleDateString()})`;
 }

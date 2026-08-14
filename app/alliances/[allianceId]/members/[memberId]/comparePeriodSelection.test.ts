@@ -10,8 +10,9 @@ function header(
   name: string,
   startsAt: Date | null = null,
   endsAt: Date | null = null,
+  createdAt: Date = new Date("2026-01-01"),
 ): ComparePeriodHeader {
-  return { id, name, startsAt, endsAt };
+  return { id, name, startsAt, endsAt, createdAt };
 }
 
 const week18 = header("week-18", "Week 18");
@@ -100,11 +101,13 @@ describe("resolveComparePeriodSelection", () => {
 });
 
 describe("formatComparePeriodLabel", () => {
-  it("returns the bare name when dates are unset", () => {
-    expect(formatComparePeriodLabel(week18)).toBe("Week 18");
+  it("falls back to createdAt (not the bare name) when both dates are unset", () => {
+    const label = formatComparePeriodLabel(week18);
+    expect(label).toContain("Week 18");
+    expect(label).toContain(week18.createdAt.toLocaleDateString());
   });
 
-  it("appends a disambiguating date range when dates are set", () => {
+  it("appends a disambiguating date range when both dates are set", () => {
     const dated = header("week-18-a", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
     const label = formatComparePeriodLabel(dated);
     expect(label).toContain("Week 18");
@@ -112,9 +115,27 @@ describe("formatComparePeriodLabel", () => {
     expect(label).toContain(dated.endsAt!.toLocaleDateString());
   });
 
+  it("uses startsAt alone when endsAt is unset", () => {
+    const partial = header("week-18-b", "Week 18", new Date("2026-08-03"), null);
+    const label = formatComparePeriodLabel(partial);
+    expect(label).toContain(partial.startsAt!.toLocaleDateString());
+  });
+
+  it("uses endsAt alone when startsAt is unset", () => {
+    const partial = header("week-18-c", "Week 18", null, new Date("2026-08-09"));
+    const label = formatComparePeriodLabel(partial);
+    expect(label).toContain(partial.endsAt!.toLocaleDateString());
+  });
+
   it("disambiguates two periods that share a name via their date ranges", () => {
     const first = header("a", "Week 18", new Date("2026-08-03"), new Date("2026-08-09"));
     const second = header("b", "Week 18", new Date("2026-08-10"), new Date("2026-08-16"));
+    expect(formatComparePeriodLabel(first)).not.toBe(formatComparePeriodLabel(second));
+  });
+
+  it("disambiguates two same-named, fully undated periods via createdAt", () => {
+    const first = header("a", "Week 18", null, null, new Date("2026-01-01"));
+    const second = header("b", "Week 18", null, null, new Date("2026-02-01"));
     expect(formatComparePeriodLabel(first)).not.toBe(formatComparePeriodLabel(second));
   });
 });
