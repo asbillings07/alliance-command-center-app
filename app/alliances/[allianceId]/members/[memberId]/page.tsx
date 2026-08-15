@@ -1,10 +1,17 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import {
     metricPeriodChronologicalOrderBy,
     pickCurrentMetricPeriod,
-    findPriorMetricPeriod,
+    findOlderMetricPeriods,
 } from "@/app/src/lib/metricPeriodOrdering";
+import {
+    resolveComparePeriodSelection,
+    formatComparePeriodLabels,
+    NO_COMPARISON_PARAM,
+    NO_PRIOR_PERIOD_PARAM,
+    type ComparePeriodSelection,
+} from "./comparePeriodSelection";
 import { memberPeriodMetricValues } from "@/app/src/lib/metrics/memberPeriodMetricValues";
 import { formatPower } from "@/app/src/lib/formatPower";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
@@ -16,6 +23,7 @@ import { buildCurrentMetricViewModels, buildPeriodTrendViewModels } from "./memb
 import { MemberActions } from "./MemberActions";
 import { MemberAccountSection } from "./MemberAccountSection";
 import { MemberPeriodSelector } from "./MemberPeriodSelector";
+import { MemberComparePeriodSelector } from "./MemberComparePeriodSelector";
 import { PageLayout, Card, Badge } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 
@@ -26,12 +34,33 @@ type Params = {
     }>;
     searchParams: Promise<{
         periodId?: string;
+        comparePeriodId?: string;
     }>;
+}
+
+/**
+ * Resolves the query-param value a canonical URL must carry for a given
+ * `ComparePeriodSelection` - shared by the redirect below and by whatever
+ * gets passed down to the client selectors as `chosenComparePeriodId`.
+ * `"invalid"` is unreachable here: callers must `notFound()` on that status
+ * before ever calling this.
+ */
+function canonicalCompareParam(selection: ComparePeriodSelection): string {
+    switch (selection.status) {
+        case "period":
+            return selection.comparePeriod.id;
+        case "explicit-none":
+            return NO_COMPARISON_PARAM;
+        case "no-prior-period":
+            return NO_PRIOR_PERIOD_PARAM;
+        case "invalid":
+            throw new Error("canonicalCompareParam called with an invalid selection - check status first");
+    }
 }
 
 export default async function MemberPage({ params, searchParams }: Params) {
     const { allianceId, memberId } = await params;
-    const { periodId: requestedPeriodId } = await searchParams;
+    const { periodId: requestedPeriodId, comparePeriodId: requestedComparePeriodId } = await searchParams;
 
     const auth = await requireAllianceAccess({
         allianceId,
@@ -55,6 +84,7 @@ export default async function MemberPage({ params, searchParams }: Params) {
             name: true,
             active: true,
             startsAt: true,
+            endsAt: true,
             createdAt: true,
         },
     });
@@ -67,6 +97,43 @@ export default async function MemberPage({ params, searchParams }: Params) {
         ? allPeriods.find((p) => p.id === requestedPeriodId)
         : pickCurrentMetricPeriod(allPeriods.filter((p) => p.active))
             ?? pickCurrentMetricPeriod(allPeriods);
+
+    // #349: resolve the explicit "Compare with" selection (and canonicalize
+    // the URL if either param was implicit) before any of the expensive
+    // reads below - see comparePeriodSelection.ts's doc comment for why the
+    // four possible outcomes must stay distinct, and the plan's
+    // "Canonicalization strategy" section for why this must run here, not
+    // after `priorPeriodHeader` was derived like the pre-#349 code did.
+    if (!selectedPeriodHeader && requestedComparePeriodId !== undefined) {
+        // A comparison was requested with nothing to be primary - the
+        // concept doesn't apply when there's no period at all.
+        notFound();
+    }
+
+    const eligibleComparePeriods = selectedPeriodHeader
+        ? findOlderMetricPeriods(allPeriods, selectedPeriodHeader.id)
+        : [];
+
+    const compareSelection = selectedPeriodHeader
+        ? resolveComparePeriodSelection({ requestedComparePeriodId, eligiblePeriods: eligibleComparePeriods })
+        : null;
+
+    if (compareSelection?.status === "invalid") {
+        notFound();
+    }
+
+    const needsCanonicalRedirect =
+        !!selectedPeriodHeader && (requestedPeriodId === undefined || requestedComparePeriodId === undefined);
+
+    if (needsCanonicalRedirect && compareSelection) {
+        const canonicalPeriodId = encodeURIComponent(selectedPeriodHeader!.id);
+        const canonicalComparePeriodId = encodeURIComponent(canonicalCompareParam(compareSelection));
+        redirect(
+            `/alliances/${allianceId}/members/${memberId}?periodId=${canonicalPeriodId}&comparePeriodId=${canonicalComparePeriodId}`,
+        );
+    }
+
+    const compareLabelsById = formatComparePeriodLabels(eligibleComparePeriods);
 
     const selectedPeriod = selectedPeriodHeader
         ? await prisma.metricPeriod.findUnique({
@@ -124,11 +191,11 @@ export default async function MemberPage({ params, searchParams }: Params) {
     // rawMemberEntries above - see buildPeriodTrendViewModels' doc comment
     // for why mixing the two sources for one card's arithmetic would be a
     // correctness trap. `priorPeriodHeader` null (vs. an empty rollup
-    // result) is what distinguishes "New" from "N/A" - see
-    // findPriorMetricPeriod's doc comment.
-    const priorPeriodHeader = selectedPeriod
-        ? findPriorMetricPeriod(allPeriods, selectedPeriod.id)
-        : null;
+    // result) is what distinguishes "New"/explicit "No comparison" from
+    // "N/A" - see comparePeriodSelection.ts's doc comment. #349: this is now
+    // whichever period (if any) the leader's explicit "Compare with"
+    // selection resolved to, not just "the chronologically adjacent one."
+    const priorPeriodHeader = compareSelection?.status === "period" ? compareSelection.comparePeriod : null;
 
     const [currentPeriodRollup, priorPeriodRollup] = selectedPeriod && activeMetricIds.length > 0
         ? await Promise.all([
@@ -143,9 +210,15 @@ export default async function MemberPage({ params, searchParams }: Params) {
           ])
         : [[], null];
 
-    const periodTrends = selectedPeriod
-        ? buildPeriodTrendViewModels(periodMetricInputs, currentPeriodRollup, priorPeriodRollup)
-        : new Map();
+    // #349: an active opt-out (`explicit-none`) must render no badge at all
+    // - distinct from `no-prior-period`, which still passes a `null` prior
+    // rollup through to `buildPeriodTrendViewModels` exactly as before,
+    // preserving the existing, truthful "New" badge.
+    const periodTrends = !selectedPeriod
+        ? new Map()
+        : compareSelection?.status === "explicit-none"
+        ? new Map()
+        : buildPeriodTrendViewModels(periodMetricInputs, currentPeriodRollup, priorPeriodRollup);
 
     const performanceMetrics = selectedPeriod
         ? buildCurrentMetricViewModels(periodMetricInputs, rawMemberEntries).map((metric) => ({
@@ -156,17 +229,40 @@ export default async function MemberPage({ params, searchParams }: Params) {
           }))
         : [];
 
-    const periodSelector = selectedPeriod ? (
-        <MemberPeriodSelector
-            allianceId={allianceId}
-            memberId={memberId}
-            selectedPeriodId={selectedPeriod.id}
-            periods={allPeriods}
-        />
+    const periodSelector = selectedPeriod && compareSelection ? (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+            <MemberPeriodSelector
+                allianceId={allianceId}
+                memberId={memberId}
+                selectedPeriodId={selectedPeriod.id}
+                periods={allPeriods}
+                chosenComparePeriodId={canonicalCompareParam(compareSelection)}
+            />
+            <MemberComparePeriodSelector
+                allianceId={allianceId}
+                memberId={memberId}
+                selectedPeriodId={selectedPeriod.id}
+                chosenComparePeriodId={canonicalCompareParam(compareSelection)}
+                options={eligibleComparePeriods.map((period) => ({
+                    id: period.id,
+                    label: compareLabelsById.get(period.id)!,
+                }))}
+            />
+        </div>
     ) : undefined;
 
+    // #349: this used to also require `!requestedPeriodId`, to distinguish
+    // "the system silently fell back here" from "the leader explicitly
+    // picked this exact period." That distinction can no longer be read
+    // from the URL: canonicalization (above) makes `periodId` explicit on
+    // the very first render, so every subsequent visit to the same
+    // canonical, shareable link - including the auto-fallback's own - would
+    // otherwise regress to "Inactive Period" instead of this label. Purely
+    // data-driven ("no active period exists anywhere, and this is the
+    // newest one") is both the only signal that survives canonicalization
+    // and arguably the more correct one for a reproducible link: it's true
+    // regardless of how the visitor arrived.
     const isAutoFallbackToLatestInactive =
-        !requestedPeriodId &&
         !allPeriods.some((p) => p.active) &&
         selectedPeriodHeader?.id === allPeriods[0]?.id;
 
@@ -219,7 +315,10 @@ export default async function MemberPage({ params, searchParams }: Params) {
                   emptyState: "has-metrics",
                   periodName: selectedPeriod.name,
                   metrics: performanceMetrics,
-                  previousPeriodName: priorPeriodHeader?.name,
+                  // #349: the disambiguated label (never the bare, possibly
+                  // non-unique `.name`) for whichever period the leader's
+                  // explicit "Compare with" selection resolved to.
+                  previousPeriodName: priorPeriodHeader ? compareLabelsById.get(priorPeriodHeader.id) : undefined,
                   periodSelector,
                   periodStatusLabel,
                   unrecordedNotice: allUnrecorded

@@ -21,6 +21,27 @@ inaccurate regardless of good intentions.
 
 ---
 
+## 2026-08-14 - Member detail: pick which period a trend compares against
+
+The period-over-period trend badges on a member's detail page used to always
+compare the selected evaluation period against whichever period immediately
+preceded it, with no way to change that. A new **Compare with** selector,
+next to the existing **Evaluation Period** selector, lets a leader pick any
+older period instead - or choose **No comparison** to hide the trend badges
+entirely for that view.
+
+The choice is captured in the page's URL, so a shared or bookmarked link
+always shows the same comparison, not whatever happened to be "last period"
+at the time. Every trend badge still names the exact period it's comparing
+against (e.g. `+2.1M vs. Week 18`), now regardless of which period was
+chosen. Switching the primary evaluation period keeps a still-valid
+comparison selected and otherwise falls back to the new immediate
+predecessor (or "no earlier period" for the alliance's first-ever period).
+
+Issues: #321, #349.
+
+---
+
 ## 2026-08-13 - "N/A" trend badge now names its comparison period too
 
 A small correction to the entry directly below: that change only updated the

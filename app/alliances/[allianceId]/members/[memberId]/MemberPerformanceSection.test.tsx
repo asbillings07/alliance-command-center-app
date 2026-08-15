@@ -185,12 +185,53 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
     );
 
     expect(html).toContain("bg-success");
-    // The prior period's name renders in the badge's own visible text, not
-    // just its hover tooltip - "vs. last period" alone doesn't say *which*
-    // period without hovering (production feedback, #332 stabilization).
-    expect(html).toContain("+50 vs. Week 19");
+    // The pill itself carries only the arrow + delta - the comparison
+    // period renders as adjacent muted text, not crammed into the pill
+    // (production feedback: the badge had "outgrown" reading as a pill).
+    expect(html).toContain(">▲ +50<");
+    // The prior period's name renders as visible text next to the badge,
+    // not just its hover tooltip - "vs. last period" alone doesn't say
+    // *which* period without hovering (production feedback, #332
+    // stabilization).
+    expect(html).toContain("vs. Week 19");
     expect(html).not.toContain("vs. last period");
     expect(html).not.toContain("since last entry");
+  });
+
+  // #353: production feedback that once the comparison label started
+  // including a full date range, the pill "outgrew" reading as a pill -
+  // this locks in that the colored badge itself stays a short, fixed-size
+  // status chip, with the comparison text living outside it as plain
+  // adjacent text instead of being concatenated into the badge's markup.
+  it("keeps the comparison period's name out of the colored pill itself - it renders as separate adjacent text", () => {
+    const html = renderToStaticMarkup(
+      <MemberPerformanceSection
+        emptyState="has-metrics"
+        periodName="Week 20"
+        previousPeriodName="Week 18 (8/3/2026 – 8/9/2026)"
+        metrics={[
+          {
+            metricId: "m1",
+            metricName: "Kill Points",
+            current: { value: 900, recordedAt: new Date("2026-04-10") },
+            periodTrend: {
+              status: "comparable",
+              currentValue: 900,
+              previousValue: 850,
+              delta: 50,
+              direction: "up",
+              favorability: "favorable",
+            },
+          },
+        ]}
+      />,
+    );
+
+    const badgeMatch = html.match(/<span class="[^"]*bg-success[^"]*">[^<]*<\/span>/);
+    expect(badgeMatch).not.toBeNull();
+    expect(badgeMatch![0]).not.toContain("vs.");
+    expect(badgeMatch![0]).not.toContain("Week 18");
+    expect(html).toContain("vs. Week 18 (8/3/2026 – 8/9/2026)");
   });
 
   it("renders a comparable adverse trend in the danger color, e.g. a LOWER_IS_BETTER metric trending up", () => {
@@ -218,7 +259,8 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
     );
 
     expect(html).toContain("bg-danger");
-    expect(html).toContain("+3 vs. Week 19");
+    expect(html).toContain(">▲ +3<");
+    expect(html).toContain("vs. Week 19");
   });
 
   it("renders a neutral-favorability comparable trend without success/danger coloring", () => {
@@ -247,7 +289,8 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
 
     expect(html).not.toContain("bg-success");
     expect(html).not.toContain("bg-danger");
-    expect(html).toContain("+50 vs. Week 19");
+    expect(html).toContain(">▲ +50<");
+    expect(html).toContain("vs. Week 19");
   });
 
   it("falls back to the generic 'vs. last period' copy if previousPeriodName is ever missing for a comparable trend (defensive - the real page always supplies it)", () => {
@@ -273,7 +316,8 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
       />,
     );
 
-    expect(html).toContain("+50 vs. last period");
+    expect(html).toContain(">▲ +50<");
+    expect(html).toContain("vs. last period");
   });
 
   it("renders 'New' when there is no prior period at all - distinct from 'N/A'", () => {
@@ -316,9 +360,12 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
     // Same "name the baseline directly, don't rely on the hover tooltip"
     // rule as the comparable badge above - PR #348 fixed that badge but
     // missed this one, leaving "N/A vs. last period" just as ambiguous as
-    // before on this branch.
-    expect(html).toContain("N/A vs. Week 19");
-    expect(html).not.toContain("N/A vs. last period");
+    // before on this branch. The pill itself now carries only "N/A"; the
+    // period name renders as adjacent muted text, same as the comparable
+    // case above.
+    expect(html).toContain(">N/A<");
+    expect(html).toContain("vs. Week 19");
+    expect(html).not.toContain("vs. last period");
   });
 
   it("falls back to the generic 'vs. last period' copy if previousPeriodName is ever missing for a no-baseline trend (defensive - the real page always supplies it)", () => {
@@ -337,7 +384,8 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
       />,
     );
 
-    expect(html).toContain("N/A vs. last period");
+    expect(html).toContain(">N/A<");
+    expect(html).toContain("vs. last period");
   });
 
   it("renders no trend badge at all when periodTrend is absent (e.g. current is void/never-recorded)", () => {
@@ -384,6 +432,7 @@ describe("MemberPerformanceSection period trend badge (#323)", () => {
     );
 
     expect(html).toContain("+20 since last entry");
-    expect(html).toContain("+50 vs. Week 19");
+    expect(html).toContain(">▲ +50<");
+    expect(html).toContain("vs. Week 19");
   });
 });
