@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import Image from "next/image";
+import allianceIcon from "@/app/icon.png";
 import { Card } from "./Card";
 
 /**
@@ -54,12 +55,12 @@ export function AuthLayout({
             ) : (
               <div className="mx-auto mb-4 flex items-center justify-center">
                 <Image
-                  src="/icon.png"
+                  src={allianceIcon}
                   alt="Alliance Command Center Logo"
                   width={64}
                   height={64}
                   priority
-                  className="w-16 h-16 rounded-2xl shadow-md object-cover"
+                  className="w-16 h-16 object-contain"
                 />
               </div>
             )}

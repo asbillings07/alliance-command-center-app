@@ -1,0 +1,30 @@
+# Alliance Command Center brand artwork
+
+Owner: @asbillings07. Refs #379. On November 3, 2026 the owner selected Alliance Link, approved its circuit styling, requested an application PR, then directed removal of the central A while keeping the rest. The resulting mark has two blue/violet interlocking forms, rounded circuit channels and an open center.
+
+![Alliance Link product mark](../../app/icon.png)
+
+## Source and use
+
+- `app/icon.png` is the retained 1254 × 1254 transparent RGBA PNG master. `app/apple-icon.png` is byte-identical, preserving the artwork for both metadata conventions. Both have SHA-256 `7c77c1cb6e6816e6b0f37ef20ac5bd7a51070143990a9ecff12e3a11bd76e19a`.
+- The master was created with built-in image generation, then edited to remove only the central A. Its prior circuit/A source had SHA-256 `8ae93aa6df96cf54ab5219588c4fb2d4c1b60fcb24024ee3a3a19a47ef7a712f`. This is raster artwork, not a vector or a claim of pixel-identical generative editing.
+- The existing homepage (80px), default authentication header (64px) and alliance navigation (24px) import the master with Next.js Image. Static imports give the rendered image a content-hashed URL and allow the existing image optimizer to serve appropriately sized derivatives. Their dimensions and accessible labels are unchanged.
+- Next.js file-based metadata supplies the browser and Apple touch icon links from the two image files. No manual duplicate metadata or new manifest is added. See the [Next.js icon convention](https://nextjs.org/docs/app/api-reference/file-conventions/metadata/app-icons).
+- Keep the transparent background, open center, circuit details, color blend and proportions. Use `object-contain`; do not crop, round the image box, add a shadow/glow, or apply color filters. The small rendition remains a product identifier rather than a status indicator.
+
+## Aptelum reference and local scope
+
+Canonical design reference: [Aptelum design system at `35f2d6e4460b6a16b2a8d9c6fa98aeb298e43dae`](https://github.com/asbillings07/aptelum/blob/35f2d6e4460b6a16b2a8d9c6fa98aeb298e43dae/docs/design-system/README.md). The reference is pinned deliberately; do not fetch or apply a moving branch automatically.
+
+Referenced document SHA-256: `1afc247b9911a9e21bfef9617f0abe911069f346021ae87364b72ade274adb75`.
+
+Alliance Link is this product's own identity. Aptelum's attribution mark remains a separate, supplied asset: company experiences use solid blue, product experiences use the original blend, and developer-only experiences use deep violet. This change does not redraw or substitute for that attribution mark.
+
+The owner-requested blue/violet brand artwork is a narrow exception to the application's monochrome functional-icon and single-accent UI guidance. Semantic colors, charts, buttons and other interface controls remain governed by the existing design tokens. This reference is not company-policy adoption or a runtime authorization grant.
+
+## Final edit prompt
+
+> Remove ONLY the capital letter A from the center of the circuit-detailed Alliance Link icon, replacing it with transparency. Preserve the linked silhouette, proportions, circuit channels and terminals, blue/indigo/violet palette, transparent background and margin. Do not add new symbols, letters, shadows or framing.
+
+The supplied raster is the source of truth for this revision. Future refinements need owner visual review. Design approval and source updates do not claim final integrated human QA, deployment, or publication.
+
