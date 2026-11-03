@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import allianceIcon from "@/app/icon.png";
 import { auth } from "@/app/src/lib/auth";
 import { isPlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import {
@@ -53,11 +54,11 @@ export default async function AlliancesLayout({
             className="flex min-w-0 shrink items-center gap-2.5 text-sm font-semibold text-text-primary transition-colors hover:text-primary"
           >
             <Image
-              src="/icon.png"
+              src={allianceIcon}
               alt=""
               width={24}
               height={24}
-              className="h-6 w-6 shrink-0 rounded-md object-cover"
+              className="h-6 w-6 shrink-0 object-contain"
             />
             <span className="hidden truncate sm:inline">
               Alliance Command Center

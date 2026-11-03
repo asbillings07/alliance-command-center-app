@@ -194,7 +194,7 @@ className="w-6 h-6"
 ### Rules
 
 1. **Icons inherit text color** - Use `currentColor` or let Tailwind handle it
-2. **No colored icons** - Icons are monochrome unless representing semantic status
+2. **No colored functional icons** - Icons are monochrome unless representing semantic status. The [product identity mark](./brand.md) is a separately approved brand-art exception.
 3. **Consistent sizing** - Use only the three defined sizes
 
 ---

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import allianceIcon from "@/app/icon.png";
 import { auth } from "@/app/src/lib/auth";
 import { redirect } from "next/navigation";
 import { Button } from "@/app/src/components/client";
@@ -17,12 +18,12 @@ export default async function HomePage() {
         <div className="text-center mb-10">
           <div className="mx-auto mb-6 flex items-center justify-center">
             <Image
-              src="/icon.png"
+              src={allianceIcon}
               alt="Alliance Command Center Logo"
               width={80}
               height={80}
               priority
-              className="w-20 h-20 rounded-2xl shadow-xl object-cover"
+              className="w-20 h-20 object-contain"
             />
           </div>
           <h1 className="text-3xl font-bold text-primary mb-3">

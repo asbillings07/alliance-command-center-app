@@ -21,6 +21,17 @@ inaccurate regardless of good intentions.
 
 ---
 
+## Unreleased - Alliance Link icon
+
+Alliance Command Center's new blue-and-violet linked icon brings its identity
+into the Aptelum family. It appears on the welcome and sign-in pages, in alliance
+navigation, and as the browser and saved-home-screen icon. The product name and
+navigation stay the same.
+
+Issue: #379. Awaiting final UI review and release.
+
+---
+
 ## 2026-08-14 - Member detail: pick which period a trend compares against
 
 The period-over-period trend badges on a member's detail page used to always

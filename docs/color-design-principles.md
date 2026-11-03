@@ -453,6 +453,14 @@ Icons should inherit surrounding text color unless representing semantic meaning
 
 Avoid colorful iconography throughout the interface.
 
+### Product identity exception
+
+The owner-approved [Alliance Link product mark](./design-system/brand.md) uses
+blue and violet in the application identity, browser icon and Apple touch icon.
+This narrow brand-art exception does not change semantic colors, primary actions,
+charts or monochrome functional icons. Render the supplied artwork without
+recoloring, cropping, glow or an added shadow.
+
 ---
 
 # Dark Mode
