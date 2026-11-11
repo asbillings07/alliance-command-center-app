@@ -41,7 +41,7 @@ export function ColumnTranslationCard({
 
           {/* Sample values */}
           <div className="text-text-muted text-[11px] flex items-center space-x-1">
-            <span className="font-medium text-text-primary-light">Samples:</span>
+            <span className="font-medium text-text-primary">Samples:</span>
             {translation.samples.length > 0 ? (
               <span className="font-mono bg-surface-secondary/40 px-1.5 py-0.5 rounded border border-border/40">
                 {translation.samples.map((s) => `"${s}"`).join(", ")}
