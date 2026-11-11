@@ -9,26 +9,27 @@
 
 :root {
   /* Surface Colors */
-  --background: #0F172A;
-  --surface: #111827;
-  --surface-secondary: #1F2937;
-  --surface-elevated: #273449;
+  --background: #0B1220;
+  --surface: #111B2E;
+  --surface-secondary: #19263D;
+  --surface-elevated: #243550;
 
   /* Border Colors */
-  --border: #374151;
-  --border-hover: #4B5563;
+  --border: #30415D;
+  --border-hover: #486080;
 
   /* Text Colors */
-  --text-primary: #F9FAFB;
-  --text-secondary: #D1D5DB;
-  --text-muted: #9CA3AF;
-  --text-disabled: #8B929F; /* Lightened for WCAG AA contrast (was #6B7280) */
+  --text-primary: #F2F6FF;
+  --text-secondary: #C8D3E7;
+  --text-muted: #A5B6D0;
+  --text-disabled: #93A1BA;
 
   /* Accent Colors */
-  --primary: #3B82F6;
+  --primary: #60A5FA;
   --primary-hover: #2563EB; /* Accessible fill for white text (5.1:1); button resting color */
   --primary-active: #1D4ED8; /* Darker shade for button hover/active (6.5:1) */
   --primary-light: #60A5FA; /* Lighter shade for badges/low-contrast backgrounds */
+  --brand-violet: #7554E8; /* Identity accents only; never a status color */
   --success: #22C55E;
   --success-light: #4ADE80; /* Lighter shade for badges */
   --warning: #F59E0B;
@@ -79,4 +80,18 @@ body {
   background: var(--background);
   color: var(--text-primary);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* A quiet link between identity surfaces, separate from semantic UI colors. */
+.brand-rule {
+  height: 2px;
+  background: linear-gradient(90deg, var(--primary), var(--brand-violet));
+}
+
+.brand-kicker {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }

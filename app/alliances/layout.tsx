@@ -1,6 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
-import allianceIcon from "@/app/icon.png";
+import { BrandLockup } from "@/app/src/components/BrandLockup";
 import { auth } from "@/app/src/lib/auth";
 import { isPlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import {
@@ -47,22 +46,14 @@ export default async function AlliancesLayout({
     // the sticky header, push the page past 100vh (extra scroll/whitespace).
     <div className="bg-background">
       <header className="sticky top-0 z-30 border-b border-border bg-surface">
+        <div aria-hidden="true" className="brand-rule" />
         <div className="flex min-w-0 items-center justify-between gap-2 px-4 py-3 lg:px-6">
           <Link
             href="/app"
             aria-label="Alliance Command Center"
             className="flex min-w-0 shrink items-center gap-2.5 text-sm font-semibold text-text-primary transition-colors hover:text-primary"
           >
-            <Image
-              src={allianceIcon}
-              alt=""
-              width={24}
-              height={24}
-              className="h-6 w-6 shrink-0 object-contain"
-            />
-            <span className="hidden truncate sm:inline">
-              Alliance Command Center
-            </span>
+            <BrandLockup compact />
           </Link>
           {session?.user && (
             <div className="flex shrink-0 items-center gap-0.5 md:gap-1">

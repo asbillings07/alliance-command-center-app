@@ -9,7 +9,7 @@ Owner: @asbillings07. Refs #379. On November 3, 2026 the owner selected Alliance
 - `app/icon.png` is the retained 1254 × 1254 transparent RGBA PNG master. `app/apple-icon.png` is byte-identical, preserving the artwork for both metadata conventions. Both have SHA-256 `4de8033e5aa5d470d1a69e68e98900d1d327b4bb68de1c456fa16a173941dd15`.
 - The master was created with built-in image generation, then edited to remove only the central A. Its prior circuit/A source had SHA-256 `8ae93aa6df96cf54ab5219588c4fb2d4c1b60fcb24024ee3a3a19a47ef7a712f`. This is raster artwork, not a vector or a claim of pixel-identical generative editing.
 - On November 11, 2026 the owner approved direct Python pixel cleanup, approved the cleaned image, and requested an application PR. This refinement removes low-opacity stray pixels, smooths edge coverage, and replaces contaminated fringe colors with adjacent original artwork colors. The open center, circuit cutouts, blue/violet gradient, proportions, transparency, and canvas size are retained; solid interior pixels are unchanged. The pre-cleanup master remains in Git history with SHA-256 `7c77c1cb6e6816e6b0f37ef20ac5bd7a51070143990a9ecff12e3a11bd76e19a`.
-- The existing homepage (80px), default authentication header (64px) and alliance navigation (24px) import the master with Next.js Image. Static imports give the rendered image a content-hashed URL and allow the existing image optimizer to serve appropriately sized derivatives. Their dimensions and accessible labels are unchanged.
+- `BrandLockup` pairs the master with a two-line Alliance / Command Center wordmark. Public and authentication headers use a 48px image; the authenticated alliance header uses 36px and hides the wordmark below the `sm` breakpoint while retaining the accessible brand-link label. Next.js static imports preserve content-hashed image URLs and appropriately sized derivatives. The artwork itself is unchanged.
 - Next.js file-based metadata supplies the browser and Apple touch icon links from the two image files. No manual duplicate metadata or new manifest is added. See the [Next.js icon convention](https://nextjs.org/docs/app/api-reference/file-conventions/metadata/app-icons).
 - Keep the transparent background, open center, circuit details, color blend and proportions. Use `object-contain`; do not crop, round the image box, add a shadow/glow, or apply color filters. The small rendition remains a product identifier rather than a status indicator.
 
@@ -21,7 +21,7 @@ Referenced document SHA-256: `1afc247b9911a9e21bfef9617f0abe911069f346021ae87364
 
 Alliance Link is this product's own identity. Aptelum's attribution mark remains a separate, supplied asset: company experiences use solid blue, product experiences use the original blend, and developer-only experiences use deep violet. This change does not redraw or substitute for that attribution mark.
 
-The owner-requested blue/violet brand artwork is a narrow exception to the application's monochrome functional-icon and single-accent UI guidance. Semantic colors, charts, buttons and other interface controls remain governed by the existing design tokens. This reference is not company-policy adoption or a runtime authorization grant.
+The blue/violet product artwork and a thin identity rule are narrow exceptions to the application's monochrome functional-icon and single-accent UI guidance. Functional actions and selection stay blue; status colors, charts and other controls retain their separate meanings. This reference is not company-policy adoption or a runtime authorization grant.
 
 ## Final edit prompt
 
@@ -29,3 +29,14 @@ The owner-requested blue/violet brand artwork is a narrow exception to the appli
 
 The supplied raster is the source of truth for this revision. Future refinements need owner visual review. Design approval and source updates do not claim final integrated human QA, deployment, or publication.
 
+
+## Application identity refresh (#383)
+
+Proposed for owner preview review before production adoption. The approved cleaned artwork remains unchanged.
+
+- Use deep navy surfaces, readable cool-white typography, and one consistent lockup across entry points and the alliance shell. Keep the existing Geist family.
+- The welcome page explains people, participation and perspective while keeping Sign In, Redeem Invitation and Request Beta Access available. Mobile puts entry actions before the supporting capability descriptions. Keep the private-beta statement honest.
+- Authentication uses the same header and quiet identity rule, with a focused form panel. Supporting copy is shown only where desktop space allows; form fields, error handling, password controls, OAuth availability and destinations are unchanged.
+- App pages retain their information hierarchy, dense tables, permissions and workflows. Shared cards use a 12px radius; page gutters reduce at narrow widths. The header remains compact and labels are accessible when the wordmark is hidden.
+- Violet belongs only to identity artwork and the thin blue/violet rule. Use no glow, patterned starfield, decorative motion, gradients in charts, or invented usage statistics. See the [color tokens](../color-design-principles.md).
+- This visual proposal does not authorize a production release. Owner preview QA, review and green CI are required before merge and deployment.
