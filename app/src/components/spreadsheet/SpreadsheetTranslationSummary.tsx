@@ -32,7 +32,7 @@ export function SpreadsheetTranslationSummary(props: SpreadsheetTranslationSumma
       <div className="bg-surface border border-border rounded-xl p-4 space-y-3 text-xs">
         <div className="flex items-center justify-between border-b border-border pb-2">
           <div className="flex items-center space-x-2">
-            <span className="text-blue-500 font-bold text-base">🔍</span>
+            <span className="text-primary font-bold text-base">🔍</span>
             <div>
               <h4 className="font-semibold text-text-primary text-sm">Planned Metric Translation</h4>
               <p className="text-[11px] text-text-muted">
@@ -40,7 +40,7 @@ export function SpreadsheetTranslationSummary(props: SpreadsheetTranslationSumma
               </p>
             </div>
           </div>
-          <span className="bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium px-2 py-0.5 rounded text-[11px]">
+          <span className="bg-primary/10 text-primary-light font-medium px-2 py-0.5 rounded text-[11px]">
             Destination: {summary.destinationPeriodName}
           </span>
         </div>
@@ -56,13 +56,13 @@ export function SpreadsheetTranslationSummary(props: SpreadsheetTranslationSumma
           </div>
           <div className="bg-surface-secondary/40 p-2.5 rounded-lg border border-border/40">
             <span className="text-text-muted block">Existing / Attached Metrics</span>
-            <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+            <span className="text-lg font-bold text-success-light">
               {summary.reusedExistingMetricsCount + summary.attachedLibraryMetricsCount}
             </span>
           </div>
           <div className="bg-surface-secondary/40 p-2.5 rounded-lg border border-border/40">
             <span className="text-text-muted block">New Metrics to Create</span>
-            <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+            <span className="text-lg font-bold text-primary">
               {summary.createdMetricsCount}
             </span>
           </div>
@@ -84,26 +84,26 @@ export function SpreadsheetTranslationSummary(props: SpreadsheetTranslationSumma
   if (props.mode === "committed_metrics") {
     const { summary } = props;
     return (
-      <div className="bg-surface border border-emerald-500/30 rounded-xl p-4 space-y-3 text-xs">
+      <div className="bg-surface border border-success/30 rounded-xl p-4 space-y-3 text-xs">
         <div className="flex items-center justify-between border-b border-border pb-2">
           <div className="flex items-center space-x-2">
-            <span className="text-emerald-500 font-bold text-base">✅</span>
+            <span className="text-success-light font-bold text-base">✅</span>
             <div>
               <h4 className="font-semibold text-text-primary text-sm">Committed Metric Translation</h4>
-              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+              <p className="text-[11px] text-success-light font-medium">
                 Successfully saved metric entries to database.
               </p>
             </div>
           </div>
-          <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium px-2 py-0.5 rounded text-[11px]">
+          <span className="bg-success/10 text-success-light font-medium px-2 py-0.5 rounded text-[11px]">
             Period: {summary.destinationPeriodName}
           </span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[11px]">
-          <div className="bg-emerald-500/10 p-2.5 rounded-lg border border-emerald-500/20">
+          <div className="bg-success/10 p-2.5 rounded-lg border border-success/20">
             <span className="text-text-muted block">Total Entries Committed</span>
-            <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+            <span className="text-xl font-bold text-success-light">
               {summary.totalValuesCommitted}
             </span>
           </div>
@@ -146,7 +146,7 @@ export function SpreadsheetTranslationSummary(props: SpreadsheetTranslationSumma
       <div className="bg-surface border border-border rounded-xl p-4 space-y-3 text-xs">
         <div className="flex items-center justify-between border-b border-border pb-2">
           <div className="flex items-center space-x-2">
-            <span className="text-blue-500 font-bold text-base">🔍</span>
+            <span className="text-primary font-bold text-base">🔍</span>
             <div>
               <h4 className="font-semibold text-text-primary text-sm">Planned Alliance Member Translation</h4>
               <p className="text-[11px] text-text-muted">
@@ -154,7 +154,7 @@ export function SpreadsheetTranslationSummary(props: SpreadsheetTranslationSumma
               </p>
             </div>
           </div>
-          <span className="bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium px-2 py-0.5 rounded text-[11px]">
+          <span className="bg-primary/10 text-primary-light font-medium px-2 py-0.5 rounded text-[11px]">
             Scope: Alliance Members
           </span>
         </div>
@@ -162,13 +162,13 @@ export function SpreadsheetTranslationSummary(props: SpreadsheetTranslationSumma
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
           <div className="bg-surface-secondary/40 p-2.5 rounded-lg border border-border/40">
             <span className="text-text-muted block">Members to Create</span>
-            <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+            <span className="text-lg font-bold text-success-light">
               {summary.membersToCreateCount}
             </span>
           </div>
           <div className="bg-surface-secondary/40 p-2.5 rounded-lg border border-border/40">
             <span className="text-text-muted block">Archived to Restore</span>
-            <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+            <span className="text-lg font-bold text-primary">
               {summary.archivedMembersToRestoreCount}
             </span>
           </div>
@@ -197,32 +197,32 @@ export function SpreadsheetTranslationSummary(props: SpreadsheetTranslationSumma
   // committed_roster
   const { summary } = props;
   return (
-    <div className="bg-surface border border-emerald-500/30 rounded-xl p-4 space-y-3 text-xs">
+    <div className="bg-surface border border-success/30 rounded-xl p-4 space-y-3 text-xs">
       <div className="flex items-center justify-between border-b border-border pb-2">
         <div className="flex items-center space-x-2">
-          <span className="text-emerald-500 font-bold text-base">✅</span>
+          <span className="text-success-light font-bold text-base">✅</span>
           <div>
             <h4 className="font-semibold text-text-primary text-sm">Committed Alliance Member Translation</h4>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+            <p className="text-[11px] text-success-light font-medium">
               Successfully updated alliance members.
             </p>
           </div>
         </div>
-        <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium px-2 py-0.5 rounded text-[11px]">
+        <span className="bg-success/10 text-success-light font-medium px-2 py-0.5 rounded text-[11px]">
           Scope: Alliance Members
         </span>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
-        <div className="bg-emerald-500/10 p-2.5 rounded-lg border border-emerald-500/20">
+        <div className="bg-success/10 p-2.5 rounded-lg border border-success/20">
           <span className="text-text-muted block">New Members Created</span>
-          <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+          <span className="text-xl font-bold text-success-light">
             {summary.createdCount}
           </span>
         </div>
-        <div className="bg-blue-500/10 p-2.5 rounded-lg border border-blue-500/20">
+        <div className="bg-primary/10 p-2.5 rounded-lg border border-primary/20">
           <span className="text-text-muted block">Archived Members Restored</span>
-          <span className="text-xl font-bold text-blue-600 dark:text-blue-400">
+          <span className="text-xl font-bold text-primary">
             {summary.restoredCount}
           </span>
         </div>

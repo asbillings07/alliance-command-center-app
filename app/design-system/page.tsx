@@ -9,6 +9,7 @@ import {
   Input,
   Textarea,
   Select,
+  Label,
   Checkbox,
   FormField,
 } from "@/app/src/components/client";
@@ -171,14 +172,15 @@ export default function DesignSystemPage() {
                   <Input placeholder="Enter text..." error />
                 </FormField>
 
-                <FormField label="Select">
-                  <Select>
+                <div>
+                  <Label htmlFor="design-system-select">Select</Label>
+                  <Select id="design-system-select">
                     <option value="">Select an option...</option>
                     <option value="1">Option 1</option>
                     <option value="2">Option 2</option>
                     <option value="3">Option 3</option>
                   </Select>
-                </FormField>
+                </div>
 
                 <FormField label="Textarea">
                   <Textarea placeholder="Enter longer text..." rows={3} />

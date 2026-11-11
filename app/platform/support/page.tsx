@@ -96,7 +96,7 @@ export default async function PlatformSupport() {
         <section>
           <h2 className="text-lg font-semibold text-text-secondary mb-4">
             Needs Help
-            <span className="ml-2 text-sm font-normal text-danger">
+            <span className="ml-2 text-sm font-normal text-danger-light">
               ({needsHelpCount})
             </span>
           </h2>
@@ -108,7 +108,7 @@ export default async function PlatformSupport() {
                 className="block bg-danger/10 rounded-lg border border-danger/20 p-3 hover:border-danger/40 transition-colors"
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-danger">🔴</span>
+                  <span className="text-danger-light">🔴</span>
                   <span className="text-text-primary font-medium">
                     {item.title}
                   </span>

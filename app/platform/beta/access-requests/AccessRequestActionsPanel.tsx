@@ -191,7 +191,7 @@ function ExistingAccessPanel({
           <dd className="inline">
             <Link
               href={`/platform/support/alliance/${detail.allianceId}`}
-              className="text-primary hover:text-primary-hover"
+              className="text-primary hover:text-text-primary"
             >
               {detail.allianceName}
             </Link>
@@ -269,7 +269,7 @@ function OtherConflictNotice({
       <p className="text-sm">
         <Link
           href={`/platform/beta?search=${encodeURIComponent(email)}`}
-          className="text-primary hover:text-primary-hover"
+          className="text-primary hover:text-text-primary"
         >
           Open on the Beta page
         </Link>
@@ -536,7 +536,7 @@ export function AccessRequestActionsPanel({
     }
     if (conflictCheckResult.status === "error") {
       return (
-        <div className="text-sm text-danger space-y-2" data-testid="access-request-conflict-check-error">
+        <div className="text-sm text-danger-light space-y-2" data-testid="access-request-conflict-check-error">
           <p>Couldn&apos;t check for conflicts: {conflictCheckResult.message}</p>
           <Button
             type="button"
@@ -560,7 +560,7 @@ export function AccessRequestActionsPanel({
               className="rounded-lg border border-danger/30 bg-danger/5 p-3 space-y-2"
               data-testid="access-request-wave-options-error"
             >
-              <p className="text-sm text-danger">
+              <p className="text-sm text-danger-light">
                 Couldn&apos;t load beta waves: {waveOptionsState.message}
               </p>
               <Button
@@ -674,7 +674,7 @@ export function AccessRequestActionsPanel({
       )}
 
       {!conflictRecovery && error && (
-        <p className="text-sm text-danger" data-testid="access-request-error">
+        <p className="text-sm text-danger-light" data-testid="access-request-error">
           {error}
         </p>
       )}
@@ -816,7 +816,7 @@ export function AccessRequestActionsPanel({
           Resend or Reissue on the{" "}
           <Link
             href={`/platform/beta?search=${encodeURIComponent(item.email)}`}
-            className="text-primary hover:text-primary-hover"
+            className="text-primary hover:text-text-primary"
           >
             Beta page
           </Link>

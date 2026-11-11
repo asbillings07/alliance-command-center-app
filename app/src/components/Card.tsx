@@ -93,7 +93,7 @@ function CardFooter({ children, align = "right" }: CardFooterProps) {
 function CardBase({ children, className = "", padding = "md" }: CardProps) {
   return (
     <div
-      className={`bg-surface border border-border rounded-lg ${paddingClasses[padding]} ${className}`}
+      className={`bg-surface border border-border rounded-xl ${paddingClasses[padding]} ${className}`}
     >
       {children}
     </div>

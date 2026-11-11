@@ -116,7 +116,7 @@ export function InvitationActions({
       <button
         type="button"
         onClick={() => copyUrl(inviteUrl)}
-        className="text-xs text-primary hover:text-primary-hover"
+        className="text-xs text-primary hover:text-text-primary"
         title="Copy invite URL"
       >
         {urlState === "copied" ? "Copied!" : "URL"}
@@ -125,7 +125,7 @@ export function InvitationActions({
       <button
         type="button"
         onClick={() => copyCode(code)}
-        className="text-xs text-primary hover:text-primary-hover"
+        className="text-xs text-primary hover:text-text-primary"
         title="Copy invite code"
       >
         {codeState === "copied" ? "Copied!" : "Code"}
@@ -135,7 +135,7 @@ export function InvitationActions({
         type="button"
         onClick={handleResend}
         disabled={isResending || identityAmbiguous}
-        className="text-xs text-primary hover:text-primary-hover disabled:opacity-50"
+        className="text-xs text-primary hover:text-text-primary disabled:opacity-50"
         title={
           identityAmbiguous
             ? "Resend blocked while identity is ambiguous"
@@ -150,13 +150,13 @@ export function InvitationActions({
         type="button"
         onClick={handleRevoke}
         disabled={isPending}
-        className="text-xs text-danger hover:text-danger/80 disabled:opacity-50"
+        className="text-xs text-danger-light hover:text-danger-light disabled:opacity-50"
         title="Revoke invitation"
       >
         {isPending ? "..." : "Revoke"}
       </button>
       {error && (
-        <span className="text-xs text-danger ml-2" title={error}>
+        <span className="text-xs text-danger-light ml-2" title={error}>
           Failed
         </span>
       )}
@@ -228,14 +228,14 @@ export function InvitationCardActions({
       <button
         type="button"
         onClick={() => copyUrl(inviteUrl)}
-        className="px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-tertiary border border-border rounded-lg transition-colors"
+        className="px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-elevated border border-border rounded-lg transition-colors"
       >
         {urlState === "copied" ? "Copied!" : "Copy URL"}
       </button>
       <button
         type="button"
         onClick={() => copyCode(code)}
-        className="px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-tertiary border border-border rounded-lg transition-colors"
+        className="px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-elevated border border-border rounded-lg transition-colors"
       >
         {codeState === "copied" ? "Copied!" : "Copy Code"}
       </button>
@@ -243,7 +243,7 @@ export function InvitationCardActions({
         type="button"
         onClick={handleResend}
         disabled={isResending || identityAmbiguous}
-        className="px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-tertiary border border-border rounded-lg transition-colors disabled:opacity-50"
+        className="px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-elevated border border-border rounded-lg transition-colors disabled:opacity-50"
         data-testid="resend-email-button"
       >
         {isResending
@@ -256,11 +256,11 @@ export function InvitationCardActions({
         type="button"
         onClick={handleRevoke}
         disabled={isPending}
-        className="px-3 py-1 text-sm bg-danger/10 hover:bg-danger/20 text-danger border border-danger/20 rounded-lg transition-colors disabled:opacity-50"
+        className="px-3 py-1 text-sm bg-danger/10 hover:bg-danger/20 text-danger-light border border-danger/20 rounded-lg transition-colors disabled:opacity-50"
       >
         {isPending ? "Revoking..." : "Revoke"}
       </button>
-      {error && <span className="text-xs text-danger">{error}</span>}
+      {error && <span className="text-xs text-danger-light">{error}</span>}
     </div>
   );
 }

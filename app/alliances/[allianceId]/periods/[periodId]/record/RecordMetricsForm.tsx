@@ -104,7 +104,7 @@ export function RecordMetricsForm({
       <div>
         <label
           htmlFor="metricId"
-          className="block text-sm font-medium text-gray-700 mb-1"
+          className="block text-sm font-medium text-text-secondary mb-1"
         >
           Select Metric
         </label>
@@ -118,7 +118,7 @@ export function RecordMetricsForm({
             setSuccess(null);
           }}
           disabled={isPending}
-          className="w-full rounded-md border border-gray-300 p-2 disabled:bg-gray-100"
+          className="w-full rounded-md border border-border bg-surface-secondary text-text-primary p-2 focus:outline-none focus:ring-2 focus:ring-primary disabled:text-text-disabled"
         >
           {metrics.map((metric) => (
             <option key={metric.id} value={metric.id}>
@@ -128,16 +128,16 @@ export function RecordMetricsForm({
         </select>
       </div>
 
-      <hr className="border-gray-200" />
+      <hr className="border-border" />
 
       <h3 className="text-lg font-semibold">
         Record {selectedMetric?.name || "Metric"} for Members
       </h3>
 
       {success && (
-        <div className="p-3 rounded-md bg-green-50 border border-green-200 text-green-700 text-sm flex items-center gap-2">
+        <div className="p-3 rounded-md bg-success/10 border border-success/30 text-success-light text-sm flex items-center gap-2">
           <svg
-            className="w-5 h-5 text-green-500"
+            className="w-5 h-5 text-success-light"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -161,7 +161,7 @@ export function RecordMetricsForm({
           return (
             <div
               key={member.id}
-              className="flex items-center justify-between p-3 border rounded-md"
+              className="flex items-center justify-between gap-3 p-3 border border-border bg-surface rounded-md"
             >
               <label htmlFor={`value-${member.id}`} className="font-medium">
                 {member.playerName}
@@ -169,17 +169,17 @@ export function RecordMetricsForm({
               <div className="flex flex-col items-end">
                 <input
                   type="text"
-                  id={member.id}
+                  id={`value-${member.id}`}
                   value={value}
                   onChange={(e) => handleValueChange(member.id, e.target.value)}
                   placeholder="Enter value"
                   disabled={isPending}
-                  className={`w-32 rounded-md border p-2 text-right disabled:bg-gray-100 ${
-                    isInvalid ? "border-red-500 bg-red-50" : "border-gray-300"
+                  className={`w-32 rounded-md border p-2 text-right text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary disabled:text-text-disabled ${
+                    isInvalid ? "border-danger bg-danger/10" : "border-border bg-surface-secondary"
                   }`}
                 />
                 {isInvalid && (
-                  <span className="text-xs text-red-500 mt-1">
+                  <span className="text-xs text-danger-light mt-1">
                     Must be a whole number
                   </span>
                 )}
@@ -190,7 +190,7 @@ export function RecordMetricsForm({
       </div>
 
       {error && (
-        <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm">
+        <div className="p-3 rounded-md bg-danger/10 border border-danger/30 text-danger-light text-sm">
           {error}
         </div>
       )}
@@ -198,7 +198,7 @@ export function RecordMetricsForm({
       <button
         type="submit"
         disabled={isPending}
-        className="px-4 py-2 rounded-md bg-blue-500 text-white hover:bg-blue-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isPending ? "Saving..." : "Save All"}
       </button>

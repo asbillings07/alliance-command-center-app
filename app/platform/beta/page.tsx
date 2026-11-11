@@ -144,19 +144,19 @@ export default async function PlatformBeta({ searchParams }: PageProps) {
             <div className="text-2xl font-bold text-warning">
               {result.summary.needsAttention}
             </div>
-            <div className="text-sm text-warning/80">Needs attention</div>
+            <div className="text-sm text-warning-light">Needs attention</div>
           </div>
           <div className="bg-primary/10 rounded-lg p-4 border border-primary/20">
             <div className="text-2xl font-bold text-primary">
               {result.summary.distinctAlliancesCreated}
             </div>
-            <div className="text-sm text-primary/80">Alliances created</div>
+            <div className="text-sm text-primary-light">Alliances created</div>
           </div>
           <div className="bg-success/10 rounded-lg p-4 border border-success/20">
             <div className="text-2xl font-bold text-success">
               {result.summary.distinctAlliancesSetupComplete}
             </div>
-            <div className="text-sm text-success/80">Setup complete</div>
+            <div className="text-sm text-success-light">Setup complete</div>
           </div>
         </div>
 
@@ -216,7 +216,7 @@ export default async function PlatformBeta({ searchParams }: PageProps) {
         <div className="text-center py-12 text-text-muted">
           <p>No beta participants match these filters.</p>
           <p className="text-sm mt-1">
-            <Link href="/platform/beta" className="text-primary hover:text-primary-hover">
+            <Link href="/platform/beta" className="text-primary hover:text-text-primary">
               Clear filters
             </Link>{" "}
             or use the form above to invite your first beta tester.

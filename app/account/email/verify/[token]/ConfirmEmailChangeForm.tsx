@@ -47,7 +47,7 @@ export function ConfirmEmailChangeForm({
   return (
     <form className="space-y-5" action={formAction}>
       {state.status === "error" && state.message && (
-        <div className="p-3 bg-danger/10 border border-danger text-danger rounded-md text-sm">
+        <div className="p-3 bg-danger/10 border border-danger text-danger-light rounded-md text-sm">
           {state.message}
         </div>
       )}

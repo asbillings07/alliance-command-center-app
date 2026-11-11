@@ -157,7 +157,7 @@ function DeliveryStatusSummary({
             </span>
           )}
           {delivery.status === "failed" && delivery.failureReason && (
-            <span className="text-danger basis-full">
+            <span className="text-danger-light basis-full">
               {delivery.failureReason}
             </span>
           )}
@@ -222,7 +222,7 @@ function DeliveryHistoryDisclosure({ invitationId }: { invitationId: string }) {
       <button
         type="button"
         onClick={handleToggle}
-        className="text-xs text-primary hover:text-primary-hover"
+        className="text-xs text-primary hover:text-text-primary"
         aria-expanded={open}
       >
         {open ? "Hide" : "Show"} email delivery history
@@ -232,7 +232,7 @@ function DeliveryHistoryDisclosure({ invitationId }: { invitationId: string }) {
           {isPending && !result && (
             <p className="text-xs text-text-muted">Loading delivery history…</p>
           )}
-          {error && <p className="text-xs text-danger">{error}</p>}
+          {error && <p className="text-xs text-danger-light">{error}</p>}
           {result?.success && result.items.length === 0 && (
             <p className="text-xs text-text-disabled">Not recorded</p>
           )}
@@ -246,7 +246,7 @@ function DeliveryHistoryDisclosure({ invitationId }: { invitationId: string }) {
                 type="button"
                 onClick={() => loadPage(currentPage - 1)}
                 disabled={!canGoPrevious || isPending}
-                className="text-xs text-primary hover:text-primary-hover disabled:text-text-disabled disabled:cursor-not-allowed"
+                className="text-xs text-primary hover:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed"
               >
                 Previous
               </button>
@@ -257,7 +257,7 @@ function DeliveryHistoryDisclosure({ invitationId }: { invitationId: string }) {
                 type="button"
                 onClick={() => loadPage(currentPage + 1)}
                 disabled={!canGoNext || isPending}
-                className="text-xs text-primary hover:text-primary-hover disabled:text-text-disabled disabled:cursor-not-allowed"
+                className="text-xs text-primary hover:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed"
               >
                 Next
               </button>
@@ -392,7 +392,7 @@ function PriorAttemptsDisclosure({
       <button
         type="button"
         onClick={handleToggle}
-        className="text-xs text-primary hover:text-primary-hover"
+        className="text-xs text-primary hover:text-text-primary"
         aria-expanded={open}
       >
         {open ? "Hide" : "Show"} {priorAttemptCount} prior attempt
@@ -403,7 +403,7 @@ function PriorAttemptsDisclosure({
           {isPending && !result && (
             <p className="text-xs text-text-muted">Loading history…</p>
           )}
-          {error && <p className="text-xs text-danger">{error}</p>}
+          {error && <p className="text-xs text-danger-light">{error}</p>}
           {result?.success &&
             result.items.map((attempt) => (
               <AttemptAuditDetails key={attempt.id} attempt={attempt} />
@@ -414,7 +414,7 @@ function PriorAttemptsDisclosure({
                 type="button"
                 onClick={() => loadPage(currentPage - 1)}
                 disabled={!canGoPrevious || isPending}
-                className="text-xs text-primary hover:text-primary-hover disabled:text-text-disabled disabled:cursor-not-allowed"
+                className="text-xs text-primary hover:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed"
               >
                 Previous
               </button>
@@ -425,7 +425,7 @@ function PriorAttemptsDisclosure({
                 type="button"
                 onClick={() => loadPage(currentPage + 1)}
                 disabled={!canGoNext || isPending}
-                className="text-xs text-primary hover:text-primary-hover disabled:text-text-disabled disabled:cursor-not-allowed"
+                className="text-xs text-primary hover:text-text-primary disabled:text-text-disabled disabled:cursor-not-allowed"
               >
                 Next
               </button>

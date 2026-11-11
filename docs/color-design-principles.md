@@ -64,7 +64,7 @@ Pure black creates excessive contrast and contributes to eye fatigue.
 ## Application Background
 
 ```css
-#0F172A
+#0B1220
 ```
 
 Purpose:
@@ -76,7 +76,7 @@ Primary application background.
 ## Primary Surface
 
 ```css
-#111827
+#111B2E
 ```
 
 Purpose:
@@ -94,7 +94,7 @@ Content containers
 ## Secondary Surface
 
 ```css
-#1F2937
+#19263D
 ```
 
 Purpose:
@@ -110,7 +110,7 @@ Expanded sections
 ## Elevated Surface
 
 ```css
-#273449
+#243550
 ```
 
 Purpose:
@@ -134,7 +134,7 @@ Borders should provide subtle separation rather than visual emphasis.
 ## Default Border
 
 ```css
-#374151
+#30415D
 ```
 
 ---
@@ -142,7 +142,7 @@ Borders should provide subtle separation rather than visual emphasis.
 ## Hover Border
 
 ```css
-#4B5563
+#486080
 ```
 
 ---
@@ -150,7 +150,7 @@ Borders should provide subtle separation rather than visual emphasis.
 ## Divider
 
 ```css
-#374151
+#30415D
 ```
 
 Avoid unnecessary dividers.
@@ -168,7 +168,7 @@ Typography should maintain excellent readability.
 ## Primary Text
 
 ```css
-#F9FAFB
+#F2F6FF
 ```
 
 Nearly white.
@@ -180,7 +180,7 @@ Avoid pure white.
 ## Secondary Text
 
 ```css
-#D1D5DB
+#C8D3E7
 ```
 
 Supporting information.
@@ -196,7 +196,7 @@ Examples:
 ## Muted Text
 
 ```css
-#9CA3AF
+#A5B6D0
 ```
 
 Examples:
@@ -211,7 +211,7 @@ Examples:
 ## Disabled Text
 
 ```css
-#6B7280
+#93A1BA
 ```
 
 Used only for disabled controls.
@@ -227,7 +227,7 @@ Alliance Command Center should use a single primary accent color.
 ## Primary
 
 ```css
-#3B82F6
+#60A5FA
 ```
 
 Reasons:
@@ -240,7 +240,7 @@ Reasons:
 
 Primary actions should consistently use this color.
 
-Avoid introducing additional brand colors.
+Use the blue/violet blend only in the product mark and restrained identity rule. Solid violet accents may identify workspace headings and active platform navigation, as described below. Functional actions and form selection remain blue. Filled primary buttons retain `#2563EB` with white text and `#1D4ED8` on hover/active; the lighter `#60A5FA` is for readable text, outlines, and selection accents.
 
 ---
 
@@ -297,7 +297,7 @@ Examples:
 ## Information
 
 ```css
-#3B82F6
+#60A5FA
 ```
 
 Examples:
@@ -317,7 +317,7 @@ Hover states should primarily rely on subtle background changes.
 Recommended hover surface:
 
 ```css
-#273449
+#243550
 ```
 
 Avoid dramatic color shifts.
@@ -364,7 +364,7 @@ Primary Surface
 Hover should use:
 
 ```css
-#273449
+#243550
 ```
 
 Selected rows should use a subtle blue tint.
@@ -457,9 +457,7 @@ Avoid colorful iconography throughout the interface.
 
 The owner-approved [Alliance Link product mark](./design-system/brand.md) uses
 blue and violet in the application identity, browser icon and Apple touch icon.
-This narrow brand-art exception does not change semantic colors, primary actions,
-charts or monochrome functional icons. Render the supplied artwork without
-recoloring, cropping, glow or an added shadow.
+The same blend may appear as one thin, two-pixel identity rule on welcome, authentication, alliance and platform headers. Its violet endpoint is `--brand-violet: #7554E8`. Workspace headings may use a narrow solid-violet accent. Navigation shells use `--brand-surface: #171D33`; active platform links use `--brand-selection: #30234F` and `--brand-text: #D1C4FF` (8.8:1 contrast). Do not use violet as a status, chart series, action-button fill, or focus indicator. This identity exception preserves semantic status colors and monochrome functional icons. Render the supplied artwork without recoloring, cropping, glow or an added shadow.
 
 ---
 
@@ -506,21 +504,21 @@ Accessibility is a product requirement, not an enhancement.
 The following tokens should serve as the application's source of truth.
 
 ```css
---background: #0F172A;
+--background: #0B1220;
 
---surface: #111827;
---surface-secondary: #1F2937;
---surface-elevated: #273449;
+--surface: #111B2E;
+--surface-secondary: #19263D;
+--surface-elevated: #243550;
 
---border: #374151;
---border-hover: #4B5563;
+--border: #30415D;
+--border-hover: #486080;
 
---text-primary: #F9FAFB;
---text-secondary: #D1D5DB;
---text-muted: #9CA3AF;
---text-disabled: #6B7280;
+--text-primary: #F2F6FF;
+--text-secondary: #C8D3E7;
+--text-muted: #A5B6D0;
+--text-disabled: #93A1BA;
 
---primary: #3B82F6;
+--primary: #60A5FA;
 
 --success: #22C55E;
 --warning: #F59E0B;
@@ -554,3 +552,11 @@ Color should never compete with information.
 Its purpose is to improve readability, reinforce hierarchy, communicate meaning, and help alliance leaders make better decisions with confidence.
 
 When a choice exists between visual flair and clarity, clarity always wins.
+
+## Shared token coverage
+
+All application screens use the tokens in `app/globals.css`, including legacy invitation forms, spreadsheet mapping/review, metric entry, account pages and Platform Operations. Avoid literal hex utilities and numbered color shades in app components. Provider marks and transactional email rendering have separate requirements.
+
+Filled confirmation actions use `success-dark` (`#166534`) with white text and `success-active` (`#14532D`) on hover. Destructive and caution actions use `danger-dark` / `warning-dark` at rest and `danger-active` (`#B91C1C`) / `warning-active` (`#78350F`) on hover. Use `danger-light` for error text, including on tinted error panels and on hover; reserve `danger` for fills/borders/icons where contrast allows it. Keep small status text fully opaque on subtle tinted surfaces.
+
+For nested or tinted panels, use `primary-light` (`#93C5FD`) and `danger-light` (`#FCA5A5`) as foregrounds. Status text stays fully opaque. Archived cards use a dashed border and their existing Archived label instead of fading the entire card; expired invitation rows retain full-opacity text and their Expired label. Blue link hover text uses the high-contrast primary text token, not the darker button-fill token.

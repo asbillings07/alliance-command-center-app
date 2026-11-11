@@ -152,7 +152,7 @@ export function AccessRequestHistory({
       {open && (
         <div className="mt-2 space-y-3">
           {error && (
-            <p className="text-sm text-danger" data-testid="access-request-history-error">
+            <p className="text-sm text-danger-light" data-testid="access-request-history-error">
               {error}
             </p>
           )}

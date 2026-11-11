@@ -85,7 +85,7 @@ function FeedbackRowBody({ item }: { item: FeedbackInboxListItem }) {
           {item.allianceId && item.allianceName ? (
             <Link
               href={`/platform/support/alliance/${item.allianceId}`}
-              className="text-primary hover:text-primary-hover"
+              className="text-primary hover:text-text-primary"
             >
               {item.allianceName}
             </Link>
@@ -114,7 +114,7 @@ function FeedbackRowBody({ item }: { item: FeedbackInboxListItem }) {
             href={item.githubIssueUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary hover:text-primary-hover break-all"
+            className="text-primary hover:text-text-primary break-all"
           >
             {item.githubIssueUrl}
           </a>

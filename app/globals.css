@@ -8,35 +8,44 @@
  */
 
 :root {
+  color-scheme: dark;
   /* Surface Colors */
-  --background: #0F172A;
-  --surface: #111827;
-  --surface-secondary: #1F2937;
-  --surface-elevated: #273449;
+  --background: #0B1220;
+  --surface: #111B2E;
+  --surface-secondary: #19263D;
+  --surface-elevated: #243550;
 
   /* Border Colors */
-  --border: #374151;
-  --border-hover: #4B5563;
+  --border: #30415D;
+  --border-hover: #486080;
 
   /* Text Colors */
-  --text-primary: #F9FAFB;
-  --text-secondary: #D1D5DB;
-  --text-muted: #9CA3AF;
-  --text-disabled: #8B929F; /* Lightened for WCAG AA contrast (was #6B7280) */
+  --text-primary: #F2F6FF;
+  --text-secondary: #C8D3E7;
+  --text-muted: #A5B6D0;
+  --text-disabled: #93A1BA;
 
   /* Accent Colors */
-  --primary: #3B82F6;
+  --primary: #60A5FA;
   --primary-hover: #2563EB; /* Accessible fill for white text (5.1:1); button resting color */
   --primary-active: #1D4ED8; /* Darker shade for button hover/active (6.5:1) */
-  --primary-light: #60A5FA; /* Lighter shade for badges/low-contrast backgrounds */
+  --primary-light: #93C5FD; /* Lighter shade for badges/low-contrast backgrounds */
+  --brand-violet: #7554E8; /* Identity accents only; never a status color */
+  --brand-surface: #171D33; /* Navigation shell */
+  --brand-selection: #30234F; /* Active navigation */
+  --brand-text: #D1C4FF; /* Readable text on brand-selection */
   --success: #22C55E;
+  --success-dark: #166534; /* Accessible filled confirmation actions */
+  --success-active: #14532D;
   --success-light: #4ADE80; /* Lighter shade for badges */
   --warning: #F59E0B;
   --warning-dark: #92400E; /* Darker shade for button backgrounds (WCAG AA 5.5:1 with white) */
+  --warning-active: #78350F;
   --warning-light: #FBBF24; /* Lighter shade for badges */
   --danger: #EF4444;
   --danger-dark: #DC2626; /* Darker shade for button backgrounds (WCAG AA) */
-  --danger-light: #F87171; /* Lighter shade for badges */
+  --danger-active: #B91C1C;
+  --danger-light: #FCA5A5; /* Lighter shade for badges */
 }
 
 @theme inline {
@@ -61,13 +70,21 @@
   --color-primary-hover: var(--primary-hover);
   --color-primary-active: var(--primary-active);
   --color-primary-light: var(--primary-light);
+  --color-brand-violet: var(--brand-violet);
+  --color-brand-surface: var(--brand-surface);
+  --color-brand-selection: var(--brand-selection);
+  --color-brand-text: var(--brand-text);
   --color-success: var(--success);
+  --color-success-dark: var(--success-dark);
+  --color-success-active: var(--success-active);
   --color-success-light: var(--success-light);
   --color-warning: var(--warning);
   --color-warning-dark: var(--warning-dark);
+  --color-warning-active: var(--warning-active);
   --color-warning-light: var(--warning-light);
   --color-danger: var(--danger);
   --color-danger-dark: var(--danger-dark);
+  --color-danger-active: var(--danger-active);
   --color-danger-light: var(--danger-light);
 
   /* Fonts - Use Geist */
@@ -80,3 +97,128 @@ body {
   color: var(--text-primary);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
+
+/* A quiet link between identity surfaces, separate from semantic UI colors. */
+.brand-rule {
+  height: 2px;
+  background: linear-gradient(90deg, var(--primary), var(--brand-violet));
+}
+
+.brand-kicker {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* Connect workspace titles to the mark without coloring operational status. */
+.workspace-heading {
+  border-left: 3px solid var(--brand-violet);
+  padding-left: 1rem;
+}
+
+/* Approved mobile header: name first, then badge and account actions aligned.
+ * The 32px first track plus 8px gap aligns the badge with the wordmark. */
+.brand-header-grid {
+  display: grid;
+  grid-template-columns: 32px max-content minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 8px;
+  align-items: center;
+  padding: 14px 16px 6px;
+}
+.brand-header-home { grid-column: 1 / -1; grid-row: 1; }
+.brand-header-badge {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+  padding: 5px 10px;
+  font-size: 11px;
+  line-height: 16px;
+}
+.brand-header-actions {
+  grid-column: 3;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 2px;
+}
+.brand-header-tools { grid-column: 1 / -1; min-width: 0; }
+@media (width < 640px) {
+  .brand-header-actions > :is(a, button),
+  .brand-header-actions > form > button {
+    min-height: 44px;
+    padding: 8px 5px;
+    font-size: 12px;
+  }
+  .brand-header-actions > :is(a, button) svg,
+  .brand-header-actions > form > button svg { width: 14px; height: 14px; margin-right: 5px; }
+}
+@media (width >= 640px) {
+  .brand-header-grid { grid-template-columns: auto auto minmax(0, 1fr); gap: 16px; padding: 12px 24px; }
+  .brand-header-home { grid-column: 1; grid-row: 1; }
+  .brand-header-badge { grid-column: 2; grid-row: 1; padding: 6px 12px; font-size: 12px; }
+  .brand-header-actions { grid-column: 3; grid-row: 1; gap: 4px; }
+  .brand-header-public { padding: 24px 32px; }
+}
+@media (width >= 1024px) {
+  .brand-header-with-tools { grid-template-columns: auto auto auto minmax(0, 1fr); }
+  .brand-header-tools { grid-column: 4; grid-row: 1; justify-self: end; }
+  .brand-header-public { padding: 32px 40px; }
+}
+
+/* Driver.js uses a portal. Scope its vendor defaults to our tour class rather
+ * than relying on a parent surface or stylesheet import order. */
+.driver-popover.acc-tour {
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hover);
+  border-radius: 12px;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.acc-tour .driver-popover-description {
+  color: var(--text-secondary);
+}
+
+.acc-tour .driver-popover-progress-text,
+.acc-tour .driver-popover-close-btn {
+  color: var(--text-muted);
+}
+
+.acc-tour .driver-popover-close-btn:is(:hover, :focus) {
+  color: var(--text-primary);
+}
+
+.acc-tour .driver-popover-footer-btn {
+  background: var(--surface-secondary);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+  border-radius: 6px;
+}
+
+.acc-tour .driver-popover-footer-btn:is(:hover, :focus) {
+  background: var(--surface-elevated);
+}
+
+.acc-tour .driver-popover-next-btn {
+  background: var(--primary-hover);
+  color: white;
+  border-color: var(--primary-hover);
+}
+
+.acc-tour .driver-popover-next-btn:is(:hover, :focus) {
+  background: var(--primary-active);
+}
+
+.acc-tour button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.acc-tour .driver-popover-arrow-side-left { border-left-color: var(--surface); }
+.acc-tour .driver-popover-arrow-side-right { border-right-color: var(--surface); }
+.acc-tour .driver-popover-arrow-side-top { border-top-color: var(--surface); }
+.acc-tour .driver-popover-arrow-side-bottom { border-bottom-color: var(--surface); }

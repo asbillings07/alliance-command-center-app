@@ -56,6 +56,7 @@ export async function runTour(
   const handleAbort = () => driverObj.destroy();
 
   const driverObj = driver({
+    popoverClass: "acc-tour",
     showProgress: tour.steps.length > 1,
     allowClose: true,
     steps: tour.steps.map((step) => ({

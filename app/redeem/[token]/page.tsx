@@ -16,9 +16,9 @@ type PageProps = {
 
 function ErrorIcon() {
   return (
-    <div className="w-16 h-16 mx-auto mb-4 bg-[#EF4444]/20 rounded-full flex items-center justify-center">
+    <div className="w-16 h-16 mx-auto mb-4 bg-danger/20 rounded-full flex items-center justify-center">
       <svg
-        className="w-8 h-8 text-[#EF4444]"
+        className="w-8 h-8 text-danger-light"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -36,9 +36,9 @@ function ErrorIcon() {
 
 function SuccessIcon() {
   return (
-    <div className="w-16 h-16 mx-auto mb-4 bg-[#22C55E]/20 rounded-full flex items-center justify-center">
+    <div className="w-16 h-16 mx-auto mb-4 bg-success/20 rounded-full flex items-center justify-center">
       <svg
-        className="w-8 h-8 text-[#22C55E]"
+        className="w-8 h-8 text-success-light"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -64,13 +64,13 @@ function ErrorCard({
   showRetry?: boolean;
 }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
-      <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8 text-center">
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="max-w-md w-full bg-surface border border-border rounded-lg p-8 text-center">
         <ErrorIcon />
-        <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">{title}</h1>
-        <p className="text-[#9CA3AF] mb-6">{message}</p>
+        <h1 className="text-xl font-bold text-text-primary mb-2">{title}</h1>
+        <p className="text-text-muted mb-6">{message}</p>
         {showRetry && (
-          <Link href="/redeem" className="text-[#3B82F6] hover:text-[#60A5FA]">
+          <Link href="/redeem" className="text-primary hover:text-text-primary">
             Try entering your code again
           </Link>
         )}
@@ -117,19 +117,19 @@ export default async function RedeemTokenPage({
 
   if (result.status === "already_accepted") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
-        <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8 text-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="max-w-md w-full bg-surface border border-border rounded-lg p-8 text-center">
           <SuccessIcon />
-          <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">
+          <h1 className="text-xl font-bold text-text-primary mb-2">
             Already Accepted
           </h1>
-          <p className="text-[#9CA3AF] mb-6">
+          <p className="text-text-muted mb-6">
             This beta invitation has already been accepted. Sign in to continue
             to your alliance.
           </p>
           <Link
             href="/login"
-            className="inline-block px-4 py-2 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB]"
+            className="inline-block px-4 py-2 bg-primary-hover text-white rounded-md hover:bg-primary-active"
           >
             Sign In
           </Link>
@@ -155,12 +155,12 @@ export default async function RedeemTokenPage({
   const isLoggedIn = !!session?.user;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
-      <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8">
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="max-w-md w-full bg-surface border border-border rounded-lg p-8">
         <div className="text-center mb-6">
-          <div className="w-16 h-16 mx-auto mb-4 bg-[#3B82F6]/20 rounded-full flex items-center justify-center">
+          <div className="w-16 h-16 mx-auto mb-4 bg-primary/20 rounded-full flex items-center justify-center">
             <svg
-              className="w-8 h-8 text-[#3B82F6]"
+              className="w-8 h-8 text-primary"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -173,19 +173,19 @@ export default async function RedeemTokenPage({
               />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">
+          <h1 className="text-xl font-bold text-text-primary mb-2">
             Welcome to the Beta!
           </h1>
-          <p className="text-[#9CA3AF]">
+          <p className="text-text-muted">
             You&apos;ve been invited to create your own alliance workspace 
             in Alliance Command Center.
           </p>
         </div>
 
-        <div className="bg-[#1F2937] rounded-lg p-4 mb-6">
+        <div className="bg-surface-secondary rounded-lg p-4 mb-6">
           <div className="flex justify-between text-sm">
-            <span className="text-[#9CA3AF]">Invited Email</span>
-            <span className="font-medium text-[#F9FAFB]">
+            <span className="text-text-muted">Invited Email</span>
+            <span className="font-medium text-text-primary">
               {invitation.email}
             </span>
           </div>
@@ -199,31 +199,31 @@ export default async function RedeemTokenPage({
               <>
                 <GoogleSignInButton
                   callbackUrl={redeemCallbackUrl}
-                  className="flex w-full items-center justify-center px-4 py-2 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60A5FA] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111827]"
+                  className="flex w-full items-center justify-center px-4 py-2 bg-primary-hover text-white rounded-md hover:bg-primary-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                 />
                 <div className="flex items-center gap-3">
-                  <span className="h-px flex-1 bg-[#374151]" />
-                  <span className="text-xs uppercase tracking-wide text-[#9CA3AF]">
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="text-xs uppercase tracking-wide text-text-muted">
                     or
                   </span>
-                  <span className="h-px flex-1 bg-[#374151]" />
+                  <span className="h-px flex-1 bg-border" />
                 </div>
               </>
             )}
             <Link
               href={`/register?callbackUrl=${encodeURIComponent(redeemCallbackUrl)}`}
-              className="block w-full px-4 py-2 bg-[#3B82F6] text-white text-center rounded-md hover:bg-[#2563EB]"
+              className="block w-full px-4 py-2 bg-primary-hover text-white text-center rounded-md hover:bg-primary-active"
             >
               Create Account
             </Link>
-            <p className="text-center text-sm text-[#9CA3AF]">
+            <p className="text-center text-sm text-text-muted">
               After creating your account, you&apos;ll set up your alliance.
             </p>
-            <p className="text-center text-sm text-[#9CA3AF]">
+            <p className="text-center text-sm text-text-muted">
               Already have an account?{" "}
               <Link
                 href={`/login?callbackUrl=${encodeURIComponent(redeemCallbackUrl)}`}
-                className="text-[#3B82F6] hover:text-[#60A5FA]"
+                className="text-primary hover:text-text-primary"
               >
                 Sign in
               </Link>

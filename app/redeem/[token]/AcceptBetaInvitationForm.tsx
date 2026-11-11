@@ -20,15 +20,15 @@ export function AcceptBetaInvitationForm({ invitationId }: Props) {
       <input type="hidden" name="invitationId" value={invitationId} />
 
       {state.error && (
-        <div className="mb-4 p-3 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-md">
-          <p className="text-sm text-[#EF4444]">{state.error}</p>
+        <div className="mb-4 p-3 bg-danger/10 border border-danger/20 rounded-md">
+          <p className="text-sm text-danger-light">{state.error}</p>
         </div>
       )}
 
       <button
         type="submit"
         disabled={isPending}
-        className="w-full px-4 py-2 bg-[#3B82F6] text-white font-medium rounded-md hover:bg-[#2563EB] disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full px-4 py-2 bg-primary-hover text-white font-medium rounded-md hover:bg-primary-active disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isPending ? "Accepting..." : "Accept Invitation"}
       </button>

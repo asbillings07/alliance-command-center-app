@@ -1,6 +1,34 @@
 import { test, expect } from "../shared/fixtures";
+import { checkA11yLevelAA, checkA11yWithOptions } from "../shared/accessibility";
 import { prisma } from "@/app/src/lib/prisma";
 import { MemberImportChangeType } from "@/app/generated/prisma/enums";
+import type { Page } from "@playwright/test";
+import { releaseStage, releaseStageLabels } from "@/app/src/lib/releaseStage";
+
+async function expectReleaseStage(page: Page) {
+  const badge = page.getByTestId("release-stage-badge");
+  const header = page.getByTestId("brand-header");
+  await expect(header).toHaveCount(1);
+  await expect(badge).toHaveCount(1);
+  await expect(badge).toBeVisible();
+  await expect(badge).toHaveText(releaseStageLabels[releaseStage]);
+  const position = await badge.boundingBox();
+  const name = await header.getByRole("link", { name: "Alliance Command Center home", exact: true }).boundingBox();
+  expect(position).not.toBeNull();
+  expect(name).not.toBeNull();
+  if (page.viewportSize()!.width < 640) {
+    expect(position!.y).toBeGreaterThanOrEqual(name!.y + name!.height);
+    expect(Math.abs(position!.x - (name!.x + 40))).toBeLessThanOrEqual(1);
+    const actions = header.getByTestId("brand-header-actions");
+    if (await actions.count()) {
+      const controls = await actions.boundingBox();
+      expect(Math.abs(position!.y + position!.height / 2 - (controls!.y + controls!.height / 2))).toBeLessThanOrEqual(1);
+    }
+  } else {
+    expect(position!.x).toBeGreaterThan(name!.x + name!.width);
+    expect(Math.abs(position!.y + position!.height / 2 - (name!.y + name!.height / 2))).toBeLessThanOrEqual(1);
+  }
+}
 
 /**
  * Visual Regression E2E Tests
@@ -25,17 +53,41 @@ test.describe("Visual Regression", () => {
     await page.getByLabel(/email/i).fill(process.env.TEST_OWNER_EMAIL!);
     await page.getByLabel(/password/i).fill(process.env.TEST_OWNER_PASSWORD!);
     await page.getByRole("button", { name: /sign in/i }).click();
-    await page.waitForURL(/\/(app|alliances)/);
+    // /app only resolves the session and redirects; measure the final shell.
+    await page.waitForURL(/\/alliances\//);
+    await page.waitForLoadState("networkidle");
+    await expectReleaseStage(page);
   });
 
-  test("@visual Dashboard visual snapshot", async ({ page }) => {
+  test("@visual Dashboard visual snapshot", async ({ page }, testInfo) => {
     await page.goto(`/alliances/${testAllianceId}`);
     await page.waitForLoadState("networkidle");
+
+    // Retain the exact render for human review even when a subtle color change
+    // falls within the screenshot comparator's existing tolerance.
+    await testInfo.attach("dashboard-current", { body: await page.screenshot({ fullPage: true, animations: "disabled" }), contentType: "image/png" });
 
     await expect(page).toHaveScreenshot("dashboard.png", {
       fullPage: true,
       animations: "disabled",
     });
+  });
+
+  test("@visual Mobile dashboard and invitation settings", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const [path, snapshot] of [
+      ["", "dashboard-mobile.png"],
+      ["/settings/invitations", "invitation-settings-mobile.png"],
+    ]) {
+      await page.goto(`/alliances/${testAllianceId}${path}`);
+      await page.waitForLoadState("networkidle");
+      await expectReleaseStage(page);
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+      await checkA11yLevelAA(page);
+      await testInfo.attach(snapshot, { body: await page.screenshot({ fullPage: true, animations: "disabled" }), contentType: "image/png" });
+      await expect(page).toHaveScreenshot(snapshot, { fullPage: true, animations: "disabled" });
+    }
   });
 
   test("@visual Members Table visual snapshot", async ({ page }) => {
@@ -112,6 +164,17 @@ test.describe("Visual Regression", () => {
       mask: [page.locator("h2")],
       maxDiffPixelRatio: 0.02,
     });
+  });
+
+  test("@visual Guided help uses the application palette", async ({ page }) => {
+    await page.goto(`/alliances/${testAllianceId}/periods`);
+    await page.getByRole("button", { name: "Take a tour" }).click();
+    const popover = page.locator(".driver-popover");
+    await expect(popover).toBeVisible();
+    await expect(popover).toHaveScreenshot("guided-help.png", { animations: "disabled" });
+    await checkA11yWithOptions(page, { include: [".driver-popover"], runOnly: ["wcag2a", "wcag2aa"] });
+    await page.keyboard.press("Escape");
+    await expect(popover).not.toBeVisible();
   });
 
   test("@visual Setup Page visual snapshot", async ({ page }) => {
@@ -208,6 +271,7 @@ test.describe("Design System Preview", () => {
   test("@visual Design System page visual snapshot", async ({ page }) => {
     await page.goto("/design-system");
     await page.waitForLoadState("networkidle");
+    await expectReleaseStage(page);
 
     await expect(page).toHaveScreenshot("design-system.png", {
       fullPage: true,
@@ -217,6 +281,51 @@ test.describe("Design System Preview", () => {
 });
 
 test.describe("Auth Pages Visual", () => {
+  test("@visual Release stage covers public and standalone pages on mobile", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+    await expectReleaseStage(page);
+    await expect(page).toHaveScreenshot("welcome-release-stage.png", { fullPage: true, animations: "disabled" });
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expectReleaseStage(page);
+
+    await page.setViewportSize({ width: 320, height: 780 });
+    for (const path of ["/", "/login", "/register", "/forgot-password", "/request-access", "/invite", "/redeem", "/invite/invalid-release-stage", "/redeem/invalid-release-stage", "/reset-password/invalid-release-stage", "/account/email/verify/invalid-release-stage", "/design-system", "/missing-release-stage-page", "/alliances/missing-release-stage/nested-missing-page", "/platform/missing-release-stage-page"]) {
+      await page.goto(path);
+      await expectReleaseStage(page);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+      await checkA11yWithOptions(page, { include: ['[data-testid="brand-header"]'], runOnly: ["wcag2a", "wcag2aa"] });
+      if (path === "/") {
+        await expect(page).toHaveScreenshot("welcome-release-stage-mobile.png", { fullPage: true, animations: "disabled" });
+      }
+    }
+  });
+
+  test("@visual Sign-up form includes the shared badge on desktop and mobile", async ({ page }, testInfo) => {
+    const token = `visual-register-${Date.now()}-${testInfo.retry}`;
+    const participant = await prisma.betaParticipant.create({ data: {} });
+    const invitation = await prisma.betaInvitation.create({ data: {
+      email: "visual-register@example.test", token, code: token,
+      expiresAt: new Date(Date.now() + 86_400_000), participantId: participant.id,
+    } });
+    try {
+      await page.goto(`/register?callbackUrl=${encodeURIComponent(`/redeem/${token}`)}`);
+      await expect(page.getByRole("heading", { name: "Create Account", exact: true })).toBeVisible();
+      for (const width of [1280, 320]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await expectReleaseStage(page);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+        await checkA11yLevelAA(page);
+        await expect(page).toHaveScreenshot(`register-${width}.png`, { fullPage: true, animations: "disabled" });
+      }
+    } finally {
+      await prisma.betaInvitation.delete({ where: { id: invitation.id } });
+      await prisma.betaParticipant.delete({ where: { id: participant.id } });
+    }
+  });
+
   test("@visual Login page visual snapshot", async ({ page }) => {
     await page.goto("/login");
     await page.waitForLoadState("networkidle");
@@ -245,5 +354,37 @@ test.describe("Auth Pages Visual", () => {
       fullPage: true,
       animations: "disabled",
     });
+  });
+});
+
+// The platform console has a different shell from alliance pages. Capture both
+// shells explicitly so a welcome-page-only refresh cannot conceal this gap.
+test.describe("Platform brand coverage", () => {
+  test("@visual Platform navigation desktop and mobile", async ({ page }) => {
+    test.skip(!process.env.TEST_PLATFORM_ADMIN_EMAIL || !process.env.TEST_PLATFORM_ADMIN_PASSWORD,
+      "Platform test credentials required");
+    await page.goto("/login");
+    await page.getByLabel(/email/i).fill(process.env.TEST_PLATFORM_ADMIN_EMAIL!);
+    await page.getByLabel(/password/i).fill(process.env.TEST_PLATFORM_ADMIN_PASSWORD!);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await page.waitForURL(/\/(app|alliances|platform)/);
+    await page.goto("/platform/overview");
+    await page.waitForLoadState("networkidle");
+    await expectReleaseStage(page);
+    await expect(page.locator("header")).toHaveScreenshot("platform-header.png", { animations: "disabled" });
+    // Capture the navigation itself, not time-sensitive operational data.
+    await expect(page.locator("aside nav ul")).toHaveScreenshot("platform-navigation.png", { animations: "disabled" });
+    await checkA11yLevelAA(page);
+
+    await page.setViewportSize({ width: 320, height: 780 });
+    await expectReleaseStage(page);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+    await expect(page.locator("header")).toHaveScreenshot("platform-header-mobile.png", { animations: "disabled" });
+    await page.getByRole("button", { name: "Open navigation menu" }).click();
+    const drawer = page.locator("div.fixed").filter({ has: page.getByRole("button", { name: "Close navigation menu" }) });
+    await expect(drawer).toHaveScreenshot("platform-navigation-mobile.png", { animations: "disabled" });
+    await checkA11yLevelAA(page);
+    await page.getByRole("button", { name: "Close navigation menu" }).click();
+    await expect(page.getByRole("button", { name: "Close navigation menu" })).not.toBeVisible();
   });
 });

@@ -20,8 +20,8 @@ export function AllianceSelector({ alliances }: { alliances: Alliance[] }) {
 
     return (
         <div className="flex flex-col items-center justify-center">
-            <select 
-                className="border border-gray-300 rounded-md p-2"
+            <select
+                className="w-full border border-border bg-surface-secondary text-text-primary rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-primary"
                 aria-label="Select an Alliance"
                 value={selectedAlliance}
                 onChange={(e) => setSelectedAlliance(e.target.value)}
@@ -32,8 +32,8 @@ export function AllianceSelector({ alliances }: { alliances: Alliance[] }) {
                     </option>
                 ))}
             </select>
-            <button 
-                className="p-2 bg-blue-500 text-white w-full rounded-md mt-2 cursor-pointer" 
+            <button
+                className="p-2 bg-primary-hover hover:bg-primary-active text-white w-full rounded-md mt-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary"
                 type="button"
                 onClick={handleSubmit}
             >

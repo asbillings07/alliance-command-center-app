@@ -1284,7 +1284,7 @@ export function MultiPeriodImportFlow({
             <>
               <Link
                 href={`/alliances/${allianceId}/members?periodId=${committedPeriods[0]!.periodId}`}
-                className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover text-sm font-medium"
+                className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active text-sm font-medium"
               >
                 View Member Results
               </Link>
@@ -1308,7 +1308,7 @@ export function MultiPeriodImportFlow({
               ))}
               <Link
                 href={`/alliances/${allianceId}/members`}
-                className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover text-sm font-medium"
+                className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active text-sm font-medium"
               >
                 View Members
               </Link>
@@ -1447,7 +1447,7 @@ export function MultiPeriodImportFlow({
         />
 
         {error && (
-          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
+          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light">{error}</div>
         )}
 
         <div className="flex gap-3 justify-end">
@@ -1462,7 +1462,7 @@ export function MultiPeriodImportFlow({
             type="button"
             onClick={handleImport}
             disabled={isPending || totalToImport === 0 || hasBlockingParseErrors || hasBlockingDiagnostics}
-            className="px-4 py-2 rounded-md bg-success text-white cursor-pointer disabled:opacity-50"
+            className="px-4 py-2 rounded-md bg-success-dark text-white cursor-pointer disabled:opacity-50"
           >
             {isPending
               ? "Importing..."
@@ -1895,13 +1895,13 @@ export function MultiPeriodImportFlow({
       })}
 
       {periodMetricCollision && (
-        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger text-sm">
+        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light text-sm">
           {periodMetricCollision}
         </div>
       )}
 
       {error && (
-        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
+        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light">{error}</div>
       )}
 
       <div className="flex gap-3 justify-end">
@@ -1916,7 +1916,7 @@ export function MultiPeriodImportFlow({
           type="button"
           onClick={handlePreview}
           disabled={!canProceedToPreview}
-          className="px-4 py-2 rounded-md bg-primary text-white cursor-pointer disabled:opacity-50"
+          className="px-4 py-2 rounded-md bg-primary-hover text-white cursor-pointer disabled:opacity-50"
         >
           Preview Multi-Period Import
         </button>

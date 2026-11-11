@@ -77,7 +77,7 @@ function CopyButton({
     <button
       type="button"
       onClick={handleCopy}
-      className="px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-tertiary border border-border rounded-lg transition-colors"
+      className="px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-elevated border border-border rounded-lg transition-colors"
     >
       {state === "copied" ? "Copied!" : label}
     </button>
@@ -191,7 +191,7 @@ export function InviteBetaTester() {
 
       {result?.success === false && (
         <div className="mb-4 p-3 bg-danger/10 border border-danger/20 rounded-lg">
-          <p className="text-sm text-danger">{result.error}</p>
+          <p className="text-sm text-danger-light">{result.error}</p>
         </div>
       )}
 

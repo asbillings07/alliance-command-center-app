@@ -30,7 +30,7 @@ export function WorkbookIssueNotice({
 
   const isBlocking = tone === "blocking";
   const containerClass = isBlocking
-    ? "bg-danger/10 border-danger/30 text-danger"
+    ? "bg-danger/10 border-danger/30 text-danger-light"
     : "bg-warning/10 border-warning/30 text-warning";
   const secondaryText = isBlocking ? "text-text-secondary" : "text-text-secondary";
 
@@ -69,9 +69,9 @@ export function ValueIssueNotice({
   if (issues.length === 0) return null;
 
   return (
-    <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger flex flex-col gap-2">
+    <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light flex flex-col gap-2">
       <div>
-        <p className="font-semibold text-danger">
+        <p className="font-semibold text-danger-light">
           Fix {formatCellCount(issues.length)} before {phase === "preview" ? "previewing" : "importing"}
         </p>
         <p className="text-sm text-text-secondary mt-1">

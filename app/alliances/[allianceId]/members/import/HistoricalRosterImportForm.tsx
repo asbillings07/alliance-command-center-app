@@ -97,7 +97,7 @@ function outcomeLabel(outcome: HistoricalRowOutcome): { label: string; className
         case "ALREADY_MATCHES":
             return { label: "Preserve (unchanged)", className: "bg-surface-secondary border border-border text-text-muted" };
         case "LIFECYCLE_CONFLICT":
-            return { label: "Conflict — active member", className: "bg-danger/20 text-danger" };
+            return { label: "Conflict — active member", className: "bg-danger/20 text-danger-light" };
         case "UNASSIGNED_BLOCKED":
             return { label: "Unassigned", className: "bg-warning/20 text-warning" };
     }
@@ -620,7 +620,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
 
                     {!parseErrorCode && error && (
                         <div className="mt-4 p-4 bg-danger/10 border border-danger/30 rounded-lg">
-                            <p className="text-danger font-medium">{error}</p>
+                            <p className="text-danger-light font-medium">{error}</p>
                         </div>
                     )}
                 </div>
@@ -657,15 +657,15 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                 )}
 
                 {hasBlockingDiagnostics && (
-                    <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger flex flex-col gap-1">
-                        <p className="font-semibold text-danger">
+                    <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger-light flex flex-col gap-1">
+                        <p className="font-semibold text-danger-light">
                             Workbook Cell Issues Detected in Mapped Columns ({blockingCellIssues.length})
                         </p>
                         <p className="text-sm text-text-secondary">
                             Selected rows in mapped columns contain uncalculated formulas or error cells. Please
                             re-save your file or adjust row selection before importing:
                         </p>
-                        <ul className="list-disc list-inside text-xs text-danger mt-1 max-h-32 overflow-y-auto space-y-0.5">
+                        <ul className="list-disc list-inside text-xs text-danger-light mt-1 max-h-32 overflow-y-auto space-y-0.5">
                             {blockingCellIssues.map((issue, idx) => (
                                 <li key={idx}>
                                     Cell <strong>{issue.address}</strong>: {issue.message}
@@ -729,8 +729,8 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                 )}
 
                 {hasAmbiguousMatches && (
-                    <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger flex flex-col gap-1">
-                        <p className="font-semibold text-danger">
+                    <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger-light flex flex-col gap-1">
+                        <p className="font-semibold text-danger-light">
                             Import Disabled — Ambiguous Match{ambiguousMatchRows.length === 1 ? "" : "es"} in Your Roster
                         </p>
                         <p className="text-sm text-text-secondary">
@@ -743,8 +743,8 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                 )}
 
                 {hasBlockingThpError && (
-                    <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger flex flex-col gap-1">
-                        <p className="font-semibold text-danger">Invalid THP Values Detected</p>
+                    <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger-light flex flex-col gap-1">
+                        <p className="font-semibold text-danger-light">Invalid THP Values Detected</p>
                         <p className="text-sm text-text-secondary">
                             Please fix invalid Total Hero Power (THP) values for selected new members before continuing.
                             Accepted formats include: 450000000, 450.000.000, or &quot;450,000,000&quot;.
@@ -753,7 +753,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                 )}
 
                 {error && (
-                    <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger">
+                    <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger-light">
                         <p className="font-medium">{error}</p>
                     </div>
                 )}
@@ -795,7 +795,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                             type="button"
                             onClick={() => setFinalStatusBulk("archived")}
                             disabled={selectedCount === 0}
-                            className="px-3 py-1.5 rounded-md border border-primary text-primary hover:bg-primary/10 text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                            className="px-3 py-1.5 rounded-md border border-primary text-primary-light hover:bg-primary/10 text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                         >
                             Mark Selected Archived
                         </button>
@@ -809,7 +809,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                                 onClick={() => setActiveTab(tab.id)}
                                 className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer ${
                                     activeTab === tab.id
-                                        ? "bg-primary text-white"
+                                        ? "bg-primary-hover text-white"
                                         : "bg-surface-secondary text-text-secondary hover:bg-surface-secondary/70"
                                 }`}
                             >
@@ -931,14 +931,14 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                                                                 placeholder="Not provided"
                                                                 className={`w-full px-2 py-1 border rounded text-sm ${
                                                                     member.selected && member.thpError
-                                                                        ? "border-danger bg-danger/10 text-danger"
+                                                                        ? "border-danger bg-danger/10 text-danger-light"
                                                                         : member.selected
                                                                           ? "border-border bg-surface text-text-primary"
                                                                           : "border-border/50 bg-surface-secondary text-text-disabled"
                                                                 }`}
                                                             />
                                                             {member.selected && member.thpError && (
-                                                                <span className="text-xs text-danger mt-0.5">{member.thpError}</span>
+                                                                <span className="text-xs text-danger-light mt-0.5">{member.thpError}</span>
                                                             )}
                                                         </div>
                                                     ) : (
@@ -976,7 +976,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                                                             disabled={!member.selected}
                                                             className={`px-2 py-1 rounded text-xs font-medium border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                                                                 member.finalStatus === "active"
-                                                                    ? "bg-success text-white border-success"
+                                                                    ? "bg-success-dark text-white border-success"
                                                                     : "border-border text-text-secondary hover:bg-success/10"
                                                             }`}
                                                         >
@@ -990,7 +990,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                                                             disabled={!member.selected}
                                                             className={`px-2 py-1 rounded text-xs font-medium border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                                                                 member.finalStatus === "archived"
-                                                                    ? "bg-primary text-white border-primary"
+                                                                    ? "bg-primary-hover text-white border-primary"
                                                                     : "border-border text-text-secondary hover:bg-primary/10"
                                                             }`}
                                                         >
@@ -1038,7 +1038,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                             <ul className="divide-y divide-border">
                                 {ambiguousMatchRows.map((member) => (
                                     <li key={member.id} className="px-4 py-2 text-sm text-text-secondary flex items-center gap-2">
-                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-danger/20 text-danger">
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-danger/20 text-danger-light">
                                             Ambiguous Match
                                         </span>
                                         {member.playerName}
@@ -1067,7 +1067,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                             hasBlockingDiagnostics ||
                             hasAmbiguousMatches
                         }
-                        className="px-4 py-2 rounded-md bg-success text-white hover:bg-success/90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-4 py-2 rounded-md bg-success-dark text-white hover:bg-success-active cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isPending ? "Importing..." : `Import ${selectedCount} Row${selectedCount === 1 ? "" : "s"}`}
                     </button>
@@ -1081,7 +1081,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
         return (
             <div className="flex flex-col gap-6">
                 <div className="space-y-4">
-                    <div className="bg-surface border border-emerald-500/30 rounded-lg p-4">
+                    <div className="bg-surface border border-success/30 rounded-lg p-4">
                         <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider mb-3">Committed</h3>
                         <div className="grid grid-cols-3 gap-4">
                             <div className="bg-surface-secondary border border-border rounded-lg p-4 text-center">
@@ -1145,8 +1145,8 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
 
                 {importResult.errors.length > 0 && (
                     <div className="bg-danger/10 border border-danger/30 rounded-lg p-4">
-                        <p className="font-medium text-danger">Some errors occurred:</p>
-                        <ul className="mt-2 text-sm text-danger list-disc list-inside">
+                        <p className="font-medium text-danger-light">Some errors occurred:</p>
+                        <ul className="mt-2 text-sm text-danger-light list-disc list-inside">
                             {importResult.errors.map((err, idx) => (
                                 <li key={idx}>{err}</li>
                             ))}
@@ -1184,14 +1184,14 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                     {returnTo && (
                         <Link
                             href={returnTo}
-                            className="px-4 py-2 rounded-md border border-primary text-primary hover:bg-primary/10 inline-block text-center font-medium"
+                            className="px-4 py-2 rounded-md border border-primary text-primary-light hover:bg-primary/10 inline-block text-center font-medium"
                         >
                             Continue Setup
                         </Link>
                     )}
                     <Link
                         href={`/alliances/${allianceId}/members`}
-                        className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover inline-block text-center font-medium"
+                        className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active inline-block text-center font-medium"
                     >
                         View Members
                     </Link>

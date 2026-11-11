@@ -61,7 +61,7 @@ export function MemberAccountSection(props: MemberAccountSectionProps) {
                     {formatRole(props.membershipRole)}
                   </Badge>
                 </div>
-                <span className="text-sm text-success/80">{props.email}</span>
+                <span className="text-sm text-success-light">{props.email}</span>
               </div>
             </div>
           </div>

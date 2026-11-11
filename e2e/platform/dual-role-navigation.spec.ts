@@ -161,7 +161,7 @@ test.describe("Dual-role operator navigation", () => {
         await page.setViewportSize({ width, height: 667 });
 
         const brand = page.getByRole("link", {
-          name: "Alliance Command Center",
+          name: "Alliance Command Center home",
           exact: true,
         });
         const platformConsole = page.getByRole("link", {

@@ -25,7 +25,7 @@ const CONFIDENCE_STYLES: Record<
   },
   medium: {
     label: "Medium confidence",
-    className: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+    className: "bg-warning/10 text-warning-light border-warning/30",
   },
   low: {
     label: "Low confidence",
@@ -76,7 +76,7 @@ export function PeriodProposalReview({
     <div className="bg-surface border border-border rounded-xl p-4 text-xs space-y-4 shadow-sm">
       <div className="flex items-start justify-between border-b border-border pb-3">
         <div className="flex items-center space-x-2">
-          <span className="text-blue-500 font-bold text-lg">📅</span>
+          <span className="text-primary font-bold text-lg">📅</span>
           <div>
             <h4 className="font-semibold text-text-primary text-sm">
               {isBlocking
@@ -94,7 +94,7 @@ export function PeriodProposalReview({
           </div>
         </div>
         {qualifyingProposals.length > 0 && (
-          <span className="bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium px-2.5 py-1 rounded text-[11px]">
+          <span className="bg-primary/10 text-primary-light font-medium px-2.5 py-1 rounded text-[11px]">
             {qualifyingProposals.length} Confident Period
             {qualifyingProposals.length === 1 ? "" : "s"}
           </span>
@@ -104,15 +104,15 @@ export function PeriodProposalReview({
       <div
         className={`p-3 rounded-lg space-y-1 text-[11px] ${
           isBlocking
-            ? "bg-amber-500/10 border border-amber-500/30"
+            ? "bg-warning/10 border border-warning/30"
             : "bg-surface-secondary/60 border border-border/40"
         }`}
       >
-        <p className={isBlocking ? "font-medium text-amber-200" : "font-medium text-text-primary"}>
+        <p className={isBlocking ? "font-medium text-warning-light" : "font-medium text-text-primary"}>
           {review.evidenceSummary}
         </p>
         {isBlocking ? (
-          <p className="text-amber-300/90">
+          <p className="text-warning-light">
             ACC suggests what the spreadsheet means, but you decide what it becomes.
             The fixed-period import controls below are disabled until you explicitly
             choose how to proceed.
@@ -147,8 +147,8 @@ export function PeriodProposalReview({
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
                         prop.dateKind === "snapshot"
-                          ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20"
-                          : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                          ? "bg-primary/10 text-primary-light border-primary/20"
+                          : "bg-success/10 text-success-light border-success/20"
                       }`}
                     >
                       {prop.dateKind === "snapshot" ? "Snapshot" : "Range"}
@@ -195,7 +195,7 @@ export function PeriodProposalReview({
                 </div>
 
                 {prop.warnings.length > 0 && (
-                  <div className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 p-2 rounded border border-amber-500/20 space-y-0.5">
+                  <div className="text-[11px] text-warning-light bg-warning/10 p-2 rounded border border-warning/20 space-y-0.5">
                     {prop.warnings.map((w, idx) => (
                       <p key={idx}>⚠️ {w}</p>
                     ))}
@@ -208,7 +208,7 @@ export function PeriodProposalReview({
       )}
 
       {hasReviewable && (
-        <div className="bg-amber-500/5 p-3 rounded-lg border border-amber-500/20 space-y-2">
+        <div className="bg-warning/5 p-3 rounded-lg border border-warning/20 space-y-2">
           <p className="text-[11px] font-medium text-text-primary">
             Columns needing confirmation ({review.reviewableColumns.length})
           </p>
@@ -225,7 +225,7 @@ export function PeriodProposalReview({
                   <span className="text-text-muted">·</span>
                   <strong className="text-text-primary">&quot;{col.headerText}&quot;</strong>
                   <span className="text-text-muted">→ {col.proposedMetricName}</span>
-                  <span className="px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[10px]">
+                  <span className="px-1.5 py-0.5 rounded border border-warning/30 text-warning-light text-[10px]">
                     {REVIEWABLE_REASON_LABELS[col.reviewReason]}
                   </span>
                 </div>
@@ -307,7 +307,7 @@ export function PeriodProposalReview({
           <button
             type="button"
             onClick={onAcceptReview}
-            className="px-3 py-1.5 bg-primary text-white hover:bg-primary-hover rounded-md font-medium transition-colors cursor-pointer"
+            className="px-3 py-1.5 bg-primary-hover text-white hover:bg-primary-active rounded-md font-medium transition-colors cursor-pointer"
           >
             Review & Map to Existing Periods
           </button>

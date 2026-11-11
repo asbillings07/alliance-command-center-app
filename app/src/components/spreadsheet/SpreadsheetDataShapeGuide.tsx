@@ -51,7 +51,7 @@ export function SpreadsheetDataShapeGuide({ type, periodName }: SpreadsheetDataS
     <div className="bg-surface border border-border rounded-xl p-4 text-xs space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          <span className="text-amber-500 font-bold text-sm">📋</span>
+          <span className="text-warning-light font-bold text-sm">📋</span>
           <h4 className="font-semibold text-text-primary text-sm">
             {type === "metrics"
               ? `Expected Metric Spreadsheet Format ${periodName ? `(${periodName})` : ""}`
@@ -95,7 +95,7 @@ export function SpreadsheetDataShapeGuide({ type, periodName }: SpreadsheetDataS
                 <button
                   type="button"
                   onClick={handleDownload}
-                  className="px-2 py-1 bg-primary text-white hover:bg-primary-hover rounded transition-colors"
+                  className="px-2 py-1 bg-primary-hover text-white hover:bg-primary-active rounded transition-colors"
                 >
                   Download .csv Template
                 </button>

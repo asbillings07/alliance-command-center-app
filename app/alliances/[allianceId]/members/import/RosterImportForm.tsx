@@ -531,7 +531,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
 
           {!parseErrorCode && error && (
             <div className="mt-4 p-4 bg-danger/10 border border-danger/30 rounded-lg">
-              <p className="text-danger font-medium">{error}</p>
+              <p className="text-danger-light font-medium">{error}</p>
             </div>
           )}
         </div>
@@ -600,8 +600,8 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
         <SpreadsheetTranslationSummary mode="planned_roster" summary={plannedRosterSummary} />
 
         {columnTranslations.length > 0 && (
-          <div className="bg-card border border-border rounded-xl p-4 space-y-3">
-            <h3 className="font-semibold text-foreground text-sm">Source Column Translations</h3>
+          <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
+            <h3 className="font-semibold text-text-primary text-sm">Source Column Translations</h3>
             <div className="space-y-2">
               {columnTranslations.map((t) => (
                 <ColumnTranslationCard key={t.columnIndex} translation={t} />
@@ -611,14 +611,14 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
         )}
 
         {hasBlockingDiagnostics && (
-          <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger flex flex-col gap-1">
-            <p className="font-semibold text-danger">
+          <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger-light flex flex-col gap-1">
+            <p className="font-semibold text-danger-light">
               Workbook Cell Issues Detected in Mapped Columns ({blockingCellIssues.length})
             </p>
             <p className="text-sm text-text-secondary">
               Selected rows in mapped columns contain uncalculated formulas or error cells. Please re-save your file or adjust row selection before importing:
             </p>
-            <ul className="list-disc list-inside text-xs text-danger mt-1 max-h-32 overflow-y-auto space-y-0.5">
+            <ul className="list-disc list-inside text-xs text-danger-light mt-1 max-h-32 overflow-y-auto space-y-0.5">
               {blockingCellIssues.map((issue, idx) => (
                 <li key={idx}>
                   Cell <strong>{issue.address}</strong>: {issue.message}
@@ -667,8 +667,8 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
         )}
 
         {hasBlockingThpError && (
-          <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger flex flex-col gap-1">
-            <p className="font-semibold text-danger">Invalid THP Values Detected</p>
+          <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger-light flex flex-col gap-1">
+            <p className="font-semibold text-danger-light">Invalid THP Values Detected</p>
             <p className="text-sm text-text-secondary">
               Please fix invalid Total Hero Power (THP) values in selected rows before continuing. Accepted formats include: 450000000, 450.000.000, or &quot;450,000,000&quot;.
             </p>
@@ -676,7 +676,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
         )}
 
         {error && (
-          <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger">
+          <div className="p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger-light">
             <p className="font-medium">{error}</p>
           </div>
         )}
@@ -789,14 +789,14 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
                               placeholder="Not provided"
                               className={`w-full px-2 py-1 border rounded text-sm ${
                                 member.selected && member.thpError
-                                  ? "border-danger bg-danger/10 text-danger"
+                                  ? "border-danger bg-danger/10 text-danger-light"
                                   : member.selected
                                   ? "border-border bg-surface text-text-primary"
                                   : "border-border/50 bg-surface-secondary text-text-disabled"
                               }`}
                             />
                             {member.selected && member.thpError && (
-                              <span className="text-xs text-danger mt-0.5">{member.thpError}</span>
+                              <span className="text-xs text-danger-light mt-0.5">{member.thpError}</span>
                             )}
                             {member.selected && !member.thpError && member.parsedThp !== undefined && (
                               <span className="text-xs text-text-muted mt-0.5 font-mono">
@@ -896,7 +896,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
                 hasBlockingThpError ||
                 hasBlockingDiagnostics
               }
-              className="px-4 py-2 rounded-md bg-success text-white hover:bg-success/90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 rounded-md bg-success-dark text-white hover:bg-success-active cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isPending
                 ? "Importing..."
@@ -976,8 +976,8 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
 
         {importResult.errors.length > 0 && (
           <div className="bg-danger/10 border border-danger/30 rounded-lg p-4">
-            <p className="font-medium text-danger">Some errors occurred:</p>
-            <ul className="mt-2 text-sm text-danger list-disc list-inside">
+            <p className="font-medium text-danger-light">Some errors occurred:</p>
+            <ul className="mt-2 text-sm text-danger-light list-disc list-inside">
               {importResult.errors.map((err, idx) => (
                 <li key={idx}>{err}</li>
               ))}
@@ -1003,14 +1003,14 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
           {returnTo && (
             <Link
               href={returnTo}
-              className="px-4 py-2 rounded-md border border-primary text-primary hover:bg-primary/10 inline-block text-center font-medium"
+              className="px-4 py-2 rounded-md border border-primary text-primary-light hover:bg-primary/10 inline-block text-center font-medium"
             >
               Continue Setup
             </Link>
           )}
           <Link
             href={`/alliances/${allianceId}/members`}
-            className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover inline-block text-center font-medium"
+            className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active inline-block text-center font-medium"
           >
             View Members
           </Link>

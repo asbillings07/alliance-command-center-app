@@ -113,10 +113,10 @@ test.describe("Platform Access Requests", () => {
     await expect(backLink).toHaveAttribute("href", "/platform/beta");
 
     // PlatformNav highlights "Beta" via descendant-path handling — no separate
-    // nav entry exists for this page (#177 design decision). PlatformNav
-    // marks the active item with a class toggle, not aria-current.
+    // nav entry exists for this page (#177 design decision). Assert the active
+    // page semantics; the visual suite covers its current brand treatment.
     const betaNavLink = page.getByRole("link", { name: "Beta", exact: true }).first();
-    await expect(betaNavLink).toHaveClass(/text-primary/);
+    await expect(betaNavLink).toHaveAttribute("aria-current", "page");
   });
 
   test("beta-wave combobox: blank default, keyboard operation, invalid/overlong values, and exact-existing submission", async ({

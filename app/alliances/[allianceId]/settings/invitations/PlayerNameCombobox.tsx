@@ -91,15 +91,15 @@ export function PlayerNameCombobox({
     <div ref={containerRef} className="relative">
       <label
         htmlFor="playerName"
-        className="block text-sm font-medium text-[#D1D5DB] mb-1.5"
+        className="block text-sm font-medium text-text-secondary mb-1.5"
       >
         Player Name
       </label>
 
       {selectedDisplay ? (
-        <div className="flex items-center gap-2 px-3 py-2 border border-[#374151] rounded-md bg-[#1F2937]">
+        <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-md bg-surface-secondary">
           <svg
-            className="w-4 h-4 text-[#9CA3AF]"
+            className="w-4 h-4 text-text-muted"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -111,11 +111,11 @@ export function PlayerNameCombobox({
               d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
             />
           </svg>
-          <span className="flex-1 text-[#F9FAFB] text-sm">{selectedDisplay}</span>
+          <span className="flex-1 text-text-primary text-sm">{selectedDisplay}</span>
           <button
             type="button"
             onClick={handleClear}
-            className="text-[#9CA3AF] hover:text-[#D1D5DB]"
+            className="text-text-muted hover:text-text-secondary"
           >
             <svg
               className="w-4 h-4"
@@ -141,15 +141,15 @@ export function PlayerNameCombobox({
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setIsOpen(true)}
           placeholder="Search existing members or type a new name..."
-          className="w-full px-3 py-2 border border-[#374151] rounded-md bg-[#1F2937] text-[#F9FAFB] placeholder-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:border-transparent text-sm"
+          className="w-full px-3 py-2 border border-border rounded-md bg-surface-secondary text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
           autoComplete="off"
         />
       )}
 
       {isOpen && !selectedDisplay && (
-        <div className="absolute z-10 w-full mt-1 bg-[#273449] border border-[#374151] rounded-md shadow-lg max-h-60 overflow-auto">
+        <div className="absolute z-10 w-full mt-1 bg-surface-elevated border border-border rounded-md shadow-lg max-h-60 overflow-auto">
           {isLoading && (
-            <div className="px-3 py-2.5 text-[#9CA3AF] text-sm">Searching...</div>
+            <div className="px-3 py-2.5 text-text-muted text-sm">Searching...</div>
           )}
 
           {!isLoading && members.length > 0 && (
@@ -159,10 +159,10 @@ export function PlayerNameCombobox({
                   key={member.id}
                   type="button"
                   onClick={() => handleSelectMember(member)}
-                  className="w-full px-3 py-2.5 text-left hover:bg-[#1F2937] flex items-center gap-2 text-sm"
+                  className="w-full px-3 py-2.5 text-left hover:bg-surface-secondary flex items-center gap-2 text-sm"
                 >
                   <svg
-                    className="w-4 h-4 text-[#9CA3AF]"
+                    className="w-4 h-4 text-text-muted"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -174,14 +174,14 @@ export function PlayerNameCombobox({
                       d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
                     />
                   </svg>
-                  <span className="text-[#F9FAFB]">{member.playerName}</span>
+                  <span className="text-text-primary">{member.playerName}</span>
                 </button>
               ))}
             </>
           )}
 
           {!isLoading && members.length === 0 && query.trim() && (
-            <div className="px-3 py-2.5 text-[#9CA3AF] text-sm">
+            <div className="px-3 py-2.5 text-text-muted text-sm">
               No existing members match
             </div>
           )}
@@ -189,15 +189,15 @@ export function PlayerNameCombobox({
           {showCreateOption && (
             <>
               {members.length > 0 && (
-                <div className="border-t border-[#374151]" />
+                <div className="border-t border-border" />
               )}
               <button
                 type="button"
                 onClick={handleCreateNew}
-                className="w-full px-3 py-2.5 text-left hover:bg-[#1F2937] text-[#D1D5DB] flex items-center gap-2 text-sm"
+                className="w-full px-3 py-2.5 text-left hover:bg-surface-secondary text-text-secondary flex items-center gap-2 text-sm"
               >
                 <svg
-                  className="w-4 h-4 text-[#9CA3AF]"
+                  className="w-4 h-4 text-text-muted"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -215,7 +215,7 @@ export function PlayerNameCombobox({
           )}
 
           {!isLoading && members.length === 0 && !query.trim() && (
-            <div className="px-3 py-2.5 text-[#9CA3AF] text-sm">
+            <div className="px-3 py-2.5 text-text-muted text-sm">
               Start typing to search or create
             </div>
           )}

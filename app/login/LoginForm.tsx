@@ -37,13 +37,13 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
         <div className="space-y-2">
           <p>
             Have a beta code?{" "}
-            <Link href="/redeem" className="text-primary hover:text-primary-hover underline">
+            <Link href="/redeem" className="text-primary hover:text-text-primary underline">
               Redeem it here
             </Link>
           </p>
           <p>
             Invited to an alliance?{" "}
-            <Link href="/invite" className="text-primary hover:text-primary-hover underline">
+            <Link href="/invite" className="text-primary hover:text-text-primary underline">
               Enter invitation code
             </Link>
           </p>
@@ -102,7 +102,7 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
           <div className="mt-2 text-right">
             <Link
               href="/forgot-password"
-              className="text-sm text-primary hover:text-primary-hover underline"
+              className="text-sm text-primary hover:text-text-primary underline"
             >
               Forgot your password?
             </Link>

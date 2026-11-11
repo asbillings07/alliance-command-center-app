@@ -71,7 +71,7 @@ export function PageLayout({
 }: PageLayoutProps) {
   return (
     <div className="min-h-screen bg-background">
-      <div className={`mx-auto ${maxWidthClasses[maxWidth]} p-8`}>
+      <div className={`mx-auto ${maxWidthClasses[maxWidth]} px-4 py-6 sm:p-8`}>
         {/* Breadcrumb */}
         {breadcrumb && breadcrumb.length > 0 && (
           <nav className="mb-4" aria-label="Breadcrumb">
@@ -120,8 +120,8 @@ export function PageLayout({
           (unwrapped) width, the same flex default-sizing fix.
         */}
         <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-text-primary">{title}</h1>
+          <div className="min-w-0 workspace-heading">
+            <h1 className="text-2xl font-semibold tracking-tight text-text-primary">{title}</h1>
             {description && (
               <p className="mt-1 text-sm text-text-muted">{description}</p>
             )}

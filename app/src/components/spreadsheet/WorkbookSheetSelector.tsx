@@ -23,7 +23,7 @@ export function WorkbookSheetSelector({
 
   return (
     <div className="flex flex-col space-y-2 my-4">
-      <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      <label className="text-xs font-semibold uppercase tracking-wider text-text-muted">
         Worksheet Selection ({visibleSheets.length} Worksheets)
       </label>
       <div className="flex flex-wrap gap-2">
@@ -39,16 +39,16 @@ export function WorkbookSheetSelector({
               onClick={() => onSelectSheet(sheet.index)}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors border flex items-center space-x-2 ${
                 isSelected
-                  ? "bg-accent text-accent-foreground border-accent shadow-sm"
-                  : "bg-card text-muted-foreground border-border hover:bg-muted hover:text-foreground"
+                  ? "bg-surface-elevated text-text-primary border-primary shadow-sm"
+                  : "bg-surface text-text-muted border-border hover:bg-surface-secondary hover:text-text-primary"
               } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
             >
               <span>{sheet.name}</span>
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full ${
                   isSelected
-                    ? "bg-accent-foreground/10 text-accent-foreground"
-                    : "bg-muted text-muted-foreground"
+                    ? "bg-primary/10 text-text-primary"
+                    : "bg-surface-secondary text-text-muted"
                 }`}
               >
                 {dataRowCount} {dataRowCount === 1 ? "row" : "rows"}

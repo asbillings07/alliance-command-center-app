@@ -42,7 +42,7 @@ export function ConfirmMemberForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="bg-danger/10 border border-danger/30 rounded-md p-3 text-sm text-danger">
+        <div className="bg-danger/10 border border-danger/30 rounded-md p-3 text-sm text-danger-light">
           {error}
         </div>
       )}
@@ -99,7 +99,7 @@ export function ConfirmMemberForm({
       <button
         type="submit"
         disabled={isPending}
-        className="w-full px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm transition-colors"
+        className="w-full px-4 py-2 bg-primary-hover text-white rounded-md hover:bg-primary-active disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm transition-colors"
       >
         {isPending ? "Confirming..." : "Continue"}
       </button>

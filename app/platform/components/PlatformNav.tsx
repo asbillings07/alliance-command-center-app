@@ -110,11 +110,12 @@ export function PlatformNav({
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  aria-current={isActive ? "page" : undefined}
                   className={`
                   block px-3 py-2 rounded-lg text-sm transition-colors
                   ${
                     isActive
-                      ? "bg-primary/10 text-primary font-medium"
+                      ? "bg-brand-selection text-brand-text font-medium ring-1 ring-brand-violet/50"
                       : "text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
                   }
                 `}
@@ -154,11 +155,12 @@ export function PlatformNavMobile({
       />
 
       {/* Drawer */}
-      <div className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-surface border-r border-border lg:hidden">
+      <div className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-brand-surface border-r border-border lg:hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <span className="font-semibold text-text-primary">Navigation</span>
           <button
             onClick={onClose}
+            aria-label="Close navigation menu"
             className="p-1 text-text-muted hover:text-text-primary"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -177,12 +179,13 @@ export function PlatformNavMobile({
                 <li key={item.href}>
                   <Link
                     href={item.href}
+                    aria-current={isActive ? "page" : undefined}
                     onClick={onClose}
                     className={`
                       block px-3 py-3 rounded-lg transition-colors
                       ${
                         isActive
-                          ? "bg-primary/10 text-primary font-medium"
+                          ? "bg-brand-selection text-brand-text font-medium ring-1 ring-brand-violet/50"
                           : "text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
                       }
                     `}

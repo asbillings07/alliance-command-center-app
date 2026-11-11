@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { BrandHeader } from "@/app/src/components/BrandHeader";
+import { DefaultBrandHeader } from "@/app/src/components/DefaultBrandHeader";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -26,7 +28,10 @@ export default function RootLayout({
     <html lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <DefaultBrandHeader><BrandHeader publicPage /></DefaultBrandHeader>
+        {children}
+      </body>
     </html>
   );
 }

@@ -102,13 +102,15 @@ describe("AlliancesLayout", () => {
     expect(isPlatformAdmin).toHaveBeenCalledWith("member-1");
   });
 
-  it("marks the brand link for narrow-viewport accessibility", async () => {
+  it("includes accessible product identity and the release stage", async () => {
     vi.mocked(isPlatformAdmin).mockResolvedValue(false);
 
     const layout = await AlliancesLayout({ children: <div>Content</div> });
     const html = renderToStaticMarkup(layout);
 
-    expect(html).toContain('aria-label="Alliance Command Center"');
-    expect(html).toContain("hidden truncate sm:inline");
+    expect(html).toContain('aria-label="Alliance Command Center home"');
+    expect(html).toContain("Command Center");
+    expect(html).toContain('data-testid="release-stage-badge"');
+    expect(html).toContain("Private beta");
   });
 });

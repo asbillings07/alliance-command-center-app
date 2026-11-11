@@ -5,6 +5,7 @@ import { PlatformNav } from "./components/PlatformNav";
 import { PlatformSearch } from "./components/PlatformSearch";
 import { PlatformFooter } from "./components/PlatformFooter";
 import { MobileNavWrapper } from "./components/MobileNavWrapper";
+import { BrandHeader } from "@/app/src/components/BrandHeader";
 
 export const metadata = {
   title: "Platform Operations - Alliance Command Center",
@@ -22,30 +23,20 @@ export default async function PlatformLayout({
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* Header with Search - Mobile & Desktop */}
-      <header className="sticky top-0 z-30 bg-surface border-b border-border">
-        <div className="flex items-center justify-between px-4 py-3 lg:px-6">
-          <div className="flex items-center gap-3">
-            {/* Mobile menu button */}
-            <MobileNavWrapper workspace={workspace} />
-            <h1 className="text-lg font-semibold text-text-primary">
-              Platform Operations
-            </h1>
-          </div>
-          <div className="flex-1 max-w-md mx-4">
-            <PlatformSearch />
-          </div>
-          <div className="w-8 lg:w-auto" />
-        </div>
-      </header>
+      <BrandHeader
+        href="/platform/overview"
+        actions={<><MobileNavWrapper workspace={workspace} /><h1 className="text-xs sm:text-sm font-semibold text-text-secondary">Platform Operations</h1></>}
+        tools={<div className="w-full lg:w-80"><PlatformSearch /></div>}
+      />
 
       <div className="flex flex-1">
         {/* Desktop Sidebar Navigation */}
-        <aside className="hidden lg:flex lg:w-56 lg:flex-col lg:border-r lg:border-border lg:bg-surface">
+        <aside className="hidden lg:flex lg:w-56 lg:shrink-0 lg:flex-col lg:border-r lg:border-border lg:bg-brand-surface">
           <PlatformNav workspace={workspace} />
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-auto">
+        <main className="min-w-0 flex-1 overflow-auto">
           <div className="p-4 lg:p-6">{children}</div>
         </main>
       </div>

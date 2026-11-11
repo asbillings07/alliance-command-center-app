@@ -40,7 +40,7 @@ export function SetupProgressCard({
         </div>
         <Link
           href={recommendedTask?.href ?? `/alliances/${allianceId}/setup`}
-          className="shrink-0 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-hover"
+          className="shrink-0 px-4 py-2 bg-primary-hover text-white text-sm font-medium rounded-lg hover:bg-primary-active"
         >
           Continue Setup
         </Link>

@@ -33,6 +33,14 @@ test.describe("Platform Operations Console", () => {
     await page.waitForURL(/\/(app|alliances|platform)/);
   });
 
+  for (const route of ["/platform/setup", "/platform/beta"]) {
+    test(`@a11y ${route} keeps summary and status text readable`, async ({ page }) => {
+      await page.goto(route);
+      await page.waitForLoadState("networkidle");
+      await checkA11yWithOptions(page, { runOnly: ["wcag2a", "wcag2aa"] });
+    });
+  }
+
   test.describe("Layout and Navigation", () => {
     test("redirects /platform to /platform/overview", async ({ page }) => {
       await page.goto("/platform");

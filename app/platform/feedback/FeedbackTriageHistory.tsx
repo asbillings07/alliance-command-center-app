@@ -75,7 +75,7 @@ export function FeedbackTriageHistory({ feedbackId }: { feedbackId: string }) {
       {open && (
         <div className="mt-2 space-y-3">
           {error && (
-            <p className="text-sm text-danger" data-testid="history-error">
+            <p className="text-sm text-danger-light" data-testid="history-error">
               {error}
             </p>
           )}
