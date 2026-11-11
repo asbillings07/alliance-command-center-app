@@ -1206,7 +1206,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                   key={region.id}
                   className={`flex items-center gap-2 text-sm p-2 rounded cursor-pointer border ${
                     selectedRegionIndex === idx
-                      ? "border-primary bg-primary/10 text-text-primary-light font-medium"
+                      ? "border-primary bg-primary/10 text-text-primary font-medium"
                       : "border-border text-text-secondary hover:bg-surface"
                   }`}
                 >
@@ -1335,7 +1335,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary font-medium">
               Destination Period: {periodName}
             </div>
-            <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary-light">
+            <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary">
               <p className="font-medium text-text-primary">Evaluation Results Import Scope</p>
               <p className="mt-0.5 text-text-secondary">
                 Importing results for destination period &apos;{periodName}&apos;. This matches existing active members in your member list; unmatched names are skipped. During mapping, authorized users may attach an existing metric or create a new one. This workflow does not create members.
@@ -1502,7 +1502,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             </div>
 
             {mappedColumns.length > 0 && (
-              <div className="p-4 rounded-md bg-primary/10 border border-primary/30 text-text-primary-light">
+              <div className="p-4 rounded-md bg-primary/10 border border-primary/30 text-text-primary">
                 <p className="font-medium mb-1">
                   Ready to import {mappedColumns.length} {mappedColumns.length === 1 ? "metric" : "metrics"}:
                 </p>
@@ -1695,7 +1695,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
       <SpreadsheetDataShapeGuide type="metrics" periodName={periodName} />
 
-      <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary-light">
+      <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary">
         <p className="font-medium text-text-primary">Destination: {periodName}</p>
         <p className="mt-0.5 text-text-secondary">
           Importing metric results directly into active evaluation period &apos;{periodName}&apos;. Member names are matched against active alliance members. Authorized leaders can map columns to existing metrics, attach library metrics, or create new metrics.

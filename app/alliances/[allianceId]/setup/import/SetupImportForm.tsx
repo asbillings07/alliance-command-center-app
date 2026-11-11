@@ -206,7 +206,7 @@ export function SetupImportForm({
                   key={region.id}
                   className={`flex items-center gap-2 text-sm p-2 rounded cursor-pointer border ${
                     selectedRegionIndex === idx
-                      ? "border-primary bg-primary/10 text-text-primary-light font-medium"
+                      ? "border-primary bg-primary/10 text-text-primary font-medium"
                       : "border-border text-text-secondary hover:bg-surface"
                   }`}
                 >
@@ -304,7 +304,7 @@ export function SetupImportForm({
     <div className="w-full max-w-2xl flex flex-col gap-5">
       <NumbersExportGuide isOpen={showNumbersGuide} onClose={() => setShowNumbersGuide(false)} />
 
-      <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary-light">
+      <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary">
         <p className="font-medium">Import evaluation results from your spreadsheet</p>
         <p className="mt-1 text-text-secondary">
           ACC analyzes your workbook to detect evaluation periods and metric columns. No data is

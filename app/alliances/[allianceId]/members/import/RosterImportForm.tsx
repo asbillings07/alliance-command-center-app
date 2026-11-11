@@ -501,7 +501,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
             </div>
           </div>
 
-          <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary-light mb-4">
+          <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-text-primary mb-4">
             <p className="font-medium text-text-primary">Scope: Alliance Members</p>
             <p className="mt-0.5 text-text-secondary">
               This workflow updates details for <strong>Alliance Members</strong> (Name, Total Hero Power, Role / Game Rank). It does not import evaluation metrics. Existing active members are identified and left unchanged.
@@ -656,7 +656,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
         )}
 
         {duplicateInFileRows.length > 0 && (
-          <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-text-primary-light flex flex-col gap-1">
+          <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-text-primary flex flex-col gap-1">
             <p className="font-semibold text-text-primary">
               {duplicateInFileRows.length} Duplicate Row{duplicateInFileRows.length === 1 ? "" : "s"} Highlighted in File
             </p>

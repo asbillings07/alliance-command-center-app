@@ -717,7 +717,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                 )}
 
                 {duplicateInFileRows.length > 0 && (
-                    <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-text-primary-light flex flex-col gap-1">
+                    <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-text-primary flex flex-col gap-1">
                         <p className="font-semibold text-text-primary">
                             {duplicateInFileRows.length} Duplicate Row{duplicateInFileRows.length === 1 ? "" : "s"} Highlighted in File
                         </p>
