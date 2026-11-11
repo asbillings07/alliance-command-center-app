@@ -6,12 +6,28 @@ import type { Page } from "@playwright/test";
 import { releaseStage, releaseStageLabels } from "@/app/src/lib/releaseStage";
 
 async function expectReleaseStage(page: Page) {
-  const banner = page.getByRole("region", { name: "Release stage", exact: true });
-  await expect(banner).toHaveCount(1);
-  await expect(banner).toBeVisible();
-  await expect(banner).toHaveText(releaseStageLabels[releaseStage]);
-  const position = await banner.boundingBox();
-  expect(position?.y).toBe(0);
+  const badge = page.getByTestId("release-stage-badge");
+  const header = page.getByTestId("brand-header");
+  await expect(header).toHaveCount(1);
+  await expect(badge).toHaveCount(1);
+  await expect(badge).toBeVisible();
+  await expect(badge).toHaveText(releaseStageLabels[releaseStage]);
+  const position = await badge.boundingBox();
+  const name = await header.getByRole("link", { name: "Alliance Command Center home", exact: true }).boundingBox();
+  expect(position).not.toBeNull();
+  expect(name).not.toBeNull();
+  if (page.viewportSize()!.width < 640) {
+    expect(position!.y).toBeGreaterThanOrEqual(name!.y + name!.height);
+    expect(Math.abs(position!.x - (name!.x + 40))).toBeLessThanOrEqual(1);
+    const actions = header.getByTestId("brand-header-actions");
+    if (await actions.count()) {
+      const controls = await actions.boundingBox();
+      expect(Math.abs(position!.y + position!.height / 2 - (controls!.y + controls!.height / 2))).toBeLessThanOrEqual(1);
+    }
+  } else {
+    expect(position!.x).toBeGreaterThan(name!.x + name!.width);
+    expect(Math.abs(position!.y + position!.height / 2 - (name!.y + name!.height / 2))).toBeLessThanOrEqual(1);
+  }
 }
 
 /**
@@ -63,6 +79,7 @@ test.describe("Visual Regression", () => {
     ]) {
       await page.goto(`/alliances/${testAllianceId}${path}`);
       await page.waitForLoadState("networkidle");
+      await expectReleaseStage(page);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
       await checkA11yLevelAA(page);
@@ -272,14 +289,38 @@ test.describe("Auth Pages Visual", () => {
     await expectReleaseStage(page);
 
     await page.setViewportSize({ width: 320, height: 780 });
-    for (const path of ["/", "/login", "/invite/invalid-release-stage", "/redeem/invalid-release-stage", "/account/email/verify/invalid-release-stage", "/missing-release-stage-page"]) {
+    for (const path of ["/", "/login", "/register", "/forgot-password", "/request-access", "/invite", "/redeem", "/invite/invalid-release-stage", "/redeem/invalid-release-stage", "/reset-password/invalid-release-stage", "/account/email/verify/invalid-release-stage", "/design-system", "/missing-release-stage-page", "/alliances/missing-release-stage/nested-missing-page", "/platform/missing-release-stage-page"]) {
       await page.goto(path);
       await expectReleaseStage(page);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
-      await checkA11yWithOptions(page, { include: ['[aria-label="Release stage"]'], runOnly: ["wcag2a", "wcag2aa"] });
+      await checkA11yWithOptions(page, { include: ['[data-testid="brand-header"]'], runOnly: ["wcag2a", "wcag2aa"] });
       if (path === "/") {
         await expect(page).toHaveScreenshot("welcome-release-stage-mobile.png", { fullPage: true, animations: "disabled" });
       }
+    }
+  });
+
+  test("@visual Sign-up form includes the shared badge on desktop and mobile", async ({ page }, testInfo) => {
+    const token = `visual-register-${Date.now()}-${testInfo.retry}`;
+    const participant = await prisma.betaParticipant.create({ data: {} });
+    const invitation = await prisma.betaInvitation.create({ data: {
+      email: "visual-register@example.test", token, code: token,
+      expiresAt: new Date(Date.now() + 86_400_000), participantId: participant.id,
+    } });
+    try {
+      await page.goto(`/register?callbackUrl=${encodeURIComponent(`/redeem/${token}`)}`);
+      await expect(page.getByRole("heading", { name: "Create Account", exact: true })).toBeVisible();
+      for (const width of [1280, 320]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await expectReleaseStage(page);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+        await checkA11yLevelAA(page);
+        await expect(page).toHaveScreenshot(`register-${width}.png`, { fullPage: true, animations: "disabled" });
+      }
+    } finally {
+      await prisma.betaInvitation.delete({ where: { id: invitation.id } });
+      await prisma.betaParticipant.delete({ where: { id: participant.id } });
     }
   });
 

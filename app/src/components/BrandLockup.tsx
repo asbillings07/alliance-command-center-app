@@ -6,20 +6,20 @@ export function BrandLockup({ compact = false }: { compact?: boolean }) {
   const size = compact ? 36 : 48;
 
   return (
-    <span className="inline-flex min-w-0 items-center gap-3">
+    <span className="inline-flex min-w-0 items-center gap-2 sm:gap-3">
       <Image
         src={allianceIcon}
         alt=""
         width={size}
         height={size}
         priority={!compact}
-        className="shrink-0 object-contain"
+        className={`h-8 w-8 shrink-0 object-contain ${compact ? "sm:h-9 sm:w-9" : "sm:h-12 sm:w-12"}`}
       />
-      <span className={compact ? "hidden truncate sm:inline" : "min-w-0"}>
-        <span className="block text-xl font-semibold leading-tight tracking-tight text-text-primary">
+      <span className="min-w-0">
+        <span className="block text-lg sm:text-xl font-semibold leading-tight tracking-tight text-text-primary">
           Alliance
         </span>
-        <span className="block text-[10px] font-medium uppercase leading-relaxed tracking-[0.18em] text-text-muted">
+        <span className="block whitespace-nowrap text-[9px] sm:text-[10px] font-medium uppercase leading-relaxed tracking-[0.17em] sm:tracking-[0.18em] text-text-muted">
           Command Center
         </span>
       </span>

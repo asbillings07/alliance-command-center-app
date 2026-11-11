@@ -2,7 +2,6 @@ import Link from "next/link";
 import { auth } from "@/app/src/lib/auth";
 import { redirect } from "next/navigation";
 import { Button } from "@/app/src/components/client";
-import { BrandLockup } from "@/app/src/components/BrandLockup";
 import { releaseStage, releaseStageLabels } from "@/app/src/lib/releaseStage";
 
 const perspectives = [
@@ -16,11 +15,7 @@ export default async function HomePage() {
   if (session?.user) redirect("/app");
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 sm:px-8 lg:px-10">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border py-6 sm:py-8">
-        <BrandLockup />
-      </header>
-
+    <div className="mx-auto flex flex-1 w-full max-w-6xl flex-col px-5 sm:px-8 lg:px-10">
       <main className="grid flex-1 items-center gap-10 py-10 sm:py-16 lg:grid-cols-[1.25fr_1fr] lg:gap-x-20 lg:gap-y-8">
         <section aria-labelledby="welcome-heading" className="lg:self-end">
           <p className="brand-kicker mb-5">Built for Last War leadership</p>

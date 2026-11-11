@@ -5,8 +5,7 @@ import { PlatformNav } from "./components/PlatformNav";
 import { PlatformSearch } from "./components/PlatformSearch";
 import { PlatformFooter } from "./components/PlatformFooter";
 import { MobileNavWrapper } from "./components/MobileNavWrapper";
-import { BrandLockup } from "@/app/src/components/BrandLockup";
-import Link from "next/link";
+import { BrandHeader } from "@/app/src/components/BrandHeader";
 
 export const metadata = {
   title: "Platform Operations - Alliance Command Center",
@@ -24,24 +23,11 @@ export default async function PlatformLayout({
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* Header with Search - Mobile & Desktop */}
-      <header className="sticky top-12 z-50 bg-brand-surface border-b border-border">
-        <div className="brand-rule" aria-hidden="true" />
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3 lg:px-6">
-          <div className="flex items-center gap-3">
-            {/* Mobile menu button */}
-            <MobileNavWrapper workspace={workspace} />
-            <Link href="/platform/overview" aria-label="Alliance Command Center platform overview" className="shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-              <BrandLockup compact />
-            </Link>
-            <h1 className="border-l border-border pl-3 text-sm font-semibold text-text-secondary">
-              Platform Operations
-            </h1>
-          </div>
-          <div className="w-full sm:ml-auto sm:w-64 lg:w-80">
-            <PlatformSearch />
-          </div>
-        </div>
-      </header>
+      <BrandHeader
+        href="/platform/overview"
+        actions={<><MobileNavWrapper workspace={workspace} /><h1 className="text-xs sm:text-sm font-semibold text-text-secondary">Platform Operations</h1></>}
+        tools={<div className="w-full lg:w-80"><PlatformSearch /></div>}
+      />
 
       <div className="flex flex-1">
         {/* Desktop Sidebar Navigation */}

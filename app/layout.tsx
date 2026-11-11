@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { ReleaseStageBanner } from "@/app/src/components/ReleaseStageBanner";
+import { BrandHeader } from "@/app/src/components/BrandHeader";
+import { DefaultBrandHeader } from "@/app/src/components/DefaultBrandHeader";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,7 +29,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <ReleaseStageBanner />
+        <DefaultBrandHeader><BrandHeader publicPage /></DefaultBrandHeader>
         {children}
       </body>
     </html>

@@ -1,6 +1,4 @@
 import { ReactNode } from "react";
-import Link from "next/link";
-import { BrandLockup } from "./BrandLockup";
 
 /**
  * AuthLayout Props
@@ -42,13 +40,7 @@ export function AuthLayout({
   footer,
 }: AuthLayoutProps) {
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 sm:px-8 lg:px-10">
-      <header className="border-b border-border py-6 sm:py-8">
-        <Link href="/" aria-label="Alliance Command Center home" className="inline-flex rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">
-          <BrandLockup />
-        </Link>
-      </header>
-
+    <div className="mx-auto flex flex-1 w-full max-w-6xl flex-col px-5 sm:px-8 lg:px-10">
       <main className="grid flex-1 items-center gap-10 py-8 sm:py-12 lg:grid-cols-[1fr_1fr] lg:gap-20">
         <aside className="hidden lg:block" aria-label="About Alliance Command Center">
           <p className="brand-kicker mb-5">A shared view. A stronger alliance.</p>

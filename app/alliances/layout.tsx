@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { BrandLockup } from "@/app/src/components/BrandLockup";
+import { BrandHeader } from "@/app/src/components/BrandHeader";
 import { auth } from "@/app/src/lib/auth";
 import { isPlatformAdmin } from "@/app/src/lib/auth/requirePlatformAdmin";
 import {
@@ -45,25 +44,11 @@ export default async function AlliancesLayout({
     // own). A second full-height wrapper would stack with the child's and, with
     // the sticky header, push the page past 100vh (extra scroll/whitespace).
     <div className="bg-background">
-      <header className="sticky top-12 z-30 border-b border-border bg-brand-surface">
-        <div aria-hidden="true" className="brand-rule" />
-        <div className="flex min-w-0 items-center justify-between gap-2 px-4 py-3 lg:px-6">
-          <Link
-            href="/app"
-            aria-label="Alliance Command Center"
-            className="flex min-w-0 shrink items-center gap-2.5 text-sm font-semibold text-text-primary transition-colors hover:text-primary"
-          >
-            <BrandLockup compact />
-          </Link>
-          {session?.user && (
-            <div className="flex shrink-0 items-center gap-0.5 md:gap-1">
-              {showPlatformConsole && <PlatformConsoleNavLink compact />}
-              <AccountNavLink compact />
-              <SignOutButton variant="ghost" compact />
-            </div>
-          )}
-        </div>
-      </header>
+      <BrandHeader
+        href="/app"
+        actions={session?.user ? <><AccountNavLink /><SignOutButton variant="ghost" /></> : undefined}
+        tools={showPlatformConsole ? <PlatformConsoleNavLink /> : undefined}
+      />
 
       {children}
 

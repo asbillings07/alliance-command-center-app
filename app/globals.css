@@ -118,6 +118,55 @@ body {
   padding-left: 1rem;
 }
 
+/* Approved mobile header: name first, then badge and account actions aligned.
+ * The 32px first track plus 8px gap aligns the badge with the wordmark. */
+.brand-header-grid {
+  display: grid;
+  grid-template-columns: 32px max-content minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 8px;
+  align-items: center;
+  padding: 14px 16px 6px;
+}
+.brand-header-home { grid-column: 1 / -1; grid-row: 1; }
+.brand-header-badge {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+  padding: 5px 10px;
+  font-size: 11px;
+  line-height: 16px;
+}
+.brand-header-actions {
+  grid-column: 3;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 2px;
+}
+.brand-header-tools { grid-column: 1 / -1; min-width: 0; }
+@media (width < 640px) {
+  .brand-header-actions :is(a, button) {
+    min-height: 44px;
+    padding: 8px 5px;
+    font-size: 12px;
+  }
+  .brand-header-actions svg { width: 14px; height: 14px; margin-right: 5px; }
+}
+@media (width >= 640px) {
+  .brand-header-grid { grid-template-columns: auto auto minmax(0, 1fr); gap: 16px; padding: 12px 24px; }
+  .brand-header-home { grid-column: 1; grid-row: 1; }
+  .brand-header-badge { grid-column: 2; grid-row: 1; padding: 6px 12px; font-size: 12px; }
+  .brand-header-actions { grid-column: 3; grid-row: 1; gap: 4px; }
+  .brand-header-public { padding: 24px 32px; }
+}
+@media (width >= 1024px) {
+  .brand-header-with-tools { grid-template-columns: auto auto auto minmax(0, 1fr); }
+  .brand-header-tools { grid-column: 4; grid-row: 1; justify-self: end; }
+  .brand-header-public { padding: 32px 40px; }
+}
+
 /* Driver.js uses a portal. Scope its vendor defaults to our tour class rather
  * than relying on a parent surface or stylesheet import order. */
 .driver-popover.acc-tour {
