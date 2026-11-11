@@ -53,7 +53,9 @@ test.describe("Visual Regression", () => {
     await page.getByLabel(/email/i).fill(process.env.TEST_OWNER_EMAIL!);
     await page.getByLabel(/password/i).fill(process.env.TEST_OWNER_PASSWORD!);
     await page.getByRole("button", { name: /sign in/i }).click();
-    await page.waitForURL(/\/(app|alliances)/);
+    // /app only resolves the session and redirects; measure the final shell.
+    await page.waitForURL(/\/alliances\//);
+    await page.waitForLoadState("networkidle");
     await expectReleaseStage(page);
   });
 
