@@ -65,7 +65,8 @@ function HistogramSvg({
         const labelY = Math.max(y - 4, 12);
         return (
           <g key={index} data-testid={`${testId}-bin-${index}`}>
-            <rect x={x} y={y} width={barWidth} height={height} fill="var(--primary)" />
+            {/* Darker blue keeps the light average marker distinct from each bar. */}
+            <rect x={x} y={y} width={barWidth} height={height} fill="var(--primary-hover)" />
             <text x={x + barWidth / 2} y={labelY} textAnchor="middle" fontSize={10} fill="var(--text-muted)">
               {bin.count}
             </text>
@@ -141,7 +142,7 @@ function HistogramAxisLabels({ bins, precision, unitLabel }: { bins: Distributio
 function AllEqualDistributionBar({ value, count, unitLabel }: { value: number; count: number; unitLabel: string | null }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-6" data-testid="distribution-all-equal-bar">
-      <div className="w-28 h-16 rounded bg-primary" />
+      <div className="w-28 h-16 rounded bg-primary-hover" />
       <p className="text-sm text-text-secondary text-center">
         All {count} valid {pluralize(count, "result", "results")} {pluralize(count, "was", "were")}{" "}
         {formatMetricAverage(value, unitLabel)}.
