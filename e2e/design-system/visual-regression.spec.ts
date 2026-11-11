@@ -1,5 +1,5 @@
 import { test, expect } from "../shared/fixtures";
-import { checkA11yLevelAA } from "../shared/accessibility";
+import { checkA11yLevelAA, checkA11yWithOptions } from "../shared/accessibility";
 import { prisma } from "@/app/src/lib/prisma";
 import { MemberImportChangeType } from "@/app/generated/prisma/enums";
 
@@ -136,6 +136,7 @@ test.describe("Visual Regression", () => {
     const popover = page.locator(".driver-popover");
     await expect(popover).toBeVisible();
     await expect(popover).toHaveScreenshot("guided-help.png", { animations: "disabled" });
+    await checkA11yWithOptions(page, { include: [".driver-popover"], runOnly: ["wcag2a", "wcag2aa"] });
     await page.keyboard.press("Escape");
     await expect(popover).not.toBeVisible();
   });
