@@ -54,14 +54,14 @@ export function WorkbookParseError({
           <button
             type="button"
             onClick={onDismiss}
-            className="text-danger-light/70 hover:text-danger-light p-1"
+            className="text-danger-light hover:text-danger-light p-1"
           >
             ✕
           </button>
         )}
       </div>
       <p className="leading-relaxed">{message}</p>
-      {hint && <p className="font-medium text-danger-light/90 text-[11px] pt-1">{hint}</p>}
+      {hint && <p className="font-medium text-danger-light text-[11px] pt-1">{hint}</p>}
     </div>
   );
 }

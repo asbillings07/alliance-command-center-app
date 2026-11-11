@@ -82,15 +82,15 @@ export function SpreadsheetUpload({
         }}
         className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
           isDragging
-            ? "border-accent bg-surface-elevated/5"
+            ? "border-primary bg-surface-elevated/5"
             : disabled || isLoading
             ? "border-border/50 bg-surface/50 cursor-not-allowed opacity-60"
-            : "border-border hover:border-accent/50 bg-surface hover:bg-surface/80"
+            : "border-border hover:border-primary/50 bg-surface hover:bg-surface/80"
         }`}
       >
         {isLoading ? (
           <div className="flex flex-col items-center justify-center space-y-2 py-4">
-            <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
             <p className="text-sm font-medium text-text-muted">Reading workbook data...</p>
           </div>
         ) : children ? (

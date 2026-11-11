@@ -39,7 +39,7 @@ export function WorkbookSheetSelector({
               onClick={() => onSelectSheet(sheet.index)}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors border flex items-center space-x-2 ${
                 isSelected
-                  ? "bg-surface-elevated text-text-primary border-accent shadow-sm"
+                  ? "bg-surface-elevated text-text-primary border-primary shadow-sm"
                   : "bg-surface text-text-muted border-border hover:bg-surface-secondary hover:text-text-primary"
               } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
             >
@@ -47,7 +47,7 @@ export function WorkbookSheetSelector({
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full ${
                   isSelected
-                    ? "bg-accent-foreground/10 text-text-primary"
+                    ? "bg-primary/10 text-text-primary"
                     : "bg-surface-secondary text-text-muted"
                 }`}
               >

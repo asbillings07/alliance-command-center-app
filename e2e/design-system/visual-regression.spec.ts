@@ -29,9 +29,13 @@ test.describe("Visual Regression", () => {
     await page.waitForURL(/\/(app|alliances)/);
   });
 
-  test("@visual Dashboard visual snapshot", async ({ page }) => {
+  test("@visual Dashboard visual snapshot", async ({ page }, testInfo) => {
     await page.goto(`/alliances/${testAllianceId}`);
     await page.waitForLoadState("networkidle");
+
+    // Retain the exact render for human review even when a subtle color change
+    // falls within the screenshot comparator's existing tolerance.
+    await testInfo.attach("dashboard-current", { body: await page.screenshot({ fullPage: true, animations: "disabled" }), contentType: "image/png" });
 
     await expect(page).toHaveScreenshot("dashboard.png", {
       fullPage: true,
@@ -39,7 +43,7 @@ test.describe("Visual Regression", () => {
     });
   });
 
-  test("@visual Mobile dashboard and invitation settings", async ({ page }) => {
+  test("@visual Mobile dashboard and invitation settings", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
     for (const [path, snapshot] of [
       ["", "dashboard-mobile.png"],
@@ -50,6 +54,7 @@ test.describe("Visual Regression", () => {
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
       await checkA11yLevelAA(page);
+      await testInfo.attach(snapshot, { body: await page.screenshot({ fullPage: true, animations: "disabled" }), contentType: "image/png" });
       await expect(page).toHaveScreenshot(snapshot, { fullPage: true, animations: "disabled" });
     }
   });
