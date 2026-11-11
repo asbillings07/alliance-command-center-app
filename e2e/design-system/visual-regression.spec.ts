@@ -2,6 +2,17 @@ import { test, expect } from "../shared/fixtures";
 import { checkA11yLevelAA, checkA11yWithOptions } from "../shared/accessibility";
 import { prisma } from "@/app/src/lib/prisma";
 import { MemberImportChangeType } from "@/app/generated/prisma/enums";
+import type { Page } from "@playwright/test";
+import { releaseStage, releaseStageLabels } from "@/app/src/lib/releaseStage";
+
+async function expectReleaseStage(page: Page) {
+  const banner = page.getByRole("region", { name: "Release stage", exact: true });
+  await expect(banner).toHaveCount(1);
+  await expect(banner).toBeVisible();
+  await expect(banner).toHaveText(releaseStageLabels[releaseStage]);
+  const position = await banner.boundingBox();
+  expect(position?.y).toBe(0);
+}
 
 /**
  * Visual Regression E2E Tests
@@ -27,6 +38,7 @@ test.describe("Visual Regression", () => {
     await page.getByLabel(/password/i).fill(process.env.TEST_OWNER_PASSWORD!);
     await page.getByRole("button", { name: /sign in/i }).click();
     await page.waitForURL(/\/(app|alliances)/);
+    await expectReleaseStage(page);
   });
 
   test("@visual Dashboard visual snapshot", async ({ page }, testInfo) => {
@@ -240,6 +252,7 @@ test.describe("Design System Preview", () => {
   test("@visual Design System page visual snapshot", async ({ page }) => {
     await page.goto("/design-system");
     await page.waitForLoadState("networkidle");
+    await expectReleaseStage(page);
 
     await expect(page).toHaveScreenshot("design-system.png", {
       fullPage: true,
@@ -249,6 +262,24 @@ test.describe("Design System Preview", () => {
 });
 
 test.describe("Auth Pages Visual", () => {
+  test("@visual Release stage covers public and standalone pages on mobile", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+    await expectReleaseStage(page);
+    await expect(page).toHaveScreenshot("welcome-release-stage.png", { fullPage: true, animations: "disabled" });
+
+    await page.setViewportSize({ width: 320, height: 780 });
+    for (const path of ["/", "/login", "/invite/invalid-release-stage", "/redeem/invalid-release-stage", "/account/email/verify/invalid-release-stage", "/missing-release-stage-page"]) {
+      await page.goto(path);
+      await expectReleaseStage(page);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+      await checkA11yWithOptions(page, { include: ['[aria-label="Release stage"]'], runOnly: ["wcag2a", "wcag2aa"] });
+      if (path === "/") {
+        await expect(page).toHaveScreenshot("welcome-release-stage-mobile.png", { fullPage: true, animations: "disabled" });
+      }
+    }
+  });
+
   test("@visual Login page visual snapshot", async ({ page }) => {
     await page.goto("/login");
     await page.waitForLoadState("networkidle");
@@ -293,12 +324,14 @@ test.describe("Platform brand coverage", () => {
     await page.waitForURL(/\/(app|alliances|platform)/);
     await page.goto("/platform/overview");
     await page.waitForLoadState("networkidle");
+    await expectReleaseStage(page);
     await expect(page.locator("header")).toHaveScreenshot("platform-header.png", { animations: "disabled" });
     // Capture the navigation itself, not time-sensitive operational data.
     await expect(page.locator("aside nav ul")).toHaveScreenshot("platform-navigation.png", { animations: "disabled" });
     await checkA11yLevelAA(page);
 
     await page.setViewportSize({ width: 320, height: 780 });
+    await expectReleaseStage(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
     await expect(page.locator("header")).toHaveScreenshot("platform-header-mobile.png", { animations: "disabled" });
     await page.getByRole("button", { name: "Open navigation menu" }).click();

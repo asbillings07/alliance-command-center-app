@@ -3,6 +3,7 @@ import { auth } from "@/app/src/lib/auth";
 import { redirect } from "next/navigation";
 import { Button } from "@/app/src/components/client";
 import { BrandLockup } from "@/app/src/components/BrandLockup";
+import { releaseStage, releaseStageLabels } from "@/app/src/lib/releaseStage";
 
 const perspectives = [
   { number: "01", title: "People", description: "Keep your members and leadership context together." },
@@ -18,9 +19,6 @@ export default async function HomePage() {
     <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 sm:px-8 lg:px-10">
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border py-6 sm:py-8">
         <BrandLockup />
-        <span className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary">
-          Private beta
-        </span>
       </header>
 
       <main className="grid flex-1 items-center gap-10 py-10 sm:py-16 lg:grid-cols-[1.25fr_1fr] lg:gap-x-20 lg:gap-y-8">
@@ -51,7 +49,7 @@ export default async function HomePage() {
 
             <div className="mt-7 rounded-xl bg-surface-secondary p-4">
               <h3 className="text-sm font-medium text-text-primary">Lead an alliance?</h3>
-              <p className="mb-3 mt-1 text-sm leading-relaxed text-text-muted">We’re welcoming leadership teams into private beta.</p>
+              <p className="mb-3 mt-1 text-sm leading-relaxed text-text-muted">We’re welcoming leadership teams into {releaseStageLabels[releaseStage].toLowerCase()}.</p>
               <Link href="/request-access" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">
                 Request Beta Access <span aria-hidden="true">→</span>
               </Link>
