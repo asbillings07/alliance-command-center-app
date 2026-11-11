@@ -147,12 +147,14 @@ body {
 }
 .brand-header-tools { grid-column: 1 / -1; min-width: 0; }
 @media (width < 640px) {
-  .brand-header-actions :is(a, button) {
+  .brand-header-actions > :is(a, button),
+  .brand-header-actions > form > button {
     min-height: 44px;
     padding: 8px 5px;
     font-size: 12px;
   }
-  .brand-header-actions svg { width: 14px; height: 14px; margin-right: 5px; }
+  .brand-header-actions > :is(a, button) svg,
+  .brand-header-actions > form > button svg { width: 14px; height: 14px; margin-right: 5px; }
 }
 @media (width >= 640px) {
   .brand-header-grid { grid-template-columns: auto auto minmax(0, 1fr); gap: 16px; padding: 12px 24px; }
