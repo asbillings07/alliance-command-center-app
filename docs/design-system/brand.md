@@ -44,6 +44,6 @@ Proposed for owner preview review before production adoption. The approved clean
 
 ### Release-stage badge
 
-The owner-approved “Private beta” pill appears in a compact top bar on every page, including standalone account/invitation routes and error pages. `ReleaseStageBanner` renders once in the root layout (and separately in the global error fallback, which replaces that layout). Keep its neutral border and readable secondary text; it is product context, not an operational warning or an interactive control.
+The owner-approved “Private beta” pill appears in a compact, sticky 48px top bar on every page, including standalone account/invitation routes and error pages. Sticky alliance/platform headers sit below that bar. `ReleaseStageBanner` renders once in the root layout (and separately in the global error fallback, which replaces that layout). Keep its neutral border and readable secondary text; it is product context, not an operational warning or an interactive control.
 
 `app/src/lib/releaseStage.ts` is the single source of truth. It currently selects `private-beta`; change that selection to `public-beta` in a reviewed release change after the owner approves Public Beta. Every page then displays “Public beta” together. This presentation setting does not enable signup, grant access, alter invitations, change feature flags, or authorize publication. No date, branch, environment or deployment automatically promotes the label.

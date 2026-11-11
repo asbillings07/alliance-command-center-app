@@ -268,6 +268,9 @@ test.describe("Auth Pages Visual", () => {
     await expectReleaseStage(page);
     await expect(page).toHaveScreenshot("welcome-release-stage.png", { fullPage: true, animations: "disabled" });
 
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expectReleaseStage(page);
+
     await page.setViewportSize({ width: 320, height: 780 });
     for (const path of ["/", "/login", "/invite/invalid-release-stage", "/redeem/invalid-release-stage", "/account/email/verify/invalid-release-stage", "/missing-release-stage-page"]) {
       await page.goto(path);

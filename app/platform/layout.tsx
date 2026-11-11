@@ -24,7 +24,7 @@ export default async function PlatformLayout({
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* Header with Search - Mobile & Desktop */}
-      <header className="sticky top-0 z-50 bg-brand-surface border-b border-border">
+      <header className="sticky top-12 z-50 bg-brand-surface border-b border-border">
         <div className="brand-rule" aria-hidden="true" />
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 lg:px-6">
           <div className="flex items-center gap-3">
