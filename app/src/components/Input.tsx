@@ -43,7 +43,7 @@ export function Label({ required, children, ...props }: LabelProps) {
       {...props}
     >
       {children}
-      {required && <span className="text-danger ml-1">*</span>}
+      {required && <span className="text-danger-light ml-1">*</span>}
     </label>
   );
 }
@@ -65,7 +65,7 @@ export function FormError({ children }: FormErrorProps) {
   if (!children) return null;
 
   return (
-    <p className="mt-1 text-sm text-danger">{children}</p>
+    <p className="mt-1 text-sm text-danger-light">{children}</p>
   );
 }
 

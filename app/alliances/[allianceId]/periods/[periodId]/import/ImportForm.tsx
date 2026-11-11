@@ -234,9 +234,9 @@ function ValueIssueNotice({
   if (issues.length === 0) return null;
 
   return (
-    <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger flex flex-col gap-2">
+    <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light flex flex-col gap-2">
       <div>
-        <p className="font-semibold text-danger">Fix {formatCellCount(issues.length)} before {phase === "preview" ? "previewing" : "importing"}</p>
+        <p className="font-semibold text-danger-light">Fix {formatCellCount(issues.length)} before {phase === "preview" ? "previewing" : "importing"}</p>
         <p className="text-sm text-text-secondary mt-1">
           {summarizeColumns(issues.map((issue) => issue.columnName))}. Check cell details below.
         </p>
@@ -1375,10 +1375,10 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             ) : (
               <div className="p-4 rounded-md bg-danger/10 border border-danger/30">
                 <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-danger" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-danger-light" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
-                  <p className="text-danger font-semibold">No player column found</p>
+                  <p className="text-danger-light font-semibold">No player column found</p>
                 </div>
                 <p className="text-sm text-text-secondary mt-2 ml-7">Please rename a column in your spreadsheet to one of these:</p>
                 <ul className="text-sm text-text-secondary mt-1 ml-7 list-disc list-inside">
@@ -1391,14 +1391,14 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
             {numericColumns.length === 0 && (
               <div className="p-4 rounded-md bg-danger/10 border border-danger/30">
-                <p className="text-danger font-semibold">No numeric columns found</p>
+                <p className="text-danger-light font-semibold">No numeric columns found</p>
                 <p className="text-sm text-text-secondary mt-1">Your spreadsheet needs at least one column with whole numbers.</p>
               </div>
             )}
 
             {noSelectableMetrics && (
               <div className="p-4 rounded-md bg-danger/10 border border-danger/30">
-                <p className="text-danger font-semibold">No metrics available</p>
+                <p className="text-danger-light font-semibold">No metrics available</p>
                 <p className="text-sm text-text-secondary mt-1">Ask an alliance admin to add metrics, then import again.</p>
               </div>
             )}
@@ -1528,7 +1528,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         )}
 
         {error && (
-          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
+          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light">{error}</div>
         )}
 
         <div className="flex gap-3 justify-end">
@@ -1660,7 +1660,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
         />
 
         {error && (
-          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
+          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light">{error}</div>
         )}
 
         <div className="flex gap-3 justify-end">
@@ -1724,7 +1724,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       )}
 
       {!parseErrorCode && error && (
-        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
+        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light">{error}</div>
       )}
 
       <div data-tour="metric-requirements" className="p-4 rounded-md bg-surface-secondary border border-border">

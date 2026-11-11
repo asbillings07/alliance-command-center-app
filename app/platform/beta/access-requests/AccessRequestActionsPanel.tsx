@@ -536,7 +536,7 @@ export function AccessRequestActionsPanel({
     }
     if (conflictCheckResult.status === "error") {
       return (
-        <div className="text-sm text-danger space-y-2" data-testid="access-request-conflict-check-error">
+        <div className="text-sm text-danger-light space-y-2" data-testid="access-request-conflict-check-error">
           <p>Couldn&apos;t check for conflicts: {conflictCheckResult.message}</p>
           <Button
             type="button"
@@ -560,7 +560,7 @@ export function AccessRequestActionsPanel({
               className="rounded-lg border border-danger/30 bg-danger/5 p-3 space-y-2"
               data-testid="access-request-wave-options-error"
             >
-              <p className="text-sm text-danger">
+              <p className="text-sm text-danger-light">
                 Couldn&apos;t load beta waves: {waveOptionsState.message}
               </p>
               <Button
@@ -674,7 +674,7 @@ export function AccessRequestActionsPanel({
       )}
 
       {!conflictRecovery && error && (
-        <p className="text-sm text-danger" data-testid="access-request-error">
+        <p className="text-sm text-danger-light" data-testid="access-request-error">
           {error}
         </p>
       )}

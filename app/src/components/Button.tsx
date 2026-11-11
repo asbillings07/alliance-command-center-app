@@ -76,7 +76,7 @@ const variantClasses: Record<ButtonVariant, string> = {
   danger:
     "bg-danger-dark text-white hover:bg-danger-active disabled:bg-surface-secondary disabled:text-text-disabled",
   "danger-link":
-    "bg-transparent text-danger-light hover:text-danger underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
+    "bg-transparent text-danger-light hover:text-danger-light underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
   warning:
     "bg-warning-dark text-white hover:bg-warning-active disabled:bg-surface-secondary disabled:text-text-disabled",
   "warning-link":

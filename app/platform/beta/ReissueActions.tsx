@@ -145,7 +145,7 @@ export function ReissueActions({
             {isPending ? "Reissuing..." : "Confirm reissue"}
           </button>
           {error && (
-            <p className="text-xs text-danger" data-testid="reissue-error">
+            <p className="text-xs text-danger-light" data-testid="reissue-error">
               {error}
             </p>
           )}

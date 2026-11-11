@@ -1447,7 +1447,7 @@ export function MultiPeriodImportFlow({
         />
 
         {error && (
-          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
+          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light">{error}</div>
         )}
 
         <div className="flex gap-3 justify-end">
@@ -1895,13 +1895,13 @@ export function MultiPeriodImportFlow({
       })}
 
       {periodMetricCollision && (
-        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger text-sm">
+        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light text-sm">
           {periodMetricCollision}
         </div>
       )}
 
       {error && (
-        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
+        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light">{error}</div>
       )}
 
       <div className="flex gap-3 justify-end">

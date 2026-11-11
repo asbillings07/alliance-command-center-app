@@ -191,7 +191,7 @@ export function InviteBetaTester() {
 
       {result?.success === false && (
         <div className="mb-4 p-3 bg-danger/10 border border-danger/20 rounded-lg">
-          <p className="text-sm text-danger">{result.error}</p>
+          <p className="text-sm text-danger-light">{result.error}</p>
         </div>
       )}
 

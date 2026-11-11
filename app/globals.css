@@ -116,3 +116,57 @@ body {
   border-left: 3px solid var(--brand-violet);
   padding-left: 1rem;
 }
+
+/* Driver.js uses a portal. Scope its vendor defaults to our tour class rather
+ * than relying on a parent surface or stylesheet import order. */
+.driver-popover.acc-tour {
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hover);
+  border-radius: 12px;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.acc-tour .driver-popover-description {
+  color: var(--text-secondary);
+}
+
+.acc-tour .driver-popover-progress-text,
+.acc-tour .driver-popover-close-btn {
+  color: var(--text-muted);
+}
+
+.acc-tour .driver-popover-close-btn:is(:hover, :focus-visible) {
+  color: var(--text-primary);
+}
+
+.acc-tour .driver-popover-footer-btn {
+  background: var(--surface-secondary);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+  border-radius: 6px;
+}
+
+.acc-tour .driver-popover-footer-btn:is(:hover, :focus-visible) {
+  background: var(--surface-elevated);
+}
+
+.acc-tour .driver-popover-next-btn {
+  background: var(--primary-hover);
+  color: white;
+  border-color: var(--primary-hover);
+}
+
+.acc-tour .driver-popover-next-btn:is(:hover, :focus-visible) {
+  background: var(--primary-active);
+}
+
+.acc-tour button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.acc-tour .driver-popover-arrow-side-left { border-left-color: var(--surface); }
+.acc-tour .driver-popover-arrow-side-right { border-right-color: var(--surface); }
+.acc-tour .driver-popover-arrow-side-top { border-top-color: var(--surface); }
+.acc-tour .driver-popover-arrow-side-bottom { border-bottom-color: var(--surface); }

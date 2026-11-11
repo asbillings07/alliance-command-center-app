@@ -276,7 +276,7 @@ export function SetupImportForm({
         )}
 
         {error && (
-          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
+          <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light">{error}</div>
         )}
 
         <div className="flex gap-3 justify-end">
@@ -334,7 +334,7 @@ export function SetupImportForm({
       )}
 
       {!parseErrorCode && error && (
-        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger">{error}</div>
+        <div className="p-4 rounded-md bg-danger/10 border border-danger/30 text-danger-light">{error}</div>
       )}
     </div>
   );

@@ -26,7 +26,7 @@ const toneClasses = {
 const countClasses = {
   warning: "text-warning",
   success: "text-success",
-  danger: "text-danger",
+  danger: "text-danger-light",
   info: "text-primary",
 } as const;
 

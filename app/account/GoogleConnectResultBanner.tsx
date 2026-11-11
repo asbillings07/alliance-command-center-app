@@ -51,7 +51,7 @@ export function GoogleConnectResultBanner({
   const copy = RESULT_COPY[result];
   const isError = copy.tone === "error";
   const classes = isError
-    ? "bg-danger/10 border-danger text-danger"
+    ? "bg-danger/10 border-danger text-danger-light"
     : "bg-success/10 border-success text-success";
 
   return (

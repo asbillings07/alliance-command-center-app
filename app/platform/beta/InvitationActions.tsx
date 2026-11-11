@@ -150,13 +150,13 @@ export function InvitationActions({
         type="button"
         onClick={handleRevoke}
         disabled={isPending}
-        className="text-xs text-danger hover:text-danger/80 disabled:opacity-50"
+        className="text-xs text-danger-light hover:text-danger-light/80 disabled:opacity-50"
         title="Revoke invitation"
       >
         {isPending ? "..." : "Revoke"}
       </button>
       {error && (
-        <span className="text-xs text-danger ml-2" title={error}>
+        <span className="text-xs text-danger-light ml-2" title={error}>
           Failed
         </span>
       )}
@@ -256,11 +256,11 @@ export function InvitationCardActions({
         type="button"
         onClick={handleRevoke}
         disabled={isPending}
-        className="px-3 py-1 text-sm bg-danger/10 hover:bg-danger/20 text-danger border border-danger/20 rounded-lg transition-colors disabled:opacity-50"
+        className="px-3 py-1 text-sm bg-danger/10 hover:bg-danger/20 text-danger-light border border-danger/20 rounded-lg transition-colors disabled:opacity-50"
       >
         {isPending ? "Revoking..." : "Revoke"}
       </button>
-      {error && <span className="text-xs text-danger">{error}</span>}
+      {error && <span className="text-xs text-danger-light">{error}</span>}
     </div>
   );
 }

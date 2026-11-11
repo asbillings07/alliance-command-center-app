@@ -77,7 +77,7 @@ function Requirement({
     status === "met"
       ? "text-success"
       : status === "error"
-        ? "text-danger"
+        ? "text-danger-light"
         : "text-text-muted";
   return (
     <li className={`flex items-center gap-2 ${tone}`}>

@@ -247,10 +247,10 @@ export default async function PlatformSetup() {
             <div className="text-sm text-warning/80">Needs Setup</div>
           </div>
           <div className="bg-danger/10 rounded-lg p-4 border border-danger/20">
-            <div className="text-2xl font-bold text-danger">
+            <div className="text-2xl font-bold text-danger-light">
               {summary.stalled}
             </div>
-            <div className="text-sm text-danger/80">Stalled</div>
+            <div className="text-sm text-danger-light/80">Stalled</div>
           </div>
           <div className="bg-primary/10 rounded-lg p-4 border border-primary/20">
             <div className="text-2xl font-bold text-primary">{summary.new}</div>
@@ -264,7 +264,7 @@ export default async function PlatformSetup() {
         <section>
           <h2 className="text-lg font-semibold text-text-secondary mb-4">
             Stalled Alliances
-            <span className="ml-2 text-sm font-normal text-danger">
+            <span className="ml-2 text-sm font-normal text-danger-light">
               ({stalledAlliances.length})
             </span>
           </h2>

@@ -193,7 +193,7 @@ export function InviteCollaboratorForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="bg-danger/10 border border-danger/30 rounded-md p-3 text-sm text-danger">
+        <div className="bg-danger/10 border border-danger/30 rounded-md p-3 text-sm text-danger-light">
           {error}
         </div>
       )}

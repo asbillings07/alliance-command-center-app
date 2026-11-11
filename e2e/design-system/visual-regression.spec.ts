@@ -130,6 +130,16 @@ test.describe("Visual Regression", () => {
     });
   });
 
+  test("@visual Guided help uses the application palette", async ({ page }) => {
+    await page.goto(`/alliances/${testAllianceId}/periods`);
+    await page.getByRole("button", { name: "Take a tour" }).click();
+    const popover = page.locator(".driver-popover");
+    await expect(popover).toBeVisible();
+    await expect(popover).toHaveScreenshot("guided-help.png", { animations: "disabled" });
+    await page.keyboard.press("Escape");
+    await expect(popover).not.toBeVisible();
+  });
+
   test("@visual Setup Page visual snapshot", async ({ page }) => {
     await page.goto(`/alliances/${testAllianceId}/setup`);
     await page.waitForLoadState("networkidle");

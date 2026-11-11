@@ -103,7 +103,7 @@ export function AddMemberForm({ allianceId }: AddMemberFormProps) {
             <input type="hidden" name="allianceId" value={allianceId} />
 
             {error && (
-                <div className="p-3 bg-danger/10 border border-danger text-danger rounded-md text-sm">
+                <div className="p-3 bg-danger/10 border border-danger text-danger-light rounded-md text-sm">
                     {error}
                 </div>
             )}

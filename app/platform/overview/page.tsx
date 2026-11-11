@@ -269,7 +269,7 @@ export default async function PlatformOverview() {
                 {readySummary.needsSetup}
               </span>
             </div>
-            <div className="flex items-center justify-between px-3 py-2 rounded bg-danger/10 text-danger">
+            <div className="flex items-center justify-between px-3 py-2 rounded bg-danger/10 text-danger-light">
               <span className="text-sm">Stalled</span>
               <span className="font-mono font-medium">
                 {readySummary.stalled}

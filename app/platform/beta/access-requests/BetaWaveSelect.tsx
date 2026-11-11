@@ -168,7 +168,7 @@ export function BetaWaveSelect({
             data-testid={`${idPrefix}-wave-new-input`}
           />
           {showLengthError && (
-            <p id={errorId} className="text-xs text-danger" data-testid={`${idPrefix}-wave-error`}>
+            <p id={errorId} className="text-xs text-danger-light" data-testid={`${idPrefix}-wave-error`}>
               Beta wave must be {WAVE_LABEL_MIN}–{WAVE_LABEL_MAX} characters.
             </p>
           )}

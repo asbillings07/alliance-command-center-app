@@ -157,7 +157,7 @@ function DeliveryStatusSummary({
             </span>
           )}
           {delivery.status === "failed" && delivery.failureReason && (
-            <span className="text-danger basis-full">
+            <span className="text-danger-light basis-full">
               {delivery.failureReason}
             </span>
           )}
@@ -232,7 +232,7 @@ function DeliveryHistoryDisclosure({ invitationId }: { invitationId: string }) {
           {isPending && !result && (
             <p className="text-xs text-text-muted">Loading delivery history…</p>
           )}
-          {error && <p className="text-xs text-danger">{error}</p>}
+          {error && <p className="text-xs text-danger-light">{error}</p>}
           {result?.success && result.items.length === 0 && (
             <p className="text-xs text-text-disabled">Not recorded</p>
           )}
@@ -403,7 +403,7 @@ function PriorAttemptsDisclosure({
           {isPending && !result && (
             <p className="text-xs text-text-muted">Loading history…</p>
           )}
-          {error && <p className="text-xs text-danger">{error}</p>}
+          {error && <p className="text-xs text-danger-light">{error}</p>}
           {result?.success &&
             result.items.map((attempt) => (
               <AttemptAuditDetails key={attempt.id} attempt={attempt} />

@@ -104,7 +104,7 @@ export function AuthError({ children }: { children: ReactNode }) {
 
   return (
     <div className="mb-4 p-3 bg-danger/10 border border-danger/20 rounded-lg">
-      <p className="text-sm text-danger">{children}</p>
+      <p className="text-sm text-danger-light">{children}</p>
     </div>
   );
 }

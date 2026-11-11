@@ -267,7 +267,7 @@ export function FeedbackTriagePanel({
       )}
 
       {error && !conflict && (
-        <p className="text-sm text-danger" data-testid="triage-error">
+        <p className="text-sm text-danger-light" data-testid="triage-error">
           {error}
         </p>
       )}

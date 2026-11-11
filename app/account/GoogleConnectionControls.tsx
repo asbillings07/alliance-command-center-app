@@ -127,7 +127,7 @@ export function GoogleConnectionControls({
       )}
 
       {state.status === "error" && state.message && (
-        <p className="mt-2 text-xs text-danger">{state.message}</p>
+        <p className="mt-2 text-xs text-danger-light">{state.message}</p>
       )}
       {state.status === "success" && state.message && (
         <p className="mt-2 text-xs text-success">{state.message}</p>

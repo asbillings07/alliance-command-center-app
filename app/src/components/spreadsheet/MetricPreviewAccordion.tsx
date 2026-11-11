@@ -486,7 +486,7 @@ function PreviewRow({
     <tr
       data-testid={`metric-preview-row-${preview.columnIndex}-${resultIndex}`}
       className={
-        result.status === "invalid_value" ? "bg-danger/20 text-danger font-semibold border-t border-border" :
+        result.status === "invalid_value" ? "bg-danger/20 text-danger-light font-semibold border-t border-border" :
         result.status === "unmatched" ? "bg-danger/10 text-text-secondary border-t border-border" :
         !isSelected ? "bg-surface-secondary text-text-disabled border-t border-border" :
         "bg-success/10 text-text-primary border-t border-border"
@@ -503,14 +503,14 @@ function PreviewRow({
       </td>
       <td className="px-3 py-2 text-right font-mono font-medium">
         {result.status === "invalid_value" ? (
-          <span className="text-danger font-bold">{result.rawValue} ({result.error})</span>
+          <span className="text-danger-light font-bold">{result.rawValue} ({result.error})</span>
         ) : (
           result.value?.toLocaleString()
         )}
       </td>
       <td className="px-3 py-2 text-center">
         {result.status === "invalid_value" ? (
-          <span className="px-2 py-0.5 rounded text-xs bg-danger/20 text-danger font-bold">Invalid Value</span>
+          <span className="px-2 py-0.5 rounded text-xs bg-danger/20 text-danger-light font-bold">Invalid Value</span>
         ) : result.status === "unmatched" ? (
           <span className="px-2 py-0.5 rounded text-xs bg-danger-dark text-white font-medium">No Match</span>
         ) : memberHasDuplicates ? (
