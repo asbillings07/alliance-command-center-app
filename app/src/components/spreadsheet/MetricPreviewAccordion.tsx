@@ -522,7 +522,7 @@ function PreviewRow({
             {isSelected ? "Selected" : "Use This"}
           </button>
         ) : willImport ? (
-          <span className="px-2 py-0.5 rounded text-xs bg-success/20 text-success font-medium">Will Import</span>
+          <span className="px-2 py-0.5 rounded text-xs bg-success/20 text-success-light font-medium">Will Import</span>
         ) : null}
       </td>
     </tr>

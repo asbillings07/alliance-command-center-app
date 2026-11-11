@@ -114,6 +114,11 @@ test.describe("Results import preview progressive disclosure", () => {
 
     await expect(translations.locator("summary")).toHaveAttribute("aria-expanded", "false");
 
+    // Check the actual row badges too; collapsed disclosure content is skipped by axe.
+    const willImport = page.getByTestId("metric-preview-will-import");
+    await willImport.locator("summary").click();
+    await expect(willImport.getByText("Will Import", { exact: true }).first()).toBeVisible();
+
     await checkA11yWithOptions(page, {
       runOnly: ["wcag2a", "wcag2aa"],
       include: [
