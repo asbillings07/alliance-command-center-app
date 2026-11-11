@@ -47,7 +47,7 @@ export function ColumnTranslationCard({
                 {translation.samples.map((s) => `"${s}"`).join(", ")}
               </span>
             ) : (
-              <span className="italic text-text-muted/60">(none / empty column)</span>
+              <span className="italic text-text-muted">(none / empty column)</span>
             )}
           </div>
         </div>
@@ -55,41 +55,41 @@ export function ColumnTranslationCard({
         {/* Translation Status Badge */}
         <div>
           {translation.kind === "identity" && (
-            <span className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
               Mapped: Member Identity
             </span>
           )}
           {translation.kind === "member_property" && (
-            <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
+            <span className="bg-success/10 text-success-light border border-success/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
               Mapped: {translation.targetLabel}
             </span>
           )}
           {translation.kind === "unsupported" && (
-            <span className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
+            <span className="bg-warning/10 text-warning-light border border-warning/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
               Excluded: {translation.reason}
             </span>
           )}
           {translation.kind === "empty" && (
-            <span className="bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
+            <span className="bg-surface-secondary text-text-muted border border-border px-2 py-0.5 rounded-full font-medium text-[11px]">
               Ignored: {translation.reason}
             </span>
           )}
           {translation.kind === "metric" && (
             <div>
               {translation.target.kind === "skip" ? (
-                <span className="bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
+                <span className="bg-surface-secondary text-text-muted border border-border px-2 py-0.5 rounded-full font-medium text-[11px]">
                   Skipped
                 </span>
               ) : translation.target.kind === "existing" ? (
-                <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
+                <span className="bg-success/10 text-success-light border border-success/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
                   Mapped: Existing Metric
                 </span>
               ) : translation.target.kind === "attach" ? (
-                <span className="bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
+                <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
                   Mapped: Library Metric
                 </span>
               ) : (
-                <span className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
+                <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
                   Mapped: New Metric
                 </span>
               )}
@@ -102,18 +102,18 @@ export function ColumnTranslationCard({
       {translation.kind === "metric" && (
         <div className="pt-1 border-t border-border/40 space-y-2">
           {translation.classification.intent === "likely_period" && (
-            <div className="bg-amber-500/10 border border-amber-500/20 p-2 rounded text-[11px] space-y-1.5">
-              <p className="font-semibold text-amber-700 dark:text-amber-300">
+            <div className="bg-warning/10 border border-warning/20 p-2 rounded text-[11px] space-y-1.5">
+              <p className="font-semibold text-warning-light">
                 Period-like Column Detected (&quot;{translation.sourceColumnName}&quot;)
               </p>
-              <p className="text-amber-800/80 dark:text-amber-200/80">
+              <p className="text-warning-light">
                 This header resembles an evaluation period name. Single-period import imports metrics into the selected destination period.
               </p>
               <div className="flex items-center space-x-2 pt-1">
                 <button
                   type="button"
                   onClick={() => onConfirmMetric?.(translation.columnIndex)}
-                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  className="px-2.5 py-1 bg-warning-dark hover:bg-warning-active text-white rounded font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-warning"
                 >
                   Keep as Metric Name
                 </button>
@@ -129,7 +129,7 @@ export function ColumnTranslationCard({
           )}
 
           {translation.classification.intent === "unsure" && (
-            <div className="bg-slate-500/10 border border-slate-500/20 p-2 rounded text-[11px] space-y-1.5">
+            <div className="bg-surface-secondary border border-border p-2 rounded text-[11px] space-y-1.5">
               <p className="font-semibold text-text-primary">
                 Ambiguous Column Header (&quot;{translation.sourceColumnName}&quot;)
               </p>

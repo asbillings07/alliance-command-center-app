@@ -74,11 +74,11 @@ const variantClasses: Record<ButtonVariant, string> = {
   ghost:
     "bg-transparent text-text-secondary hover:bg-surface-secondary hover:text-text-primary disabled:text-text-disabled",
   danger:
-    "bg-danger-dark text-white hover:bg-danger disabled:bg-surface-secondary disabled:text-text-disabled",
+    "bg-danger-dark text-white hover:bg-danger-active disabled:bg-surface-secondary disabled:text-text-disabled",
   "danger-link":
     "bg-transparent text-danger-light hover:text-danger underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
   warning:
-    "bg-warning-dark text-white hover:bg-warning disabled:bg-surface-secondary disabled:text-text-disabled",
+    "bg-warning-dark text-white hover:bg-warning-active disabled:bg-surface-secondary disabled:text-text-disabled",
   "warning-link":
     "bg-transparent text-warning-light hover:text-warning underline-offset-4 hover:underline p-0 disabled:text-text-disabled disabled:no-underline",
   "success-link":

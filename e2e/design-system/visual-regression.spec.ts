@@ -1,4 +1,5 @@
 import { test, expect } from "../shared/fixtures";
+import { checkA11yLevelAA } from "../shared/accessibility";
 import { prisma } from "@/app/src/lib/prisma";
 import { MemberImportChangeType } from "@/app/generated/prisma/enums";
 
@@ -36,6 +37,21 @@ test.describe("Visual Regression", () => {
       fullPage: true,
       animations: "disabled",
     });
+  });
+
+  test("@visual Mobile dashboard and invitation settings", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const [path, snapshot] of [
+      ["", "dashboard-mobile.png"],
+      ["/settings/invitations", "invitation-settings-mobile.png"],
+    ]) {
+      await page.goto(`/alliances/${testAllianceId}${path}`);
+      await page.waitForLoadState("networkidle");
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+      await checkA11yLevelAA(page);
+      await expect(page).toHaveScreenshot(snapshot, { fullPage: true, animations: "disabled" });
+    }
   });
 
   test("@visual Members Table visual snapshot", async ({ page }) => {
@@ -245,5 +261,35 @@ test.describe("Auth Pages Visual", () => {
       fullPage: true,
       animations: "disabled",
     });
+  });
+});
+
+// The platform console has a different shell from alliance pages. Capture both
+// shells explicitly so a welcome-page-only refresh cannot conceal this gap.
+test.describe("Platform brand coverage", () => {
+  test("@visual Platform navigation desktop and mobile", async ({ page }) => {
+    test.skip(!process.env.TEST_PLATFORM_ADMIN_EMAIL || !process.env.TEST_PLATFORM_ADMIN_PASSWORD,
+      "Platform test credentials required");
+    await page.goto("/login");
+    await page.getByLabel(/email/i).fill(process.env.TEST_PLATFORM_ADMIN_EMAIL!);
+    await page.getByLabel(/password/i).fill(process.env.TEST_PLATFORM_ADMIN_PASSWORD!);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await page.waitForURL(/\/(app|alliances|platform)/);
+    await page.goto("/platform/overview");
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator("header")).toHaveScreenshot("platform-header.png", { animations: "disabled" });
+    // Capture the navigation itself, not time-sensitive operational data.
+    await expect(page.locator("aside nav ul")).toHaveScreenshot("platform-navigation.png", { animations: "disabled" });
+    await checkA11yLevelAA(page);
+
+    await page.setViewportSize({ width: 320, height: 780 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+    await expect(page.locator("header")).toHaveScreenshot("platform-header-mobile.png", { animations: "disabled" });
+    await page.getByRole("button", { name: "Open navigation menu" }).click();
+    const drawer = page.locator("div.fixed").filter({ has: page.getByRole("button", { name: "Close navigation menu" }) });
+    await expect(drawer).toHaveScreenshot("platform-navigation-mobile.png", { animations: "disabled" });
+    await checkA11yLevelAA(page);
+    await page.getByRole("button", { name: "Close navigation menu" }).click();
+    await expect(page.getByRole("button", { name: "Close navigation menu" })).not.toBeVisible();
   });
 });

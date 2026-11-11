@@ -21,7 +21,7 @@ Referenced document SHA-256: `1afc247b9911a9e21bfef9617f0abe911069f346021ae87364
 
 Alliance Link is this product's own identity. Aptelum's attribution mark remains a separate, supplied asset: company experiences use solid blue, product experiences use the original blend, and developer-only experiences use deep violet. This change does not redraw or substitute for that attribution mark.
 
-The blue/violet product artwork and a thin identity rule are narrow exceptions to the application's monochrome functional-icon and single-accent UI guidance. Functional actions and selection stay blue; status colors, charts and other controls retain their separate meanings. This reference is not company-policy adoption or a runtime authorization grant.
+The blue/violet product artwork, thin identity rule, workspace heading accent and active platform navigation are identity exceptions to the application's monochrome functional-icon and single-accent UI guidance. Functional actions and form selection stay blue; status colors and charts retain their separate meanings. This reference is not company-policy adoption or a runtime authorization grant.
 
 ## Final edit prompt
 
@@ -34,9 +34,10 @@ The supplied raster is the source of truth for this revision. Future refinements
 
 Proposed for owner preview review before production adoption. The approved cleaned artwork remains unchanged.
 
-- Use deep navy surfaces, readable cool-white typography, and one consistent lockup across entry points and the alliance shell. Keep the existing Geist family.
+- Use deep navy surfaces, readable cool-white typography, and one consistent lockup across entry points, the alliance shell and Platform Operations. Keep the existing Geist family.
 - The welcome page explains people, participation and perspective while keeping Sign In, Redeem Invitation and Request Beta Access available. Mobile puts entry actions before the supporting capability descriptions. Keep the private-beta statement honest.
 - Authentication uses the same header and quiet identity rule, with a focused form panel. Supporting copy is shown only where desktop space allows; form fields, error handling, password controls, OAuth availability and destinations are unchanged.
 - App pages retain their information hierarchy, dense tables, permissions and workflows. Shared cards use a 12px radius; page gutters reduce at narrow widths. The header remains compact and labels are accessible when the wordmark is hidden.
-- Violet belongs only to identity artwork and the thin blue/violet rule. Use no glow, patterned starfield, decorative motion, gradients in charts, or invented usage statistics. See the [color tokens](../color-design-principles.md).
+- Apply the palette throughout invitations, setup, imports, metrics, reports, account settings and Platform Operations. Components must use shared tokens instead of literal hex colors or numbered Tailwind color shades.
+- Violet belongs to identity artwork, the thin blue/violet rule, workspace heading accents and active platform navigation. Navigation uses `brand-surface`, `brand-selection` and readable `brand-text`; it never indicates operational success, warning or failure. Use no glow, patterned starfield, decorative motion, gradients in charts, or invented usage statistics. See the [color tokens](../color-design-principles.md).
 - This visual proposal does not authorize a production release. Owner preview QA, review and green CI are required before merge and deployment.

@@ -240,7 +240,7 @@ Reasons:
 
 Primary actions should consistently use this color.
 
-Use the blue/violet blend only in the product mark and the restrained identity rule described below. Functional actions and selection remain blue. Filled primary buttons retain `#2563EB` with white text and `#1D4ED8` on hover/active; the lighter `#60A5FA` is for readable text, outlines, and selection accents.
+Use the blue/violet blend only in the product mark and restrained identity rule. Solid violet accents may identify workspace headings and active platform navigation, as described below. Functional actions and form selection remain blue. Filled primary buttons retain `#2563EB` with white text and `#1D4ED8` on hover/active; the lighter `#60A5FA` is for readable text, outlines, and selection accents.
 
 ---
 
@@ -457,7 +457,7 @@ Avoid colorful iconography throughout the interface.
 
 The owner-approved [Alliance Link product mark](./design-system/brand.md) uses
 blue and violet in the application identity, browser icon and Apple touch icon.
-The same blend may appear as one thin, two-pixel identity rule on welcome, authentication and alliance-header surfaces. Its violet endpoint is `--brand-violet: #7554E8`. Do not use violet as a status, chart series, text, button fill, or focus indicator. This narrow identity exception preserves semantic status colors and monochrome functional icons. Render the supplied artwork without recoloring, cropping, glow or an added shadow.
+The same blend may appear as one thin, two-pixel identity rule on welcome, authentication, alliance and platform headers. Its violet endpoint is `--brand-violet: #7554E8`. Workspace headings may use a narrow solid-violet accent. Navigation shells use `--brand-surface: #171D33`; active platform links use `--brand-selection: #30234F` and `--brand-text: #D1C4FF` (8.8:1 contrast). Do not use violet as a status, chart series, action-button fill, or focus indicator. This identity exception preserves semantic status colors and monochrome functional icons. Render the supplied artwork without recoloring, cropping, glow or an added shadow.
 
 ---
 
@@ -552,3 +552,9 @@ Color should never compete with information.
 Its purpose is to improve readability, reinforce hierarchy, communicate meaning, and help alliance leaders make better decisions with confidence.
 
 When a choice exists between visual flair and clarity, clarity always wins.
+
+## Shared token coverage
+
+All application screens use the tokens in `app/globals.css`, including legacy invitation forms, spreadsheet mapping/review, metric entry, account pages and Platform Operations. Avoid literal hex utilities and numbered color shades in app components. Provider marks and transactional email rendering have separate requirements.
+
+Filled confirmation actions use `success-dark` (`#166534`) with white text and `success-active` (`#14532D`) on hover. Destructive and caution actions use `danger-dark` / `warning-dark` at rest and `danger-active` (`#B91C1C`) / `warning-active` (`#78350F`) on hover. Keep small status text fully opaque on subtle tinted surfaces.

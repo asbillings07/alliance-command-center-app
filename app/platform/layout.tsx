@@ -5,6 +5,8 @@ import { PlatformNav } from "./components/PlatformNav";
 import { PlatformSearch } from "./components/PlatformSearch";
 import { PlatformFooter } from "./components/PlatformFooter";
 import { MobileNavWrapper } from "./components/MobileNavWrapper";
+import { BrandLockup } from "@/app/src/components/BrandLockup";
+import Link from "next/link";
 
 export const metadata = {
   title: "Platform Operations - Alliance Command Center",
@@ -22,30 +24,33 @@ export default async function PlatformLayout({
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* Header with Search - Mobile & Desktop */}
-      <header className="sticky top-0 z-30 bg-surface border-b border-border">
-        <div className="flex items-center justify-between px-4 py-3 lg:px-6">
+      <header className="sticky top-0 z-30 bg-brand-surface border-b border-border">
+        <div className="brand-rule" aria-hidden="true" />
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 lg:px-6">
           <div className="flex items-center gap-3">
             {/* Mobile menu button */}
             <MobileNavWrapper workspace={workspace} />
-            <h1 className="text-lg font-semibold text-text-primary">
+            <Link href="/platform/overview" aria-label="Alliance Command Center platform overview" className="shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+              <BrandLockup compact />
+            </Link>
+            <h1 className="border-l border-border pl-3 text-sm font-semibold text-text-secondary">
               Platform Operations
             </h1>
           </div>
-          <div className="flex-1 max-w-md mx-4">
+          <div className="w-full sm:ml-auto sm:w-64 lg:w-80">
             <PlatformSearch />
           </div>
-          <div className="w-8 lg:w-auto" />
         </div>
       </header>
 
       <div className="flex flex-1">
         {/* Desktop Sidebar Navigation */}
-        <aside className="hidden lg:flex lg:w-56 lg:flex-col lg:border-r lg:border-border lg:bg-surface">
+        <aside className="hidden lg:flex lg:w-56 lg:shrink-0 lg:flex-col lg:border-r lg:border-border lg:bg-brand-surface">
           <PlatformNav workspace={workspace} />
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-auto">
+        <main className="min-w-0 flex-1 overflow-auto">
           <div className="p-4 lg:p-6">{children}</div>
         </main>
       </div>

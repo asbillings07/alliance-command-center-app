@@ -1462,7 +1462,7 @@ export function MultiPeriodImportFlow({
             type="button"
             onClick={handleImport}
             disabled={isPending || totalToImport === 0 || hasBlockingParseErrors || hasBlockingDiagnostics}
-            className="px-4 py-2 rounded-md bg-success text-white cursor-pointer disabled:opacity-50"
+            className="px-4 py-2 rounded-md bg-success-dark text-white cursor-pointer disabled:opacity-50"
           >
             {isPending
               ? "Importing..."

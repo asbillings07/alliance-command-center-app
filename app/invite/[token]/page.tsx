@@ -14,9 +14,9 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
 
   const lookupToken = token === "code" && code ? null : token;
   const lookupCode = token === "code" ? code : null;
-  
+
   // Build the callback URL - preserve the code query param if using code lookup
-  const inviteCallbackUrl = lookupCode 
+  const inviteCallbackUrl = lookupCode
     ? `/invite/code?code=${encodeURIComponent(lookupCode)}`
     : `/invite/${token}`;
 
@@ -39,11 +39,11 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
 
   if (!invitation) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
-        <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 bg-[#EF4444]/20 rounded-full flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="max-w-md w-full bg-surface border border-border rounded-lg p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 bg-danger/20 rounded-full flex items-center justify-center">
             <svg
-              className="w-8 h-8 text-[#EF4444]"
+              className="w-8 h-8 text-danger-light"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -56,15 +56,15 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
               />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">
+          <h1 className="text-xl font-bold text-text-primary mb-2">
             Invalid Invitation
           </h1>
-          <p className="text-[#9CA3AF] mb-6">
+          <p className="text-text-muted mb-6">
             This invitation link is invalid or has been revoked.
           </p>
           <Link
             href="/login"
-            className="text-[#3B82F6] hover:text-[#60A5FA]"
+            className="text-primary hover:text-text-primary"
           >
             Go to Login
           </Link>
@@ -75,11 +75,11 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
 
   if (invitation.cancelledAt) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
-        <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 bg-[#F59E0B]/20 rounded-full flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="max-w-md w-full bg-surface border border-border rounded-lg p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 bg-warning/20 rounded-full flex items-center justify-center">
             <svg
-              className="w-8 h-8 text-[#F59E0B]"
+              className="w-8 h-8 text-warning-light"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -92,15 +92,15 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
               />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">
+          <h1 className="text-xl font-bold text-text-primary mb-2">
             Invitation Cancelled
           </h1>
-          <p className="text-[#9CA3AF] mb-6">
+          <p className="text-text-muted mb-6">
             This invitation has been cancelled by the alliance administrator.
           </p>
           <Link
             href="/login"
-            className="text-[#3B82F6] hover:text-[#60A5FA]"
+            className="text-primary hover:text-text-primary"
           >
             Go to Login
           </Link>
@@ -111,11 +111,11 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
 
   if (invitation.expiresAt < new Date()) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
-        <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 bg-[#F59E0B]/20 rounded-full flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="max-w-md w-full bg-surface border border-border rounded-lg p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 bg-warning/20 rounded-full flex items-center justify-center">
             <svg
-              className="w-8 h-8 text-[#F59E0B]"
+              className="w-8 h-8 text-warning-light"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -128,16 +128,16 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
               />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">
+          <h1 className="text-xl font-bold text-text-primary mb-2">
             Invitation Expired
           </h1>
-          <p className="text-[#9CA3AF] mb-6">
+          <p className="text-text-muted mb-6">
             This invitation has expired. Please ask the alliance administrator to
             resend the invitation.
           </p>
           <Link
             href="/login"
-            className="text-[#3B82F6] hover:text-[#60A5FA]"
+            className="text-primary hover:text-text-primary"
           >
             Go to Login
           </Link>
@@ -148,11 +148,11 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
 
   if (invitation.acceptedAt) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
-        <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 bg-[#22C55E]/20 rounded-full flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="max-w-md w-full bg-surface border border-border rounded-lg p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 bg-success/20 rounded-full flex items-center justify-center">
             <svg
-              className="w-8 h-8 text-[#22C55E]"
+              className="w-8 h-8 text-success-light"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -165,15 +165,15 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
               />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">
+          <h1 className="text-xl font-bold text-text-primary mb-2">
             Already Accepted
           </h1>
-          <p className="text-[#9CA3AF] mb-6">
+          <p className="text-text-muted mb-6">
             This invitation has already been accepted.
           </p>
           <Link
             href={`/alliances/${invitation.allianceId}`}
-            className="text-[#3B82F6] hover:text-[#60A5FA]"
+            className="text-primary hover:text-text-primary"
           >
             Go to {invitation.alliance.name}
           </Link>
@@ -201,11 +201,11 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
 
   if (alreadyHasAccess) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
-        <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 bg-[#3B82F6]/20 rounded-full flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="max-w-md w-full bg-surface border border-border rounded-lg p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 bg-primary/20 rounded-full flex items-center justify-center">
             <svg
-              className="w-8 h-8 text-[#3B82F6]"
+              className="w-8 h-8 text-primary"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -218,16 +218,16 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
               />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">
+          <h1 className="text-xl font-bold text-text-primary mb-2">
             You Already Have Access
           </h1>
-          <p className="text-[#9CA3AF] mb-6">
-            You&apos;re already a member of <strong className="text-[#F9FAFB]">{invitation.alliance.name}</strong>. 
+          <p className="text-text-muted mb-6">
+            You&apos;re already a member of <strong className="text-text-primary">{invitation.alliance.name}</strong>.
             No need to accept this invitation.
           </p>
           <Link
             href={`/alliances/${invitation.allianceId}`}
-            className="inline-block px-4 py-2 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB]"
+            className="inline-block px-4 py-2 bg-primary-hover text-white rounded-md hover:bg-primary-active"
           >
             Go to {invitation.alliance.name}
           </Link>
@@ -250,12 +250,12 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
-      <div className="max-w-md w-full bg-[#111827] border border-[#374151] rounded-lg p-8">
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="max-w-md w-full bg-surface border border-border rounded-lg p-8">
         <div className="text-center mb-6">
-          <div className="w-16 h-16 mx-auto mb-4 bg-[#3B82F6]/20 rounded-full flex items-center justify-center">
+          <div className="w-16 h-16 mx-auto mb-4 bg-primary/20 rounded-full flex items-center justify-center">
             <svg
-              className="w-8 h-8 text-[#3B82F6]"
+              className="w-8 h-8 text-primary"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -268,27 +268,27 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
               />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-[#F9FAFB] mb-2">
+          <h1 className="text-xl font-bold text-text-primary mb-2">
             You&apos;re Invited!
           </h1>
-          <p className="text-[#9CA3AF]">
+          <p className="text-text-muted">
             {invitation.invitedBy.displayName} has invited you to join the
-            leadership team of <strong className="text-[#F9FAFB]">{invitation.alliance.name}</strong>.
+            leadership team of <strong className="text-text-primary">{invitation.alliance.name}</strong>.
           </p>
         </div>
 
-        <div className="bg-[#1F2937] rounded-lg p-4 mb-6 space-y-2">
+        <div className="bg-surface-secondary rounded-lg p-4 mb-6 space-y-2">
           {invitation.allianceMember && (
             <div className="flex justify-between text-sm">
-              <span className="text-[#9CA3AF]">Player Name</span>
-              <span className="font-medium text-[#F9FAFB]">
+              <span className="text-text-muted">Player Name</span>
+              <span className="font-medium text-text-primary">
                 {invitation.allianceMember.playerName}
               </span>
             </div>
           )}
           <div className="flex justify-between text-sm">
-            <span className="text-[#9CA3AF]">Role</span>
-            <span className="font-medium text-[#F9FAFB]">
+            <span className="text-text-muted">Role</span>
+            <span className="font-medium text-text-primary">
               {formatRole(invitation.membershipRole)}
             </span>
           </div>
@@ -303,15 +303,15 @@ export default async function InvitePage({ params, searchParams }: PageProps) {
           <div className="space-y-4">
             <Link
               href={`/register?callbackUrl=${encodeURIComponent(inviteCallbackUrl)}`}
-              className="block w-full px-4 py-2 bg-[#3B82F6] text-white text-center rounded-md hover:bg-[#2563EB]"
+              className="block w-full px-4 py-2 bg-primary-hover text-white text-center rounded-md hover:bg-primary-active"
             >
               Create Account to Join
             </Link>
-            <p className="text-center text-sm text-[#9CA3AF]">
+            <p className="text-center text-sm text-text-muted">
               Already have an account?{" "}
               <Link
                 href={`/login?callbackUrl=${encodeURIComponent(inviteCallbackUrl)}`}
-                className="text-[#3B82F6] hover:text-[#60A5FA]"
+                className="text-primary hover:text-text-primary"
               >
                 Sign in
               </Link>

@@ -976,7 +976,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                                                             disabled={!member.selected}
                                                             className={`px-2 py-1 rounded text-xs font-medium border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                                                                 member.finalStatus === "active"
-                                                                    ? "bg-success text-white border-success"
+                                                                    ? "bg-success-dark text-white border-success"
                                                                     : "border-border text-text-secondary hover:bg-success/10"
                                                             }`}
                                                         >
@@ -1067,7 +1067,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                             hasBlockingDiagnostics ||
                             hasAmbiguousMatches
                         }
-                        className="px-4 py-2 rounded-md bg-success text-white hover:bg-success/90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-4 py-2 rounded-md bg-success-dark text-white hover:bg-success-active cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isPending ? "Importing..." : `Import ${selectedCount} Row${selectedCount === 1 ? "" : "s"}`}
                     </button>
@@ -1081,7 +1081,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
         return (
             <div className="flex flex-col gap-6">
                 <div className="space-y-4">
-                    <div className="bg-surface border border-emerald-500/30 rounded-lg p-4">
+                    <div className="bg-surface border border-success/30 rounded-lg p-4">
                         <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider mb-3">Committed</h3>
                         <div className="grid grid-cols-3 gap-4">
                             <div className="bg-surface-secondary border border-border rounded-lg p-4 text-center">

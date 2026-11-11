@@ -896,7 +896,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
                 hasBlockingThpError ||
                 hasBlockingDiagnostics
               }
-              className="px-4 py-2 rounded-md bg-success text-white hover:bg-success/90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 rounded-md bg-success-dark text-white hover:bg-success-active cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isPending
                 ? "Importing..."

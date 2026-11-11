@@ -92,9 +92,9 @@ export function PendingInvitations({
   if (invitations.length === 0) {
     return (
       <div className="text-center py-8">
-        <div className="w-12 h-12 mx-auto mb-3 bg-[#1F2937] rounded-full flex items-center justify-center">
+        <div className="w-12 h-12 mx-auto mb-3 bg-surface-secondary rounded-full flex items-center justify-center">
           <svg
-            className="w-6 h-6 text-[#6B7280]"
+            className="w-6 h-6 text-text-muted"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -107,8 +107,8 @@ export function PendingInvitations({
             />
           </svg>
         </div>
-        <p className="text-[#D1D5DB] font-medium">No pending invitations</p>
-        <p className="text-sm text-[#9CA3AF] mt-1">
+        <p className="text-text-secondary font-medium">No pending invitations</p>
+        <p className="text-sm text-text-muted mt-1">
           Use the form above to invite collaborators to your leadership team.
         </p>
       </div>
@@ -118,28 +118,28 @@ export function PendingInvitations({
   return (
     <div className="space-y-4">
       {error && (
-        <div className="p-3 bg-red-900/20 border border-red-500/30 rounded-md text-sm text-red-400">
+        <div className="p-3 bg-danger/20 border border-danger/30 rounded-md text-sm text-danger-light">
           {error}
         </div>
       )}
 
       {resendResult && (
-        <div className="bg-[#1F2937] border border-[#374151] rounded-md p-4 mb-4">
+        <div className="bg-surface-secondary border border-border rounded-md p-4 mb-4">
           <div className="flex justify-between items-start">
             <div className="flex items-start gap-2">
-              <svg className="w-4 h-4 text-[#22C55E] mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 text-success-light mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
               <div>
-                <p className="text-sm font-medium text-[#F9FAFB]">
+                <p className="text-sm font-medium text-text-primary">
                   Invitation resent
                 </p>
                 <div className="mt-1.5 space-y-1">
-                  <p className="text-xs text-[#D1D5DB] break-all">
-                    <span className="text-[#9CA3AF]">Link:</span> {resendResult.inviteUrl}
+                  <p className="text-xs text-text-secondary break-all">
+                    <span className="text-text-muted">Link:</span> {resendResult.inviteUrl}
                   </p>
-                  <p className="text-xs text-[#D1D5DB] font-mono">
-                    <span className="font-sans text-[#9CA3AF]">Code:</span> {resendResult.inviteCode}
+                  <p className="text-xs text-text-secondary font-mono">
+                    <span className="font-sans text-text-muted">Code:</span> {resendResult.inviteCode}
                   </p>
                 </div>
               </div>
@@ -147,7 +147,7 @@ export function PendingInvitations({
             <button
               type="button"
               onClick={() => setResendResult(null)}
-              className="text-[#6B7280] hover:text-[#9CA3AF]"
+              className="text-text-muted hover:text-text-muted"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -160,51 +160,51 @@ export function PendingInvitations({
       <div className="overflow-x-auto -mx-6 px-6">
         <table className="min-w-full">
           <thead>
-            <tr className="border-b border-[#374151]">
-              <th className="pb-3 pr-6 text-left text-xs font-medium text-[#9CA3AF] uppercase tracking-wide">
+            <tr className="border-b border-border">
+              <th className="pb-3 pr-6 text-left text-xs font-medium text-text-muted uppercase tracking-wide">
                 Player
               </th>
-              <th className="pb-3 pr-6 text-left text-xs font-medium text-[#9CA3AF] uppercase tracking-wide">
+              <th className="pb-3 pr-6 text-left text-xs font-medium text-text-muted uppercase tracking-wide">
                 Email
               </th>
-              <th className="pb-3 pr-6 text-left text-xs font-medium text-[#9CA3AF] uppercase tracking-wide">
+              <th className="pb-3 pr-6 text-left text-xs font-medium text-text-muted uppercase tracking-wide">
                 Role
               </th>
-              <th className="pb-3 pr-6 text-left text-xs font-medium text-[#9CA3AF] uppercase tracking-wide">
+              <th className="pb-3 pr-6 text-left text-xs font-medium text-text-muted uppercase tracking-wide">
                 Invited By
               </th>
-              <th className="pb-3 pr-6 text-left text-xs font-medium text-[#9CA3AF] uppercase tracking-wide">
+              <th className="pb-3 pr-6 text-left text-xs font-medium text-text-muted uppercase tracking-wide">
                 Expires
               </th>
-              <th className="pb-3 pl-6 text-right text-xs font-medium text-[#9CA3AF] uppercase tracking-wide">
+              <th className="pb-3 pl-6 text-right text-xs font-medium text-text-muted uppercase tracking-wide">
                 
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#1F2937]">
+          <tbody className="divide-y divide-surface-secondary">
             {invitations.map((invitation) => {
               const expired = isExpired(invitation.expiresAt);
               return (
                 <tr key={invitation.id} className={expired ? "opacity-60" : ""}>
-                  <td className="py-3 pr-6 text-sm font-medium text-[#F9FAFB]">
+                  <td className="py-3 pr-6 text-sm font-medium text-text-primary">
                     {invitation.playerNameSnapshot}
                   </td>
-                  <td className="py-3 pr-6 text-sm text-[#D1D5DB]">
+                  <td className="py-3 pr-6 text-sm text-text-secondary">
                     {invitation.email}
                   </td>
-                  <td className="py-3 pr-6 text-sm text-[#D1D5DB]">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[#1F2937] text-[#D1D5DB]">
+                  <td className="py-3 pr-6 text-sm text-text-secondary">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-surface-secondary text-text-secondary">
                       {formatRole(invitation.membershipRole)}
                     </span>
                   </td>
-                  <td className="py-3 pr-6 text-sm text-[#9CA3AF]">
+                  <td className="py-3 pr-6 text-sm text-text-muted">
                     {invitation.invitedBy.displayName}
                   </td>
                   <td className="py-3 pr-6 text-sm">
                     {expired ? (
-                      <span className="text-[#F59E0B] text-xs font-medium">Expired</span>
+                      <span className="text-warning-light text-xs font-medium">Expired</span>
                     ) : (
-                      <span className="text-[#9CA3AF] text-xs">
+                      <span className="text-text-muted text-xs">
                         {formatDate(invitation.expiresAt)}
                       </span>
                     )}
@@ -214,7 +214,7 @@ export function PendingInvitations({
                       type="button"
                       onClick={() => handleResend(invitation.id)}
                       disabled={isPending}
-                      className="text-[#9CA3AF] hover:text-[#F9FAFB] disabled:opacity-50 text-xs"
+                      className="text-text-muted hover:text-text-primary disabled:opacity-50 text-xs"
                     >
                       Resend
                     </button>
@@ -222,7 +222,7 @@ export function PendingInvitations({
                       type="button"
                       onClick={() => handleCancel(invitation.id)}
                       disabled={isPending}
-                      className="text-[#9CA3AF] hover:text-[#EF4444] disabled:opacity-50 text-xs"
+                      className="text-text-muted hover:text-danger-light disabled:opacity-50 text-xs"
                     >
                       Cancel
                     </button>

@@ -30,13 +30,20 @@
   --primary-active: #1D4ED8; /* Darker shade for button hover/active (6.5:1) */
   --primary-light: #60A5FA; /* Lighter shade for badges/low-contrast backgrounds */
   --brand-violet: #7554E8; /* Identity accents only; never a status color */
+  --brand-surface: #171D33; /* Navigation shell */
+  --brand-selection: #30234F; /* Active navigation */
+  --brand-text: #D1C4FF; /* Readable text on brand-selection */
   --success: #22C55E;
+  --success-dark: #166534; /* Accessible filled confirmation actions */
+  --success-active: #14532D;
   --success-light: #4ADE80; /* Lighter shade for badges */
   --warning: #F59E0B;
   --warning-dark: #92400E; /* Darker shade for button backgrounds (WCAG AA 5.5:1 with white) */
+  --warning-active: #78350F;
   --warning-light: #FBBF24; /* Lighter shade for badges */
   --danger: #EF4444;
   --danger-dark: #DC2626; /* Darker shade for button backgrounds (WCAG AA) */
+  --danger-active: #B91C1C;
   --danger-light: #F87171; /* Lighter shade for badges */
 }
 
@@ -62,13 +69,21 @@
   --color-primary-hover: var(--primary-hover);
   --color-primary-active: var(--primary-active);
   --color-primary-light: var(--primary-light);
+  --color-brand-violet: var(--brand-violet);
+  --color-brand-surface: var(--brand-surface);
+  --color-brand-selection: var(--brand-selection);
+  --color-brand-text: var(--brand-text);
   --color-success: var(--success);
+  --color-success-dark: var(--success-dark);
+  --color-success-active: var(--success-active);
   --color-success-light: var(--success-light);
   --color-warning: var(--warning);
   --color-warning-dark: var(--warning-dark);
+  --color-warning-active: var(--warning-active);
   --color-warning-light: var(--warning-light);
   --color-danger: var(--danger);
   --color-danger-dark: var(--danger-dark);
+  --color-danger-active: var(--danger-active);
   --color-danger-light: var(--danger-light);
 
   /* Fonts - Use Geist */
@@ -94,4 +109,10 @@ body {
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+
+/* Connect workspace titles to the mark without coloring operational status. */
+.workspace-heading {
+  border-left: 3px solid var(--brand-violet);
+  padding-left: 1rem;
 }

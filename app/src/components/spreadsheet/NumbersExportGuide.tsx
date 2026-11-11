@@ -13,7 +13,7 @@ export function NumbersExportGuide({ isOpen, onClose }: NumbersExportGuideProps)
       <div className="bg-card border border-border rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
         <div className="flex items-start justify-between border-b border-border pb-3">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold text-lg">
+            <div className="w-8 h-8 rounded-lg bg-warning/10 text-warning-light flex items-center justify-center font-bold text-lg">
               
             </div>
             <div>

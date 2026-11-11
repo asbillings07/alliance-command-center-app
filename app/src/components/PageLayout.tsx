@@ -120,7 +120,7 @@ export function PageLayout({
           (unwrapped) width, the same flex default-sizing fix.
         */}
         <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-          <div className="min-w-0">
+          <div className="min-w-0 workspace-heading">
             <h1 className="text-2xl font-semibold tracking-tight text-text-primary">{title}</h1>
             {description && (
               <p className="mt-1 text-sm text-text-muted">{description}</p>

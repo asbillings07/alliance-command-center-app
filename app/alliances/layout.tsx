@@ -45,7 +45,7 @@ export default async function AlliancesLayout({
     // own). A second full-height wrapper would stack with the child's and, with
     // the sticky header, push the page past 100vh (extra scroll/whitespace).
     <div className="bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-surface">
+      <header className="sticky top-0 z-30 border-b border-border bg-brand-surface">
         <div aria-hidden="true" className="brand-rule" />
         <div className="flex min-w-0 items-center justify-between gap-2 px-4 py-3 lg:px-6">
           <Link

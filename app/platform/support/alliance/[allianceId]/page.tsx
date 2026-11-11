@@ -189,7 +189,7 @@ export default async function AllianceDetailPage({ params }: Props) {
                   <div
                     className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
                       event.completed
-                        ? "bg-success text-white"
+                        ? "bg-success-dark text-white"
                         : "bg-border text-text-disabled"
                     }`}
                   >

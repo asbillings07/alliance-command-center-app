@@ -193,9 +193,9 @@ function WorkbookIssueNotice({
 
   const isBlocking = tone === "blocking";
   const styles = isBlocking
-    ? "bg-red-50 border-red-300 text-red-900"
-    : "bg-amber-50 border-amber-300 text-amber-900";
-  const secondaryText = isBlocking ? "text-red-800" : "text-amber-800";
+    ? "bg-danger/10 border-danger/30 text-danger-light"
+    : "bg-warning/10 border-warning/30 text-warning-light";
+  const secondaryText = isBlocking ? "text-danger-light" : "text-warning-light";
 
   return (
     <div className={`p-4 border rounded-lg flex flex-col gap-2 ${styles}`}>
@@ -1226,10 +1226,10 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
         {/* Low-confidence Header Confirmation */}
         {tableBounds && (tableBounds.needsConfirmation || tableBounds.tableRegions.length > 1) && !isHeaderConfirmed && (
-          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex flex-col gap-3">
+          <div className="p-4 bg-warning/10 border border-warning/30 rounded-lg flex flex-col gap-3">
             <div>
-              <p className="font-semibold text-amber-200 text-sm">Confirm Header Row &amp; Table Region</p>
-              <p className="text-xs text-amber-300/90 mt-1">
+              <p className="font-semibold text-warning-light text-sm">Confirm Header Row &amp; Table Region</p>
+              <p className="text-xs text-warning-light mt-1">
                 {tableBounds.tableRegions.length > 1
                   ? "Multiple tables were detected. Confirm your table selection and header row before mapping columns."
                   : "Header row detection confidence is low. Please confirm which row contains your column headers."}
@@ -1237,7 +1237,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             </div>
             {tableBounds.candidates.length > 0 && (
               <div className="flex flex-col gap-1 text-xs">
-                <span className="text-amber-200 font-medium">Header Row:</span>
+                <span className="text-warning-light font-medium">Header Row:</span>
                 <select
                   value={selectedHeaderRowIndex}
                   onChange={(e) => handleSelectHeaderRow(Number(e.target.value))}
@@ -1263,10 +1263,10 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
         {/* Inferential Period Notice Card */}
         {unconfirmedPeriodColumns.length > 0 && (
-          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex flex-col gap-3">
+          <div className="p-4 bg-warning/10 border border-warning/30 rounded-lg flex flex-col gap-3">
             <div>
-              <p className="font-semibold text-amber-200 text-sm">This file may include multiple periods</p>
-              <p className="text-xs text-amber-300/90 mt-1">
+              <p className="font-semibold text-warning-light text-sm">This file may include multiple periods</p>
+              <p className="text-xs text-warning-light mt-1">
                 Single-period import records results into <strong>{periodName}</strong>. Some columns ({unconfirmedPeriodColumns.map((c) => `\u201c${c.columnName}\u201d`).join(", ")}) appear to name evaluation periods rather than metrics. Confirm whether to import these columns as metrics for {periodName} or skip them. To import data into a different evaluation period, open that period and import this spreadsheet.
               </p>
             </div>
@@ -1429,7 +1429,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                             {mapping.columnName}
                           </span>
                           {isPeriodLike && (
-                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-warning/20 text-warning-light border border-warning/30">
                               Looks like a period name
                             </span>
                           )}
@@ -1439,7 +1439,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                             </span>
                           )}
                           {isAmbiguous && mapping.confirmationStatus === "unconfirmed" && (
-                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-warning/20 text-warning-light border border-warning/30">
                               Ambiguous column — confirm choice
                             </span>
                           )}
@@ -1450,7 +1450,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
                           )}
                         </div>
                         {(isPeriodLike || isAmbiguous) && mapping.confirmationStatus === "unconfirmed" && (
-                          <span className="text-xs text-amber-400 font-medium whitespace-nowrap">Confirmation required</span>
+                          <span className="text-xs text-warning-light font-medium whitespace-nowrap">Confirmation required</span>
                         )}
                       </div>
 
@@ -1670,7 +1670,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           <button
             onClick={handleImport}
             disabled={isPending || totalToImport === 0 || hasBlockingParseErrors || hasBlockingDiagnostics}
-            className="px-4 py-2 rounded-md bg-success text-white hover:bg-success/90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-md bg-success-dark text-white hover:bg-success-active cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isPending
               ? "Importing..."

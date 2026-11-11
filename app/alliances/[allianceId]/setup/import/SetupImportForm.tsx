@@ -225,16 +225,16 @@ export function SetupImportForm({
         )}
 
         {tableBounds && (tableBounds.needsConfirmation || tableBounds.tableRegions.length > 1) && !isHeaderConfirmed && (
-          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex flex-col gap-3">
+          <div className="p-4 bg-warning/10 border border-warning/30 rounded-lg flex flex-col gap-3">
             <div>
-              <p className="font-semibold text-amber-200 text-sm">Confirm Header Row &amp; Table Region</p>
-              <p className="text-xs text-amber-300/90 mt-1">
+              <p className="font-semibold text-warning-light text-sm">Confirm Header Row &amp; Table Region</p>
+              <p className="text-xs text-warning-light mt-1">
                 Confirm which row contains your column headers before mapping evaluation results.
               </p>
             </div>
             {tableBounds.candidates.length > 0 && (
               <div className="flex flex-col gap-1 text-xs">
-                <span className="text-amber-200 font-medium">Header Row:</span>
+                <span className="text-warning-light font-medium">Header Row:</span>
                 <select
                   value={selectedHeaderRowIndex}
                   onChange={(e) => handleSelectHeaderRow(Number(e.target.value))}

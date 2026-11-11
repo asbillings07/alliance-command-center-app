@@ -517,7 +517,7 @@ function PreviewRow({
           <button
             type="button"
             onClick={() => result.memberId && onDuplicateSelection(preview.columnIndex, result.memberId, resultIndex)}
-            className={`px-2 py-1 rounded text-xs cursor-pointer ${isSelected ? "bg-success text-white" : "bg-surface-secondary border border-border text-text-secondary hover:bg-surface-elevated"}`}
+            className={`px-2 py-1 rounded text-xs cursor-pointer ${isSelected ? "bg-success-dark text-white" : "bg-surface-secondary border border-border text-text-secondary hover:bg-surface-elevated"}`}
           >
             {isSelected ? "Selected" : "Use This"}
           </button>

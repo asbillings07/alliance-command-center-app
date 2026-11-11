@@ -37,7 +37,7 @@ export function AcceptInvitationForm({
   return (
     <div className="space-y-3">
       {error && (
-        <div className="p-3 bg-[#EF4444]/10 border border-[#EF4444]/30 rounded-md text-sm text-[#EF4444]">
+        <div className="p-3 bg-danger/10 border border-danger/30 rounded-md text-sm text-danger-light">
           {error}
         </div>
       )}
@@ -45,7 +45,7 @@ export function AcceptInvitationForm({
         type="button"
         onClick={handleAccept}
         disabled={isPending}
-        className="w-full px-4 py-2 bg-[#3B82F6] text-white rounded-md hover:bg-[#2563EB] disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full px-4 py-2 bg-primary-hover text-white rounded-md hover:bg-primary-active disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isPending ? "Joining..." : `Join ${allianceName}`}
       </button>
