@@ -94,7 +94,7 @@ export function PeriodProposalReview({
           </div>
         </div>
         {qualifyingProposals.length > 0 && (
-          <span className="bg-primary/10 text-primary font-medium px-2.5 py-1 rounded text-[11px]">
+          <span className="bg-primary/10 text-primary-light font-medium px-2.5 py-1 rounded text-[11px]">
             {qualifyingProposals.length} Confident Period
             {qualifyingProposals.length === 1 ? "" : "s"}
           </span>
@@ -147,7 +147,7 @@ export function PeriodProposalReview({
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
                         prop.dateKind === "snapshot"
-                          ? "bg-primary/10 text-primary border-primary/20"
+                          ? "bg-primary/10 text-primary-light border-primary/20"
                           : "bg-success/10 text-success-light border-success/20"
                       }`}
                     >

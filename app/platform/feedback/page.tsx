@@ -105,7 +105,7 @@ export default async function PlatformFeedbackPage({ searchParams }: PageProps) 
           <p className="text-sm mt-1">
             <Link
               href="/platform/feedback"
-              className="text-primary hover:text-primary-hover"
+              className="text-primary hover:text-text-primary"
             >
               Clear filters
             </Link>

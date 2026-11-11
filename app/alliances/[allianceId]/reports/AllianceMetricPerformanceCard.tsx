@@ -46,7 +46,7 @@ export function AllianceMetricPerformanceCard({ allianceId, periodId, comparePer
 
   return (
     <div data-testid={`alliance-metric-card-${metric.id}`}>
-      <Card className={!metric.active ? "opacity-60" : ""}>
+      <Card className={!metric.active ? "border-dashed" : ""}>
         <Card.Body>
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">

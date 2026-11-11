@@ -46,7 +46,7 @@ function ReissueSuccessNotice({
       <button
         type="button"
         onClick={onDismiss}
-        className="text-primary hover:text-primary-hover"
+        className="text-primary hover:text-text-primary"
       >
         Dismiss
       </button>
@@ -96,8 +96,8 @@ export function ReissueActions({
 
   const buttonClass =
     variant === "card"
-      ? "px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-tertiary border border-border rounded-lg transition-colors disabled:opacity-50"
-      : "text-xs text-primary hover:text-primary-hover disabled:opacity-50";
+      ? "px-3 py-1 text-sm bg-surface-secondary hover:bg-surface-elevated border border-border rounded-lg transition-colors disabled:opacity-50"
+      : "text-xs text-primary hover:text-text-primary disabled:opacity-50";
 
   return (
     <div className="mt-2">
@@ -138,7 +138,7 @@ export function ReissueActions({
             className={
               variant === "card"
                 ? "px-3 py-1 text-sm bg-primary-hover text-white rounded-lg disabled:opacity-50"
-                : "text-xs text-primary hover:text-primary-hover disabled:opacity-50"
+                : "text-xs text-primary hover:text-text-primary disabled:opacity-50"
             }
             data-testid="reissue-submit"
           >

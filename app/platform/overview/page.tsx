@@ -174,13 +174,13 @@ export default async function PlatformOverview() {
               <div className="mt-2 flex flex-wrap gap-3 text-sm">
                 <Link
                   href="/platform/beta"
-                  className="text-primary hover:text-primary-hover"
+                  className="text-primary hover:text-text-primary"
                 >
                   Open Beta Participants
                 </Link>
                 <Link
                   href="/platform/overview"
-                  className="text-primary hover:text-primary-hover"
+                  className="text-primary hover:text-text-primary"
                 >
                   Retry
                 </Link>
@@ -252,7 +252,7 @@ export default async function PlatformOverview() {
           </h2>
           <Link
             href="/platform/setup"
-            className="text-sm text-primary hover:text-primary-hover"
+            className="text-sm text-primary hover:text-text-primary"
           >
             View all →
           </Link>
@@ -312,7 +312,7 @@ export default async function PlatformOverview() {
           </h2>
           <Link
             href="/platform/activity"
-            className="text-sm text-primary hover:text-primary-hover"
+            className="text-sm text-primary hover:text-text-primary"
           >
             View all →
           </Link>

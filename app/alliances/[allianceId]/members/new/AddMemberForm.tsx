@@ -68,13 +68,13 @@ export function AddMemberForm({ allianceId }: AddMemberFormProps) {
                     <h2 className="text-lg font-semibold text-warning mb-2">
                         Archived Member Found
                     </h2>
-                    <p className="text-warning/90 mb-4">
+                    <p className="text-warning-light mb-4">
                         A member named <strong>{archivedPrompt.playerName}</strong> was
                         previously archived on{" "}
                         {new Date(archivedPrompt.archivedAt).toLocaleDateString()}. Would you
                         like to restore them instead of creating a new record?
                     </p>
-                    <p className="text-sm text-warning/80 mb-6">
+                    <p className="text-sm text-warning-light mb-6">
                         Restoring will preserve their historical metrics and leadership notes.
                     </p>
                     <div className="flex gap-3">

@@ -41,7 +41,7 @@ export function ColumnTranslationCard({
 
           {/* Sample values */}
           <div className="text-text-muted text-[11px] flex items-center space-x-1">
-            <span className="font-medium text-text-primary/80">Samples:</span>
+            <span className="font-medium text-text-primary-light">Samples:</span>
             {translation.samples.length > 0 ? (
               <span className="font-mono bg-surface-secondary/40 px-1.5 py-0.5 rounded border border-border/40">
                 {translation.samples.map((s) => `"${s}"`).join(", ")}
@@ -55,7 +55,7 @@ export function ColumnTranslationCard({
         {/* Translation Status Badge */}
         <div>
           {translation.kind === "identity" && (
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
+            <span className="bg-primary/10 text-primary-light border border-primary/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
               Mapped: Member Identity
             </span>
           )}
@@ -85,11 +85,11 @@ export function ColumnTranslationCard({
                   Mapped: Existing Metric
                 </span>
               ) : translation.target.kind === "attach" ? (
-                <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
+                <span className="bg-primary/10 text-primary-light border border-primary/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
                   Mapped: Library Metric
                 </span>
               ) : (
-                <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
+                <span className="bg-primary/10 text-primary-light border border-primary/20 px-2 py-0.5 rounded-full font-medium text-[11px]">
                   Mapped: New Metric
                 </span>
               )}

@@ -63,7 +63,7 @@ export function MetricComparisonControl({ allianceId, metricId, comparison }: Pr
           {comparison.recommended && (
             <button
               type="button"
-              className="ml-2 text-primary hover:text-primary-hover underline disabled:opacity-50"
+              className="ml-2 text-primary hover:text-text-primary underline disabled:opacity-50"
               onClick={() => navigate(comparison.recommended!.id)}
               disabled={isPending}
               data-testid="comparison-use-recommended"

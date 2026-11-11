@@ -13,7 +13,7 @@ const backToLogin = (
     Remembered your password?{" "}
     <Link
       href="/login"
-      className="text-primary hover:text-primary-hover underline"
+      className="text-primary hover:text-text-primary underline"
     >
       Sign in
     </Link>

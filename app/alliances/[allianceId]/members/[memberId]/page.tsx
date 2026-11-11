@@ -394,7 +394,7 @@ export default async function MemberPage({ params, searchParams }: Params) {
                                     This member was archived on{" "}
                                     {allianceMember.archivedAt.toLocaleDateString()}
                                 </p>
-                                <p className="text-sm text-warning/80 mt-1">
+                                <p className="text-sm text-warning-light mt-1">
                                     Historical data is preserved but they will not appear in active member lists.
                                 </p>
                             </div>

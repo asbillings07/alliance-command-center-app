@@ -39,7 +39,7 @@ export default async function AccessRequestsPage({ searchParams }: PageProps) {
     return (
       <div className="space-y-8 max-w-6xl" data-testid="platform-access-requests-page">
         <nav className="text-sm text-text-muted" aria-label="Breadcrumb">
-          <Link href="/platform/beta" className="text-primary hover:text-primary-hover underline">
+          <Link href="/platform/beta" className="text-primary hover:text-text-primary underline">
             Beta
           </Link>
           {" / "}
@@ -63,7 +63,7 @@ export default async function AccessRequestsPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-8 max-w-6xl" data-testid="platform-access-requests-page">
       <nav className="text-sm text-text-muted" aria-label="Breadcrumb">
-        <Link href="/platform/beta" className="text-primary hover:text-primary-hover underline">
+        <Link href="/platform/beta" className="text-primary hover:text-text-primary underline">
           Beta
         </Link>
         {" / "}
@@ -75,7 +75,7 @@ export default async function AccessRequestsPage({ searchParams }: PageProps) {
           <h2 className="text-lg font-semibold text-text-secondary">Access Requests</h2>
           <Link
             href="/platform/beta"
-            className="text-sm text-primary hover:text-primary-hover"
+            className="text-sm text-primary hover:text-text-primary"
             data-testid="back-to-beta-participants"
           >
             ← Back to Beta participants
@@ -101,7 +101,7 @@ export default async function AccessRequestsPage({ searchParams }: PageProps) {
         <div className="text-center py-12 text-text-muted">
           <p>No access requests match these filters.</p>
           <p className="text-sm mt-1">
-            <Link href="/platform/beta/access-requests" className="text-primary hover:text-primary-hover">
+            <Link href="/platform/beta/access-requests" className="text-primary hover:text-text-primary">
               Clear filters
             </Link>
           </p>

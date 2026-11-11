@@ -29,7 +29,7 @@
   --primary: #60A5FA;
   --primary-hover: #2563EB; /* Accessible fill for white text (5.1:1); button resting color */
   --primary-active: #1D4ED8; /* Darker shade for button hover/active (6.5:1) */
-  --primary-light: #60A5FA; /* Lighter shade for badges/low-contrast backgrounds */
+  --primary-light: #93C5FD; /* Lighter shade for badges/low-contrast backgrounds */
   --brand-violet: #7554E8; /* Identity accents only; never a status color */
   --brand-surface: #171D33; /* Navigation shell */
   --brand-selection: #30234F; /* Active navigation */
@@ -45,7 +45,7 @@
   --danger: #EF4444;
   --danger-dark: #DC2626; /* Darker shade for button backgrounds (WCAG AA) */
   --danger-active: #B91C1C;
-  --danger-light: #F87171; /* Lighter shade for badges */
+  --danger-light: #FCA5A5; /* Lighter shade for badges */
 }
 
 @theme inline {

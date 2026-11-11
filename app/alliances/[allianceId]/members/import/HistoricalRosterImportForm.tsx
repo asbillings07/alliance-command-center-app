@@ -717,7 +717,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                 )}
 
                 {duplicateInFileRows.length > 0 && (
-                    <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-text-primary flex flex-col gap-1">
+                    <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg text-text-primary-light flex flex-col gap-1">
                         <p className="font-semibold text-text-primary">
                             {duplicateInFileRows.length} Duplicate Row{duplicateInFileRows.length === 1 ? "" : "s"} Highlighted in File
                         </p>
@@ -795,7 +795,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                             type="button"
                             onClick={() => setFinalStatusBulk("archived")}
                             disabled={selectedCount === 0}
-                            className="px-3 py-1.5 rounded-md border border-primary text-primary hover:bg-primary/10 text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                            className="px-3 py-1.5 rounded-md border border-primary text-primary-light hover:bg-primary/10 text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                         >
                             Mark Selected Archived
                         </button>
@@ -1184,7 +1184,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                     {returnTo && (
                         <Link
                             href={returnTo}
-                            className="px-4 py-2 rounded-md border border-primary text-primary hover:bg-primary/10 inline-block text-center font-medium"
+                            className="px-4 py-2 rounded-md border border-primary text-primary-light hover:bg-primary/10 inline-block text-center font-medium"
                         >
                             Continue Setup
                         </Link>

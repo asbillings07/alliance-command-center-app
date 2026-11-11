@@ -288,7 +288,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
             )}
 
             {contextualBanner.kind === "no-periods" && (
-                <div className="mb-6 rounded-lg border border-primary/20 bg-primary/10 p-4 text-sm text-text-primary">
+                <div className="mb-6 rounded-lg border border-primary/20 bg-primary/10 p-4 text-sm text-text-primary-light">
                     <p>Create an evaluation period before viewing member results.</p>
                     {permissions.canConfigurePeriods ? (
                         <div className="mt-3">
@@ -309,7 +309,7 @@ export default async function MembersPage({ params, searchParams }: Params) {
             )}
 
             {contextualBanner.kind === "no-metrics" && selectedPeriod && (
-                <div className="mb-6 rounded-lg border border-primary/20 bg-primary/10 p-4 text-sm text-text-primary">
+                <div className="mb-6 rounded-lg border border-primary/20 bg-primary/10 p-4 text-sm text-text-primary-light">
                     <p>
                         <strong>{selectedPeriod.name}</strong> has no configured metrics yet.
                     </p>

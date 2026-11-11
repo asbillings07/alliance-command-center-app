@@ -40,7 +40,7 @@ export function SpreadsheetTranslationSummary(props: SpreadsheetTranslationSumma
               </p>
             </div>
           </div>
-          <span className="bg-primary/10 text-primary font-medium px-2 py-0.5 rounded text-[11px]">
+          <span className="bg-primary/10 text-primary-light font-medium px-2 py-0.5 rounded text-[11px]">
             Destination: {summary.destinationPeriodName}
           </span>
         </div>
@@ -154,7 +154,7 @@ export function SpreadsheetTranslationSummary(props: SpreadsheetTranslationSumma
               </p>
             </div>
           </div>
-          <span className="bg-primary/10 text-primary font-medium px-2 py-0.5 rounded text-[11px]">
+          <span className="bg-primary/10 text-primary-light font-medium px-2 py-0.5 rounded text-[11px]">
             Scope: Alliance Members
           </span>
         </div>

@@ -238,23 +238,23 @@ export default async function PlatformSetup() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-success/10 rounded-lg p-4 border border-success/20">
             <div className="text-2xl font-bold text-success">{summary.ready}</div>
-            <div className="text-sm text-success/80">Ready</div>
+            <div className="text-sm text-success-light">Ready</div>
           </div>
           <div className="bg-warning/10 rounded-lg p-4 border border-warning/20">
             <div className="text-2xl font-bold text-warning">
               {summary.needsSetup}
             </div>
-            <div className="text-sm text-warning/80">Needs Setup</div>
+            <div className="text-sm text-warning-light">Needs Setup</div>
           </div>
           <div className="bg-danger/10 rounded-lg p-4 border border-danger/20">
             <div className="text-2xl font-bold text-danger-light">
               {summary.stalled}
             </div>
-            <div className="text-sm text-danger-light/80">Stalled</div>
+            <div className="text-sm text-danger-light">Stalled</div>
           </div>
           <div className="bg-primary/10 rounded-lg p-4 border border-primary/20">
             <div className="text-2xl font-bold text-primary">{summary.new}</div>
-            <div className="text-sm text-primary/80">New</div>
+            <div className="text-sm text-primary-light">New</div>
           </div>
         </div>
       </section>

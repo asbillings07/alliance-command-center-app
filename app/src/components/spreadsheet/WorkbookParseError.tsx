@@ -44,7 +44,7 @@ export function WorkbookParseError({
   }
 
   return (
-    <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 my-4 space-y-2 text-xs text-destructive">
+    <div className="rounded-lg border border-danger/30 bg-danger/10 p-4 my-4 space-y-2 text-xs text-danger-light">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2 font-semibold text-sm">
           <span>⚠️</span>
@@ -54,14 +54,14 @@ export function WorkbookParseError({
           <button
             type="button"
             onClick={onDismiss}
-            className="text-destructive/70 hover:text-destructive p-1"
+            className="text-danger-light/70 hover:text-danger-light p-1"
           >
             ✕
           </button>
         )}
       </div>
       <p className="leading-relaxed">{message}</p>
-      {hint && <p className="font-medium text-destructive/90 text-[11px] pt-1">{hint}</p>}
+      {hint && <p className="font-medium text-danger-light/90 text-[11px] pt-1">{hint}</p>}
     </div>
   );
 }

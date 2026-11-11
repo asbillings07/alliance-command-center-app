@@ -191,7 +191,7 @@ function ExistingAccessPanel({
           <dd className="inline">
             <Link
               href={`/platform/support/alliance/${detail.allianceId}`}
-              className="text-primary hover:text-primary-hover"
+              className="text-primary hover:text-text-primary"
             >
               {detail.allianceName}
             </Link>
@@ -269,7 +269,7 @@ function OtherConflictNotice({
       <p className="text-sm">
         <Link
           href={`/platform/beta?search=${encodeURIComponent(email)}`}
-          className="text-primary hover:text-primary-hover"
+          className="text-primary hover:text-text-primary"
         >
           Open on the Beta page
         </Link>
@@ -816,7 +816,7 @@ export function AccessRequestActionsPanel({
           Resend or Reissue on the{" "}
           <Link
             href={`/platform/beta?search=${encodeURIComponent(item.email)}`}
-            className="text-primary hover:text-primary-hover"
+            className="text-primary hover:text-text-primary"
           >
             Beta page
           </Link>

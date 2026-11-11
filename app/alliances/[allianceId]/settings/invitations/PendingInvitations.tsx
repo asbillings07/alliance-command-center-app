@@ -185,7 +185,7 @@ export function PendingInvitations({
             {invitations.map((invitation) => {
               const expired = isExpired(invitation.expiresAt);
               return (
-                <tr key={invitation.id} className={expired ? "opacity-60" : ""}>
+                <tr key={invitation.id} className={expired ? "bg-surface-secondary/50" : ""}>
                   <td className="py-3 pr-6 text-sm font-medium text-text-primary">
                     {invitation.playerNameSnapshot}
                   </td>

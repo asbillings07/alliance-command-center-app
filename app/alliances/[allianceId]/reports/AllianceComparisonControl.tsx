@@ -54,7 +54,7 @@ export function AllianceComparisonControl({ allianceId, comparisonSelection }: P
           {comparisonSelection.recommended && (
             <button
               type="button"
-              className="ml-2 text-primary hover:text-primary-hover underline disabled:opacity-50"
+              className="ml-2 text-primary hover:text-text-primary underline disabled:opacity-50"
               onClick={() => navigate(comparisonSelection.recommended!.id)}
               disabled={isPending}
               data-testid="alliance-comparison-use-recommended"
