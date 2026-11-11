@@ -137,7 +137,7 @@ export function ReissueActions({
             disabled={isPending}
             className={
               variant === "card"
-                ? "px-3 py-1 text-sm bg-primary text-white rounded-lg disabled:opacity-50"
+                ? "px-3 py-1 text-sm bg-primary-hover text-white rounded-lg disabled:opacity-50"
                 : "text-xs text-primary hover:text-primary-hover disabled:opacity-50"
             }
             data-testid="reissue-submit"

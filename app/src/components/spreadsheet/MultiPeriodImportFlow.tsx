@@ -1284,7 +1284,7 @@ export function MultiPeriodImportFlow({
             <>
               <Link
                 href={`/alliances/${allianceId}/members?periodId=${committedPeriods[0]!.periodId}`}
-                className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover text-sm font-medium"
+                className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active text-sm font-medium"
               >
                 View Member Results
               </Link>
@@ -1308,7 +1308,7 @@ export function MultiPeriodImportFlow({
               ))}
               <Link
                 href={`/alliances/${allianceId}/members`}
-                className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover text-sm font-medium"
+                className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active text-sm font-medium"
               >
                 View Members
               </Link>
@@ -1916,7 +1916,7 @@ export function MultiPeriodImportFlow({
           type="button"
           onClick={handlePreview}
           disabled={!canProceedToPreview}
-          className="px-4 py-2 rounded-md bg-primary text-white cursor-pointer disabled:opacity-50"
+          className="px-4 py-2 rounded-md bg-primary-hover text-white cursor-pointer disabled:opacity-50"
         >
           Preview Multi-Period Import
         </button>

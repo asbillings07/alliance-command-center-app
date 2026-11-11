@@ -140,7 +140,7 @@ export function ColumnTranslationCard({
                 <button
                   type="button"
                   onClick={() => onConfirmMetric?.(translation.columnIndex)}
-                  className="px-2.5 py-1 bg-primary text-white hover:bg-primary-hover rounded font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="px-2.5 py-1 bg-primary-hover text-white hover:bg-primary-active rounded font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   Import as Metric
                 </button>

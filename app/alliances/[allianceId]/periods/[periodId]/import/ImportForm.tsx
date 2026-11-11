@@ -1131,7 +1131,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
           </Link>
           <Link
             href={`/alliances/${allianceId}/periods/${periodId}`}
-            className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover text-sm font-medium inline-block text-center"
+            className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active text-sm font-medium inline-block text-center"
           >
             View Evaluation Period
           </Link>
@@ -1254,7 +1254,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             <button
               type="button"
               onClick={() => setIsHeaderConfirmed(true)}
-              className="px-3 py-1.5 rounded bg-primary text-white text-xs font-medium hover:bg-primary-hover self-start cursor-pointer"
+              className="px-3 py-1.5 rounded bg-primary-hover text-white text-xs font-medium hover:bg-primary-active self-start cursor-pointer"
             >
               Confirm Header &amp; Table Region
             </button>
@@ -1539,7 +1539,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
             <button
               onClick={handleSelectComplete}
               disabled={!canProceed}
-              className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Preview Import
             </button>

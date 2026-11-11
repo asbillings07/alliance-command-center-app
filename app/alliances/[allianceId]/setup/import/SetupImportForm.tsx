@@ -251,7 +251,7 @@ export function SetupImportForm({
             <button
               type="button"
               onClick={() => setIsHeaderConfirmed(true)}
-              className="px-3 py-1.5 rounded bg-primary text-white text-xs font-medium hover:bg-primary-hover self-start cursor-pointer"
+              className="px-3 py-1.5 rounded bg-primary-hover text-white text-xs font-medium hover:bg-primary-active self-start cursor-pointer"
             >
               Confirm Header &amp; Table Region
             </button>
@@ -291,7 +291,7 @@ export function SetupImportForm({
             type="button"
             onClick={() => setStep("import")}
             disabled={!canProceedToImport || Boolean(error)}
-            className="px-4 py-2 rounded-md bg-primary text-white cursor-pointer disabled:opacity-50"
+            className="px-4 py-2 rounded-md bg-primary-hover text-white cursor-pointer disabled:opacity-50"
           >
             Continue to Column Mapping
           </button>

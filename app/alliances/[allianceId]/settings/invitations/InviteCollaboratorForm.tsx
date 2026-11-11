@@ -146,7 +146,7 @@ export function InviteCollaboratorForm({
                   <button
                     type="button"
                     onClick={handleCopyUrl}
-                    className="px-3 py-2 bg-primary text-white rounded-md text-sm hover:bg-primary-hover flex-shrink-0"
+                    className="px-3 py-2 bg-primary-hover text-white rounded-md text-sm hover:bg-primary-active flex-shrink-0"
                   >
                     Copy
                   </button>
@@ -167,7 +167,7 @@ export function InviteCollaboratorForm({
                   <button
                     type="button"
                     onClick={handleCopyCode}
-                    className="px-3 py-2 bg-primary text-white rounded-md text-sm hover:bg-primary-hover flex-shrink-0"
+                    className="px-3 py-2 bg-primary-hover text-white rounded-md text-sm hover:bg-primary-active flex-shrink-0"
                   >
                     Copy
                   </button>
@@ -294,7 +294,7 @@ export function InviteCollaboratorForm({
             <button
               type="submit"
               disabled={isPending || !email.trim()}
-              className="w-full px-4 py-2.5 bg-primary text-white rounded-md hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+              className="w-full px-4 py-2.5 bg-primary-hover text-white rounded-md hover:bg-primary-active disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
             >
               {isPending ? "Sending..." : "Send Invitation"}
             </button>

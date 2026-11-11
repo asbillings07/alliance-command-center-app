@@ -99,7 +99,7 @@ export function ConfirmMemberForm({
       <button
         type="submit"
         disabled={isPending}
-        className="w-full px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm transition-colors"
+        className="w-full px-4 py-2 bg-primary-hover text-white rounded-md hover:bg-primary-active disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm transition-colors"
       >
         {isPending ? "Confirming..." : "Continue"}
       </button>

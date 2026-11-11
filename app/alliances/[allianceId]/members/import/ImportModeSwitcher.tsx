@@ -54,7 +54,7 @@ export function ImportModeSwitcher({ allianceId, existingMembers, returnTo, canM
                     onClick={() => setMode("current")}
                     className={`px-4 py-2 rounded-md text-sm font-medium cursor-pointer ${
                         mode === "current"
-                            ? "bg-primary text-white"
+                            ? "bg-primary-hover text-white"
                             : "bg-surface-secondary text-text-secondary hover:bg-surface-secondary/70"
                     }`}
                 >
@@ -67,7 +67,7 @@ export function ImportModeSwitcher({ allianceId, existingMembers, returnTo, canM
                         onClick={() => setMode("historical")}
                         className={`px-4 py-2 rounded-md text-sm font-medium cursor-pointer ${
                             mode === "historical"
-                                ? "bg-primary text-white"
+                                ? "bg-primary-hover text-white"
                                 : "bg-surface-secondary text-text-secondary hover:bg-surface-secondary/70"
                         }`}
                     >

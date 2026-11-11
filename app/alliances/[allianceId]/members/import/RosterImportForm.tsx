@@ -1010,7 +1010,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
           )}
           <Link
             href={`/alliances/${allianceId}/members`}
-            className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover inline-block text-center font-medium"
+            className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active inline-block text-center font-medium"
           >
             View Members
           </Link>

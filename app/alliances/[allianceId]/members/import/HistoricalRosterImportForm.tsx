@@ -809,7 +809,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                                 onClick={() => setActiveTab(tab.id)}
                                 className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer ${
                                     activeTab === tab.id
-                                        ? "bg-primary text-white"
+                                        ? "bg-primary-hover text-white"
                                         : "bg-surface-secondary text-text-secondary hover:bg-surface-secondary/70"
                                 }`}
                             >
@@ -990,7 +990,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                                                             disabled={!member.selected}
                                                             className={`px-2 py-1 rounded text-xs font-medium border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                                                                 member.finalStatus === "archived"
-                                                                    ? "bg-primary text-white border-primary"
+                                                                    ? "bg-primary-hover text-white border-primary"
                                                                     : "border-border text-text-secondary hover:bg-primary/10"
                                                             }`}
                                                         >
@@ -1191,7 +1191,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                     )}
                     <Link
                         href={`/alliances/${allianceId}/members`}
-                        className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-hover inline-block text-center font-medium"
+                        className="px-4 py-2 rounded-md bg-primary-hover text-white hover:bg-primary-active inline-block text-center font-medium"
                     >
                         View Members
                     </Link>

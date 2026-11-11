@@ -95,7 +95,7 @@ export function SpreadsheetDataShapeGuide({ type, periodName }: SpreadsheetDataS
                 <button
                   type="button"
                   onClick={handleDownload}
-                  className="px-2 py-1 bg-primary text-white hover:bg-primary-hover rounded transition-colors"
+                  className="px-2 py-1 bg-primary-hover text-white hover:bg-primary-active rounded transition-colors"
                 >
                   Download .csv Template
                 </button>
