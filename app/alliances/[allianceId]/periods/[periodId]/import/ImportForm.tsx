@@ -1,5 +1,6 @@
 'use client'
-import { useState, useTransition, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { ApplyMetricDataDialog, type MetricApplicationSummary } from "@/app/src/components/ApplyMetricDataDialog";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -281,7 +282,11 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
   const [dismissedPeriodSuggestion, setDismissedPeriodSuggestion] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
+  const [pendingApplication, setPendingApplication] = useState<{
+    payload: Parameters<typeof importMemberMetrics>[0];
+    summary: MetricApplicationSummary[];
+  } | null>(null);
 
   const metricNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -931,16 +936,30 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       return;
     }
 
-    startTransition(async () => {
-      try {
-        const result = await importMemberMetrics({ periodId, allianceId, mappings });
-        setImportResult(result);
-        router.refresh();
-        setStep("complete");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Import failed");
-      }
+    setPendingApplication({
+      payload: { periodId, allianceId, mappings },
+      summary: previews.map((preview) => ({
+        periodName,
+        metricName: preview.displayName,
+        entryCount: getPreviewEntries(preview, duplicateSelections[preview.columnIndex]).length,
+      })).filter((item) => item.entryCount > 0),
     });
+  };
+
+  const applyData = async () => {
+    if (!pendingApplication) return;
+    setIsPending(true);
+    try {
+      const result = await importMemberMetrics(pendingApplication.payload);
+      setImportResult(result);
+      setPendingApplication(null);
+      router.refresh();
+      setStep("complete");
+    } catch {
+      return { error: "Could not confirm whether the data was applied. Check Go back in time before trying again." };
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const handleReset = () => {
@@ -1677,6 +1696,12 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
               : `Import All (${totalToImport} ${totalToImport === 1 ? "entry" : "entries"} across ${previews.length} ${previews.length === 1 ? "metric" : "metrics"})`}
           </button>
         </div>
+        <ApplyMetricDataDialog
+          isOpen={pendingApplication !== null}
+          summary={pendingApplication?.summary ?? []}
+          onConfirm={applyData}
+          onClose={() => setPendingApplication(null)}
+        />
       </div>
     );
   }

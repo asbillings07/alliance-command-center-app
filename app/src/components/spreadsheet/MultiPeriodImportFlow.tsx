@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
+import { ApplyMetricDataDialog, type MetricApplicationSummary } from "@/app/src/components/ApplyMetricDataDialog";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -716,7 +717,11 @@ export function MultiPeriodImportFlow({
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<MultiPeriodImportMetricsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
+  const [pendingApplication, setPendingApplication] = useState<{
+    payload: Parameters<typeof importMultiPeriodMetrics>[0];
+    summary: MetricApplicationSummary[];
+  } | null>(null);
 
   const metricNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -1162,16 +1167,30 @@ export function MultiPeriodImportFlow({
       return;
     }
 
-    startTransition(async () => {
-      try {
-        const result = await importMultiPeriodMetrics({ allianceId, groups });
-        setImportResult(result);
-        router.refresh();
-        setStep("complete");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Import failed");
-      }
+    setPendingApplication({
+      payload: { allianceId, groups },
+      summary: previews.map((preview) => ({
+        periodName: preview.periodName,
+        metricName: preview.displayName,
+        entryCount: getPreviewEntries(preview, duplicateSelections[preview.columnIndex]).length,
+      })).filter((item) => item.entryCount > 0),
     });
+  };
+
+  const applyData = async () => {
+    if (!pendingApplication) return;
+    setIsPending(true);
+    try {
+      const result = await importMultiPeriodMetrics(pendingApplication.payload);
+      setImportResult(result);
+      setPendingApplication(null);
+      router.refresh();
+      setStep("complete");
+    } catch {
+      return { error: "Could not confirm whether the data was applied. Check Go back in time before trying again." };
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const currentSheet = parsedWorkbook.sheets[selectedSheetIndex];
@@ -1469,6 +1488,12 @@ export function MultiPeriodImportFlow({
               : `Confirm Multi-Period Import (${totalToImport} ${totalToImport === 1 ? "entry" : "entries"})`}
           </button>
         </div>
+        <ApplyMetricDataDialog
+          isOpen={pendingApplication !== null}
+          summary={pendingApplication?.summary ?? []}
+          onConfirm={applyData}
+          onClose={() => setPendingApplication(null)}
+        />
       </div>
     );
   }

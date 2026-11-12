@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { ApplyMetricDataDialog, type MetricApplicationSummary } from "@/app/src/components/ApplyMetricDataDialog";
 import { recordMemberMetrics } from "./action";
 
 type MemberOption = {
@@ -15,6 +16,7 @@ type MetricOption = {
 
 type RecordMetricsFormProps = {
   periodId: string;
+  periodName: string;
   allianceId: string;
   members: MemberOption[];
   metrics: MetricOption[];
@@ -27,6 +29,7 @@ function isValidInteger(value: string): boolean {
 
 export function RecordMetricsForm({
   periodId,
+  periodName,
   allianceId,
   members,
   metrics,
@@ -34,7 +37,11 @@ export function RecordMetricsForm({
   const [selectedMetricId, setSelectedMetricId] = useState(
     metrics[0]?.id || ""
   );
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
+  const [pendingApplication, setPendingApplication] = useState<{
+    payload: Parameters<typeof recordMemberMetrics>[0];
+    summary: MetricApplicationSummary[];
+  } | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ count: number } | null>(null);
@@ -79,22 +86,29 @@ export function RecordMetricsForm({
       return;
     }
 
-    startTransition(async () => {
-      try {
-        await recordMemberMetrics({
-          periodId,
-          metricId: selectedMetricId,
-          allianceId,
-          entries,
-        });
-        setSuccess({ count: entries.length });
-        setValues({});
-        setError(null);
-      } catch (err) {
-        console.error("Failed to record metrics:", err);
-        setError("Failed to record metrics. Please try again.");
-      }
+    setPendingApplication({
+      payload: { periodId, metricId: selectedMetricId, allianceId, entries },
+      summary: [{
+        periodName,
+        metricName: metrics.find((m) => m.id === selectedMetricId)?.name ?? "Metric",
+        entryCount: entries.length,
+      }],
     });
+  };
+
+  const applyData = async () => {
+    if (!pendingApplication) return;
+    setIsPending(true);
+    try {
+      await recordMemberMetrics(pendingApplication.payload);
+      setSuccess({ count: pendingApplication.payload.entries.length });
+      setValues({});
+      setError(null);
+    } catch {
+      return { error: "Could not confirm whether the data was applied. Check Go back in time before trying again." };
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const selectedMetric = metrics.find((m) => m.id === selectedMetricId);
@@ -202,6 +216,12 @@ export function RecordMetricsForm({
       >
         {isPending ? "Saving..." : "Save All"}
       </button>
+      <ApplyMetricDataDialog
+        isOpen={pendingApplication !== null}
+        summary={pendingApplication?.summary ?? []}
+        onConfirm={applyData}
+        onClose={() => setPendingApplication(null)}
+      />
     </form>
   );
 }

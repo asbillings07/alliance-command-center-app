@@ -24,3 +24,9 @@ Part of #42, #287 and #295. The approved [responsive design](README.md) remains 
 Member detail → **Go back in time** → metric filter → bounded recorded-history list → selected entry. Phones use the approved separate detail / All history pattern; tablets and desktop show the list beside the selected entry. All routes inherit the existing app identity and Private beta header.
 
 Automated acceptance covers real database persistence, attribution immutability, legacy compatibility, permission changes and locking, scoped deep links, keyset ties/pagination, zero/void history and unchanged canonical values. Browser QA covers saving an entry, changing it without erasing the earlier entry, reloading history, phone/tablet layout, keyboard navigation and accessibility. Existing required CI and independent review still apply. Human QA is the next gate; merge and production deployment remain separate.
+
+### Final leader confirmation
+
+Manual entry and both spreadsheet import paths require an explicit **Apply this data?** dialog before the mutation. The warning lists the metric, destination period and entry count, explains the effect on results/reports, and states that earlier entries remain in **Go back in time**. **Yes, apply data** sends the reviewed payload; Cancel or Escape returns to the form with no write. Changed data requires a fresh confirmation. The dialog handles pending/error states and fits phone, tablet and desktop screens.
+
+This is a final UI confirmation for the currently supported leader writes, not an authorization grant or the later screenshot identity/lower-member-score decision protocol. Those server-validated protections remain required before member ingestion is enabled. A response failure does not establish rollback; the warning directs leaders to inspect history before retrying.

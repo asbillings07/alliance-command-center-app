@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { installDialogPolyfill } from "@/app/src/lib/testing/dialogPolyfill";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
@@ -54,6 +55,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+    installDialogPolyfill();
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -736,6 +738,14 @@ describe("MultiPeriodImportFlow [component]", () => {
       confirmButton.click();
       await new Promise((r) => setTimeout(r, 30));
     });
+    const dialog = container.querySelector("dialog[open]")!;
+    expect(dialog.textContent).toContain("Weekly Kills");
+    const cancel = Array.from(dialog.querySelectorAll("button")).find((b) => b.textContent === "Cancel")!;
+    await act(async () => { cancel.click(); });
+    expect(importMock).not.toHaveBeenCalled();
+    expect(container.querySelector("dialog[open]")).toBeNull();
+    await act(async () => { confirmButton.click(); });
+    await confirmApplication();
 
     expect(importMock).toHaveBeenCalledTimes(1);
     const payload = importMock.mock.calls[0]?.[0];
@@ -929,6 +939,7 @@ describe("MultiPeriodImportFlow [component]", () => {
       confirmButton.click();
       await new Promise((r) => setTimeout(r, 30));
     });
+    await confirmApplication();
 
     expect(importMock).toHaveBeenCalledTimes(1);
     const payload = importMock.mock.calls[0]?.[0];
@@ -1146,6 +1157,7 @@ describe("MultiPeriodImportFlow [component]", () => {
       confirmButton.click();
       await new Promise((r) => setTimeout(r, 30));
     });
+    await confirmApplication();
 
     expect(importMock).toHaveBeenCalledTimes(1);
     const payload = importMock.mock.calls[0]?.[0];
@@ -1263,3 +1275,14 @@ describe("buildManualFallbackProposal", () => {
     expect(fallback.columns.map((c) => c.headerText)).toEqual(["VS Score"]);
   });
 });
+
+async function confirmApplication() {
+    expect(importMock).not.toHaveBeenCalled();
+    const dialog = container.querySelector("dialog[open]");
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain("Apply this data?");
+    expect(dialog?.textContent).toContain("can change current results and reports");
+    expect(dialog?.textContent).toContain("Go back in time");
+    const confirm = Array.from(dialog!.querySelectorAll("button")).find((b) => b.textContent === "Yes, apply data")!;
+    await act(async () => { confirm.click(); });
+}

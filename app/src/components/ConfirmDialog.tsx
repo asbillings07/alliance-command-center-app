@@ -158,7 +158,7 @@ export function ConfirmDialog({
             }}
             aria-labelledby={titleId}
             aria-describedby={description ? descriptionId : undefined}
-            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg p-0 backdrop:bg-black/50 max-w-md w-full m-0 bg-surface border border-border"
+            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg p-0 backdrop:bg-black/50 max-w-md w-full max-h-[calc(100dvh-2rem)] overflow-y-auto m-0 bg-surface border border-border"
         >
             <div className="p-6 flex flex-col gap-4 min-w-0">
                 <h2 id={titleId} className="text-lg font-semibold text-text-primary break-words">
