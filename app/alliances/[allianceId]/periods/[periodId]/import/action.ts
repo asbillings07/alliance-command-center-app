@@ -1,4 +1,5 @@
 "use server";
+import { metricEntryProvenance } from "@/app/src/lib/metrics/metricEntryProvenance";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions, hasPermission } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
@@ -167,6 +168,7 @@ export async function importMemberMetrics(
   // missing metrics, then import. A failure anywhere rolls back everything -
   // no dangling metrics, no partial import.
   const { plan, resolved } = await prisma.$transaction(async (tx) => {
+    const provenance = await metricEntryProvenance(tx, allianceId, auth.user.id, "SPREADSHEET_SINGLE_PERIOD", deriveRequiredPermissions(classified));
     const resolved = await resolveMetricTargets(tx, {
       allianceId,
       periodId,
@@ -208,6 +210,7 @@ export async function importMemberMetrics(
       const observationGrain = requireMetricObservationGrain(grainByMetricId, mapping.metricId);
       await tx.memberMetricEntry.createMany({
         data: mapping.entries.map((entry) => ({
+          ...provenance,
           allianceMemberId: entry.memberId,
           periodId,
           metricId: mapping.metricId,

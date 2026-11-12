@@ -637,6 +637,14 @@ model MetricPeriodMetric {
   @@id([periodId, metricId])
 }
 
+// How a saved metric value reached ACC. Null on older entries means unknown,
+// not a member submission or a particular import method.
+enum MetricEntryMethod {
+  MANUAL
+  SPREADSHEET_SINGLE_PERIOD
+  SPREADSHEET_MULTI_PERIOD
+}
+
 model MemberMetricEntry {
   id String @id @default(cuid())
 
@@ -671,10 +679,19 @@ model MemberMetricEntry {
   // in the #287 database design's §3b).
   value Int?
 
+  // Immutable action-time evidence, not a join to today's profile or role.
+  // No FK: account deletion must not erase or mutate an historical entry.
+  // The CHECK constraint requires all four fields together or all null.
+  enteredByUserId      String?
+  enteredByName        String?
+  enteredByRole       AllianceRole?
+  entryMethod         MetricEntryMethod?
+
   recordedAt DateTime @default(now())
   createdAt  DateTime @default(now())
 
   @@index([allianceMemberId, periodId])
+  @@index([allianceMemberId, recordedAt(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "member_metric_entry_history_idx")
   @@index([metricId])
   // #190: supports the per-metric report's `DISTINCT ON ("allianceMemberId")`
   // latest-entry-per-member query: an index scan filters by periodId/metricId

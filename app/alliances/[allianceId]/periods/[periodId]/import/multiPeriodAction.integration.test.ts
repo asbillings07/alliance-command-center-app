@@ -15,6 +15,7 @@ const runDb = process.env.INTEGRATION_DB === "true";
 
 describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
   let prisma: PrismaClient;
+  let actorId: string;
   let importMultiPeriodMetrics: typeof MultiPeriodAction.importMultiPeriodMetrics;
   const createdAllianceIds: string[] = [];
 
@@ -25,10 +26,15 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
     ({ importMultiPeriodMetrics } = await import("./multiPeriodAction"));
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.restoreAllMocks();
     vi.resetAllMocks();
+    const actor = await prisma.user.create({ data: {
+      email: `metric-actor-${crypto.randomUUID()}@example.test`, displayName: "Test recorder",
+    } });
+    actorId = actor.id;
     vi.mocked(requireAllianceAccess).mockResolvedValue({
-      user: { id: "integration-test-user", email: "test@local" },
+      user: { id: actorId, email: "test@local" },
       permissions: {
         canViewAlliance: true,
         canViewMembers: true,
@@ -67,11 +73,13 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
       await prisma.allianceMember.deleteMany({
         where: { allianceId: { in: createdAllianceIds } },
       });
+      await prisma.allianceMembership.deleteMany({ where: { allianceId: { in: createdAllianceIds } } });
       await prisma.alliance.deleteMany({
         where: { id: { in: createdAllianceIds } },
       });
       createdAllianceIds.length = 0;
     }
+    await prisma.user.delete({ where: { id: actorId } });
   });
 
   async function makeTestSetup() {
@@ -83,6 +91,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
       },
     });
     createdAllianceIds.push(alliance.id);
+        await prisma.allianceMembership.create({ data: { allianceId: alliance.id, userId: actorId, role: "ADMIN" } });
 
     const member = await prisma.allianceMember.create({
       data: {
@@ -166,6 +175,9 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
     expect(entriesB).toHaveLength(1);
     expect(entriesA[0].value).toBe(100);
     expect(entriesB[0].value).toBe(200);
+    for (const entry of [...entriesA, ...entriesB]) {
+      expect(entry).toMatchObject({ enteredByUserId: actorId, enteredByName: "Test recorder", enteredByRole: "ADMIN", entryMethod: "SPREADSHEET_MULTI_PERIOD" });
+    }
   });
 
   it("writes observationGrain re-fetched per group from each resolved metric's own grain, and status ACTIVE explicitly (ADR-018 §3)", async () => {
@@ -283,7 +295,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
     });
 
     vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
-      user: { id: "integration-test-user", email: "test@local" },
+      user: { id: actorId, email: "test@local" },
       permissions: {
         canImportMetrics: true,
         canConfigurePeriods: false,
@@ -582,7 +594,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
           },
         ],
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow("Simulated in-transaction insert failure");
 
     expect(
       await prisma.metricPeriod.count({
@@ -600,7 +612,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
     const { alliance, member } = await makeTestSetup();
 
     vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
-      user: { id: "integration-test-user", email: "test@local" },
+      user: { id: actorId, email: "test@local" },
       permissions: {
         canImportMetrics: true,
         canConfigurePeriods: false,
