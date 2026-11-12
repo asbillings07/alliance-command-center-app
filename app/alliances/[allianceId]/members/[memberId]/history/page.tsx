@@ -43,6 +43,7 @@ export default async function MemberMetricHistoryPage({ params, searchParams }: 
   }
   const listHref = href(before ? { before } : {});
   return (
+    <main>
     <PageLayout maxWidth="6xl" title="Go back in time"
       description={`${member.playerName} · Review saved values and who recorded them.`}
       breadcrumb={[
@@ -134,5 +135,6 @@ export default async function MemberMetricHistoryPage({ params, searchParams }: 
         )}
       </div>
     </PageLayout>
+    </main>
   );
 }
