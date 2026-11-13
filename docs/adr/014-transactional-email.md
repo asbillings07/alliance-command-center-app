@@ -143,6 +143,14 @@ Some related protections are intentionally deferred:
   against a disposable Postgres rather than production load tests. Tracked in
   issue #160.
 
+## Collaborator invitations and reset diagnostics (#391)
+
+Collaborator creation and renewal now invoke `sendCollaboratorInvitation` from the authorized action layer after the invitation is persisted. The template identifies the alliance, player, invited role, acceptance link/code and expiry. Both the incoming recipient/role and stored renewal recipient/role are validated before persistence/renewal; delivery also checks its trusted stored input. Existing owner/admin invitation authority and preview allowlisting remain unchanged.
+
+Invitation creation, email acceptance by the provider and inbox delivery are separate outcomes. The UI says **Invitation created/renewed**, then reports accepted-for-delivery, skipped or unconfirmed email delivery. Persisted invitations survive provider failure and retain manual sharing. Renewal retains the existing token/code replacement behavior. Beginning renewal/cancellation clears all displayed share results so obsolete credentials cannot remain advertised as valid; interrupted responses require checking current state rather than automatic retry.
+
+These outcomes are recorded as metadata-only operator logs, not a new durable delivery-history model or inbox-delivery proof. No provider retry/outbox, bounce tracking or bulk resend is introduced. The normal password-reset action now logs its outcome or failed phase without an address, token, password, URL or raw exception. Its generic public response, password-capable-account requirement, concurrency handling and token rules remain unchanged. Adding diagnostics does not establish or resolve the separately reported live reset-email failure; that incident requires correlated provider/account evidence.
+
 ## Configuration
 
 | Variable | Purpose |

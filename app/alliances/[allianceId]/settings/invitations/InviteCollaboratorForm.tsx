@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { PlayerNameCombobox } from "./PlayerNameCombobox";
 import { inviteCollaborator, searchMembersAction } from "./action";
+import { InvitationEmailNotice } from "./InvitationEmailNotice";
+import type { EmailStatus } from "@/app/src/lib/email/types";
 
 type Member = {
   id: string;
@@ -15,10 +17,12 @@ type Selection =
 
 type InviteCollaboratorFormProps = {
   allianceId: string;
+  invalidatedShareIds?: readonly string[];
 };
 
 export function InviteCollaboratorForm({
   allianceId,
+  invalidatedShareIds = [],
 }: InviteCollaboratorFormProps) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [email, setEmail] = useState("");
@@ -31,9 +35,11 @@ export function InviteCollaboratorForm({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
+    invitationId: string;
     inviteUrl: string;
     inviteCode: string;
     memberCreated: boolean;
+    emailStatus: EmailStatus | "unknown";
   } | null>(null);
 
   const isNewMember = selection?.type === "new";
@@ -45,7 +51,7 @@ export function InviteCollaboratorForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selection || !email.trim()) return;
+    if (isPending || !selection || !email.trim()) return;
 
     setError(null);
     setResult(null);
@@ -77,9 +83,11 @@ export function InviteCollaboratorForm({
           setError(response.error);
         } else if (response.data) {
           setResult({
+            invitationId: response.data.invitationId,
             inviteUrl: response.data.inviteUrl,
             inviteCode: response.data.inviteCode,
             memberCreated: response.data.memberCreated,
+            emailStatus: response.data.emailStatus,
           });
           setSelection(null);
           setEmail("");
@@ -87,7 +95,7 @@ export function InviteCollaboratorForm({
           setSquadPower("");
         }
       } catch {
-        setError("An unexpected error occurred");
+        setError("The response was interrupted. Check Pending Invitations before trying again; the invitation may have been created.");
       }
     });
   };
@@ -102,7 +110,7 @@ export function InviteCollaboratorForm({
     await navigator.clipboard.writeText(result.inviteCode);
   };
 
-  if (result) {
+  if (result && !invalidatedShareIds.includes(result.invitationId)) {
     return (
       <div className="border border-border rounded-lg p-6 bg-surface">
         <div className="flex items-start gap-3">
@@ -123,13 +131,15 @@ export function InviteCollaboratorForm({
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-medium text-text-primary">
-              Invitation sent
+              Invitation created
             </h3>
             <p className="text-sm text-text-muted mt-0.5">
               {result.memberCreated
                 ? "A new member entry was created. Share the link or code below."
                 : "Share the link or code below with your collaborator."}
             </p>
+
+            <InvitationEmailNotice status={result.emailStatus} />
 
             <div className="mt-4 space-y-3">
               <div>

@@ -142,6 +142,7 @@ export default async function RegisterPage({ searchParams }: PageProps) {
       <RegisterForm
         callbackUrl={callbackUrl}
         displayName={invitation.playerNameSnapshot}
+        email={invitation.email}
       />
     </AuthLayout>
   );
