@@ -178,6 +178,8 @@ model MemberIdentityDecision {
   allianceId String
   memberId String
   confirmed Boolean
+  // A name-correction decision clears confirmation and retains the old name.
+  previousPlayerName String?
   accountUserId String?
   playerName String
   allianceName String

@@ -38,10 +38,50 @@ async function authorize(tx: Prisma.TransactionClient, allianceId: string, actor
     WHERE m."allianceId" = ${allianceId} AND m."userId" = ${actorId}
     FOR SHARE OF m, u
   `;
-  if (!actor || !buildPermissionSet(actor.role).canManageMembers) {
+  if (!actor || !buildPermissionSet(actor.role).canManageMemberIdentity) {
     throw new IdentityReviewError("You do not have permission to review this member's identity.");
   }
   return actor;
+}
+
+export async function correctMemberIdentityName(input: {
+  allianceId: string; memberId: string; actorId: string;
+  reviewKey: string; playerName: string; acknowledged: boolean;
+}) {
+  if (!input.acknowledged) throw new IdentityReviewError("Confirm that you have reviewed this name change.");
+  const playerName = input.playerName.trim();
+  if (!playerName || playerName.length > 200) throw new IdentityReviewError("Enter an in-game name between 1 and 200 characters.");
+  if (input.reviewKey.length > 1000) throw new IdentityReviewError("Reload this review and try again.");
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`member-identity:${input.memberId}`}, 0))`;
+      const actor = await authorize(tx, input.allianceId, input.actorId);
+      const current = await review(tx, input.allianceId, input.memberId);
+      if (current.reviewKey !== input.reviewKey) throw new IdentityReviewError("This member's identity or decision history changed. Reload and review the current details.");
+      if (current.member.archivedAt) throw new IdentityReviewError("This member is archived. Ask an owner or admin to restore the member first.");
+      if (current.member.playerName === playerName) throw new IdentityReviewError("The in-game name has not changed.");
+      const duplicate = await tx.allianceMember.findFirst({ where: {
+        allianceId: input.allianceId, id: { not: input.memberId },
+        playerName: { equals: playerName, mode: "insensitive" },
+      } });
+      if (duplicate) throw new IdentityReviewError("Another member in this alliance already has that name. Review the records before making a change.");
+      const updated = await tx.allianceMember.update({ where: { id: input.memberId }, data: { playerName } });
+      return tx.memberIdentityDecision.create({ data: {
+        allianceId: input.allianceId, memberId: input.memberId, confirmed: false,
+        previousPlayerName: current.member.playerName, playerName,
+        accountUserId: current.member.userId, allianceName: current.member.alliance.name,
+        server: current.member.alliance.server, memberVersion: updated.identityVersion,
+        allianceVersion: current.member.alliance.identityVersion,
+        actorUserId: actor.id, actorName: actor.displayName, actorRole: actor.role,
+      } });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2034") throw new IdentityReviewError("The record changed during this review. Reload and check the current identity before trying again.");
+      if (error.code === "P2002") throw new IdentityReviewError("Another member in this alliance already has that name.");
+    }
+    throw error;
+  }
 }
 
 export async function loadIdentityReview(allianceId: string, memberId: string, actorId: string) {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import type { PrismaClient } from "@/app/generated/prisma/client";
-import { loadIdentityReview, decideMemberIdentity } from "./memberIdentity";
+import { loadIdentityReview, decideMemberIdentity, correctMemberIdentityName } from "./memberIdentity";
 import { heldTransaction, expectStillBlocked } from "./metrics/testing/heldTransaction";
 
 describe.skipIf(process.env.INTEGRATION_DB !== "true")("Member identity decisions [integration]", () => {
@@ -55,9 +55,9 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true")("Member identity decision
     await db.alliance.update({ where: { id: allianceId }, data: { server: "956", name: " " } });
     await expect(decide()).rejects.toThrow("Alliance and server");
   });
-  it("denies Viewer, Leader, ordinary member and cross-tenant reads/writes; permits Admin", async () => {
+  it("denies Viewer, ordinary member and cross-tenant reads/writes; permits Admin", async () => {
     const key = (await load()).reviewKey;
-    for (const role of ["VIEWER", "LEADER"] as const) {
+    for (const role of ["VIEWER"] as const) {
       await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role } });
       await expect(load()).rejects.toThrow("permission");
       await expect(decide(true, key)).rejects.toThrow("permission");
@@ -130,5 +130,72 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true")("Member identity decision
     await db.allianceMember.delete({ where: { id: memberId } });
     await db.user.delete({ where: { id: accountId } });
     expect(await db.memberIdentityDecision.findUnique({ where: { id: event.id } })).toMatchObject({ actorName: "Morgan Leader", playerName: "Jordan Vale", accountUserId: accountId });
+  });
+
+  async function rename(playerName = "Jordan Renamed", reviewKey?: string) {
+    return correctMemberIdentityName({ allianceId, memberId, actorId, playerName, acknowledged: true,
+      reviewKey: reviewKey ?? (await load()).reviewKey });
+  }
+
+  it("lets Leaders correct a name with an immutable audit and a fresh confirmation requirement", async () => {
+    await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role: "LEADER" } });
+    await db.allianceMember.update({ where: { id: memberId }, data: { thp: 123, squadPower: 456, role: "R4" } });
+    await decide();
+    const oldKey = (await load()).reviewKey;
+    const event = await rename("  Jordan Renamed  ");
+    expect(event).toMatchObject({ previousPlayerName: "Jordan Vale", playerName: "Jordan Renamed", confirmed: false, actorUserId: actorId, actorRole: "LEADER" });
+    expect(await db.allianceMember.findUnique({ where: { id: memberId } })).toMatchObject({ playerName: "Jordan Renamed", userId: accountId, thp: 123, squadPower: 456, role: "R4" });
+    expect((await load()).confirmed).toBe(false);
+    await expect(decide(true, oldKey)).rejects.toThrow("changed");
+    await expect(db.memberIdentityDecision.update({ where: { id: event.id }, data: { previousPlayerName: "Changed" } })).rejects.toThrow("immutable");
+    await decide();
+    expect((await load()).confirmed).toBe(true);
+    expect((await load()).decisions).toHaveLength(3);
+    expect(await db.allianceMembership.count({ where: { allianceId, userId: accountId } })).toBe(0);
+  });
+
+  it("rejects blank, unchanged, long and duplicate names without changing identity or audit", async () => {
+    const duplicate = await db.allianceMember.create({ data: { allianceId, playerName: "Other Player", archivedAt: new Date() } });
+    for (const name of [" ", "Jordan Vale", "x".repeat(201), "OTHER PLAYER"]) {
+      await expect(rename(name)).rejects.toThrow();
+    }
+    expect((await load()).member.playerName).toBe("Jordan Vale");
+    expect((await load()).decisions).toHaveLength(0);
+    await db.allianceMember.delete({ where: { id: duplicate.id } });
+  });
+
+  it("denies unauthorized, cross-tenant and archived name changes", async () => {
+    const input = { allianceId, memberId, actorId, playerName: "Wrong", acknowledged: true, reviewKey: (await load()).reviewKey };
+    await expect(correctMemberIdentityName({ ...input, actorId: accountId })).rejects.toThrow("permission");
+    await expect(correctMemberIdentityName({ ...input, allianceId: "other" })).rejects.toThrow("permission");
+    await expect(correctMemberIdentityName({ ...input, memberId: "other" })).rejects.toThrow("not found");
+    await expect(correctMemberIdentityName({ ...input, acknowledged: false })).rejects.toThrow("Confirm");
+    await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role: "VIEWER" } });
+    await expect(correctMemberIdentityName(input)).rejects.toThrow("permission");
+    await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role: "LEADER" } });
+    await db.allianceMember.update({ where: { id: memberId }, data: { archivedAt: new Date() } });
+    await expect(rename()).rejects.toThrow("archived");
+    expect((await load()).decisions).toHaveLength(0);
+  });
+
+  it("permits one concurrent name correction and rejects stale confirmation or edits", async () => {
+    const key = (await load()).reviewKey;
+    const result = await Promise.allSettled([rename("Name One", key), rename("Name Two", key)]);
+    expect(result.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect((await load()).decisions).toHaveLength(1);
+    await expect(rename("Another", key)).rejects.toThrow("changed");
+    await expect(decide(true, key)).rejects.toThrow("changed");
+  });
+
+  it("rechecks role revocation while a name correction waits", async () => {
+    const key = (await load()).reviewKey;
+    const hold = heldTransaction(db, (tx) => tx.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role: "VIEWER" } }));
+    await hold.ready;
+    const result = rename("Blocked", key).then(() => "accepted", () => "rejected");
+    try { await expectStillBlocked(result, 100); }
+    finally { hold.commit(); await hold.committed; }
+    expect(await result).toBe("rejected");
+    expect(await db.memberIdentityDecision.count({ where: { memberId } })).toBe(0);
+    expect((await db.allianceMember.findUniqueOrThrow({ where: { id: memberId } })).playerName).toBe("Jordan Vale");
   });
 });
