@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { installDialogPolyfill } from "@/app/src/lib/testing/dialogPolyfill";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ImportForm } from "./ImportForm";
@@ -36,6 +37,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+    installDialogPolyfill();
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -170,7 +172,7 @@ describe("ImportForm [component]", () => {
         expect(fileInput?.getAttribute("aria-label")).toContain("Upload evaluation results spreadsheet (.csv, .xlsx, .xls)");
     });
 
-    it("completes import flow with outcome-based success terminology and destination period context", async () => {
+    it.each([false, true])("requires explicit confirmation and preserves review after cancellation or an error (reject: %s)", async (reject) => {
         (importMemberMetrics as ReturnType<typeof vi.fn>).mockResolvedValue({
             perMetric: [{ metricId: "met1", name: "Kill Points", count: 2 }],
             totalCount: 2,
@@ -197,6 +199,8 @@ describe("ImportForm [component]", () => {
             );
         });
 
+        if (reject) vi.mocked(importMemberMetrics).mockRejectedValueOnce(new Error("Internal diagnostic must not appear"));
+
         const csvContent = `Player,Kill Points\nDragon,1500\nPhoenix,2300`;
 
         await act(async () => {
@@ -222,6 +226,26 @@ describe("ImportForm [component]", () => {
         await act(async () => {
             importBtn.click();
         });
+        const dialog = container.querySelector("dialog[open]")!;
+        expect(dialog.textContent).toContain(periodName);
+        expect(dialog.textContent).toContain("Kill Points");
+        const cancel = Array.from(dialog.querySelectorAll("button")).find((b) => b.textContent === "Cancel")!;
+        await act(async () => { cancel.click(); });
+        expect(container.querySelector("dialog[open]")).toBeNull();
+        expect(importMemberMetrics).not.toHaveBeenCalled();
+        expect(container.textContent).toContain("Review & Confirm Import");
+        await act(async () => { importBtn.click(); });
+        await confirmApplication();
+
+        if (reject) {
+            expect(importMemberMetrics).toHaveBeenCalledTimes(1);
+            expect(mockRefresh).not.toHaveBeenCalled();
+            expect(container.querySelector("dialog[open] [role='alert']")?.textContent).toContain("Check Go back in time before trying again");
+            expect(container.textContent).not.toContain("Internal diagnostic");
+            await act(async () => { cancel.click(); });
+            expect(container.textContent).toContain("Review & Confirm Import");
+            return;
+        }
 
         // Assert completion copy
         expect(mockRefresh).toHaveBeenCalledTimes(1);
@@ -924,6 +948,7 @@ describe("ImportForm [component]", () => {
             importBtn.click();
             await new Promise((r) => setTimeout(r, 50));
         });
+        await confirmApplication();
 
         expect(container.textContent).toContain("Committed Metric Translation");
         expect(container.textContent).toContain("Total Entries Committed");
@@ -998,6 +1023,7 @@ describe("ImportForm [component]", () => {
             importBtn.click();
             await new Promise((r) => setTimeout(r, 50));
         });
+        await confirmApplication();
 
         // Assert importMemberMetrics was called with ONLY Kill Points (Hero Power was skipped!)
         expect(importMemberMetrics).toHaveBeenCalledTimes(1);
@@ -1250,6 +1276,7 @@ describe("ImportForm [component]", () => {
             confirmBtn.click();
             await new Promise((r) => setTimeout(r, 100));
         });
+        await confirmApplication();
 
         expect(importMultiPeriodMetrics).toHaveBeenCalledTimes(1);
         const payload = (importMultiPeriodMetrics as ReturnType<typeof vi.fn>).mock.calls[0][0];
@@ -1886,6 +1913,7 @@ describe("ImportForm [component]", () => {
             confirmBtn.click();
             await new Promise((r) => setTimeout(r, 100));
         });
+        await confirmApplication();
 
         expect(importMultiPeriodMetrics).toHaveBeenCalledTimes(1);
         const payload = (importMultiPeriodMetrics as ReturnType<typeof vi.fn>).mock.calls[0][0];
@@ -2124,6 +2152,7 @@ describe("ImportForm [component]", () => {
             confirmBtn.click();
             await new Promise((r) => setTimeout(r, 100));
         });
+        await confirmApplication();
 
         expect(importMultiPeriodMetrics).toHaveBeenCalledTimes(1);
         const payload = (importMultiPeriodMetrics as ReturnType<typeof vi.fn>).mock.calls[0][0];
@@ -2135,3 +2164,15 @@ describe("ImportForm [component]", () => {
         expect(payload.groups[0].mappings).toHaveLength(2);
     });
 });
+
+async function confirmApplication() {
+    expect(importMemberMetrics).not.toHaveBeenCalled();
+    expect(importMultiPeriodMetrics).not.toHaveBeenCalled();
+    const dialog = container.querySelector("dialog[open]");
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain("Apply this data?");
+    expect(dialog?.textContent).toContain("can change current results and reports");
+    expect(dialog?.textContent).toContain("Go back in time");
+    const confirm = Array.from(dialog!.querySelectorAll("button")).find((b) => b.textContent === "Yes, apply data")!;
+    await act(async () => { confirm.click(); });
+}

@@ -453,6 +453,11 @@ export default async function MemberPage({ params, searchParams }: Params) {
                     />
                 )}
 
+                <div className="flex justify-end">
+                    <Button variant="secondary" href={`/alliances/${allianceId}/members/${memberId}/history`}>
+                        Go back in time
+                    </Button>
+                </div>
                 <MemberPerformanceSection {...performanceProps} />
 
                 <section className="flex flex-col gap-4">

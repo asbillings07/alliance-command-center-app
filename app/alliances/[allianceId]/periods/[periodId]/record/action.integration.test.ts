@@ -20,6 +20,7 @@ const runDb = process.env.INTEGRATION_DB === "true";
 
 describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
   let prisma: PrismaClient;
+  let actorId: string;
   let recordMemberMetrics: typeof RecordAction.recordMemberMetrics;
   const createdAllianceIds: string[] = [];
 
@@ -30,10 +31,14 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
     ({ recordMemberMetrics } = await import("./action"));
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetAllMocks();
+    const actor = await prisma.user.create({ data: {
+      email: `metric-actor-${crypto.randomUUID()}@example.test`, displayName: "Test recorder",
+    } });
+    actorId = actor.id;
     vi.mocked(requireAllianceAccess).mockResolvedValue({
-      user: { id: "integration-test-user", email: "test@local" },
+      user: { id: actorId, email: "test@local" },
       permissions: { canImportMetrics: true } as unknown as Awaited<
         ReturnType<typeof requireAllianceAccess>
       >["permissions"],
@@ -56,9 +61,11 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
       await prisma.allianceMember.deleteMany({
         where: { allianceId: { in: createdAllianceIds } },
       });
+      await prisma.allianceMembership.deleteMany({ where: { allianceId: { in: createdAllianceIds } } });
       await prisma.alliance.deleteMany({ where: { id: { in: createdAllianceIds } } });
       createdAllianceIds.length = 0;
     }
+    await prisma.user.delete({ where: { id: actorId } });
   });
 
   async function makeSetup(
@@ -70,6 +77,7 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
       data: { name: `Record Action Alliance ${suffix}`, server: "1001" },
     });
     createdAllianceIds.push(alliance.id);
+        await prisma.allianceMembership.create({ data: { allianceId: alliance.id, userId: actorId, role: "ADMIN" } });
 
     const member = await prisma.allianceMember.create({
       data: { allianceId: alliance.id, playerName: "Test Player" },
@@ -110,6 +118,7 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
       where: { periodId: period.id, metricId: metric.id },
     });
     expect(entry?.value).toBe(1);
+    expect(entry).toMatchObject({ enteredByUserId: actorId, enteredByName: "Test recorder", enteredByRole: "ADMIN", entryMethod: "MANUAL" });
   });
 
   it("rejects a non-0/1 value for a BOOLEAN metric with zero writes", async () => {

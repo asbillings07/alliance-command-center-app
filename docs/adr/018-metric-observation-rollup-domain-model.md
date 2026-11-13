@@ -167,3 +167,15 @@ Real-PostgreSQL tests, mirroring the [#285](https://github.com/asbillings07/alli
 - [#292](https://github.com/asbillings07/alliance-command-center-app/issues/292), [#293](https://github.com/asbillings07/alliance-command-center-app/issues/293), [#294](https://github.com/asbillings07/alliance-command-center-app/issues/294) — downstream consumers depending on this domain model being right before they build on it.
 - [#190](https://github.com/asbillings07/alliance-command-center-app/issues/190) — the per-metric summary/`summaryKind` foundation this ADR leaves unchanged.
 - [#285](https://github.com/asbillings07/alliance-command-center-app/pull/285) — the audit-tooling precedent for this ADR's real-Postgres verification bar.
+
+## Entry provenance and the first history view (#42 / #295)
+
+The [metric attribution/history slice](../product-design/ocr-member-submissions/provenance-history-slice.md)
+adds immutable action-time actor/method snapshots to `MemberMetricEntry` and a
+read-only, tenant-scoped entry ledger. Nullable all-unknown attribution preserves
+legacy compatibility; new application writers capture trusted attribution in the
+write transaction. This does not change the canonical winner or rollup algebra.
+The new history view reports an individual saved entry, not an effective report
+“as known then.” Timestamp/id correction ordering is not transaction commit
+ordering. A later submission/decision and historical-cutoff amendment is required
+before enabling member OCR, finality or leadership precedence.

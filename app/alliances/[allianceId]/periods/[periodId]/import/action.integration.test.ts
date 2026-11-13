@@ -15,6 +15,7 @@ const runDb = process.env.INTEGRATION_DB === "true";
 
 describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
     let prisma: PrismaClient;
+  let actorId: string;
     let importMemberMetrics: typeof ImportAction.importMemberMetrics;
     const createdAllianceIds: string[] = [];
 
@@ -25,10 +26,14 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
         ({ importMemberMetrics } = await import("./action"));
     });
 
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.resetAllMocks();
+    const actor = await prisma.user.create({ data: {
+      email: `metric-actor-${crypto.randomUUID()}@example.test`, displayName: "Test recorder",
+    } });
+    actorId = actor.id;
         vi.mocked(requireAllianceAccess).mockResolvedValue({
-            user: { id: "integration-test-user", email: "test@local" },
+            user: { id: actorId, email: "test@local" },
             permissions: {
                 canViewAlliance: true,
                 canViewMembers: true,
@@ -65,11 +70,13 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             await prisma.allianceMember.deleteMany({
                 where: { allianceId: { in: createdAllianceIds } },
             });
-            await prisma.alliance.deleteMany({
+            await prisma.allianceMembership.deleteMany({ where: { allianceId: { in: createdAllianceIds } } });
+      await prisma.alliance.deleteMany({
                 where: { id: { in: createdAllianceIds } },
             });
             createdAllianceIds.length = 0;
         }
+        await prisma.user.delete({ where: { id: actorId } });
     });
 
     async function makeTestSetup() {
@@ -81,6 +88,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             },
         });
         createdAllianceIds.push(alliance.id);
+        await prisma.allianceMembership.create({ data: { allianceId: alliance.id, userId: actorId, role: "LEADER" } });
 
         const member = await prisma.allianceMember.create({
             data: {
@@ -193,7 +201,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
         const { alliance, member, periodA, libraryMetric } = await makeTestSetup();
 
         vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
-            user: { id: "integration-test-user", email: "test@local" },
+            user: { id: actorId, email: "test@local" },
             permissions: {
                 canImportMetrics: true,
                 canConfigurePeriods: true,
@@ -228,7 +236,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
 
         // User has canImportMetrics: true and canConfigurePeriods: true, but canConfigureMetrics: false
         vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
-            user: { id: "integration-test-user", email: "test@local" },
+            user: { id: actorId, email: "test@local" },
             permissions: {
                 canImportMetrics: true,
                 canConfigurePeriods: true,
@@ -267,7 +275,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
         const { alliance, member, periodA } = await makeTestSetup();
 
         vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
-            user: { id: "integration-test-user", email: "test@local" },
+            user: { id: actorId, email: "test@local" },
             permissions: {
                 canImportMetrics: true,
                 canConfigurePeriods: true,
@@ -302,7 +310,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
         const { alliance, member, periodA, libraryMetric } = await makeTestSetup();
 
         vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
-            user: { id: "integration-test-user", email: "test@local" },
+            user: { id: actorId, email: "test@local" },
             permissions: {
                 canImportMetrics: true,
                 canConfigurePeriods: true,
@@ -463,6 +471,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
         });
         expect(periodAEntries).toHaveLength(1);
         expect(periodAEntries[0].value).toBe(500);
+        expect(periodAEntries[0]).toMatchObject({ enteredByUserId: actorId, enteredByName: "Test recorder", enteredByRole: "LEADER", entryMethod: "SPREADSHEET_SINGLE_PERIOD" });
 
         // Verify Period B has 0 entries
         const periodBEntries = await prisma.memberMetricEntry.findMany({
@@ -563,7 +572,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
         const { alliance, member, periodA } = await makeTestSetup();
 
         vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
-            user: { id: "integration-test-user", email: "test@local" },
+            user: { id: actorId, email: "test@local" },
             permissions: {
                 canImportMetrics: true,
                 canConfigurePeriods: true,
@@ -656,7 +665,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             });
 
             vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
-                user: { id: "integration-test-user", email: "test@local" },
+                user: { id: actorId, email: "test@local" },
                 permissions: {
                     canImportMetrics: true,
                     canConfigurePeriods: true,
@@ -751,7 +760,7 @@ describe.skipIf(!runDb)("importMemberMetrics [integration]", () => {
             });
 
             vi.mocked(requireAllianceAccess).mockResolvedValueOnce({
-                user: { id: "integration-test-user", email: "test@local" },
+                user: { id: actorId, email: "test@local" },
                 permissions: {
                     canImportMetrics: true,
                     canConfigurePeriods: true,

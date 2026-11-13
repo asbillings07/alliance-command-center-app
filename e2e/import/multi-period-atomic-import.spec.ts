@@ -108,6 +108,7 @@ test.describe("Multi-period import with atomic period creation", () => {
     ).toBeVisible();
 
     await page.getByRole("button", { name: /Confirm Multi-Period Import/i }).click();
+    await page.getByRole("dialog", { name: "Apply this data?" }).getByRole("button", { name: "Yes, apply data" }).click();
     await expect(page.getByText("Multi-Period Import Complete")).toBeVisible();
     await expect(
       page.getByRole("heading", { name: existingPeriod.name, level: 4 }),

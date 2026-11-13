@@ -119,6 +119,7 @@ export default async function PeriodRecordPage({
         <Card.Body>
           <RecordMetricsForm
             periodId={periodId}
+            periodName={period.name}
             allianceId={allianceId}
             members={alliance.allianceMembers}
             metrics={metrics}

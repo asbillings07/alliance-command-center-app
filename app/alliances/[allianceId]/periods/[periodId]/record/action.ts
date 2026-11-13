@@ -1,4 +1,5 @@
 "use server";
+import { metricEntryProvenance } from "@/app/src/lib/metrics/metricEntryProvenance";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
@@ -35,7 +36,7 @@ export async function recordMemberMetrics(
     throw new Error("At least one entry is required");
   }
 
-  await requireAllianceAccess({
+  const auth = await requireAllianceAccess({
     allianceId,
     requiredPermission: Permissions.IMPORT_METRICS,
   });
@@ -114,9 +115,11 @@ export async function recordMemberMetrics(
   }
 
   await prisma.$transaction(async (tx) => {
+    const provenance = await metricEntryProvenance(tx, allianceId, auth.user.id, "MANUAL");
     await tx.memberMetricEntry.createMany({
       data: entries.map((entry) => ({
-        allianceMemberId: entry.memberId,
+        ...provenance,
+          allianceMemberId: entry.memberId,
         periodId,
         metricId,
         value: entry.value,

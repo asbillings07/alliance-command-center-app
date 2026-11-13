@@ -1,4 +1,5 @@
 "use server";
+import { metricEntryProvenance } from "@/app/src/lib/metrics/metricEntryProvenance";
 
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions, hasPermission } from "@/app/src/lib/auth/permissions";
@@ -186,6 +187,7 @@ export async function importMultiPeriodMetrics(
   }
 
   const transactionResults = await prisma.$transaction(async (tx) => {
+    const provenance = await metricEntryProvenance(tx, allianceId, auth.user.id, "SPREADSHEET_MULTI_PERIOD", aggregateRequiredPermissions(groupPlans, groups));
     const results: Array<{
       periodId: string;
       plan: ReturnType<typeof buildMetricImportPlan>;
@@ -249,7 +251,8 @@ export async function importMultiPeriodMetrics(
         const observationGrain = requireMetricObservationGrain(grainByMetricId, mapping.metricId);
         await tx.memberMetricEntry.createMany({
           data: mapping.entries.map((entry) => ({
-            allianceMemberId: entry.memberId,
+            ...provenance,
+          allianceMemberId: entry.memberId,
             periodId,
             metricId: mapping.metricId,
             value: entry.value,

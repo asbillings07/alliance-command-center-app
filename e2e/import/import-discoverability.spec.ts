@@ -129,8 +129,12 @@ test.describe("Import Discoverability & Navigation Bridge", () => {
     await expect(page.getByText("Planned Metric Translation")).toBeVisible();
     await expect(page.getByText("Source Column Translations")).toBeVisible();
 
-    await expect(page.getByRole("button", { name: /Import/i })).toBeVisible();
-    await page.getByRole("button", { name: /Import/i }).click();
+    await expect(page.getByRole("button", { name: /Import All/i })).toBeVisible();
+    await page.getByRole("button", { name: /Import All/i }).click();
+    const confirmation = page.getByRole("dialog", { name: "Apply this data?" });
+    await expect(confirmation).toBeVisible();
+    expect(await prisma.memberMetricEntry.count({ where: { periodId: period.id } })).toBe(0);
+    await confirmation.getByRole("button", { name: "Yes, apply data" }).click();
 
     await expect(page.getByText("Committed Metric Translation")).toBeVisible();
 

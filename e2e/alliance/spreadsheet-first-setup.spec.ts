@@ -99,6 +99,7 @@ test.describe("Spreadsheet-first setup (#185 PR 3)", () => {
     await expect(page.getByText("Planned Multi-Period Import")).toBeVisible();
 
     await page.getByRole("button", { name: /Confirm Multi-Period Import/i }).click();
+    await page.getByRole("dialog", { name: "Apply this data?" }).getByRole("button", { name: "Yes, apply data" }).click();
     await expect(page.getByText("Multi-Period Import Complete")).toBeVisible();
 
     await page.getByRole("link", { name: "View Member Results" }).click();
