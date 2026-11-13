@@ -56,7 +56,7 @@ export type CreatedPasswordResetToken =
   | {
       /** A fresh token was issued for this request. */
       created: true;
-      /** The raw token to embed in the emailed link. Never persisted. */
+      /** The raw token for email or a private operator view. Never persisted. */
       rawToken: string;
       expiresAt: Date;
     }
@@ -91,21 +91,16 @@ function hashToken(rawToken: string): string {
 export async function createPasswordResetToken(
   userId: string
 ): Promise<CreatedPasswordResetToken> {
-  const rawToken = randomBytes(32).toString("hex");
-  const tokenHash = hashToken(rawToken);
-  const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
-  const now = new Date();
-
   try {
-    await prisma.$transaction([
-      prisma.passwordResetToken.updateMany({
-        where: { userId, usedAt: null },
-        data: { usedAt: now },
-      }),
-      prisma.passwordResetToken.create({
-        data: { userId, tokenHash, expiresAt },
-      }),
-    ]);
+    return await prisma.$transaction(async (tx) => {
+      // Coalesce overlapping public requests rather than queueing several reset
+      // emails behind the User lock. Transaction-scoped: never a persistent lockout.
+      const [lock] = await tx.$queryRaw<{ acquired: boolean }[]>`
+        SELECT pg_try_advisory_xact_lock(hashtextextended(${`password-reset-request:${userId}`}, 0)) AS "acquired"
+      `;
+      if (!lock.acquired) return { created: false } as const;
+      return createPasswordResetTokenInTransaction(tx, userId);
+    });
   } catch (err) {
     // Lost the race to a concurrent request: the partial unique index
     // (one active token per user) rejected this insert, rolling the whole
@@ -122,7 +117,25 @@ export async function createPasswordResetToken(
     }
     throw err;
   }
+}
 
+/** Shared token mechanism for self-service and audited operator recovery.
+ * The caller owns authorization and the transaction; never expose this as an action.
+ */
+export async function createPasswordResetTokenInTransaction(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  ttlMs = RESET_TOKEN_TTL_MS,
+): Promise<Extract<CreatedPasswordResetToken, { created: true }>> {
+  // All issuance and consumption paths lock User before token rows. This
+  // avoids a token→User/User→token deadlock with operator-assisted recovery.
+  await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+  const rawToken = randomBytes(32).toString("hex");
+  const tokenHash = hashToken(rawToken);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + ttlMs);
+  await tx.passwordResetToken.updateMany({ where: { userId, usedAt: null }, data: { usedAt: now } });
+  await tx.passwordResetToken.create({ data: { userId, tokenHash, expiresAt } });
   return { created: true, rawToken, expiresAt };
 }
 
@@ -188,8 +201,6 @@ export async function resetPassword(
   // inside it, so a concurrent consumer can never slip through.
   const bcrypt = await getBcrypt();
   const passwordHash = await bcrypt.hash(passwordCheck.value, BCRYPT_COST);
-  const now = new Date();
-
   try {
     await prisma.$transaction(async (tx) => {
       const token = await tx.passwordResetToken.findUnique({
@@ -200,6 +211,14 @@ export async function resetPassword(
       if (!token) {
         throw new Error("INVALID_TOKEN");
       }
+
+      // Same lock order as issuance. Recheck single use only after acquiring
+      // the user lock: a replacement link may have invalidated this one.
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${token.userId} FOR UPDATE`;
+
+      // Waiting for a competing write can outlast the link. Authoritative
+      // expiry is measured after that wait, never from the earlier precheck.
+      const now = new Date();
 
       // Guarded single-use claim: only succeeds if the token is still unused and
       // unexpired. Requiring exactly one affected row makes concurrent double-use

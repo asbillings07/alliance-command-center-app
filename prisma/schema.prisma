@@ -513,7 +513,7 @@ model User {
 
 // Single-use, hashed password reset tokens.
 //
-// The raw token lives only in the emailed link; we persist a SHA-256 hash so a
+// The raw token lives only in the email/private recovery view; we persist a SHA-256 hash so a
 // database leak can't be replayed to reset passwords. `usedAt` enforces
 // one-time use and `expiresAt` bounds the window. Deleted with the user
 // (Cascade).
@@ -534,6 +534,21 @@ model PasswordResetToken {
   createdAt DateTime  @default(now())
 
   @@index([userId])
+}
+
+// An operator issued a recovery link after checking the account owner.
+// Snapshots intentionally have no account FK: account removal must not rewrite
+// this audit record. No credential, token/hash or free-form support note is stored.
+model PasswordRecoveryEvent {
+  id             String   @id @default(cuid())
+  actorUserId    String
+  actorName      String
+  targetUserId   String
+  targetEmail    String
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  @@index([targetUserId, createdAt])
 }
 
 // A pending, verified email change (ADR-015). Email is the canonical identity

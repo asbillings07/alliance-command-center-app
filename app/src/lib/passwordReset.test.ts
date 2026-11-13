@@ -18,6 +18,7 @@ vi.mock("./prisma", () => ({
       update: vi.fn(),
     },
     $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
   },
 }));
 
@@ -31,6 +32,7 @@ const mockPrisma = prisma as unknown as {
   };
   user: { update: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
+  $queryRaw: ReturnType<typeof vi.fn>;
 };
 
 // Length-only policy (main's password.ts): ≥8 chars, no complexity rules.
@@ -53,6 +55,7 @@ beforeEach(() => {
   mockPrisma.passwordResetToken.updateMany.mockResolvedValue({ count: 1 });
   mockPrisma.passwordResetToken.create.mockResolvedValue({});
   mockPrisma.user.update.mockResolvedValue({});
+  mockPrisma.$queryRaw.mockResolvedValue([{ acquired: true }]);
   // Support both call styles: array (createPasswordResetToken) and interactive
   // callback (resetPassword). tx delegates to the same mocked client.
   mockPrisma.$transaction.mockImplementation(async (arg: unknown) =>
