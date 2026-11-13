@@ -52,7 +52,7 @@ export function RegisterForm({ callbackUrl, displayName, email }: RegisterFormPr
           <div>
             <Label>Email</Label>
             <input type="hidden" name="email" value={email} />
-            <div className="px-4 py-2 bg-surface-secondary border border-border rounded-lg text-text-muted">
+            <div className="break-words px-4 py-2 bg-surface-secondary border border-border rounded-lg text-text-muted">
               {email}
             </div>
           </div>
