@@ -25,6 +25,7 @@ type InviteCollaboratorInput = {
 
 type InviteResult = {
   data?: {
+    invitationId: string;
     inviteUrl: string;
     inviteCode: string;
     memberCreated: boolean;
@@ -65,6 +66,7 @@ export async function inviteCollaborator(
 
     return {
       data: {
+        invitationId: result.invitation.id,
         inviteUrl: result.inviteUrl,
         inviteCode: result.inviteCode,
         memberCreated: result.memberCreated,

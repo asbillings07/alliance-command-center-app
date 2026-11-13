@@ -17,10 +17,12 @@ type Selection =
 
 type InviteCollaboratorFormProps = {
   allianceId: string;
+  invalidatedShareIds?: readonly string[];
 };
 
 export function InviteCollaboratorForm({
   allianceId,
+  invalidatedShareIds = [],
 }: InviteCollaboratorFormProps) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [email, setEmail] = useState("");
@@ -33,6 +35,7 @@ export function InviteCollaboratorForm({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
+    invitationId: string;
     inviteUrl: string;
     inviteCode: string;
     memberCreated: boolean;
@@ -48,7 +51,7 @@ export function InviteCollaboratorForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selection || !email.trim()) return;
+    if (isPending || !selection || !email.trim()) return;
 
     setError(null);
     setResult(null);
@@ -80,6 +83,7 @@ export function InviteCollaboratorForm({
           setError(response.error);
         } else if (response.data) {
           setResult({
+            invitationId: response.data.invitationId,
             inviteUrl: response.data.inviteUrl,
             inviteCode: response.data.inviteCode,
             memberCreated: response.data.memberCreated,
@@ -106,7 +110,7 @@ export function InviteCollaboratorForm({
     await navigator.clipboard.writeText(result.inviteCode);
   };
 
-  if (result) {
+  if (result && !invalidatedShareIds.includes(result.invitationId)) {
     return (
       <div className="border border-border rounded-lg p-6 bg-surface">
         <div className="flex items-start gap-3">

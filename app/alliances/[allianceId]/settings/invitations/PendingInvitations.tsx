@@ -21,7 +21,7 @@ export type PendingInvitation = {
 type PendingInvitationsProps = {
   invitations: PendingInvitation[];
   allianceId: string;
-  onInvitationChanged?: () => void;
+  onInvitationChanged?: (invitationId: string) => void;
 };
 
 function formatDate(dateString: string): string {
@@ -69,7 +69,7 @@ export function PendingInvitations({
 
     setError(null);
     setResendResult(null);
-    onInvitationChanged?.();
+    onInvitationChanged?.(invitationId);
     startTransition(async () => {
       try {
         const result = await cancelInvitationAction(allianceId, invitationId);
@@ -84,7 +84,7 @@ export function PendingInvitations({
   const handleResend = (invitationId: string) => {
     setError(null);
     setResendResult(null);
-    onInvitationChanged?.();
+    onInvitationChanged?.(invitationId);
     startTransition(async () => {
       try {
         const result = await resendInvitationAction(allianceId, invitationId);

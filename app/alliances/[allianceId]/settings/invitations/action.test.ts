@@ -36,7 +36,7 @@ describe("collaborator invitation delivery", () => {
   });
   it.each(["failed", "skipped"] as const)("keeps the valid invitation and reports %s", async (status) => {
     vi.mocked(emailService.sendCollaboratorInvitation).mockResolvedValue({ status });
-    expect(await inviteCollaborator(input)).toEqual({ data: { inviteUrl: persisted.inviteUrl, inviteCode: invitation.code, memberCreated: false, emailStatus: status } });
+    expect(await inviteCollaborator(input)).toEqual({ data: { invitationId: invitation.id, inviteUrl: persisted.inviteUrl, inviteCode: invitation.code, memberCreated: false, emailStatus: status } });
   });
   it("keeps creation successful when an unexpected delivery exception leaves the outcome unknown", async () => {
     vi.mocked(emailService.sendCollaboratorInvitation).mockRejectedValue(new Error("private provider details"));
