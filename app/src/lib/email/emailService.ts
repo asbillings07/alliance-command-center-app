@@ -1,5 +1,6 @@
 import type {
   AccessRequestConfirmationEmailInput,
+  CollaboratorInvitationEmailInput,
   BetaInvitationEmailInput,
   EmailChangeVerificationEmailInput,
   EmailResult,
@@ -13,6 +14,7 @@ import { renderAccessRequestConfirmationEmail } from "./templates/accessRequestC
 import { renderFeedbackNotificationEmail } from "./templates/feedbackNotificationEmail";
 import { renderEmailChangeVerificationEmail } from "./templates/emailChangeVerificationEmail";
 import { renderPasswordResetEmail } from "./templates/passwordResetEmail";
+import { renderCollaboratorInvitationEmail } from "./templates/collaboratorInvitationEmail";
 
 const DEFAULT_REPLY_TO = "support@alliancehq.app";
 
@@ -34,6 +36,15 @@ const PASSWORD_RESET_SUBJECT = "Reset your Alliance Command Center password";
  * a provider.
  */
 export const emailService: EmailService = {
+  async sendCollaboratorInvitation({ to, invitation }: CollaboratorInvitationEmailInput): Promise<EmailResult> {
+    return deliverEmail({
+      to,
+      subject: "You're invited to join an alliance in Alliance Command Center",
+      content: renderCollaboratorInvitationEmail(invitation),
+      replyTo: DEFAULT_REPLY_TO,
+      metadata: { invitationId: invitation.id },
+    });
+  },
   async sendBetaInvitation({
     to,
     invitation,
