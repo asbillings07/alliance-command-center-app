@@ -31,6 +31,7 @@ for (const width of [320, 820, 1280]) {
     await page.reload();
     await expect(page.getByText("Identity confirmed", { exact: true })).toBeVisible();
     expect(await prisma.memberIdentityDecision.count({ where: { memberId: member.id } })).toBe(1);
+    await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: testInfo.outputPath(`identity-confirmed-${width}.png`), fullPage: true });
     await page.getByRole("button", { name: "Revoke confirmation", exact: true }).click();
     await dialog.getByRole("button", { name: "Yes, revoke confirmation" }).click();
