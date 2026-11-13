@@ -190,9 +190,9 @@ describe("permissions", () => {
       const countTrue = (perms: PermissionSet) =>
         Object.values(perms).filter(Boolean).length;
 
-      expect(countTrue(ownerPerms)).toBe(13); // All 13 permissions
-      expect(countTrue(adminPerms)).toBe(10); // All except manage:leadership, manage:alliance, and rollback:member-imports
-      expect(countTrue(leaderPerms)).toBe(7);  // view:* + manage:notes + import:metrics + configure:metrics + configure:periods
+      expect(countTrue(ownerPerms)).toBe(14); // All permissions
+      expect(countTrue(adminPerms)).toBe(11); // No owner-only capabilities
+      expect(countTrue(leaderPerms)).toBe(8); // Includes focused member identity access
       expect(countTrue(viewerPerms)).toBe(3);  // Only view:*
     });
   });
@@ -217,5 +217,19 @@ describe("permissions", () => {
       
       expect(hasPermission(permissions, unknownPermission)).toBe(false);
     });
+  });
+
+  it("grants focused identity access without widening Leader roster or account powers", () => {
+    for (const role of [AllianceRole.OWNER, AllianceRole.ADMIN, AllianceRole.LEADER]) {
+      const permissions = buildPermissionSet(role);
+      expect(permissions.canManageMemberIdentity).toBe(true);
+      expect(hasPermission(permissions, Permissions.MANAGE_MEMBER_IDENTITY)).toBe(true);
+    }
+    const leader = buildPermissionSet(AllianceRole.LEADER);
+    expect(leader.canManageMembers).toBe(false);
+    expect(leader.canInviteCollaborators).toBe(false);
+    expect(leader.canManageAlliance).toBe(false);
+    expect(leader.canManageLeadership).toBe(false);
+    expect(buildPermissionSet(AllianceRole.VIEWER).canManageMemberIdentity).toBe(false);
   });
 });

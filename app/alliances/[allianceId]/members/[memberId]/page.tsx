@@ -453,7 +453,12 @@ export default async function MemberPage({ params, searchParams }: Params) {
                     />
                 )}
 
-                <div className="flex justify-end">
+                <div className="flex flex-wrap justify-end gap-3">
+                    {permissions.canManageMemberIdentity && (
+                        <Button variant="secondary" href={`/alliances/${allianceId}/members/${memberId}/identity`}>
+                            Review member identity
+                        </Button>
+                    )}
                     <Button variant="secondary" href={`/alliances/${allianceId}/members/${memberId}/history`}>
                         Go back in time
                     </Button>
