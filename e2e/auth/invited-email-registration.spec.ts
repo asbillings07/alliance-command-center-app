@@ -6,7 +6,8 @@ import { checkA11yLevelAA } from "../shared/accessibility";
 for (const width of [390, 820, 1280]) {
   test(`alliance sign-up displays and preserves the invited email at ${width}px`, async ({ page, ownerScenario }, testInfo) => {
     const { allianceId, userId } = ownerScenario;
-    const email = `invited-${crypto.randomUUID()}@example.com`;
+    // A long local part without hyphens must wrap inside the fixed field.
+    const email = `invited${crypto.randomBytes(24).toString("hex")}@example.com`;
     const otherEmail = `other-${crypto.randomUUID()}@example.com`;
     const invitation = await prisma.invitation.create({
       data: {
@@ -33,6 +34,7 @@ for (const width of [390, 820, 1280]) {
         await expect(page.getByRole("heading", { name: "Create Account", exact: true })).toBeVisible();
         const displayedEmail = page.getByText(email, { exact: true });
         await expect(displayedEmail).toBeVisible();
+        expect(await displayedEmail.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
         await expect(displayedEmail).not.toHaveAttribute("contenteditable", "true");
         await expect(page.locator('input[name="email"]')).toHaveAttribute("type", "hidden");
         await expect(page.locator('input[name="email"]')).toHaveValue(email);
