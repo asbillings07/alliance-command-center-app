@@ -155,6 +155,13 @@ export default async function PlatformOverview() {
 
   return (
     <div className="space-y-8 max-w-5xl">
+      <section className="rounded-lg border border-border bg-surface p-4">
+        <h2 className="font-semibold text-text-primary">Password recovery</h2>
+        <p className="mt-1 text-sm text-text-secondary">Help someone regain access when their reset email has not arrived.</p>
+        <Link href="/platform/support/password-recovery" className="mt-3 inline-block text-sm font-medium text-primary hover:underline">
+          Recover account access →
+        </Link>
+      </section>
       {/* Section 1: Action Required */}
       <section data-testid="action-required-section">
         <h2 className="text-lg font-semibold text-text-secondary mb-4">

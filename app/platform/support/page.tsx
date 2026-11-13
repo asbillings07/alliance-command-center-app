@@ -83,6 +83,13 @@ export default async function PlatformSupport() {
 
   return (
     <div className="space-y-8 max-w-4xl">
+      <section className="rounded-lg border border-border bg-surface p-4">
+        <h2 className="font-semibold text-text-primary">Password recovery</h2>
+        <p className="mt-1 text-sm text-text-secondary">Help someone regain access when their reset email has not arrived.</p>
+        <Link href="/platform/support/password-recovery" className="mt-3 inline-block text-sm font-medium text-primary hover:underline">
+          Recover account access →
+        </Link>
+      </section>
       {/* Search Hint */}
       <section className="bg-surface-secondary rounded-lg border border-border p-4">
         <p className="text-text-muted text-sm">

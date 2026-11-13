@@ -91,9 +91,7 @@ export async function searchUsers(query: string): Promise<SearchResult[]> {
       subtitle: membership
         ? `${membership.role} in ${membership.alliance.name}`
         : "No alliance",
-      href: membership
-        ? `/platform/support/alliance/${membership.alliance.id}`
-        : `/platform/beta`,
+      href: `/platform/support/password-recovery?userId=${encodeURIComponent(u.id)}`,
       metadata: {
         email: u.email,
         displayName: u.displayName,
