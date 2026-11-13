@@ -16,6 +16,13 @@ describe("emailService", () => {
     deliverEmailMock.mockResolvedValue({ status: "sent", messageId: "msg_123" });
   });
 
+  it("sendCollaboratorInvitation passes its persisted invitation context to the shared transport", async () => {
+    await emailService.sendCollaboratorInvitation({ to: "member@example.com", invitation: {
+      id: "alliance-invite-1", allianceName: "Alliance One", playerName: "Player", role: "VIEWER", inviteUrl: "https://example.com/invite/token", inviteCode: "ABC-DEF-GHJ", expiresAt: new Date("2026-12-01"),
+    } });
+    expect(deliverEmailMock).toHaveBeenCalledWith(expect.objectContaining({ to: "member@example.com", metadata: { invitationId: "alliance-invite-1" }, content: expect.objectContaining({ text: expect.stringContaining("https://example.com/invite/token") }) }));
+  });
+
   it("sendBetaInvitation includes default replyTo header", async () => {
     const result = await emailService.sendBetaInvitation({
       to: "invitee@example.com",

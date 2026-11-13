@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/app/src/lib/prisma";
 import { normalizeEmail } from "@/app/src/lib/emailAddress";
 import { createPasswordResetToken } from "@/app/src/lib/passwordReset";
@@ -31,6 +32,8 @@ export async function requestPasswordReset(
   }
 
   const email = normalizeEmail(rawEmail);
+  const requestId = randomUUID();
+  let phase = "account_lookup";
 
   try {
     const user = await prisma.user.findUnique({ where: { email } });
@@ -38,11 +41,13 @@ export async function requestPasswordReset(
     // Only password-capable accounts can reset. Google-only users have no
     // passwordHash; unknown emails have no user. Both paths do nothing here.
     if (user?.passwordHash) {
+      phase = "token_creation";
       const token = await createPasswordResetToken(user.id);
       // If a concurrent request already issued the single active token, it
       // sends the email; we must not (we don't hold that raw token).
       if (token.created) {
-        await emailService.sendPasswordReset({
+        phase = "email_delivery";
+        const result = await emailService.sendPasswordReset({
           to: user.email,
           reset: {
             resetUrl: getResetPasswordUrl(token.rawToken),
@@ -50,12 +55,19 @@ export async function requestPasswordReset(
           },
           userId: user.id,
         });
+        console.info("[password-reset] Email outcome", { requestId, status: result.status, messageId: result.messageId });
+      } else {
+        console.info("[password-reset] Concurrent request coalesced", { requestId });
       }
+    } else {
+      console.info("[password-reset] Request not eligible for password email", { requestId });
     }
   } catch (error) {
     // Never surface failures to the client: a DB/provider hiccup must not
     // reveal account existence. Log for operators instead.
-    console.error("[password-reset] requestPasswordReset failed", error);
+    // No email, password, token, URL or raw exception in operator diagnostics.
+    const code = error && typeof error === "object" && "code" in error && /^P\d{4}$/.test(String(error.code)) ? String(error.code) : undefined;
+    console.error("[password-reset] Request failed", { requestId, phase, code });
   }
 
   return { submitted: true, error: null };

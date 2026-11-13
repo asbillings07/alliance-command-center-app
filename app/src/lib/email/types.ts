@@ -70,6 +70,7 @@ export interface EmailTransport {
  */
 export interface EmailService {
   sendBetaInvitation(input: BetaInvitationEmailInput): Promise<EmailResult>;
+  sendCollaboratorInvitation(input: CollaboratorInvitationEmailInput): Promise<EmailResult>;
   sendAccessRequestConfirmation(
     input: AccessRequestConfirmationEmailInput
   ): Promise<EmailResult>;
@@ -81,6 +82,19 @@ export interface EmailService {
   ): Promise<EmailResult>;
   sendPasswordReset(input: PasswordResetEmailInput): Promise<EmailResult>;
 }
+
+export type CollaboratorInvitationEmailInput = {
+  to: string;
+  invitation: {
+    id: string;
+    allianceName: string;
+    playerName: string;
+    role: "ADMIN" | "LEADER" | "VIEWER";
+    inviteUrl: string;
+    inviteCode: string;
+    expiresAt: Date;
+  };
+};
 
 /** View model for the password reset email. */
 export type PasswordResetView = {

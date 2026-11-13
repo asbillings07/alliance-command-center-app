@@ -10,6 +10,8 @@ import {
   resendInvitation,
 } from "@/app/src/lib/inviteLeadershipCollaborator";
 import type { AllianceRole } from "@/app/generated/prisma/client";
+import type { EmailStatus } from "@/app/src/lib/email";
+import { deliverCollaboratorInvitation, isSingleRecipient } from "./delivery";
 
 type InviteCollaboratorInput = {
   allianceId: string;
@@ -26,6 +28,7 @@ type InviteResult = {
     inviteUrl: string;
     inviteCode: string;
     memberCreated: boolean;
+    emailStatus: EmailStatus | "unknown";
   };
   error?: string;
 };
@@ -37,6 +40,11 @@ export async function inviteCollaborator(
 
   if (!auth.permissions.canInviteCollaborators) {
     return { error: "You don't have permission to invite collaborators" };
+  }
+
+  if (!isSingleRecipient(input.email) || typeof input.playerName !== "string" || !input.playerName.trim()
+    || !["ADMIN", "LEADER", "VIEWER"].includes(input.membershipRole)) {
+    return { error: "Enter one valid email address, a player name and an allowed collaborator role." };
   }
 
   try {
@@ -51,6 +59,8 @@ export async function inviteCollaborator(
       squadPower: input.squadPower ?? null,
     });
 
+    const emailStatus = await deliverCollaboratorInvitation(result.invitation, result.inviteUrl);
+
     revalidatePath(`/alliances/${input.allianceId}/settings/invitations`);
 
     return {
@@ -58,6 +68,7 @@ export async function inviteCollaborator(
         inviteUrl: result.inviteUrl,
         inviteCode: result.inviteCode,
         memberCreated: result.memberCreated,
+        emailStatus,
       },
     };
   } catch (error) {
@@ -116,7 +127,7 @@ export async function cancelInvitationAction(
 export async function resendInvitationAction(
   allianceId: string,
   invitationId: string
-): Promise<{ data?: { inviteUrl: string; inviteCode: string }; error?: string }> {
+): Promise<{ data?: { inviteUrl: string; inviteCode: string; emailStatus: EmailStatus | "unknown" }; error?: string }> {
   const auth = await requireAllianceAccess({ allianceId });
 
   if (!auth.permissions.canInviteCollaborators) {
@@ -126,20 +137,26 @@ export async function resendInvitationAction(
   // Query scoped by both id and allianceId for safety
   const invitation = await prisma.invitation.findFirst({
     where: { id: invitationId, allianceId },
-    select: { id: true },
+    select: { id: true, email: true, membershipRole: true },
   });
 
   if (!invitation) {
     return { error: "Invitation not found" };
   }
 
+  if (!isSingleRecipient(invitation.email) || !["ADMIN", "LEADER", "VIEWER"].includes(invitation.membershipRole)) {
+    return { error: "This invitation has an invalid email address or role. Cancel it and create a new invitation with the correct details." };
+  }
+
   try {
     const result = await resendInvitation(invitationId);
+    const emailStatus = await deliverCollaboratorInvitation(result.invitation, result.inviteUrl);
     revalidatePath(`/alliances/${allianceId}/settings/invitations`);
     return {
       data: {
         inviteUrl: result.inviteUrl,
         inviteCode: result.inviteCode,
+        emailStatus,
       },
     };
   } catch (error) {

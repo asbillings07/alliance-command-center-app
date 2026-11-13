@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { PlayerNameCombobox } from "./PlayerNameCombobox";
 import { inviteCollaborator, searchMembersAction } from "./action";
+import { InvitationEmailNotice } from "./InvitationEmailNotice";
+import type { EmailStatus } from "@/app/src/lib/email/types";
 
 type Member = {
   id: string;
@@ -34,6 +36,7 @@ export function InviteCollaboratorForm({
     inviteUrl: string;
     inviteCode: string;
     memberCreated: boolean;
+    emailStatus: EmailStatus | "unknown";
   } | null>(null);
 
   const isNewMember = selection?.type === "new";
@@ -80,6 +83,7 @@ export function InviteCollaboratorForm({
             inviteUrl: response.data.inviteUrl,
             inviteCode: response.data.inviteCode,
             memberCreated: response.data.memberCreated,
+            emailStatus: response.data.emailStatus,
           });
           setSelection(null);
           setEmail("");
@@ -87,7 +91,7 @@ export function InviteCollaboratorForm({
           setSquadPower("");
         }
       } catch {
-        setError("An unexpected error occurred");
+        setError("The response was interrupted. Check Pending Invitations before trying again; the invitation may have been created.");
       }
     });
   };
@@ -123,13 +127,15 @@ export function InviteCollaboratorForm({
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-medium text-text-primary">
-              Invitation sent
+              Invitation created
             </h3>
             <p className="text-sm text-text-muted mt-0.5">
               {result.memberCreated
                 ? "A new member entry was created. Share the link or code below."
                 : "Share the link or code below with your collaborator."}
             </p>
+
+            <InvitationEmailNotice status={result.emailStatus} />
 
             <div className="mt-4 space-y-3">
               <div>

@@ -3,8 +3,10 @@
 import { useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cancelInvitationAction, resendInvitationAction } from "./action";
+import { InvitationEmailNotice } from "./InvitationEmailNotice";
+import type { EmailStatus } from "@/app/src/lib/email/types";
 
-type PendingInvitation = {
+export type PendingInvitation = {
   id: string;
   playerNameSnapshot: string;
   email: string;
@@ -19,6 +21,7 @@ type PendingInvitation = {
 type PendingInvitationsProps = {
   invitations: PendingInvitation[];
   allianceId: string;
+  onInvitationChanged?: () => void;
 };
 
 function formatDate(dateString: string): string {
@@ -50,6 +53,7 @@ function isExpired(expiresAt: string): boolean {
 export function PendingInvitations({
   invitations,
   allianceId,
+  onInvitationChanged,
 }: PendingInvitationsProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -57,34 +61,45 @@ export function PendingInvitations({
   const [resendResult, setResendResult] = useState<{
     inviteUrl: string;
     inviteCode: string;
+    emailStatus: EmailStatus | "unknown";
   } | null>(null);
 
   const handleCancel = (invitationId: string) => {
     if (!confirm("Are you sure you want to cancel this invitation?")) return;
 
     setError(null);
+    setResendResult(null);
+    onInvitationChanged?.();
     startTransition(async () => {
-      const result = await cancelInvitationAction(allianceId, invitationId);
-      if (result.error) {
-        setError(result.error);
-      } else {
-        router.refresh();
+      try {
+        const result = await cancelInvitationAction(allianceId, invitationId);
+        if (result.error) setError(result.error);
+        else router.refresh();
+      } catch {
+        setError("Could not confirm cancellation. Refresh Pending Invitations to check its status before trying again.");
       }
     });
   };
 
   const handleResend = (invitationId: string) => {
     setError(null);
+    setResendResult(null);
+    onInvitationChanged?.();
     startTransition(async () => {
-      const result = await resendInvitationAction(allianceId, invitationId);
-      if (result.error) {
-        setError(result.error);
-      } else if (result.data) {
-        setResendResult({
-          inviteUrl: result.data.inviteUrl,
-          inviteCode: result.data.inviteCode,
-        });
-        router.refresh();
+      try {
+        const result = await resendInvitationAction(allianceId, invitationId);
+        if (result.error) {
+          setError(result.error);
+        } else if (result.data) {
+          setResendResult({
+            inviteUrl: result.data.inviteUrl,
+            inviteCode: result.data.inviteCode,
+            emailStatus: result.data.emailStatus,
+          });
+          router.refresh();
+        }
+      } catch {
+        setError("Could not confirm renewal or email delivery. The previous link and code may have been replaced. Refresh Pending Invitations and check delivery before trying again.");
       }
     });
   };
@@ -118,7 +133,7 @@ export function PendingInvitations({
   return (
     <div className="space-y-4">
       {error && (
-        <div className="p-3 bg-danger/20 border border-danger/30 rounded-md text-sm text-danger-light">
+        <div role="alert" className="p-3 bg-danger/20 border border-danger/30 rounded-md text-sm text-danger-light">
           {error}
         </div>
       )}
@@ -132,8 +147,10 @@ export function PendingInvitations({
               </svg>
               <div>
                 <p className="text-sm font-medium text-text-primary">
-                  Invitation resent
+                  Invitation renewed
                 </p>
+                <p className="mt-1 text-xs text-text-secondary">The previous link and code have been replaced.</p>
+                <InvitationEmailNotice status={resendResult.emailStatus} />
                 <div className="mt-1.5 space-y-1">
                   <p className="text-xs text-text-secondary break-all">
                     <span className="text-text-muted">Link:</span> {resendResult.inviteUrl}
@@ -147,6 +164,7 @@ export function PendingInvitations({
             <button
               type="button"
               onClick={() => setResendResult(null)}
+              aria-label="Dismiss invitation result"
               className="text-text-muted hover:text-text-muted"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

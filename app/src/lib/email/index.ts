@@ -22,6 +22,7 @@ export type {
   EmailMetadata,
   BetaInvitationView,
   BetaInvitationEmailInput,
+  CollaboratorInvitationEmailInput,
   AccessRequestConfirmationView,
   AccessRequestConfirmationEmailInput,
   FeedbackNotificationView,
