@@ -14,21 +14,20 @@ type Props = { allianceId: string; memberId: string | null; synthetic: boolean; 
 const date = (value: string) => new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value));
 
 export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: Props) {
-  const router = useRouter(); const [file, setFile] = useState<File | null>(null); const [image, setImage] = useState<string | null>(null);
+  const router = useRouter(); const [file, setFile] = useState<File | null>(null);
   const [consent, setConsent] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
   const [result, setResult] = useState<Result | null>(null); const [additionalAttempts, setAdditionalAttempts] = useState<Attempt[]>([]);
   const attempts = [...initial.attempts, ...additionalAttempts.filter(a => !initial.attempts.some(existing => existing.id === a.id))]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20);
-  const requestId = useRef(""); const operation = useRef(0); const controller = useRef<AbortController | null>(null);
-  const input = useRef<HTMLInputElement>(null); const localPreview = useRef<string | null>(null);
+  const [requestId, setRequestId] = useState(""); const operation = useRef(0); const controller = useRef<AbortController | null>(null);
+  const input = useRef<HTMLInputElement>(null);
   const endpoint = `/api/ocr-evaluation?${new URLSearchParams({ allianceId, ...(memberId ? { memberId } : {}) })}`;
-  useEffect(() => () => { operation.current++; controller.current?.abort(); if (localPreview.current) URL.revokeObjectURL(localPreview.current); }, []);
-  function releasePreview() { if (localPreview.current) URL.revokeObjectURL(localPreview.current); localPreview.current = null; }
+  useEffect(() => () => { operation.current++; controller.current?.abort(); }, []);
 
   function clear() {
-    operation.current++; controller.current?.abort(); releasePreview(); setBusy(false); setFile(null); setImage(null); setConsent(false); setResult(null);
+    operation.current++; controller.current?.abort(); setBusy(false); setFile(null); setConsent(false); setResult(null);
     setMessage("Selection cleared. A scan already sent may still finish; its history is retained.");
-    requestId.current = ""; if (input.current) input.current.value = "";
+    setRequestId(""); if (input.current) input.current.value = "";
   }
   async function readResult(id: string) {
     const response = await fetch(`${endpoint}&id=${encodeURIComponent(id)}&kind=result`, { cache: "no-store", signal: controller.current?.signal });
@@ -37,18 +36,18 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
   }
   async function inspect(attempt: Attempt) {
     const token = ++operation.current; controller.current?.abort(); controller.current = new AbortController();
-    releasePreview(); setBusy(true); setMessage(""); setResult(null); setFile(null); setImage(null);
+    setBusy(true); setMessage(""); setResult(null); setFile(null);
     try {
       const next = await readResult(attempt.id);
       if (token !== operation.current) return;
-      setResult(next); setImage(`${endpoint}&id=${encodeURIComponent(attempt.id)}&kind=image`);
+      setResult(next);
     } catch (error) { if (token === operation.current) setMessage(error instanceof Error ? error.message : "Unable to open this scan."); }
     finally { if (token === operation.current) setBusy(false); }
   }
   async function scan() {
     if (!file || !consent || busy) return;
     const token = ++operation.current; controller.current = new AbortController(); setBusy(true); setMessage(""); setResult(null);
-    const form = new FormData(); form.set("screenshot", file, "screenshot"); form.set("requestId", requestId.current);
+    const form = new FormData(); form.set("screenshot", file, "screenshot"); form.set("requestId", requestId);
     form.set("contextKey", initial.contextKey); form.set("consent", "true");
     try {
       const response = await fetch(endpoint, { method: "POST", body: form, signal: controller.current.signal });
@@ -58,7 +57,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
       setAdditionalAttempts(previous => [attempt, ...previous.filter(a => a.id !== attempt.id)].slice(0, 20));
       if (attempt.status !== "READY") { setMessage("This attempt has not completed. It will not be sent again automatically. Reload to check its history."); return; }
       const next = await readResult(attempt.id);
-      if (token === operation.current) { releasePreview(); setResult(next); setFile(null); setImage(`${endpoint}&id=${encodeURIComponent(attempt.id)}&kind=image`); setMessage("Recognition is ready to review. No scores were changed."); }
+      if (token === operation.current) { setResult(next); setFile(null); setMessage("Recognition is ready to review. No scores were changed."); }
     } catch (error) { if (token === operation.current) setMessage(error instanceof Error ? error.message : "The scan did not complete. Reload before trying again."); }
     finally { if (token === operation.current) { setBusy(false); router.refresh(); } }
   }
@@ -74,19 +73,21 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
           <p className="mt-2 text-sm text-text-secondary">Keep the full Alliance Duel screen, player names, scores and countdown visible. PNG or JPEG, up to 2 MB.</p>
           <label htmlFor="vs-screenshot" className="mt-4 block text-sm font-medium">Screenshot</label>
           <input ref={input} id="vs-screenshot" type="file" accept="image/png,image/jpeg" disabled={busy} className="mt-2 block w-full min-w-0 rounded-lg border border-border p-2 text-sm focus:outline-2 focus:outline-primary"
-            onChange={event => { const selected = event.target.files?.[0] ?? null; releasePreview(); setResult(null); setMessage(""); setConsent(false); setImage(null);
+            onChange={event => { const selected = event.target.files?.[0] ?? null; setResult(null); setMessage(""); setConsent(false);
               if (selected && (selected.size > 2 * 1024 * 1024 || !["image/png", "image/jpeg"].includes(selected.type))) { setFile(null); setMessage("Choose one PNG or JPEG no larger than 2 MB."); return; }
-              setFile(selected); if (selected) { localPreview.current = URL.createObjectURL(selected); setImage(localPreview.current); } requestId.current = crypto.randomUUID(); }} />
+              setFile(selected); setRequestId(crypto.randomUUID()); }} />
           <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={consent} disabled={busy || !file} onChange={e => setConsent(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
             <span>I can share this screenshot with ACC and Google Cloud for text recognition. The prepared image and recognized text are available for 30 days, then scheduled for deletion. Upload history is retained.</span></label>
           <div className="mt-4 flex flex-wrap gap-3"><Button onClick={scan} disabled={!file || !consent || busy}>{busy ? "Reading screenshot…" : "Read screenshot"}</Button>
             <Button onClick={clear} variant="secondary">{busy ? "Cancel waiting" : "Clear selection"}</Button></div>
           <p className="mt-3 text-xs text-text-muted">Cancelling waiting cannot recall an image already sent. Scans are limited and never retried automatically.</p>
         </Card>
-        {image && <Card><h3 className="mb-3 font-semibold">{result ? "Retained screenshot" : "Selected screenshot"}</h3>
+        {(file || result) && <Card><h3 className="mb-3 font-semibold">{result ? "Retained screenshot" : "Selected screenshot"}</h3>
+          {file ? <LocalScreenshot key={requestId} file={file} onError={setMessage} /> : result && <>
           {/* The authenticated private image must bypass Next's public optimizer/cache. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={image} alt="Daily VS screenshot being reviewed" className="h-auto max-h-[70vh] w-full rounded-lg object-contain" referrerPolicy="no-referrer" onError={() => setMessage("The screenshot is unavailable. It may have expired or your access may have changed.")} />
+          <img src={`${endpoint}&id=${encodeURIComponent(result.attempt.id)}&kind=image`} alt="Daily VS screenshot being reviewed" className="h-auto max-h-[70vh] w-full rounded-lg object-contain" referrerPolicy="no-referrer" onError={() => setMessage("The screenshot is unavailable. It may have expired or your access may have changed.")} />
+          </>}
           {result && <p className="mt-3 text-xs text-text-muted">Orientation corrected; image metadata removed. Access ends {date(result.attempt.expiresAt)} UTC.</p>}
         </Card>}
       </section>
@@ -118,4 +119,29 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
       </li>)}</ol>}
     </section>
   </div>;
+}
+
+// Decode local selection into pixels rather than passing a file-backed URL to
+// a markup-loading element. The server independently validates/normalizes it.
+function LocalScreenshot({ file, onError }: { file: File; onError: (message: string) => void }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    let cancelled = false;
+    createImageBitmap(file).then(bitmap => {
+      try {
+        if (cancelled || !canvas.current) return;
+        if (bitmap.width < 200 || bitmap.height < 200 || bitmap.width * bitmap.height > 12_000_000) {
+          onError("Choose a screenshot at least 200 × 200 pixels and no larger than 12 megapixels.");
+          return;
+        }
+        canvas.current.width = bitmap.width;
+        canvas.current.height = bitmap.height;
+        const context = canvas.current.getContext("2d");
+        if (!context) throw new Error("Preview unavailable");
+        context.drawImage(bitmap, 0, 0);
+      } finally { bitmap.close(); }
+    }).catch(() => { if (!cancelled) onError("This file could not be displayed as a screenshot. Choose a valid PNG or JPEG."); });
+    return () => { cancelled = true; };
+  }, [file, onError]);
+  return <canvas ref={canvas} width={1} height={1} role="img" aria-label="Selected daily VS screenshot" className="h-auto max-h-[70vh] w-full rounded-lg object-contain" />;
 }

@@ -32,6 +32,7 @@ for (const width of [320, 820, 1280]) {
     const upload = page.getByLabel("Screenshot", { exact: true });
     const scan = page.getByRole("button", { name: "Read screenshot", exact: true });
     await upload.setInputFiles(await screenshot());
+    await expect.poll(() => page.getByRole("img", { name: "Selected daily VS screenshot" }).evaluate(el => (el as HTMLCanvasElement).width)).toBe(588);
     await expect(scan).toBeDisabled();
     await page.getByRole("button", { name: "Clear selection" }).click();
     expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(0);
@@ -128,4 +129,25 @@ test("member uses only an approved own record; revocation blocks retained conten
     await prisma.allianceMember.delete({ where: { id: member.id } });
     await prisma.user.delete({ where: { id: account.id } });
   }
+});
+
+test("rejects a disguised markup file without dispatching OCR", async ({ page, login, ownerScenario }) => {
+  const { allianceId, email, password } = ownerScenario;
+  const member = await prisma.allianceMember.create({ data: { allianceId, playerName: "Jordan Vale" } });
+  await login({ email, password, displayName: "Owner" });
+  await page.goto(`/alliances/${allianceId}/screenshots?memberId=${member.id}`);
+  const dialogs: string[] = [];
+  page.on("dialog", async dialog => { dialogs.push(dialog.message()); await dialog.dismiss(); });
+  await page.getByLabel("Screenshot", { exact: true }).setInputFiles(await screenshot());
+  await expect.poll(() => page.getByRole("img", { name: "Selected daily VS screenshot" }).evaluate(el => (el as HTMLCanvasElement).width)).toBe(588);
+  await page.getByLabel("Screenshot", { exact: true }).setInputFiles({ name: "disguised.png", mimeType: "image/png",
+    buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="700"><script>alert("unexpected execution")</script></svg>') });
+  await expect(page.getByRole("img", { name: "Selected daily VS screenshot" })).toBeVisible();
+  expect(await page.locator('img[src^="blob:"]').count()).toBe(0);
+  await expect.poll(() => page.getByRole("img", { name: "Selected daily VS screenshot" }).evaluate(el => (el as HTMLCanvasElement).width)).toBe(1);
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Read screenshot", exact: true }).click();
+  await expect(page.getByText("We could not read this image. Choose a complete PNG or JPEG screenshot up to 12 megapixels.")).toBeVisible();
+  expect(dialogs).toEqual([]);
+  expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(0);
 });
