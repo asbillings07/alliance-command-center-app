@@ -112,6 +112,14 @@ describe("qualified score review contract", () => {
   it.each([NaN, Infinity, -1, Number.MAX_SAFE_INTEGER + 1])("rejects invalid numeric value %s", value => {
     expect(() => resolveScoreReview(context, [evidence(1, value)])).toThrow("score value");
   });
+  it.each(["2026-02-30T12:00:00Z", "2026-02-29T12:00:00Z", "2026-11-18T24:00:00Z"])("rejects normalized invalid capture date %s", capturedAt => {
+    const event = evidence(1, 1); event.result.capturedAt = capturedAt;
+    expect(() => resolveScoreReview(context, [event])).toThrow("Invalid capture time");
+  });
+  it.each(["2024-02-29T12:00:00Z", "2024-02-29T12:00:00.123Z"])("retains valid leap-date capture %s", capturedAt => {
+    const event = evidence(1, 1); event.result.capturedAt = capturedAt;
+    expect(resolveScoreReview(context, [event]).pending[0].result.capturedAt).toBe(capturedAt);
+  });
   it("rejects unknown, repeated or unexplained evidence resolutions", () => {
     const events = [evidence(1, 10)];
     for (const resolutions of [[rejected("wrong")], [rejected("member-1"), rejected("member-1")], [{ ...rejected("member-1"), reason: "" }]]) {

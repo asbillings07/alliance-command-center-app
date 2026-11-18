@@ -43,7 +43,13 @@ function validateContext(context: ScoreContext) {
 function validateResult(result: ScoreResult) {
   if (!Number.isFinite(result.value) || result.value < 0 || result.value > Number.MAX_SAFE_INTEGER) throw new Error("Invalid score value.");
   requireText(result.sourceId);
-  if (result.capturedAt !== null && (typeof result.capturedAt !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(result.capturedAt) || !Number.isFinite(Date.parse(result.capturedAt)))) throw new Error("Invalid capture time.");
+  if (result.capturedAt !== null) {
+    const capture = result.capturedAt;
+    if (typeof capture !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(capture)) throw new Error("Invalid capture time.");
+    const parsed = Date.parse(capture);
+    const normalized = capture.includes(".") ? capture : capture.replace("Z", ".000Z");
+    if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== normalized) throw new Error("Invalid capture time.");
+  }
   if (!["unknown", "in-progress", "final"].includes(result.finality.kind)) throw new Error("Unknown finality.");
   if (result.finality.kind === "final") requireText(result.finality.evidenceId);
 }
