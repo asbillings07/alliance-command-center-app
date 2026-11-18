@@ -1,5 +1,6 @@
 import "server-only";
 import { localOcrFixtureEnabled } from "../config";
+import { rankingFixture } from "./rankingFixture";
 import type { OcrTransport } from "../provider";
 
 // Explicit localhost/CI fixture, unavailable in every Vercel environment.
@@ -12,7 +13,7 @@ export function syntheticOcrTransport(): OcrTransport {
     async preflight() {},
     async put(name, bytes) { if (objects.has(name)) throw new Error("Duplicate object"); objects.set(name, Uint8Array.from(bytes)); },
     async read(name, limit) { const bytes = objects.get(name); if (!bytes || bytes.length > limit) throw new Error("Missing fixture"); return bytes; },
-    async recognize() { return {
+    async recognize(image) { if (image.width === 600 && image.height === 900) return rankingFixture().recognition; return {
       text: "ALLIANCE DUEL\nToday's Duel\nTrain Heroes\n23:39:25\n[TEST]Jordan Vale\n23,340,000\n[OTHER]Morgan Reed\n19,317,601",
       words: [
         { text: "[TEST]Jordan", x: 150, y: 350, width: 140, height: 26 }, { text: "Vale", x: 300, y: 350, width: 60, height: 26 },

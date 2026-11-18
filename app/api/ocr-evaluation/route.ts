@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     const file = form.get("screenshot");
     if (!(file instanceof File)) throw new OcrEvaluationError("Choose a screenshot first.");
     const result = await evaluateScreenshot({ allianceId, actorId: session.user.id,
-      memberId: url.searchParams.get("memberId") || null, requestId: String(form.get("requestId") ?? ""),
+      memberId: url.searchParams.get("memberId") || null, scope: url.searchParams.get("scope") === "batch" ? "batch" : undefined, requestId: String(form.get("requestId") ?? ""),
       contextKey: String(form.get("contextKey") ?? ""), consent: form.get("consent") === "true",
       bytes: new Uint8Array(await file.arrayBuffer()) }, await evaluationTransport());
     return Response.json(result, { headers });
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     requireOcrEvaluation(allianceId);
     const kind = url.searchParams.get("kind");
     if (kind !== "image" && kind !== "result") throw new OcrEvaluationError("Choose a screenshot from your review history.");
-    const result = await readEvaluationContent({ allianceId, actorId: session.user.id, memberId: url.searchParams.get("memberId") || null },
+    const result = await readEvaluationContent({ allianceId, actorId: session.user.id, memberId: url.searchParams.get("memberId") || null, scope: url.searchParams.get("scope") === "batch" ? "batch" : undefined },
       url.searchParams.get("id") ?? "", kind, await evaluationTransport());
     if (result instanceof Uint8Array) return new Response(Buffer.from(result), { headers: { ...headers, "Content-Type": "image/png", "Content-Disposition": 'inline; filename="vs-screenshot.png"' } });
     return Response.json(result, { headers });

@@ -7,14 +7,32 @@ import { readIdentitySnapshot } from "../memberIdentity";
 import { OCR_CAMPAIGN, OCR_MAX_IMAGE_BYTES, OCR_MAX_RESULT_BYTES, OCR_RESERVATION_MICROS, OCR_RETENTION_MS, OCR_VERSION, OcrEvaluationError, requireOcrEvaluation } from "./config";
 import { normalizeScreenshot } from "./image";
 import type { OcrTransport } from "./provider";
-import { reviewDailyVs, type Recognition } from "./recognition";
+import { reviewDailyVs } from "./recognition";
+import { readRankingContext } from "./rankingContext";
+import { reviewRanking, type RankingRecognition, type RosterMember } from "./ranking";
 
-export type EvaluationTarget = { allianceId: string; actorId: string; memberId: string | null };
+export type EvaluationTarget = { allianceId: string; actorId: string; memberId: string | null; scope?: "batch" };
 type Tx = Prisma.TransactionClient;
 
 async function context(tx: Tx, target: EvaluationTarget, processing = true) {
   const actor = await tx.user.findUnique({ where: { id: target.actorId }, select: { id: true, displayName: true } });
   if (!actor) throw new OcrEvaluationError("Sign in again before evaluating a screenshot.");
+  if (target.scope === "batch") {
+    if (target.memberId) throw new OcrEvaluationError("Choose either a batch or a member review.");
+    const [membership] = await tx.$queryRaw<{ role: AllianceRole }[]>`
+      SELECT "role" FROM "AllianceMembership" WHERE "allianceId" = ${target.allianceId}
+        AND "userId" = ${target.actorId} FOR SHARE`;
+    if (!membership || !buildPermissionSet(membership.role).canImportMetrics) throw new OcrEvaluationError("You do not have permission to import ranking screenshots.");
+    const alliance = await tx.alliance.findUnique({ where: { id: target.allianceId }, select: { name: true, server: true, identityVersion: true } });
+    if (!alliance?.name.trim() || !alliance.server.trim()) throw new OcrEvaluationError("Review the alliance name and server before importing screenshots.");
+    const roster = await tx.allianceMember.findMany({ where: { allianceId: target.allianceId },
+      select: { id: true, playerName: true, archivedAt: true, identityVersion: true }, orderBy: { id: "asc" }, take: 2001 });
+    if (roster.length > 2000) throw new OcrEvaluationError("This trial supports up to 2,000 roster records.");
+    const members: RosterMember[] = roster.map(m => ({ id: m.id, playerName: m.playerName, archived: !!m.archivedAt }));
+    return { memberId: null, actorName: actor.displayName, actorRole: membership.role, playerName: "Alliance ranking capture",
+      allianceName: alliance.name, server: alliance.server, members,
+      contextKey: createHash("sha256").update(JSON.stringify([alliance, membership.role, roster])).digest("hex") };
+  }
   let memberId: string; let role: AllianceRole | "MEMBER"; let grantId: number | null = null;
   if (target.memberId) {
     const [membership] = await tx.$queryRaw<{ role: AllianceRole }[]>`
@@ -43,7 +61,7 @@ async function context(tx: Tx, target: EvaluationTarget, processing = true) {
     || !identity.member.alliance.name.trim() || !identity.member.alliance.server.trim())) {
     throw new OcrEvaluationError("Review the active member's name, alliance and server before evaluating a screenshot.");
   }
-  return { memberId, actorName: actor.displayName, actorRole: role, playerName: identity.member.playerName,
+  return { members: [] as RosterMember[], memberId, actorName: actor.displayName, actorRole: role, playerName: identity.member.playerName,
     allianceName: identity.member.alliance.name, server: identity.member.alliance.server,
     contextKey: JSON.stringify([identity.reviewKey, role, grantId]) };
 }
@@ -61,7 +79,7 @@ export async function loadEvaluationContext(target: EvaluationTarget) {
       ...(current.actorRole === "MEMBER" ? { actorUserId: target.actorId } : {}),
     }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 20 });
     return { playerName: current.playerName, allianceName: current.allianceName, server: current.server,
-      leader: current.actorRole !== "MEMBER", contextKey: current.contextKey,
+      leader: current.actorRole !== "MEMBER", members: current.members, contextKey: current.contextKey,
       attempts: attempts.map(auditView) };
   });
 }
@@ -101,6 +119,14 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
         || existing.contextKey !== current.contextKey) throw new OcrEvaluationError("This upload reference belongs to a different review. Choose the screenshot again.");
       return { attempt: existing, dispatched: false };
     }
+    // Reuse identical batch captures in this unchanged review context. A failed
+    // attempt is not automatically sent again under a fresh client request ID.
+    if (input.scope === "batch") {
+      const duplicate = await tx.ocrEvaluationAttempt.findFirst({ where: { allianceId: input.allianceId, memberId: null,
+        actorUserId: input.actorId, sourceDigest: image.digest, contextKey: current.contextKey,
+        processingVersion: OCR_VERSION, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
+      if (duplicate) return { attempt: duplicate, dispatched: false };
+    }
     const now = new Date(); const since = new Date(now); since.setUTCHours(0, 0, 0, 0);
     if (await tx.ocrEvaluationAttempt.count({ where: { actorUserId: input.actorId, createdAt: { gte: since } } }) >= 20) {
       throw new OcrEvaluationError("Your 20-scan daily evaluation limit has been reached. You can still review earlier scans.");
@@ -126,7 +152,8 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     await unchanged(input, attempt.contextKey);
     const recognition = await transport.recognize(image);
     await unchanged(input, attempt.contextKey);
-    const content = Buffer.from(JSON.stringify(recognition));
+    const rankingContext = await readRankingContext(image.bytes, recognition);
+    const content = Buffer.from(JSON.stringify({ ...recognition, rankingContext }));
     if (content.length > OCR_MAX_RESULT_BYTES) throw new Error("Recognition too large");
     await transport.put(`${attempt.id}/recognition.json`, content, "application/json");
     const complete = await transaction(async tx => {
@@ -169,8 +196,8 @@ export async function readEvaluationContent(target: EvaluationTarget, id: string
     }
     return bytes;
   }
-  const recognition = JSON.parse(Buffer.from(bytes).toString()) as Recognition;
-  return { recognition, review: reviewDailyVs(recognition, attempt.playerName), attempt: auditView(attempt),
+  const recognition = JSON.parse(Buffer.from(bytes).toString()) as RankingRecognition;
+  return { recognition, batchReview: target.scope === "batch" ? reviewRanking(recognition, current.members) : null, review: reviewDailyVs(recognition, attempt.playerName), attempt: auditView(attempt),
     capturedTarget: { playerName: attempt.playerName, allianceName: attempt.allianceName, server: attempt.server },
     contextChanged: current.contextKey !== attempt.contextKey };
 }

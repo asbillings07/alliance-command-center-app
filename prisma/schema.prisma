@@ -108,7 +108,8 @@ model OcrEvaluationAttempt {
   id String @id
   requestId String
   allianceId String
-  memberId String
+  // Null only for an authorized leader's alliance ranking capture.
+  memberId String?
   actorUserId String
   actorName String
   actorRole String

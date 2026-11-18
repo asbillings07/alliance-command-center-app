@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { rankingFixture } from "@/app/src/lib/ocr/testing/rankingFixture";
 import { test, expect } from "../shared/fixtures";
 import { prisma } from "@/app/src/lib/prisma";
 import { checkA11y } from "../shared/accessibility";
@@ -41,7 +42,7 @@ for (const width of [320, 820, 1280]) {
     await scan.click();
     await expect(page.getByText("Recognition is ready to review. No scores were changed.")).toBeVisible();
     await expect(page.getByText("23,340,000", { exact: true })).toBeVisible();
-    await expect(page.getByText("In progress · 23:39:25 remaining", { exact: true })).toBeVisible();
+    await expect(page.getByText("Countdown visible · 23:39:25 · game date unconfirmed", { exact: true })).toBeVisible();
     await expect(page.getByText("Name candidate found — review needed", { exact: true })).toBeVisible();
     const image = page.getByRole("img", { name: "Daily VS screenshot being reviewed" });
     await expect(image).toBeVisible();
@@ -151,3 +152,55 @@ test("rejects a disguised markup file without dispatching OCR", async ({ page, l
   expect(dialogs).toEqual([]);
   expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(0);
 });
+
+for (const width of [320, 820, 1280]) {
+  test(`Leader imports a ranking batch from the existing data page at ${width}px`, async ({ page, login, ownerScenario }, testInfo) => {
+    test.setTimeout(120000);
+    const { allianceId, userId, email, password } = ownerScenario;
+    await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "LEADER" } });
+    await prisma.allianceMember.createMany({ data: ["Jordan Vale", "Morgan Reed", "Riley Chen"].map(playerName => ({ allianceId, playerName })) });
+    const period = await prisma.metricPeriod.create({ data: { allianceId, name: "Synthetic weekly review" } });
+    await page.setViewportSize({ width, height: 900 });
+    await login({ email, password, displayName: "Leader" });
+    await page.goto(`/alliances/${allianceId}/periods/${period.id}/import`);
+    await page.getByRole("link", { name: "Screenshots", exact: true }).click();
+    const files = await Promise.all((["monday", "weekly"] as const).map(async kind => ({
+      name: `${kind}.png`, mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture(kind).svg)).png().toBuffer(),
+    })));
+    await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles(files);
+    const scan = page.getByRole("button", { name: "Read 2 screenshots", exact: true });
+    await expect(scan).toBeDisabled();
+    await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
+    await scan.click();
+    await expect(page.getByText(/Batch recognition is ready/)).toBeVisible();
+    await expect(page.getByText("6 unique rows", { exact: false })).toBeVisible();
+    await expect(page.getByText(/current game day is in progress/)).toHaveCount(0);
+    const finish = page.getByRole("button", { name: "Finish recognition review" });
+    await expect(finish).toBeDisabled();
+    await page.getByLabel("Week beginning (Monday)").fill("2026-11-16");
+    await page.getByRole("checkbox", { name: "I have checked the calendar context for these screenshots." }).check();
+    await expect(page.getByText("Daily score · 2026-11-16", { exact: true })).toHaveCount(3);
+    await expect(page.getByText("Weekly total · week of 2026-11-16", { exact: true })).toHaveCount(3);
+    await finish.click();
+    await expect(page.getByText("Recognition reviewed · No scores saved")).toBeVisible();
+    await page.getByRole("button", { name: "View screenshot 1", exact: true }).click();
+    const image = page.getByRole("img", { name: "Original ranking screenshot for batch review" });
+    await expect.poll(() => image.evaluate(el => (el as HTMLImageElement).naturalWidth)).toBe(600);
+    const imageUrl = (await image.getAttribute("src"))!;
+    expect((await page.request.get(imageUrl)).headers()["cache-control"]).toBe("private, no-store");
+    await checkA11y(page);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`leader-batch-${width}.png`), fullPage: true });
+    // Re-selecting a completed image reuses its scan instead of paying again.
+    await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles(files[0]);
+    await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
+    await page.getByRole("button", { name: "Read 1 screenshots", exact: true }).click();
+    await expect(page.getByText(/Batch recognition is ready/)).toBeVisible();
+    expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(2);
+    expect(await prisma.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })).toBe(0);
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Add scan to review" })).toHaveCount(2);
+    await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "VIEWER" } });
+    expect((await page.request.get(imageUrl)).status()).toBe(400);
+  });
+}
