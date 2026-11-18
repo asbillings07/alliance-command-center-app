@@ -76,6 +76,8 @@ These are reviewable slices under the existing issues, not approval to merge or 
 
 ### 1. Observation provenance and resolution contract — #287 / #42 / #295
 
+The existing provenance slice is deployed. The remaining [score-review contract](score-review-contract.md) is tracked in #400; it is not an activated result writer.
+
 First prepare the ADR-018 amendment and database design for review. Distinguish a submission, its source/capture context, and an authorized decision that changes which result is used. Prefer a small extension of the existing metric history over a parallel generalized event system.
 
 The design must specify:
