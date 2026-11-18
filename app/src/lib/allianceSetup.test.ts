@@ -267,6 +267,7 @@ describe("getAllianceSetupStatus", () => {
       canManageAlliance: false,
       canRollbackMemberImports: false,
       canManageMemberIdentity: true,
+      canManageMemberAccess: true,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
@@ -305,6 +306,7 @@ describe("getAllianceSetupStatus", () => {
       canManageAlliance: true,
       canRollbackMemberImports: false,
       canManageMemberIdentity: true,
+      canManageMemberAccess: true,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", adminPermissions);
@@ -373,6 +375,7 @@ describe("getAllianceSetupStatus", () => {
       canManageAlliance: false,
       canRollbackMemberImports: false,
       canManageMemberIdentity: true,
+      canManageMemberAccess: true,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
@@ -452,6 +455,7 @@ describe("getAllianceSetupStatus", () => {
       canManageAlliance: false,
       canRollbackMemberImports: false,
       canManageMemberIdentity: true,
+      canManageMemberAccess: true,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
@@ -481,6 +485,7 @@ describe("getAllianceSetupStatus", () => {
       canManageAlliance: false,
       canRollbackMemberImports: false,
       canManageMemberIdentity: false,
+      canManageMemberAccess: false,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", viewerPermissions);
@@ -506,6 +511,7 @@ describe("getAllianceSetupStatus", () => {
       canManageAlliance: false,
       canRollbackMemberImports: false,
       canManageMemberIdentity: false,
+      canManageMemberAccess: false,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", viewerPermissions);
@@ -579,6 +585,7 @@ describe("getAllianceSetupStatus", () => {
       canManageAlliance: false,
       canRollbackMemberImports: false,
       canManageMemberIdentity: true,
+      canManageMemberAccess: true,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", leaderPermissions);
@@ -688,6 +695,7 @@ describe("getAllianceSetupStatus", () => {
       canManageAlliance: false,
       canRollbackMemberImports: false,
       canManageMemberIdentity: false,
+      canManageMemberAccess: false,
     };
 
     const status = await getAllianceSetupStatus("alliance-1", viewerPermissions);

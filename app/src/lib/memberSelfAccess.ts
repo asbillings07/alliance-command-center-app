@@ -13,7 +13,7 @@ async function authorizeManager(tx: Prisma.TransactionClient, allianceId: string
     WHERE m."allianceId" = ${allianceId} AND m."userId" = ${actorId}
     FOR SHARE OF m, u
   `;
-  if (!actor || !buildPermissionSet(actor.role).canManageMembers) {
+  if (!actor || !buildPermissionSet(actor.role).canManageMemberAccess) {
     throw new MemberAccessError("You do not have permission to manage member access.");
   }
   return actor;

@@ -8,7 +8,7 @@ import { IdentityReviewError } from "@/app/src/lib/memberIdentity";
 export async function saveMemberAccess(allianceId: string, memberId: string,
   input: { reviewKey: string; grant: boolean; acknowledged: boolean },
 ): Promise<{ ok: boolean; message: string }> {
-  const { user } = await requireAllianceAccess({ allianceId, requiredPermission: Permissions.MANAGE_MEMBERS });
+  const { user } = await requireAllianceAccess({ allianceId, requiredPermission: Permissions.MANAGE_MEMBER_ACCESS });
   if (!input || typeof input.reviewKey !== "string" || typeof input.grant !== "boolean" || input.acknowledged !== true) {
     return { ok: false, message: "Review the access details and confirm your decision." };
   }

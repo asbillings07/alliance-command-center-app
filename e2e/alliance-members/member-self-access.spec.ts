@@ -9,13 +9,14 @@ async function confirm(allianceId: string, memberId: string, actorId: string) {
   await prisma.memberIdentityDecision.create({ data: { allianceId, memberId, confirmed: true,
     accountUserId: member.userId, playerName: member.playerName, allianceName: member.alliance.name,
     server: member.alliance.server, memberVersion: member.identityVersion, allianceVersion: member.alliance.identityVersion,
-    actorUserId: actorId, actorName: actor.displayName, actorRole: "OWNER" } });
+    actorUserId: actorId, actorName: actor.displayName, actorRole: (await prisma.allianceMembership.findUniqueOrThrow({ where: { allianceId_userId: { allianceId, userId: actorId } } })).role } });
 }
 
 for (const width of [320, 820, 1280]) {
-  test(`explicit member access, ordinary-member boundary and revocation at ${width}px`, async ({ page, browser, login, ownerScenario }, testInfo) => {
+  test(`Leader member access, ordinary-member boundary and revocation at ${width}px`, async ({ page, browser, login, ownerScenario }, testInfo) => {
     test.setTimeout(180000);
     const { allianceId, userId, email, password } = ownerScenario;
+    await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "LEADER" } });
     const owner = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     const account = await prisma.user.create({ data: { email: `ordinary-${crypto.randomUUID()}@example.test`, displayName: "Jordan Account", passwordHash: owner.passwordHash } });
     const member = await prisma.allianceMember.create({ data: { allianceId, playerName: "Jordan Vale", userId: account.id } });
@@ -26,6 +27,8 @@ for (const width of [320, 820, 1280]) {
       await login({ email, password, displayName: "Owner" });
       await page.goto(`/alliances/${allianceId}/members/${member.id}`);
       await expect(page.getByText("Account Linked", { exact: true })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Review member identity" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Edit", exact: true })).toHaveCount(0);
       await page.getByRole("link", { name: "Manage member access" }).click();
       await expect(page.getByRole("heading", { name: "Member access", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "Approve member access", exact: true })).toHaveCount(0);
@@ -89,6 +92,8 @@ for (const width of [320, 820, 1280]) {
       await page.reload();
       await expect(page.getByRole("region", { name: "Access history" }).getByRole("listitem")).toHaveCount(2);
       expect(await prisma.memberSelfAccessDecision.count({ where: { memberId: member.id } })).toBe(2);
+      const decisions = await prisma.memberSelfAccessDecision.findMany({ where: { memberId: member.id } });
+      expect(decisions.every(decision => decision.actorUserId === userId && decision.actorRole === "LEADER")).toBe(true);
     } finally {
       await memberContext.close();
       await prisma.allianceMember.deleteMany({ where: { userId: account.id } });
@@ -97,7 +102,7 @@ for (const width of [320, 820, 1280]) {
   });
 }
 
-test("stale approval is rejected and Leaders cannot grant access", async ({ page, login, ownerScenario }) => {
+test("stale approval is rejected and Viewers cannot grant access", async ({ page, login, ownerScenario }) => {
   const { allianceId, userId, email, password } = ownerScenario;
   const member = await prisma.allianceMember.create({ data: { allianceId, playerName: "Jordan Vale", userId } });
   await confirm(allianceId, member.id, userId);
@@ -110,10 +115,10 @@ test("stale approval is rejected and Leaders cannot grant access", async ({ page
   await page.getByRole("dialog").getByRole("button", { name: "Yes, approve member access" }).click();
   await expect(page.getByRole("dialog").getByRole("alert")).toContainText("changed");
   expect(await prisma.memberSelfAccessDecision.count({ where: { memberId: member.id } })).toBe(0);
-  await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "LEADER" } });
+  await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "VIEWER" } });
   await page.goto(href);
   await expect(page).not.toHaveURL(/\/access$/);
   await page.goto(`/alliances/${allianceId}/members/${member.id}`);
   await expect(page.getByRole("link", { name: "Manage member access" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Review member identity" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review member identity" })).toHaveCount(0);
 });

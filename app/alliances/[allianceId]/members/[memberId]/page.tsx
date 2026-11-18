@@ -455,7 +455,7 @@ export default async function MemberPage({ params, searchParams }: Params) {
                 )}
 
                 <div className="flex flex-wrap justify-end gap-3">
-                    {permissions.canManageMembers && (
+                    {permissions.canManageMemberAccess && (
                         <Button variant="secondary" href={`/alliances/${allianceId}/members/${memberId}/access`}>Manage member access</Button>
                     )}
                     {permissions.canManageMemberIdentity && (

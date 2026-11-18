@@ -69,14 +69,12 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true")("Member self access [inte
       await db.alliance.delete({ where: { id: second.id } });
     }
   });
-  it("denies Leaders, Viewers, ordinary members, cross-tenant and wrong-member requests; permits Admin", async () => {
+  it("denies Viewers, ordinary members, cross-tenant and wrong-member requests; permits Admin", async () => {
     await identity();
     const key = (await review()).reviewKey;
-    for (const role of ["LEADER", "VIEWER"] as const) {
-      await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role } });
-      await expect(review()).rejects.toThrow("permission");
-      await expect(decide(true, key)).rejects.toThrow("permission");
-    }
+    await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role: "VIEWER" } });
+    await expect(review()).rejects.toThrow("permission");
+    await expect(decide(true, key)).rejects.toThrow("permission");
     await expect(loadMemberAccessReview(allianceId, memberId, accountId)).rejects.toThrow("permission");
     await expect(decideMemberSelfAccess({ allianceId, memberId, actorId: accountId, grant: true, acknowledged: true, reviewKey: key })).rejects.toThrow("permission");
     await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role: "ADMIN" } });
@@ -85,6 +83,22 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true")("Member self access [inte
     await decide(true, key);
     expect((await review()).enabled).toBe(true);
   });
+  it.each(["OWNER", "ADMIN", "LEADER"] as const)("%s can approve and revoke only member access with accurate attribution", async (role) => {
+    await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role } });
+    await identity();
+    const grant = await decide();
+    expect(grant).toMatchObject({ actorUserId: actorId, actorRole: role, granted: true });
+    expect(await own()).not.toBeNull();
+    await expect(loadMemberAccessReview("other-alliance", memberId, actorId)).rejects.toThrow("permission");
+    await expect(decideMemberSelfAccess({ allianceId: "other-alliance", memberId, actorId,
+      grant: false, acknowledged: true, reviewKey: (await review()).reviewKey })).rejects.toThrow("permission");
+    const revoke = await decide(false);
+    expect(revoke).toMatchObject({ actorUserId: actorId, actorRole: role, granted: false });
+    expect(await own()).toBeNull();
+    expect(await db.allianceMembership.findUniqueOrThrow({ where: { allianceId_userId: { allianceId, userId: actorId } } })).toMatchObject({ role });
+    expect(await db.allianceMembership.count({ where: { allianceId, userId: accountId } })).toBe(0);
+  });
+
   it("requires acknowledgement, rejects stale/repeated decisions and retains immutable grant/revoke history", async () => {
     await identity(); const key = (await review()).reviewKey;
     await expect(decideMemberSelfAccess({ allianceId, memberId, actorId, grant: true, acknowledged: false, reviewKey: key })).rejects.toThrow("Confirm");
@@ -145,9 +159,10 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true")("Member self access [inte
     }
     expect((await review()).decisions).toHaveLength(2); expect(await own()).toBeNull();
   });
-  it("rejects a manager demoted while an access grant waits", async () => {
+  it("rejects a Leader demoted while an access grant waits", async () => {
+    await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role: "LEADER" } });
     await identity(); const key = (await review()).reviewKey;
-    const hold = heldTransaction(db, tx => tx.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role: "LEADER" } }));
+    const hold = heldTransaction(db, tx => tx.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role: "VIEWER" } }));
     await hold.ready;
     const result = decide(true, key).then(() => "accepted", () => "rejected");
     try { await expectStillBlocked(result, 100); } finally { hold.commit(); await hold.committed; }

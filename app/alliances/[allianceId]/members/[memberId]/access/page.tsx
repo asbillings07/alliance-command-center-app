@@ -10,7 +10,7 @@ import { MemberAccessForm } from "./MemberAccessForm";
 const time = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
 export default async function MemberAccessPage({ params }: { params: Promise<{ allianceId: string; memberId: string }> }) {
   const { allianceId, memberId } = await params;
-  const { user } = await requireAllianceAccess({ allianceId, requiredPermission: Permissions.MANAGE_MEMBERS });
+  const { user } = await requireAllianceAccess({ allianceId, requiredPermission: Permissions.MANAGE_MEMBER_ACCESS });
   const review = await loadMemberAccessReview(allianceId, memberId, user.id).catch((error) => {
     if (error instanceof MemberAccessError || error instanceof IdentityReviewError) notFound();
     throw error;
@@ -36,7 +36,7 @@ export default async function MemberAccessPage({ params }: { params: Promise<{ a
         {!identity.confirmed && <div className="mt-4 space-y-3 text-sm text-warning-light"><p>Confirm the current member identity before approving access.</p>
           {identity.missing.length > 0 && <ul className="list-disc space-y-2 pl-5">{identity.missing.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
           <Button href={`${href}/identity`} variant="secondary">Review member identity</Button></div>}
-        {decisions[0]?.granted && !enabled && <p className="mt-4 text-sm text-warning-light">The earlier approval no longer provides access. After identity review, an owner or admin must approve access again.</p>}
+        {decisions[0]?.granted && !enabled && <p className="mt-4 text-sm text-warning-light">The earlier approval no longer provides access. After identity review, an owner, admin or leader must approve access again.</p>}
         <div className="mt-5"><MemberAccessForm allianceId={allianceId} memberId={memberId} reviewKey={review.reviewKey}
           canGrant={identity.confirmed && !enabled} canRevoke={!!decisions[0]?.granted} accountLabel={accountLabel} playerName={member.playerName}
           previousAccount={decisions[0]?.accountName} previousName={decisions[0]?.playerName} /></div>

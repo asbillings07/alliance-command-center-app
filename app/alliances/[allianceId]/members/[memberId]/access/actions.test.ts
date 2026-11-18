@@ -9,9 +9,9 @@ vi.mock("@/app/src/lib/memberSelfAccess", () => ({ decideMemberSelfAccess: vi.fn
 vi.mock("@/app/src/lib/memberIdentity", () => ({ IdentityReviewError: class extends Error {} }));
 beforeEach(() => { vi.resetAllMocks(); vi.mocked(requireAllianceAccess).mockResolvedValue({ user: { id: "session-actor" } } as never); });
 describe("member access action boundary", () => {
-  it("derives actor and enforces manager permission, forwarding no injected fields", async () => {
+  it("derives actor and enforces focused member-access permission, forwarding no injected fields", async () => {
     expect((await saveMemberAccess("a", "m", { reviewKey: "r", grant: true, acknowledged: true, actorId: "victim", accountUserId: "other", allianceId: "other" } as never)).ok).toBe(true);
-    expect(requireAllianceAccess).toHaveBeenCalledWith({ allianceId: "a", requiredPermission: Permissions.MANAGE_MEMBERS });
+    expect(requireAllianceAccess).toHaveBeenCalledWith({ allianceId: "a", requiredPermission: Permissions.MANAGE_MEMBER_ACCESS });
     expect(decideMemberSelfAccess).toHaveBeenCalledWith({ allianceId: "a", memberId: "m", actorId: "session-actor", reviewKey: "r", grant: true, acknowledged: true });
   });
   it("rejects malformed requests and absent acknowledgement without writes", async () => {

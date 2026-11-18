@@ -190,9 +190,9 @@ describe("permissions", () => {
       const countTrue = (perms: PermissionSet) =>
         Object.values(perms).filter(Boolean).length;
 
-      expect(countTrue(ownerPerms)).toBe(14); // All permissions
-      expect(countTrue(adminPerms)).toBe(11); // No owner-only capabilities
-      expect(countTrue(leaderPerms)).toBe(8); // Includes focused member identity access
+      expect(countTrue(ownerPerms)).toBe(15); // All permissions
+      expect(countTrue(adminPerms)).toBe(12); // No owner-only capabilities
+      expect(countTrue(leaderPerms)).toBe(9); // Includes focused member identity and own-record access
       expect(countTrue(viewerPerms)).toBe(3);  // Only view:*
     });
   });
@@ -217,6 +217,22 @@ describe("permissions", () => {
       
       expect(hasPermission(permissions, unknownPermission)).toBe(false);
     });
+  });
+
+  it("grants focused own-record access approval without widening Leader administration powers", () => {
+    for (const role of [AllianceRole.OWNER, AllianceRole.ADMIN, AllianceRole.LEADER]) {
+      const permissions = buildPermissionSet(role);
+      expect(permissions.canManageMemberAccess).toBe(true);
+      expect(hasPermission(permissions, Permissions.MANAGE_MEMBER_ACCESS)).toBe(true);
+    }
+    const leader = buildPermissionSet(AllianceRole.LEADER);
+    expect(leader.canManageMembers).toBe(false);
+    expect(leader.canImportMembers).toBe(false);
+    expect(leader.canInviteCollaborators).toBe(false);
+    expect(leader.canManageAlliance).toBe(false);
+    expect(leader.canManageLeadership).toBe(false);
+    expect(leader.canRollbackMemberImports).toBe(false);
+    expect(buildPermissionSet(AllianceRole.VIEWER).canManageMemberAccess).toBe(false);
   });
 
   it("grants focused identity access without widening Leader roster or account powers", () => {
