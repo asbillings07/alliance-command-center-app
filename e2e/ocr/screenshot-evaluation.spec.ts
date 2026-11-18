@@ -238,8 +238,9 @@ test("failed batch scans require deliberate new-charge consent and preserve earl
   await expect.poll(()=>prisma.ocrEvaluationAttempt.count({where:{allianceId}})).toBe(2);
   await expect(page.getByText(/Remaining scans completed/)).toBeVisible();
   expect(await prisma.ocrEvaluationAttempt.findUniqueOrThrow({where:{retryOf:failed.id}})).toMatchObject({status:"READY",retryOf:failed.id});
+  await expect(page.getByRole("button",{name:/Remove screenshot \d+ from review/})).toHaveCount(1);
   await page.getByRole("button",{name:"Remove screenshot 1 from review",exact:true}).click();
-  await page.getByRole("button",{name:"Remove screenshot 1 from review",exact:true}).click();
+  await expect(page.getByRole("button",{name:/Remove screenshot \d+ from review/})).toHaveCount(0);
   await page.getByLabel("Week beginning (Monday)").fill("2026-11-16");
   await page.getByRole("checkbox",{name:"I have checked the calendar context for these screenshots."}).check();
   await page.getByRole("button",{name:"Finish recognition review"}).click();
