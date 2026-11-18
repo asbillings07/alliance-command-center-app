@@ -93,9 +93,23 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
     vi.mocked(transport.recognize).mockRejectedValue(new Error("provider failure"));
     await expect(evaluateScreenshot(await input(batch), transport)).rejects.toThrow("did not complete");
-    expect(await evaluateScreenshot(await input(batch), transport)).toMatchObject({ status: "FAILED" });
+    expect(await evaluateScreenshot(await input(batch), transport)).toMatchObject({ status: "FAILED", outcome: "processing-failed:recognition" });
     expect(transport.recognize).toHaveBeenCalledTimes(1);
     expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 1, reservedMicros: 10000 });
+  });
+  it("requires explicit consent for a new charged retry and preserves its failed parent", async () => {
+    const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
+    vi.mocked(transport.recognize).mockRejectedValueOnce(new Error("private provider failure"));
+    await expect(evaluateScreenshot(await input(batch), transport)).rejects.toThrow("did not complete");
+    const failed = await db.ocrEvaluationAttempt.findFirstOrThrow();
+    const request = { ...await input(batch), retryFailed: true };
+    const retried = await evaluateScreenshot(request, transport);
+    expect(retried).toMatchObject({status:"READY",retryOf:failed.id});
+    expect(await db.ocrEvaluationAttempt.findUniqueOrThrow({where:{id:failed.id}})).toMatchObject({status:"FAILED"});
+    expect((await evaluateScreenshot(request, transport)).id).toBe(retried.id);
+    expect((await evaluateScreenshot({...await input(batch),retryFailed:true}, transport)).id).toBe(retried.id);
+    expect(transport.recognize).toHaveBeenCalledTimes(2);
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({where:{id:OCR_CAMPAIGN}})).toMatchObject({attempts:2,reservedMicros:20000});
   });
   it("allows a focused Leader trial without a linked target and writes no metrics", async () => {
     await db.allianceMember.update({ where: { id: memberId }, data: { userId: null } });

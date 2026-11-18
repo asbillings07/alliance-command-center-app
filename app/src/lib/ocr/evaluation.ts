@@ -87,7 +87,7 @@ export async function loadEvaluationContext(target: EvaluationTarget) {
 function auditView(attempt: OcrEvaluationAttempt) {
   return { id: attempt.id, createdAt: attempt.createdAt.toISOString(), expiresAt: attempt.expiresAt.toISOString(),
     actorName: attempt.actorName, actorRole: attempt.actorRole, playerName: attempt.playerName,
-    status: attempt.status, outcome: attempt.outcome };
+    status: attempt.status, outcome: attempt.outcome, retryOf: attempt.retryOf };
 }
 
 async function unchanged(target: EvaluationTarget, key: string) {
@@ -98,11 +98,12 @@ async function unchanged(target: EvaluationTarget, key: string) {
 }
 
 export async function evaluateScreenshot(input: EvaluationTarget & {
-  requestId: string; contextKey: string; bytes: Uint8Array; consent: boolean;
+  requestId: string; contextKey: string; bytes: Uint8Array; consent: boolean; retryFailed?: boolean;
 }, transport: OcrTransport) {
   requireOcrEvaluation(input.allianceId);
   if (input.consent !== true) throw new OcrEvaluationError("Confirm screenshot processing and retention before continuing.");
   if (!/^[a-f0-9-]{36}$/i.test(input.requestId) || input.contextKey.length > 1500) throw new OcrEvaluationError("Reload this review before uploading.");
+  if (input.retryFailed && input.scope !== "batch") throw new OcrEvaluationError("Explicit retries are available only in the leader ranking trial.");
   await unchanged(input, input.contextKey);
   const image = await normalizeScreenshot(input.bytes);
   // Preflight cannot process or store the screenshot, and precedes spending.
@@ -121,11 +122,15 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     }
     // Reuse identical batch captures in this unchanged review context. A failed
     // attempt is not automatically sent again under a fresh client request ID.
+    let retryOf: string | null = null;
     if (input.scope === "batch") {
       const duplicate = await tx.ocrEvaluationAttempt.findFirst({ where: { allianceId: input.allianceId, memberId: null,
         actorUserId: input.actorId, sourceDigest: image.digest, contextKey: current.contextKey,
         processingVersion: OCR_VERSION, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
-      if (duplicate) return { attempt: duplicate, dispatched: false };
+      if (duplicate) {
+        if (duplicate.status !== "FAILED" || input.retryFailed !== true) return { attempt: duplicate, dispatched: false };
+        retryOf = duplicate.id;
+      }
     }
     const now = new Date(); const since = new Date(now); since.setUTCHours(0, 0, 0, 0);
     if (await tx.ocrEvaluationAttempt.count({ where: { actorUserId: input.actorId, createdAt: { gte: since } } }) >= 20) {
@@ -137,7 +142,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
       data: { reservedMicros: { increment: OCR_RESERVATION_MICROS }, attempts: { increment: 1 }, storedBytes: { increment: image.bytes.length } } });
     if (reserved.count !== 1) throw new OcrEvaluationError("The evaluation budget has been reached. Further scans are paused.");
     const attempt = await tx.ocrEvaluationAttempt.create({ data: {
-      id: randomUUID(), requestId: input.requestId, allianceId: input.allianceId, memberId: current.memberId,
+      id: randomUUID(), requestId: input.requestId, retryOf, allianceId: input.allianceId, memberId: current.memberId,
       actorUserId: input.actorId, actorName: current.actorName, actorRole: current.actorRole,
       playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       contextKey: current.contextKey, sourceDigest: image.digest, processingVersion: OCR_VERSION,
@@ -147,15 +152,19 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
   });
   if (!admitted.dispatched) return auditView(admitted.attempt);
   const attempt = admitted.attempt;
+  let failureStage = "source-storage";
   try {
     await transport.put(`${attempt.id}/source.png`, image.bytes, "image/png");
+    failureStage = "recognition";
     await unchanged(input, attempt.contextKey);
     const recognition = await transport.recognize(image);
     await unchanged(input, attempt.contextKey);
     const rankingContext = await readRankingContext(image.bytes, recognition);
     const content = Buffer.from(JSON.stringify({ ...recognition, rankingContext }));
     if (content.length > OCR_MAX_RESULT_BYTES) throw new Error("Recognition too large");
+    failureStage = "result-storage";
     await transport.put(`${attempt.id}/recognition.json`, content, "application/json");
+    failureStage = "finalization";
     const complete = await transaction(async tx => {
       if ((await context(tx, input)).contextKey !== attempt.contextKey) throw new OcrEvaluationError("The member's identity or access changed. Reload this review.");
       return tx.ocrEvaluationAttempt.update({ where: { id: attempt.id }, data: { status: "READY", outcome: "recognition-ready" } });
@@ -163,7 +172,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     return auditView(complete);
   } catch (error) {
     // Never log provider errors: they may contain image bytes or recognized text.
-    await prisma.ocrEvaluationAttempt.updateMany({ where: { id: attempt.id, status: "PROCESSING" }, data: { status: "FAILED", outcome: "processing-failed" } });
+    await prisma.ocrEvaluationAttempt.updateMany({ where: { id: attempt.id, status: "PROCESSING" }, data: { status: "FAILED", outcome: `processing-failed:${failureStage}` } });
     if (error instanceof OcrEvaluationError) throw error;
     throw new OcrEvaluationError("The scan did not complete. No scores changed. It will not be retried automatically; reload to check its history before choosing another scan.");
   }

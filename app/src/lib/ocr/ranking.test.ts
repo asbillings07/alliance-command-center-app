@@ -25,6 +25,34 @@ describe("leader ranking screenshots", () => {
     ] }, members);
     expect(review.rows.map(r => [r.sourceName, r.value])).toEqual([["Jordan Vale", 23340000], ["Morgan Reed", 19317601]]);
   });
+  it("handles centered column headers and large rank glyphs without losing the name column", () => {
+    const input: RankingRecognition = { text: "Ranking Commander Points", rankingContext: { kind: "daily", weekday: 1, label: "Monday" }, words: [
+      { text: "Commander", x: 503, y: 557, width: 199, height: 28 },
+      { text: "Points", x: 993, y: 553, width: 108, height: 33 },
+      { text: "1", x: 132, y: 698, width: 54, height: 56 },
+      { text: "Jordan Vale", x: 402, y: 672, width: 179, height: 34 },
+      { text: "[QA] Synthetic", x: 404, y: 737, width: 334, height: 37 },
+      { text: "23,340,000", x: 918, y: 707, width: 206, height: 27 },
+      { text: "79", x: 119, y: 2183, width: 80, height: 42 },
+      { text: "Morgan Reed", x: 405, y: 2152, width: 122, height: 28 },
+      { text: "19,317,601", x: 880, y: 2187, width: 243, height: 33 },
+      { text: "[QA] Synthetic", x: 404, y: 2219, width: 334, height: 37 },
+    ] };
+    expect(reviewRanking(input, members).rows.map(r => [r.sourceName,r.value,r.status])).toEqual([
+      ["Jordan Vale",23340000,"exact"],["Morgan Reed",19317601,"exact"],
+    ]);
+  });
+  it("keeps complete long names instead of matching a clipped prefix to another member", () => {
+    const input: RankingRecognition = { text: "Ranking Commander Points", rankingContext: { kind: "daily", weekday: 1, label: "Monday" }, words: [
+      { text: "Commander", x: 503, y: 557, width: 199, height: 28 },
+      { text: "Points", x: 993, y: 553, width: 108, height: 33 },
+      { text: "Jordan", x: 402, y: 672, width: 179, height: 34 },
+      { text: "LongSurname", x: 590, y: 672, width: 240, height: 34 },
+      { text: "23,340,000", x: 918, y: 707, width: 206, height: 27 },
+    ] };
+    expect(reviewRanking(input, [{id:"prefix",playerName:"Jordan",archived:false},{id:"whole",playerName:"Jordan LongSurname",archived:false}]).rows[0])
+      .toMatchObject({sourceName:"Jordan LongSurname",memberId:"whole",status:"exact"});
+  });
   it("requires visible source context, not a user-supplied date alone", () => {
     const input = sample(); delete input.rankingContext;
     expect(reviewRanking(input, members).rows).toEqual([]);
@@ -36,6 +64,13 @@ describe("leader ranking screenshots", () => {
   it("keeps cropped or unreadable names unresolved instead of borrowing a neighbouring name", () => {
     const input = sample(); input.words = input.words.filter(w => w.text !== "Morgan Reed");
     expect(reviewRanking(input, members).rows[1]).toMatchObject({ sourceName: "", status: "invalid" });
+  });
+  it("does not borrow a previous name when adjacent score and name text is missing", () => {
+    const input = sample();
+    input.words = input.words.map(w => w.y >= 320 ? { ...w, y: w.y - Math.floor((w.y - 320) / 100) * 45, height: w.x === 430 ? 30 : w.height } : w)
+      .filter(w => w.text !== "23,340,000" && w.text !== "Morgan Reed");
+    const row = reviewRanking(input, members).rows.find(r => r.value === 19317601);
+    expect(row).toMatchObject({ sourceName: "", status: "invalid" });
   });
   it("uses the canonical import number grammar and refuses malformed or oversized values", () => {
     const input = sample(); input.words.find(w => w.text === "23,340,000")!.text = "23.340.000";

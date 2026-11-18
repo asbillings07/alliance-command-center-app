@@ -14,6 +14,7 @@ const statusText = { exact: "Exact name candidate", suggested: "Suggested match 
 export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
   const router = useRouter();
   const [items, setItems] = useState<Item[]>([]); const [week, setWeek] = useState(""); const [captureDate, setCaptureDate] = useState("");
+  const [retryFailed, setRetryFailed] = useState(false);
   const [dateConfirmed, setDateConfirmed] = useState(false); const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [source, setSource] = useState<Result | null>(null);
   const [excluded, setExcluded] = useState<string[]>([]); const [reviewed, setReviewed] = useState(false);
@@ -45,7 +46,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
       setItems(previous => previous.map(p => p.requestId === item.requestId ? { ...p, state: "reading" } : p));
       try {
         const form = new FormData(); form.set("screenshot", item.file!, "screenshot"); form.set("requestId", item.requestId);
-        form.set("consent", "true"); form.set("contextKey", initial.contextKey);
+        form.set("consent", "true"); form.set("contextKey", initial.contextKey); form.set("retryFailed", String(retryFailed));
         const response = await fetch(endpoint, { method: "POST", body: form }); const attempt = await response.json();
         if (!response.ok) throw new Error(attempt.error || "This screenshot did not complete.");
         if (attempt.status !== "READY") throw new Error("This attempt failed or is still pending. It was not sent again. Check upload history before starting another scan.");
@@ -60,11 +61,11 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
         cancel.current = true;
       }
     }
-    if (active.current) { router.refresh(); setBusy(false); setConsent(false); setMessage(cancel.current ? "Stopped. Completed scans remain below; unstarted images are still queued. No scan is retried automatically." : "Batch recognition is ready. Review the names, scores and source periods together. No scores were saved."); }
+    if (active.current) { router.refresh(); setBusy(false); setConsent(false); setRetryFailed(false); setMessage(cancel.current ? "Stopped. Completed scans remain below; unstarted images are still queued. No scan is retried automatically." : items.some(item => item.state === "failed") ? "Remaining scans completed. Earlier failed images still need attention. No scores were saved." : "Batch recognition is ready. Review the names, scores and source periods together. No scores were saved."); }
   }
   async function reopen(attempt: Attempt) {
     setBusy(true); setMessage("");
-    try { const result = await read(attempt.id); setItems(previous => previous.some(p => p.result?.attempt.id === attempt.id) ? previous : [...previous, { requestId: attempt.id, file: null, state: "ready", result }]); setReviewed(false); }
+    try { const result = await read(attempt.id); setItems(previous => previous.some(p => p.result?.attempt.id === attempt.id) ? previous : [...previous, { requestId: attempt.id, file: null, state: "ready", result }]); invalidate(); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Scan unavailable."); }
     finally { setBusy(false); }
   }
@@ -77,12 +78,15 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
       <input id="ranking-screenshots" ref={input} type="file" accept="image/png,image/jpeg" multiple disabled={busy} className="mt-2 block w-full min-w-0 rounded-lg border border-border p-2 text-sm focus:outline-2 focus:outline-primary"
         onChange={event => { const files = Array.from(event.target.files ?? []); if (!files.length) return;
           if (files.length + items.length > 20 || files.some(f => f.size > 2 * 1024 * 1024 || !["image/png", "image/jpeg"].includes(f.type))) { setMessage("Choose up to 20 PNG or JPEG images, each no larger than 2 MB."); event.target.value = ""; return; }
-          setItems(previous => [...previous, ...files.map(file => ({ file, requestId: crypto.randomUUID(), state: "queued" as const }))]); setConsent(false); invalidate(); setMessage(""); event.target.value = ""; }} />
+          setItems(previous => [...previous, ...files.map(file => ({ file, requestId: crypto.randomUUID(), state: "queued" as const }))]); setConsent(false); setRetryFailed(false); invalidate(); setMessage(""); event.target.value = ""; }} />
       {items.length > 0 && <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{items.map((item, index) => <li key={item.requestId} className="min-w-0 rounded-lg border border-border p-3 text-sm">
         <strong>Screenshot {index + 1}</strong><p className="mt-1 text-text-secondary">{item.state === "ready" ? item.result!.batchReview.context.label : item.state === "reading" ? "Reading…" : item.state === "failed" ? "Needs attention" : "Queued"}</p>
         {item.error && <p className="mt-2 break-words text-warning-light">{item.error}</p>}
+        {!busy && (item.state === "failed" || item.state === "queued") && <div className="mt-3"><Button variant="secondary" onClick={() => {setItems(previous => previous.filter(p => p.requestId !== item.requestId)); invalidate();}}>Remove screenshot {index + 1} from review</Button></div>}
         {item.result && <div className="mt-3"><Button variant="secondary" onClick={() => setSource(item.result!)}>View screenshot {index + 1}</Button></div>}
       </li>)}</ol>}
+      {(initial.attempts.some(a => a.status === "FAILED") || items.some(i => i.state === "failed")) && <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={retryFailed} disabled={busy || !queued.length} onChange={e => setRetryFailed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
+        <span>Start a new attempt for failed images I selected again. Each reserves another $0.01 from the $5 trial cap. Earlier failures stay in history. Completed scans are reused.</span></label>}
       <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={consent} disabled={busy || !queued.length} onChange={e => setConsent(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
         <span>I can share these screenshots with ACC and Google Cloud for text recognition. Prepared images and recognized text are available for 30 days, then scheduled for deletion. Upload history is retained.</span></label>
       <div className="mt-4 flex flex-wrap gap-3"><Button disabled={busy || !consent || !queued.length} onClick={scan}>{busy ? "Reading screenshots…" : `Read ${queued.length || "selected"} screenshots`}</Button>
@@ -124,7 +128,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
       <img src={`${endpoint}&id=${encodeURIComponent(source.attempt.id)}&kind=image`} alt="Original ranking screenshot for batch review" className="mt-4 h-auto max-h-[80vh] w-full object-contain" referrerPolicy="no-referrer" onError={() => setMessage("This screenshot is unavailable. It may have expired or your access changed.")} />
       <p className="mt-3 text-sm text-text-muted">Uploaded by {source.attempt.actorName} · {new Date(source.attempt.createdAt).toISOString()} · Recognition does not establish image authenticity.</p></Card>}
     <p role="status" aria-live="polite" className="break-words text-sm text-text-secondary">{message}</p>
-    <section><h2 className="text-lg font-semibold">Ranking upload history</h2><p className="mt-1 text-sm text-text-muted">Latest 20 captures · Reopening a scan does not send it to Google again.</p>
+    <section><h2 className="text-lg font-semibold">Ranking upload history</h2><p className="mt-1 text-sm text-text-muted">Latest 20 captures · Reopening a scan does not send it to Google again. To retry a failed image, select it again and explicitly confirm a new paid attempt above.</p>
       <ol className="mt-3 grid gap-3 md:grid-cols-2">{existing.map(attempt => <li key={attempt.id} className="min-w-0 rounded-lg border border-border p-3 text-sm"><p className="break-words">{attempt.actorName} · {new Date(attempt.createdAt).toISOString()}</p><div className="mt-2"><Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : "Failed or pending — not retried"}</Button></div></li>)}</ol>
     </section>
   </div>;

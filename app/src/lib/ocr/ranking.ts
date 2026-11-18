@@ -62,21 +62,22 @@ export function reviewRanking(recognition: RankingRecognition, members: RosterMe
   const commander = recognition.words.find(w => /^commander$/iu.test(w.text));
   const points = recognition.words.find(w => /^points$/iu.test(w.text));
   if (!commander || !points || points.x <= commander.x || Math.abs(points.y - commander.y) > commander.height) return result;
-  const nameLeft = commander.x - commander.height * 2;
-  const scoreLeft = points.x - points.height * 3;
-  const scores = lines.map(l => ({ ...l, values: l.words.filter(w => w.x >= scoreLeft && w.y > points.y + points.height) }))
+  const nameLeft = commander.x - commander.width * .65;
+  const scoreLeft = points.x - points.width * 1.6;
+  const scores = wordLines(recognition.words.filter(w => w.x >= scoreLeft && w.y > points.y + points.height))
+    .map(l => ({ ...l, values: l.words }))
     .filter(l => l.values.length && l.values.every(w => /^[\d.,]+$/u.test(w.text)));
   for (let i = 0; i < scores.length && result.rows.length < 150; i++) {
     const score = scores[i];
-    const yMin = Math.max(points.y + points.height * 2, score.y - score.height * 2.5,
+    const yMin = Math.max(points.y + points.height * 2, score.y - score.height * 1.5,
       i ? (scores[i - 1].y + score.y) / 2 : 0);
     const yMax = Math.min(score.y + score.height * .6, i + 1 < scores.length ? (score.y + scores[i + 1].y) / 2 : Infinity);
-    const nearby = wordLines(recognition.words.filter(w => w.x >= nameLeft && w.x + w.width < scoreLeft
+    const nearby = wordLines(recognition.words.filter(w => w.x >= nameLeft && !score.values.includes(w)
       && w.y >= yMin && w.y <= yMax));
     const names = nearby.filter(l => !/^\[/u.test(l.text) && !/^\d+$/u.test(l.text));
     const sourceName = names.length === 1 ? names[0].text : "";
     const sourceValue = score.values.map(w => w.text).join("");
-    const alliance = wordLines(recognition.words.filter(w => w.x >= nameLeft && w.x + w.width < scoreLeft))
+    const alliance = wordLines(recognition.words.filter(w => w.x >= nameLeft && !score.values.includes(w)))
       .find(l => l.y > (names[0]?.y ?? score.y) && l.y <= score.y + score.height * 2 && /^\[/u.test(l.text))?.text ?? null;
     result.rows.push(matchRow(sourceName, sourceValue, members, i, names[0]?.y ?? score.y, alliance));
   }
@@ -97,7 +98,7 @@ export function rankingWindow(context: RankingContext, weekStart: string, captur
 export function showCurrentDayProgress(review: RankingReview, confirmedDate: string | null, now = new Date()) {
   // Owner-confirmed fixed reset: 01:00 UTC (9 PM EDT, 8 PM EST). No finality inference.
   const gameDay = new Date(now.getTime() - 60 * 60 * 1000).toISOString().slice(0, 10);
-  return review.context.kind === "today" && !!review.countdown && review.countdown !== "00:00:00" && confirmedDate === gameDay;
+  return review.context.kind === "today" && !!review.countdown && review.countdown.split(":").some(part => Number(part) > 0) && confirmedDate === gameDay;
 }
 
 export type BatchCandidate = RankingRow & { attemptId: string; window: string | null; source: number };

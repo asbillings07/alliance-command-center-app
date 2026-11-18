@@ -107,6 +107,8 @@ model OcrEvaluationBudget {
 model OcrEvaluationAttempt {
   id String @id
   requestId String
+  // Explicit, separately charged retry; the prior failed audit is preserved.
+  retryOf String? @unique
   allianceId String
   // Null only for an authorized leader's alliance ranking capture.
   memberId String?
