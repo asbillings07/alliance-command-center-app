@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getPostLoginRedirect } from "./getPostLoginRedirect";
 
+vi.mock("@/app/src/lib/memberSelfAccess", () => ({ listOwnMemberRecords: vi.fn() }));
+import { listOwnMemberRecords } from "@/app/src/lib/memberSelfAccess";
+
 vi.mock("@/app/src/lib/prisma", () => ({
   prisma: {
     allianceMembership: {
@@ -53,6 +56,7 @@ const admin = { id: "admin-1", email: "admin@example.com", isPlatformAdmin: true
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(listOwnMemberRecords).mockResolvedValue([]);
   // Default: no pending work, no alliance.
   mockGetPendingInvitation.mockResolvedValue(null);
   mockGetPendingAllianceCreation.mockResolvedValue(null);
@@ -199,5 +203,27 @@ describe("getPostLoginRedirect", () => {
   it("falls back to /redeem when nothing is actionable and there is no alliance", async () => {
     // Not admin, no pending invite/creation, no membership.
     await expect(getPostLoginRedirect(member)).resolves.toBe("/redeem");
+  });
+});
+
+
+describe("approved own-record landing", () => {
+  const own = { allianceId: "own-alliance", playerName: "Jordan", allianceName: "Example", server: "956" };
+  it("routes an approved existing account without collaborator access to its own record", async () => {
+    vi.mocked(listOwnMemberRecords).mockResolvedValue([own]);
+    expect(await getPostLoginRedirect(member)).toBe("/alliances/own-alliance/my-record");
+    expect(listOwnMemberRecords).toHaveBeenCalledWith(member.id);
+  });
+  it("shows an explicit selector for multiple approved records", async () => {
+    vi.mocked(listOwnMemberRecords).mockResolvedValue([own, { ...own, allianceId: "second" }]);
+    expect(await getPostLoginRedirect(member)).toBe("/alliances/my-records");
+  });
+  it("preserves collaborator and invitation priorities even with own-record access", async () => {
+    vi.mocked(listOwnMemberRecords).mockResolvedValue([own]);
+    mockPrisma.invitation.findFirst.mockResolvedValue({ token: "pending" });
+    expect(await getPostLoginRedirect(member)).toBe("/invite/pending");
+    mockPrisma.allianceMembership.findMany.mockResolvedValue([{ allianceId: "leadership", role: "VIEWER" }]);
+    expect(await getPostLoginRedirect(member)).toBe("/alliances/leadership");
+    expect(listOwnMemberRecords).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,9 @@ import { buildPermissionSet } from "./auth/permissions";
 
 export class IdentityReviewError extends Error {}
 
-async function review(tx: Prisma.TransactionClient, allianceId: string, memberId: string) {
+// Internal shared snapshot. Callers must authorize first and must not return
+// this leadership-only shape directly from an ordinary-member route.
+export async function readIdentitySnapshot(tx: Prisma.TransactionClient, allianceId: string, memberId: string) {
   const member = await tx.allianceMember.findFirst({
     where: { id: memberId, allianceId },
     select: { id: true, playerName: true, userId: true, archivedAt: true, identityVersion: true,
@@ -56,7 +58,7 @@ export async function correctMemberIdentityName(input: {
     return await prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`member-identity:${input.memberId}`}, 0))`;
       const actor = await authorize(tx, input.allianceId, input.actorId);
-      const current = await review(tx, input.allianceId, input.memberId);
+      const current = await readIdentitySnapshot(tx, input.allianceId, input.memberId);
       if (current.reviewKey !== input.reviewKey) throw new IdentityReviewError("This member's identity or decision history changed. Reload and review the current details.");
       if (current.member.archivedAt) throw new IdentityReviewError("This member is archived. Ask an owner or admin to restore the member first.");
       if (current.member.playerName === playerName) throw new IdentityReviewError("The in-game name has not changed.");
@@ -87,7 +89,7 @@ export async function correctMemberIdentityName(input: {
 export async function loadIdentityReview(allianceId: string, memberId: string, actorId: string) {
   return prisma.$transaction(async (tx) => {
     await authorize(tx, allianceId, actorId);
-    return review(tx, allianceId, memberId);
+    return readIdentitySnapshot(tx, allianceId, memberId);
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }
 
@@ -103,7 +105,7 @@ export async function decideMemberIdentity(input: {
       // conflicting order. Serializable isolation covers identity/link reads.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`member-identity:${input.memberId}`}, 0))`;
       const actor = await authorize(tx, input.allianceId, input.actorId);
-      const current = await review(tx, input.allianceId, input.memberId);
+      const current = await readIdentitySnapshot(tx, input.allianceId, input.memberId);
       if (current.reviewKey !== input.reviewKey) throw new IdentityReviewError("This member's identity or decision history changed. Reload and review the current details.");
       if (input.confirm && current.missing.length) throw new IdentityReviewError(current.missing[0]);
       if (input.confirm && current.confirmed) throw new IdentityReviewError("This identity is already confirmed.");

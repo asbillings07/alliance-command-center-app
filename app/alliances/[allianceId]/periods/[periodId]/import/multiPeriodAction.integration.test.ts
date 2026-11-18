@@ -50,6 +50,7 @@ describe.skipIf(!runDb)("importMultiPeriodMetrics [integration]", () => {
         canManageAlliance: false,
         canRollbackMemberImports: false,
         canManageMemberIdentity: true,
+        canManageMemberAccess: true,
       },
       membership: { role: "ADMIN" } as unknown as Awaited<
         ReturnType<typeof requireAllianceAccess>

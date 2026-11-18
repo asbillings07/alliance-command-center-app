@@ -79,6 +79,8 @@ Example roles:
 
 AllianceMembership exists because permissions belong to the relationship between a User and an Alliance—not to either object independently.
 
+An ordinary member's own-record access is separate from collaborator membership. An Owner/Admin/Leader with the focused member-access permission explicitly grants it to an existing account/member link after identity confirmation. A `MemberSelfAccessDecision` preserves that approval or revocation and the identity decision it relied on. A link, identity confirmation or VIEWER role must not be treated as this grant. See the [member-access slice](product-design/ocr-member-submissions/member-access-slice.md).
+
 ---
 
 # Alliance Member

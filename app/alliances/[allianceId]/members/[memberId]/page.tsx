@@ -450,10 +450,14 @@ export default async function MemberPage({ params, searchParams }: Params) {
                         allianceId={allianceId}
                         canInvite={permissions.canInviteCollaborators}
                         connected={false}
+                        linkedEmail={linkedUserInfo?.email}
                     />
                 )}
 
                 <div className="flex flex-wrap justify-end gap-3">
+                    {permissions.canManageMemberAccess && (
+                        <Button variant="secondary" href={`/alliances/${allianceId}/members/${memberId}/access`}>Manage member access</Button>
+                    )}
                     {permissions.canManageMemberIdentity && (
                         <Button variant="secondary" href={`/alliances/${allianceId}/members/${memberId}/identity`}>
                             Review member identity

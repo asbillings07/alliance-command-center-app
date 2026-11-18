@@ -3,6 +3,7 @@ import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { getAccount, getSignInMethods } from "@/app/src/lib/account";
 import { isGoogleAuthEnabled } from "@/app/src/lib/auth/identity/google";
 import { readConnectResult } from "@/app/src/lib/auth/googleConnection";
+import { Button } from "@/app/src/components/client";
 import { PageLayout, Card } from "@/app/src/components";
 import { AccountProfileForm } from "./AccountProfileForm";
 import { AccountEmailForm } from "./AccountEmailForm";
@@ -43,6 +44,10 @@ export default async function AccountPage() {
       maxWidth="lg"
     >
       <div className="space-y-6">
+        <Card><Card.Header>Member access</Card.Header><Card.Body>
+          <p className="mb-4 text-sm text-text-secondary">Open the member records your alliances have approved for this account.</p>
+          <Button variant="secondary" href="/alliances/my-records">My member records</Button>
+        </Card.Body></Card>
         <Card>
           <Card.Body>
             <AccountProfileForm displayName={account.displayName} />

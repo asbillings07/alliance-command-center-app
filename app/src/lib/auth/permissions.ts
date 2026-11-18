@@ -13,6 +13,7 @@ export const Permissions = {
   IMPORT_METRICS: "import:metrics",
   MANAGE_MEMBERS: "manage:members",
   MANAGE_MEMBER_IDENTITY: "manage:member-identity",
+  MANAGE_MEMBER_ACCESS: "manage:member-access",
   IMPORT_MEMBERS: "import:members",
   CONFIGURE_METRICS: "configure:metrics",
   CONFIGURE_PERIODS: "configure:periods",
@@ -53,6 +54,7 @@ const ROLE_PERMISSIONS: Record<AllianceRole, Permission[]> = {
     Permissions.CONFIGURE_METRICS,
     Permissions.CONFIGURE_PERIODS,
     Permissions.MANAGE_MEMBER_IDENTITY,
+    Permissions.MANAGE_MEMBER_ACCESS,
   ],
 
   [AllianceRole.ADMIN]: [
@@ -63,6 +65,7 @@ const ROLE_PERMISSIONS: Record<AllianceRole, Permission[]> = {
     Permissions.IMPORT_METRICS,
     Permissions.MANAGE_MEMBERS,
     Permissions.MANAGE_MEMBER_IDENTITY,
+    Permissions.MANAGE_MEMBER_ACCESS,
     Permissions.IMPORT_MEMBERS,
     Permissions.CONFIGURE_METRICS,
     Permissions.CONFIGURE_PERIODS,
@@ -77,6 +80,7 @@ const ROLE_PERMISSIONS: Record<AllianceRole, Permission[]> = {
     Permissions.IMPORT_METRICS,
     Permissions.MANAGE_MEMBERS,
     Permissions.MANAGE_MEMBER_IDENTITY,
+    Permissions.MANAGE_MEMBER_ACCESS,
     Permissions.IMPORT_MEMBERS,
     Permissions.CONFIGURE_METRICS,
     Permissions.CONFIGURE_PERIODS,
@@ -99,6 +103,7 @@ export type PermissionSet = {
   canImportMetrics: boolean;
   canManageMembers: boolean;
   canManageMemberIdentity: boolean;
+  canManageMemberAccess: boolean;
   canImportMembers: boolean;
   canConfigureMetrics: boolean;
   canConfigurePeriods: boolean;
@@ -135,6 +140,7 @@ export function buildPermissionSet(role: AllianceRole): PermissionSet {
     canImportMetrics: rolePerms.includes(Permissions.IMPORT_METRICS),
     canManageMembers: rolePerms.includes(Permissions.MANAGE_MEMBERS),
     canManageMemberIdentity: rolePerms.includes(Permissions.MANAGE_MEMBER_IDENTITY),
+    canManageMemberAccess: rolePerms.includes(Permissions.MANAGE_MEMBER_ACCESS),
     canImportMembers: rolePerms.includes(Permissions.IMPORT_MEMBERS),
     canConfigureMetrics: rolePerms.includes(Permissions.CONFIGURE_METRICS),
     canConfigurePeriods: rolePerms.includes(Permissions.CONFIGURE_PERIODS),
@@ -157,6 +163,7 @@ const PERMISSION_TO_KEY: Record<Permission, keyof PermissionSet> = {
   [Permissions.IMPORT_METRICS]: "canImportMetrics",
   [Permissions.MANAGE_MEMBERS]: "canManageMembers",
   [Permissions.MANAGE_MEMBER_IDENTITY]: "canManageMemberIdentity",
+  [Permissions.MANAGE_MEMBER_ACCESS]: "canManageMemberAccess",
   [Permissions.IMPORT_MEMBERS]: "canImportMembers",
   [Permissions.CONFIGURE_METRICS]: "canConfigureMetrics",
   [Permissions.CONFIGURE_PERIODS]: "canConfigurePeriods",
