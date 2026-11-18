@@ -194,6 +194,25 @@ model MemberIdentityDecision {
   @@index([allianceId, memberId, id])
 }
 
+// An explicit own-record access decision, separate from collaborator roles.
+// Immutable snapshots survive source/account deletion and grant no legacy access.
+model MemberSelfAccessDecision {
+  id Int @id @default(autoincrement())
+  allianceId String
+  memberId String
+  accountUserId String
+  accountName String
+  playerName String
+  granted Boolean
+  identityDecisionId Int
+  actorUserId String
+  actorName String
+  actorRole AllianceRole
+  createdAt DateTime @default(now())
+
+  @@index([allianceId, memberId, id])
+}
+
 enum MemberImportChangeType {
   CREATED
   RESTORED

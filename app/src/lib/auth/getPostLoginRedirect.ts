@@ -1,3 +1,4 @@
+import { listOwnMemberRecords } from "@/app/src/lib/memberSelfAccess";
 import { prisma } from "@/app/src/lib/prisma";
 import {
   getPendingAllianceCreation,
@@ -36,7 +37,8 @@ export type PostLoginUser = {
  *   3. Platform operator with no pending work       -> /platform/overview
  *   4. Alliance membership                          -> alliance home / setup / selector
  *   5. A pending alliance collaborator invitation   -> /invite/{token}
- *   6. Nothing else actionable                      -> /redeem
+ *   6. Explicit approved own-record access           -> member record / selector
+ *   7. Nothing else actionable                      -> /redeem
  */
 export async function getPostLoginRedirect(
   user: PostLoginUser
@@ -126,6 +128,12 @@ export async function getPostLoginRedirect(
     }
   }
 
-  // 6. Nothing actionable and no alliance: fall back to redeem.
+  // Own-record access is separate from collaborator membership. Preserve all
+  // existing onboarding/leadership/invitation priorities above.
+  const ownRecords = await listOwnMemberRecords(user.id);
+  if (ownRecords.length === 1) return `/alliances/${ownRecords[0].allianceId}/my-record`;
+  if (ownRecords.length > 1) return "/alliances/my-records";
+
+  // Nothing actionable and no approved access: fall back to redeem.
   return "/redeem";
 }

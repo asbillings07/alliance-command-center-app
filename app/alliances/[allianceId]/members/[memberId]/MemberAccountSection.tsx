@@ -12,6 +12,7 @@ type MemberAccountSectionProps = {
     }
   | {
       connected: false;
+      linkedEmail?: string;
     }
 );
 
@@ -91,10 +92,11 @@ export function MemberAccountSection(props: MemberAccountSectionProps) {
               </svg>
             </div>
             <div>
-              <span className="font-medium text-primary-light">Not Connected</span>
+              <span className="font-medium text-primary-light">{props.linkedEmail ? "Account Linked" : "Not Connected"}</span>
               <p className="text-sm text-text-secondary">
-                No account linked to this member
+                {props.linkedEmail ? "No collaborator role. Member access is managed separately." : "No account linked to this member"}
               </p>
+              {props.linkedEmail && <p className="mt-1 break-all text-sm text-text-secondary">{props.linkedEmail}</p>}
             </div>
           </div>
           {props.canInvite && (

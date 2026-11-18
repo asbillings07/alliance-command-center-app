@@ -91,6 +91,8 @@ Then implement one focused provenance/history slice with real PostgreSQL tests b
 
 ### 2. Own-record access and eligibility — #295
 
+The bounded [existing-account access slice](member-access-slice.md) is tracked in #396.
+
 Implement the approved account/member association and own-record authorization workflow. Keep existing invitation/account eligibility rules and collaborator permissions intact. Verify approval, revocation, rename/relink, archived member and cross-alliance cases on the server before processing and again before accepting a result. Membership, identity and role changes during a pending upload must invalidate review.
 
 An ordinary member must never gain roster-wide records, leadership notes, reports or another member's data through a guessed route or identifier. Do not solve access by assigning VIEWER.
