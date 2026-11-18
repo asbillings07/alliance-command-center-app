@@ -30,6 +30,21 @@ remains unchanged. Local synthetic transport is workflow evidence only.
    normal startup check runs too late to protect a migration. The deployment
    build must run this preflight before `prisma migrate deploy`, not merely
    before starting Next.js. Record the non-secret identity evidence.
+   Set `OCR_EVAL_DB_IDENTITY` to the verified trial endpoint and
+   `OCR_EVAL_SHARED_DB_HOSTS` to the verified ordinary-preview endpoint identities.
+   Use this build command override only for the isolated evaluation deployment:
+
+   ```sh
+   npx tsx scripts/check-ocr-deployment.ts && npx prisma generate && npx prisma migrate deploy && npx next build
+   ```
+
+   The check opens no database connection and fails closed for missing pins,
+   wrong environment/branch, production/shared endpoints or mismatched connections.
+   It also rejects connection-string options that could override the checked
+   endpoint; only unique `sslmode=require|verify-ca|verify-full` and
+   `channel_binding=require|prefer` query options are accepted.
+   It validates the configured identities, not database grants or billing.
+   Existing project and production build settings remain unchanged.
 5. After independent code review, deploy the exact reviewed commit to this custom
    environment. Record its immutable deployment URL, SHA, environment ID and
    database identity. It is a non-production deployment with separate test auth.
@@ -141,6 +156,23 @@ trial, disable its flag and federation provider; keep scheduled deletion active.
   unprovisioned/unverified. No managed OCR call was made. The $5 recognition
   cap remains unchanged. Human QA is not yet ready; no merge or production
   deployment is authorized by this checkpoint.
+
+### 2026-11-18 follow-up
+
+- The owner authorized Neon sign-in using GitHub `asbillings07`. The login flow
+  reached Neon's existing passkey challenge; owner completion is pending. This
+  is no longer an authorization request for the ordinary sign-in. No new Neon
+  account, integration or database has been created.
+- A fresh check in the owner's Chrome session again found Orion OS unlinked.
+  Its enable-billing dialog reports the signed-in account is not administrator
+  of any billing account. No billing account was created or linked. The owner
+  must finish the project link with the account that administers billing.
+- Added a read-only, pre-migration deployment check with synthetic tests for
+  production/shared/wrong database rejection, pooled/direct agreement, missing
+  pins, delimiter-only exclusions and driver query overrides. It connects to
+  no database and affects no existing deployment until the documented isolated
+  build override is explicitly used. Real configuration, grants, storage and
+  recognition still require qualification; passing these tests is not that proof.
 
 Primary references checked 2026-11-18:
 
