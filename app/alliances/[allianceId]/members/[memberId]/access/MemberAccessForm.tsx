@@ -1,13 +1,19 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/app/src/components/client";
 import { ConfirmDialog } from "@/app/src/components/ConfirmDialog";
 import { saveMemberAccess } from "./actions";
+
+// Keep server-rendered controls disabled until their confirmation handlers exist.
+const subscribe = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
 
 export function MemberAccessForm({ allianceId, memberId, reviewKey, canGrant, canRevoke, accountLabel, playerName, previousAccount, previousName }: {
   allianceId: string; memberId: string; reviewKey: string; canGrant: boolean; canRevoke: boolean;
   accountLabel: string; playerName: string; previousAccount?: string; previousName?: string;
 }) {
+  const ready = useSyncExternalStore(subscribe, clientReady, serverReady);
   const [proposal, setProposal] = useState<{ key: string; grant: boolean } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const status = useRef<HTMLParagraphElement>(null);
@@ -27,8 +33,8 @@ export function MemberAccessForm({ allianceId, memberId, reviewKey, canGrant, ca
   return <div className="space-y-4">
     {message && <p ref={status} tabIndex={-1} role="status" className="rounded-lg border border-success p-3 text-sm text-success-light focus:outline-none focus:ring-2 focus:ring-primary">{message}</p>}
     <div className="flex flex-col gap-3 sm:flex-row">
-      {canGrant && <Button onClick={() => { setMessage(null); setProposal({ key: reviewKey, grant: true }); }}>Approve member access</Button>}
-      {canRevoke && <Button variant="warning" onClick={() => { setMessage(null); setProposal({ key: reviewKey, grant: false }); }}>Revoke member access</Button>}
+      {canGrant && <Button disabled={!ready} onClick={() => { setMessage(null); setProposal({ key: reviewKey, grant: true }); }}>Approve member access</Button>}
+      {canRevoke && <Button disabled={!ready} variant="warning" onClick={() => { setMessage(null); setProposal({ key: reviewKey, grant: false }); }}>Revoke member access</Button>}
     </div>
     <ConfirmDialog isOpen={current !== null} onClose={() => setProposal(null)} onConfirm={apply}
       title={current?.grant ? "Approve access to this member record?" : "Revoke this member's access?"}

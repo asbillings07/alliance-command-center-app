@@ -47,6 +47,28 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true")("Member self access [inte
     expect(await loadOwnMemberRecord(allianceId, actorId)).toBeNull();
     expect(await loadOwnMemberRecord("other-alliance", accountId)).toBeNull();
   });
+  it("lists only explicitly approved records across alliances", async () => {
+    await identity(); await decide();
+    const second = await db.alliance.create({ data: { name: "Second access alliance", server: "957" } });
+    try {
+      await db.allianceMembership.create({ data: { allianceId: second.id, userId: actorId, role: "ADMIN" } });
+      const linked = await db.allianceMember.create({ data: { allianceId: second.id, playerName: "Jordan Two", userId: accountId } });
+      expect(await loadOwnMemberRecord(second.id, accountId)).toBeNull();
+      expect(await listOwnMemberRecords(accountId)).toHaveLength(1);
+      await expect(loadMemberAccessReview(allianceId, linked.id, actorId)).rejects.toThrow("not found");
+      await decideMemberIdentity({ allianceId: second.id, memberId: linked.id, actorId, confirm: true, acknowledged: true,
+        reviewKey: (await loadIdentityReview(second.id, linked.id, actorId)).reviewKey });
+      await decideMemberSelfAccess({ allianceId: second.id, memberId: linked.id, actorId, grant: true, acknowledged: true,
+        reviewKey: (await loadMemberAccessReview(second.id, linked.id, actorId)).reviewKey });
+      expect((await listOwnMemberRecords(accountId)).map(r => r.allianceId).sort()).toEqual([allianceId, second.id].sort());
+      await decide(false);
+      expect((await listOwnMemberRecords(accountId)).map(r => r.allianceId)).toEqual([second.id]);
+    } finally {
+      await db.allianceMember.deleteMany({ where: { allianceId: second.id } });
+      await db.allianceMembership.deleteMany({ where: { allianceId: second.id } });
+      await db.alliance.delete({ where: { id: second.id } });
+    }
+  });
   it("denies Leaders, Viewers, ordinary members, cross-tenant and wrong-member requests; permits Admin", async () => {
     await identity();
     const key = (await review()).reviewKey;

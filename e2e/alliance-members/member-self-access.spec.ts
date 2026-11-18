@@ -78,6 +78,7 @@ for (const width of [320, 820, 1280]) {
       await memberPage.goto("/account");
       await memberPage.getByRole("link", { name: "My member records" }).click();
       await expect(memberPage.getByRole("link", { name: "Open my member record" })).toHaveCount(1);
+      await page.bringToFront();
       await page.getByRole("button", { name: "Revoke member access", exact: true }).click();
       await expect(dialog).toContainText("Their next request");
       await dialog.getByRole("button", { name: "Yes, revoke member access" }).click();
@@ -107,7 +108,7 @@ test("stale approval is rejected and Leaders cannot grant access", async ({ page
   await page.getByRole("button", { name: "Approve member access", exact: true }).click();
   await prisma.allianceMember.update({ where: { id: member.id }, data: { playerName: "Changed Name" } });
   await page.getByRole("dialog").getByRole("button", { name: "Yes, approve member access" }).click();
-  await expect(page.getByRole("alert")).toContainText("changed");
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("changed");
   expect(await prisma.memberSelfAccessDecision.count({ where: { memberId: member.id } })).toBe(0);
   await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "LEADER" } });
   await page.goto(href);
