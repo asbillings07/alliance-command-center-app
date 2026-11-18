@@ -40,9 +40,11 @@ export function googleOcrConfig() {
   const bucket = process.env.OCR_GCS_BUCKET;
   const projectNumber = process.env.OCR_GCP_PROJECT_NUMBER;
   const serviceAccount = process.env.OCR_GCP_SERVICE_ACCOUNT;
-  if (process.env.VERCEL_ENV !== "preview" || process.env.VERCEL_TARGET_ENV !== "acc-ocr-eval" || project !== "orion-os-503204"
+  // Pin both identifiers to the owner-selected Aptelum project. Switching the
+  // provider must not silently switch the federation trust or billing project.
+  if (process.env.VERCEL_ENV !== "preview" || process.env.VERCEL_TARGET_ENV !== "acc-ocr-eval" || project !== "project-106f8c4e-a31b-4e3c-bc5"
     || !bucket?.startsWith("acc-ocr-eval-") || !/^[a-z0-9-]{10,63}$/.test(bucket)
-    || !projectNumber || !/^\d{6,20}$/.test(projectNumber)
+    || projectNumber !== "735932937321"
     || serviceAccount !== `acc-ocr-eval@${project}.iam.gserviceaccount.com`) {
     throw new OcrEvaluationError("The OCR provider is not configured. No scan was sent.");
   }

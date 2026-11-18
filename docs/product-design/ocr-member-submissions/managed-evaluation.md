@@ -2,8 +2,9 @@
 
 Owner approval: 2026-11-18. Managed OCR, daily VS first, screenshot retention of
 30 days, a spending cap before enablement, and no production change. Selected
-Google Cloud project: `orion-os-503204`. Provider setup and real-image accuracy
-must be verified separately from synthetic tests.
+Google Cloud project: Aptelum's `project-106f8c4e-a31b-4e3c-bc5` (number
+`735932937321`), superseding the earlier Orion OS selection. Provider setup and
+real-image accuracy must be verified separately from synthetic tests.
 
 ## Bounded vertical slice
 

@@ -6,9 +6,11 @@ remains unchanged. Local synthetic transport is workflow evidence only.
 
 ## Remaining operator setup
 
-1. The owner links an existing billing account to `orion-os-503204` (project
-   number `381354446256`). The console currently reports no billing account.
-   Do not enroll in a new paid plan or accept billing terms on the owner's behalf.
+1. Use the owner-selected Aptelum project `project-106f8c4e-a31b-4e3c-bc5`
+   (number `735932937321`). The console currently reports the free trial as
+   pending prepayment or payment processing. The owner confirms payment was
+   made; verify activation before enabling scans. Do not make another payment,
+   enroll in a new paid plan or accept billing terms on the owner's behalf.
 2. Use the dedicated Vercel custom environment named `acc-ocr-eval` in ACC
    (`prj_eEU60PIovJyutoJeSXgEPURndcRi`, team
    `team_ovHr1s3JHHZaL2VglNms1ILB`). No production domain or automatic branch
@@ -63,8 +65,8 @@ exists, inspect it; do not overwrite it or silently reuse a broader role.
 | Resource | Required scope |
 | --- | --- |
 | APIs | Vision, Cloud Storage, IAM Credentials and Security Token Service only as needed |
-| Service account | `acc-ocr-eval@orion-os-503204.iam.gserviceaccount.com`; no persistent key |
-| Bucket | `acc-ocr-eval-orion-os-503204`, US, Standard, uniform access, public-access prevention enforced |
+| Service account | `acc-ocr-eval@project-106f8c4e-a31b-4e3c-bc5.iam.gserviceaccount.com`; no persistent key |
+| Bucket | `acc-ocr-eval-735932937321`, US, Standard, uniform access, public-access prevention enforced |
 | Retention | sole unconditional `Delete` at age 30 days; soft delete disabled, versioning off, no retention policy or event hold |
 | Bucket role | custom role containing only `storage.buckets.get`, `storage.objects.create`, `storage.objects.get`, bound only on the new bucket |
 | Project role | `roles/serviceusage.serviceUsageConsumer` for that service account; no Editor/Owner or access to unrelated data |
@@ -173,6 +175,38 @@ trial, disable its flag and federation provider; keep scheduled deletion active.
   no database and affects no existing deployment until the documented isolated
   build override is explicitly used. Real configuration, grants, storage and
   recognition still require qualification; passing these tests is not that proof.
+
+### 2026-11-18 isolated database and Aptelum project transition
+
+- The owner approved creating the free isolated Neon project `acc-ocr-eval`
+  (`quiet-snow-28604451`), with database `acc_ocr_eval`, role
+  `acc_ocr_eval_owner` and endpoint identity `ep-bold-resonance-bbeekisz`.
+  Neon's default branch label is `production`, but this is a separate test
+  project, not ACC production. No paid plan was selected.
+- New database credentials and a fresh signing secret were saved only to the
+  `acc-ocr-eval` custom environment. Its database identity differs from ACC
+  production (`ep-broad-pond-auubqyjq`) and ordinary Preview
+  (`ep-jolly-wave-autvrcaw`). No existing credentials were copied.
+- Reviewed commit `15e4b2cacd462c6abe4f1a1be4cf339994c652a2` deployed to
+  [the isolated setup preview](https://alliance-command-center-nle91zceu-aptelum-labs.vercel.app/app)
+  (`dpl_AhLRCRyNGmhYQ5tN4X3KsAd4Xbro`) with the documented pre-migration
+  guard. The guard passed before all 46 migrations applied. Health reported
+  the same commit and a healthy database; anonymous evaluation access returned
+  401. This deployment has OCR off and is not managed OCR Human QA evidence.
+- Database readback found zero users, alliances, metrics and OCR attempts.
+  Ledger `acc-managed-ocr-v1` had zero reserved cost, attempts, bytes and reads.
+  Keep this same database and ledger through the project transition.
+- The owner replaced the Orion OS selection with the Aptelum project above.
+  Its Console dashboard, signed in as `support@aptelum.com`, confirms project
+  ID and number. Google displays a pending-prepayment/processing notice; the
+  owner confirms payment is already made and waiting for Google. The earlier
+  Orion billing failures above remain historical evidence, not current setup
+  instructions. Do not change Orion resources or permissions.
+- Application configuration now pins both the new project ID and number and
+  rejects stale Orion identifiers before provider dispatch. This does not
+  provision Google resources or qualify billing, federation or storage.
+  OCR remains disabled; the $5 lifetime cap and 30-day retention are unchanged.
+  No real Google call, merge or production deployment occurred.
 
 Primary references checked 2026-11-18:
 
