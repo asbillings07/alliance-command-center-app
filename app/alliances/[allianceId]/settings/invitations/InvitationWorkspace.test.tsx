@@ -44,7 +44,7 @@ beforeEach(async () => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks(); });
 
 describe("invitation workspace state", () => {
-  it.each(["Resend", "Cancel"])("preserves an unrelated unsaved draft during %s", async (operation) => {
+  it.each(["Resend", "Revoke invitation"])("preserves an unrelated unsaved draft during %s", async (operation) => {
     await prepareDraft();
     await click(operation);
     expect(container.querySelector<HTMLInputElement>("#email")?.value).toBe("draft@example.com");
@@ -52,7 +52,7 @@ describe("invitation workspace state", () => {
     expect(inviteCollaborator).not.toHaveBeenCalled();
   });
 
-  it.each(["Resend", "Cancel"])("preserves an in-flight creation and its result during %s", async (operation) => {
+  it.each(["Resend", "Revoke invitation"])("preserves an in-flight creation and its result during %s", async (operation) => {
     let finish!: (value: ReturnType<typeof creationResult>) => void;
     vi.mocked(inviteCollaborator).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     await prepareDraft();

@@ -35,7 +35,7 @@ for (const width of [390, 820, 1280]) {
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: testInfo.outputPath(`invitation-renewed-${width}.png`), fullPage: true });
     page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.getByRole("button", { name: "Revoke invitation", exact: true }).click();
     await expect(page.getByText("No pending invitations", { exact: true })).toBeVisible();
     await expect(page.getByText("Invitation renewed", { exact: true })).toHaveCount(0);
     if (width === 390) {
@@ -45,7 +45,7 @@ for (const width of [390, 820, 1280]) {
       await page.getByRole("button", { name: "Send Invitation", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Invitation created", exact: true })).toBeVisible();
       page.once("dialog", (dialog) => dialog.accept());
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("button", { name: "Revoke invitation", exact: true }).click();
       await expect(page.getByText("No pending invitations", { exact: true })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Invitation created", exact: true })).toHaveCount(0);
     }

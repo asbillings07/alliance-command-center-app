@@ -25,6 +25,15 @@ async function click(label: string) {
   await act(async () => button.click());
 }
 describe("resend result lifecycle", () => {
+  it("identifies the recipient and makes dismissal a no-op", async () => {
+    await click("Resend");
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    await click("Revoke invitation");
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("one (one@example.com)"));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("link and code will stop working"));
+    expect(cancelInvitationAction).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("old-link");
+  });
   it("clears the stale link and reports uncertainty when a renewal response is lost", async () => {
     await click("Resend");
     expect(container.textContent).toContain("old-link");
@@ -38,7 +47,7 @@ describe("resend result lifecycle", () => {
   });
   it("clears the validity notice when an invitation is canceled while another remains", async () => {
     await click("Resend");
-    await click("Cancel");
+    await click("Revoke invitation");
     expect(cancelInvitationAction).toHaveBeenCalledWith("alliance-1", "one");
     expect(container.textContent).not.toContain("old-link");
     expect(container.textContent).not.toContain("Email accepted for delivery");
