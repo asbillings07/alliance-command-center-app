@@ -94,6 +94,41 @@ enum FeedbackCategory {
   CONFUSING
 }
 
+// A non-renewing, shared evaluation allowance. Production OCR is not enabled.
+model OcrEvaluationBudget {
+  id String @id
+  reservedMicros Int @default(0)
+  attempts Int @default(0)
+  storedBytes Int @default(0)
+  reads Int @default(0)
+}
+
+// Immutable admission/audit fields; content lives only in expiring private GCS.
+model OcrEvaluationAttempt {
+  id String @id
+  requestId String
+  allianceId String
+  memberId String
+  actorUserId String
+  actorName String
+  actorRole String
+  playerName String
+  allianceName String
+  server String
+  contextKey String
+  sourceDigest String
+  processingVersion String
+  imageBytes Int
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  status String @default("PROCESSING")
+  outcome String?
+
+  @@unique([actorUserId, requestId])
+  @@index([allianceId, memberId, createdAt])
+  @@index([actorUserId, createdAt])
+}
+
 model Alliance {
   id                                String                     @id @default(cuid())
   name                              String

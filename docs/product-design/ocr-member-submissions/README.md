@@ -125,3 +125,9 @@ These do not prevent starting provenance and access work, but must be settled be
 - Full browser journeys cover member and leader actions on phone, tablet and desktop, including both identity and lower-score warnings, failures and recovery.
 - Independent engineering review, green required CI, and human QA apply to the implemented candidate. Mock approval is not implementation QA or a merge/deployment approval.
 - The live application remains unchanged until an implementation candidate is separately reviewed and release is authorized.
+
+## Managed recognition evaluation
+
+The owner approved a bounded, preview-only Google Cloud evaluation on 2026-11-18.
+See [the evaluation contract](managed-evaluation.md) and [provider activation checklist](managed-evaluation-activation.md).
+This trial does not accept scores or enable production uploads.
