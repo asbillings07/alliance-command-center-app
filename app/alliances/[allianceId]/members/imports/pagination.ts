@@ -15,4 +15,3 @@ export function resolveImportHistoryPage(rawPage: string | undefined, totalPages
     }
     return Math.min(Math.floor(parsed), Math.max(1, totalPages));
 }
-

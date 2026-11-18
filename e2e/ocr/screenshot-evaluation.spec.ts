@@ -67,6 +67,8 @@ for (const width of [320, 820, 1280]) {
     await page.getByRole("button", { name: "Review scan", exact: true }).click();
     await expect(page.getByText("Name candidate in original review", { exact: true })).toBeVisible();
     await expect(page.getByText(/member identity or access context has changed since this scan/)).toBeVisible();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: testInfo.outputPath(`ocr-historical-identity-${width}.png`), fullPage: true });
     await upload.setInputFiles(await screenshot());
     await page.getByRole("checkbox").check();
     await scan.click();
