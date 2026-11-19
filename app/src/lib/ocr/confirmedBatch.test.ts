@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { isRankingWeekPeriod } from "./ranking";
 import { reviewOrSaveBatch } from "./confirmedBatch";
 
 const mock = vi.hoisted(() => ({ read: vi.fn(), transaction: vi.fn(), isolated: vi.fn() }));
@@ -18,4 +19,10 @@ it("stops before reading sources outside the isolated database", async () => {
   mock.isolated.mockReturnValue(false);
   await expect(reviewOrSaveBatch("actor",selection)).rejects.toThrow("unavailable here");
   expect(mock.read).not.toHaveBeenCalled();
+});
+
+it("keeps weekly totals within a single inclusive scoring week", () => {
+  expect(isRankingWeekPeriod("2026-11-16", "2026-11-16", "2026-11-21")).toBe(true);
+  expect(isRankingWeekPeriod("2026-11-16", "2026-11-16", "2026-11-22")).toBe(true);
+  expect(isRankingWeekPeriod("2026-11-16", "2026-11-16", "2026-11-23")).toBe(false);
 });

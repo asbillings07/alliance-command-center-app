@@ -6,7 +6,7 @@ import { metricEntryProvenance } from "../metrics/metricEntryProvenance";
 import { OcrEvaluationError } from "./config";
 import { batchWriteContext, readEvaluationContent, type EvaluationTarget } from "./evaluation";
 import { isolatedOcrDatabaseAvailable } from "./isolatedDatabase";
-import { rankingWindow, reconcileOverlap, type BatchCandidate } from "./ranking";
+import { isRankingWeekPeriod, rankingWindow, reconcileOverlap, type BatchCandidate } from "./ranking";
 import { evaluationTransport } from "./transport";
 import { touchAllianceSetupActivity } from "../touchAllianceSetupActivity";
 
@@ -68,7 +68,7 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
         fail("Choose an active numeric metric for each screenshot type.");
       if (!weekly && (!start || !end)) fail("Daily scores require a period with a start and end date.");
       if ((start && day < start) || (end && day > end)) fail("A screenshot date falls outside this evaluation period.");
-      if (weekly && (!start || !end || start !== day || ![5, 6].includes((Date.parse(end) - Date.parse(start)) / 86400000)))
+      if (weekly && !isRankingWeekPeriod(day, start, end))
         fail("A weekly total requires an evaluation period covering that one scoring week starting on that Monday.");
       return { memberId: row.memberId!, metricId: metric.id, day: weekly ? null : day, metric: metric.name,
         window: row.window!, member: row.matchedName!, value: row.value! };
@@ -90,7 +90,7 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
     const comparison = hash([batchId, actorId, current.contextKey, current.consent.processing?.id, period.name, comparisons]);
     const response = { batchId, comparison, comparisons, excluded: excluded.size, saved: false };
     const existing = await tx.ocrScoreBatch.findUnique({ where: { id: batchId } });
-    if (existing) return { ...response, saved: true };
+    if (existing) return { ...response, excluded: existing.excludedRows, saved: true };
     const used = await tx.ocrScoreSource.findMany({ where: { attemptId: { in: input.attemptIds } }, select: { attemptId: true, rowKey: true } });
     const usedKeys = new Set(used.map(s => s.attemptId + ":" + s.rowKey));
     if (chosen.some(g => g.sources.some(r => usedKeys.has(rowId(r))))) fail("Some source rows were already saved. Exclude those rows and review the remaining scores.");
