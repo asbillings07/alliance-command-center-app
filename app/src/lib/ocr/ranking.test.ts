@@ -1,3 +1,4 @@
+import { resolveRankingChoices } from "./ranking";
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
 import { rankingFixture } from "./testing/rankingFixture";
@@ -113,4 +114,19 @@ it("proposes only new, alliance-labelled names and reconciles their scores by re
   for (const row of [{...base,allianceLabel:null}, {...base,status:"archived" as const}, {...base,value:null}])
     expect(reconcileOverlap([row],true)[0].createMember).toBe(false);
   expect(reconcileOverlap([base])[0].createMember).toBe(false);
+});
+
+it("accepts only a recorded reading when a leader resolves conflicting screenshots", () => {
+  const row = reviewRanking(sample(),members).rows[0];
+  const first = {...row,attemptId:"a",source:1,window:"2026-11-16"};
+  const second = {...first,attemptId:"b",source:2,value:99};
+  const groups = reconcileOverlap([first,second]);
+  const source = (id:string) => id+":"+row.key;
+  for (const picks of [[],[source("foreign")],[source("a"),source("b")]]) {
+    expect(resolveRankingChoices(groups,picks)[0].conflict).toBe(true);
+  }
+  const chosen = resolveRankingChoices(groups,[source("b")])[0];
+  expect(chosen.row.value).toBe(99);
+  expect(chosen.sources).toEqual([second]);
+  expect(chosen.ignored).toBe(1);
 });

@@ -637,3 +637,38 @@ test("a confirmed ranking batch persists under the correct members for a second 
     await prisma.allianceMembership.deleteMany({ where: { allianceId, userId:leaderScenario.userId } });
   }
 });
+
+test("a leader starts on an empty dashboard and confirms screenshot setup in one save", async ({page, login, ownerScenario}) => {
+  const {allianceId} = ownerScenario;
+  await prisma.alliance.update({where:{id:allianceId},data:{name:"QA",server:allianceId}});
+  try {
+    await login({...ownerScenario,displayName:"Importer"});
+    await page.goto(`/alliances/${allianceId}`);
+    await page.getByRole("link",{name:"Capture Evaluation Results",exact:true}).click();
+    const file = { name:"weekly.png", mimeType:"image/png", buffer:await sharp(Buffer.from(rankingFixture("weekly").svg)).png().toBuffer() };
+    await page.getByLabel("Ranking screenshots",{exact:true}).setInputFiles(file);
+    await page.getByRole("button",{name:"Read 1 screenshots"}).click();
+    await expect(page.getByText(/Batch recognition is ready/)).toBeVisible();
+    await page.getByLabel("Week beginning (Monday)").fill("2026-11-16");
+    await page.getByRole("button",{name:"Review screenshot dates"}).click();
+    await page.getByRole("button",{name:"Confirm dates"}).click();
+    await page.getByRole("button",{name:"Finish recognition review"}).click();
+    await page.getByRole("button",{name:"Review score changes"}).click();
+    const dialog = page.getByRole("dialog",{name:"Apply these scores?"});
+    await expect(dialog).toContainText("Create VS week of 2026-11-16");
+    await expect(dialog).toContainText("Create and attach Weekly VS points");
+    await dialog.getByRole("button",{name:"Cancel"}).click();
+    expect(await prisma.metricPeriod.count({where:{allianceId}})).toBe(0);
+    await page.getByRole("button",{name:"Review score changes"}).click();
+    await dialog.getByRole("checkbox",{name:"Create these roster members and save their scores."}).check();
+    await dialog.getByRole("button",{name:"Confirm and save scores"}).click();
+    await expect(page.getByText("3 scores saved",{exact:true})).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("heading",{name:"Saved score batches"})).toBeVisible();
+    expect(await prisma.metricPeriod.count({where:{allianceId}})).toBe(1);
+  } finally {
+    await prisma.ocrScoreSource.deleteMany({where:{entry:{allianceMember:{allianceId}}}});
+    await prisma.memberMetricEntry.deleteMany({where:{allianceMember:{allianceId}}});
+    await prisma.ocrScoreBatch.deleteMany({where:{allianceId}});
+  }
+});
