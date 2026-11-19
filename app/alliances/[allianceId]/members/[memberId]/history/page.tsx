@@ -127,7 +127,7 @@ export default async function MemberMetricHistoryPage({ params, searchParams }: 
                     {!selected.entryMethod && <p className="mt-4 rounded-lg bg-surface-secondary p-3 text-sm text-text-secondary">This entry predates attribution or came from a source that did not record it. Its uploader and method cannot be reconstructed.</p>}
                     <details className="mt-5 text-sm text-text-muted">
                       <summary className="cursor-pointer rounded py-2 focus:outline-none focus:ring-2 focus:ring-primary">About this record</summary>
-                      <p className="mt-2">These entries do not contain screenshot evidence, capture time, or in-progress/final status. A saved value is not proof of a completed game day. Metric and period labels reflect their current names.</p>
+                      <p className="mt-2">The metric and period use their current names. Each entry preserves the value recorded at the time.</p>
                       <p className="mt-3 break-all">Entry reference: {selected.id}</p>
                     </details>
                   </div>
