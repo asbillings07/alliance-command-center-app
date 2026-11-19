@@ -222,7 +222,9 @@ for (const width of [320, 820, 1280]) {
     await preview.getByRole("button", { name: "Fit image", exact: true }).click();
     await closePreview.focus();
     await page.keyboard.press("Shift+Tab");
-    expect(await preview.evaluate(el => el.contains(document.activeElement))).toBe(true);
+    await expect(preview.getByRole("region", { name: "Screenshot image" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(closePreview).toBeFocused();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`leader-batch-${width}.png`), fullPage: true });
     await page.keyboard.press("Escape");

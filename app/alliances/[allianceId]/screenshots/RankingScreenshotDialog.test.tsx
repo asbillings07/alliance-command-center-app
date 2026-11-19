@@ -28,6 +28,27 @@ afterEach(async () => {
 });
 
 describe("ranking source preview lifecycle", () => {
+  it("wraps keyboard focus at both boundaries while the image loads or is unavailable", async () => {
+    await act(async () => root.render(createElement(RankingScreenshotDialog, {
+      imageUrl: "/private-synthetic-image", title: "Screenshot 1", periodLabel: "Monday",
+      uploadedBy: "Synthetic leader", uploadedAt: "2026-11-18T12:00:00Z", onClose: vi.fn(),
+    })));
+    const close = container.querySelector("button")!;
+    const imageRegion = container.querySelector<HTMLElement>('[role="region"]')!;
+    for (const unavailable of [false, true]) {
+      if (unavailable) await act(async () => { container.querySelector("img")!.dispatchEvent(new Event("error")); });
+      close.focus();
+      const reverseTab = new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true });
+      await act(async () => { close.dispatchEvent(reverseTab); });
+      expect(reverseTab.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(imageRegion);
+      const forwardTab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+      await act(async () => { imageRegion.dispatchEvent(forwardTab); });
+      expect(forwardTab.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(close);
+    }
+  });
+
   it.each(["Escape", "Close preview"])("stays open in Strict Mode and dismisses with %s without losing scroll state", async closeWith => {
     const closed = vi.fn();
     function Review() {
