@@ -122,6 +122,7 @@ export default async function MemberMetricHistoryPage({ params, searchParams }: 
                         <dt className="text-text-muted">{label}</dt><dd className="font-medium text-text-primary">{text}</dd>
                       </div>)}
                     </dl>
+                    {selected.entryMethod === "OCR_SCREENSHOT" && <p className="mt-2 text-sm">This records the ranking at capture time. The screenshot does not establish a final score.</p>}
                     {selected.ocrSources?.map((source,i) => <p className="mt-2 text-sm" key={i}>Source screenshot uploaded by {source.attempt.actorName} · {source.window.replace("week:", "Week of ")} · {timestamp.format(source.attempt.createdAt)}</p>)}
                     {!selected.entryMethod && <p className="mt-4 rounded-lg bg-surface-secondary p-3 text-sm text-text-secondary">This entry predates attribution or came from a source that did not record it. Its uploader and method cannot be reconstructed.</p>}
                     <details className="mt-5 text-sm text-text-muted">

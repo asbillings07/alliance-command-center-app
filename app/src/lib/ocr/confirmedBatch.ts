@@ -34,6 +34,7 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
   for (const [i, id] of input.attemptIds.entries()) {
     const result = await readEvaluationContent(target, id, "result", transport);
     if (result instanceof Uint8Array || !result.batchReview?.rows.length || result.contextChanged) fail("The source or roster changed. Reopen the ranking and review its matches.");
+    if (result.batchReview.context.kind === "today") fail("Today's Duel can contain an in-progress score. To save results, use Daily Rank with its day selected or Weekly Rank.");
     const window = rankingWindow(result.batchReview.context, input.week, input.captureDate);
     if (!window) fail("Confirm the screenshot dates before saving.");
     candidates.push(...result.batchReview.rows.map(row => ({ ...row, attemptId: id, source: i + 1, window })));
@@ -67,7 +68,7 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
         fail("Choose an active numeric metric for each screenshot type.");
       if (!weekly && (!start || !end)) fail("Daily scores require a period with a start and end date.");
       if ((start && day < start) || (end && day > end)) fail("A screenshot date falls outside this evaluation period.");
-      if (weekly && (!start || !end || start !== day || ![5, 6, 7].includes((Date.parse(end) - Date.parse(start)) / 86400000)))
+      if (weekly && (!start || !end || start !== day || ![5, 6].includes((Date.parse(end) - Date.parse(start)) / 86400000)))
         fail("A weekly total requires an evaluation period covering that one scoring week starting on that Monday.");
       return { memberId: row.memberId!, metricId: metric.id, day: weekly ? null : day, metric: metric.name,
         window: row.window!, member: row.matchedName!, value: row.value! };

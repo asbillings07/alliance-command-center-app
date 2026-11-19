@@ -180,7 +180,8 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         <p className="mt-2 text-text-secondary">Exclude uncertain matches and conflicting values. A score can be saved only after you review its destination and confirm the changes.</p>
         <div className="mt-4"><Button disabled={busy || pending.length > 0 || unresolvedImages > 0 || !chosen.length} onClick={() => { setReviewed(true); setMessage("Recognition review complete. No member scores or reports were changed."); }}>Finish recognition review</Button></div>
         {reviewed && <><p className="mt-3 text-primary-light">{destination ? "Recognition reviewed" : "Recognition reviewed · No scores saved"}</p>
-          {destination && <BatchConfirmation destination={destination} daily={chosen.some(g => !g.row.window?.startsWith("week:"))} weekly={chosen.some(g => g.row.window?.startsWith("week:"))}
+          {destination && results.some(r => r.batchReview.context.kind === "today") && <p className="mt-2">Today’s Duel is available for progress review. Use the selected Daily Rank or Weekly Rank screen to save scores.</p>}
+          {destination && !results.some(r => r.batchReview.context.kind === "today") && <BatchConfirmation destination={destination} daily={chosen.some(g => !g.row.window?.startsWith("week:"))} weekly={chosen.some(g => g.row.window?.startsWith("week:"))}
             selection={{ allianceId, periodId: destination.periodId, week, captureDate, attemptIds: results.map(r => r.attempt.id), excluded }} />}</>}</div>}
     </section>
     {notice && <AllianceBatchDialog {...notice} allianceName={initial.allianceName} server={initial.server} onClose={() => { setNotice(null); input.current?.focus(); }} />}
