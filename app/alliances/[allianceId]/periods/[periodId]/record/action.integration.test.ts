@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll, afterEach, beforeEach, vi } from "vite
 import type { PrismaClient } from "@/app/generated/prisma/client";
 import type * as RecordAction from "./action";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { manualTimingAvailable, manualTimingIsolated } from "@/app/src/lib/ocr/manualTiming";
+vi.mock("@/app/src/lib/ocr/manualTiming", () => ({ manualTimingAvailable: vi.fn(), manualTimingIsolated: vi.fn() }));
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 
 vi.mock("next/cache", () => ({
@@ -50,6 +52,7 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
 
   afterEach(async () => {
     if (createdAllianceIds.length > 0) {
+      await prisma.qaManualTiming.deleteMany({ where: { allianceId: { in: createdAllianceIds } } });
       await prisma.memberMetricEntry.deleteMany({
         where: { allianceMember: { allianceId: { in: createdAllianceIds } } },
       });
@@ -103,6 +106,56 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
 
     return { alliance, member, period, metric };
   }
+
+  it("computes duration percentiles within row-count groups and excludes open and stopped tasks", async () => {
+    const { qaManualTimingSummary } = await import("@/app/src/lib/platform/qaManualTimingSummary");
+    const { alliance, period, metric } = await makeSetup("NUMERIC");
+    const startedAt = new Date("2026-11-19T10:00:00Z");
+    const base = { allianceId: alliance.id, userId: actorId, periodId: period.id, metricId: metric.id, startedAt };
+    await prisma.qaManualTiming.createMany({ data: [
+      ...[10, 30].map(seconds => ({ ...base, endedAt: new Date(+startedAt + seconds * 1000), savedRows: 27 })),
+      { ...base, endedAt: new Date(+startedAt + 500000), savedRows: 28 },
+      { ...base, endedAt: new Date(+startedAt + 1000000) }, base,
+    ] });
+    const rows = await qaManualTimingSummary();
+    expect(rows.find(row => row.rows === 27)).toMatchObject({ state: "saved", samples: 2, median: 20, p90: 28 });
+    expect(rows.find(row => row.state === "open")).toMatchObject({ median: null, p90: null });
+    expect(rows.find(row => row.state === "stopped")).toMatchObject({ median: null, p90: null });
+  });
+
+  it("can stop timing after rollout is disabled and then save the same entries by hand", async () => {
+    const { stopManualTiming } = await import("./timingActions");
+    const { alliance, member, period, metric } = await makeSetup("NUMERIC");
+    const target = { allianceId: alliance.id, periodId: period.id, metricId: metric.id };
+    const open = await prisma.qaManualTiming.create({ data: { ...target, userId: actorId } });
+    const input = { ...target, entries: [{ memberId: member.id, value: 42 }] };
+    vi.mocked(manualTimingAvailable).mockResolvedValue(false);
+    vi.mocked(manualTimingIsolated).mockReturnValue(true);
+    await expect(recordMemberMetrics({ ...input, timingId: open.id })).rejects.toThrow("unavailable");
+    await stopManualTiming(alliance.id, period.id, open.id);
+    await recordMemberMetrics(input);
+    expect(await prisma.qaManualTiming.findUniqueOrThrow({ where: { id: open.id } })).toMatchObject({ endedAt: expect.any(Date), savedRows: null });
+    expect(await prisma.memberMetricEntry.count({ where: { periodId: period.id } })).toBe(1);
+  });
+
+  it("binds a timed save to its exact context and commits at most once", async () => {
+    const { alliance, member, period, metric } = await makeSetup("NUMERIC");
+    const target = { allianceId: alliance.id, periodId: period.id, metricId: metric.id };
+    const entryFilter = { periodId: period.id, metricId: metric.id };
+    const open = await prisma.qaManualTiming.create({ data: { ...target, userId: actorId } });
+    const other = await prisma.qaManualTiming.create({ data: { ...target, userId: "synthetic-other" } });
+    const input = { ...target, timingId: open.id, entries: [{ memberId: member.id, value: 9 }] };
+    vi.mocked(manualTimingAvailable).mockResolvedValue(false);
+    await expect(recordMemberMetrics(input)).rejects.toThrow("unavailable");
+    vi.mocked(manualTimingAvailable).mockResolvedValue(true);
+    await expect(recordMemberMetrics({ ...input, timingId: other.id })).rejects.toThrow("no longer open");
+    expect(await prisma.memberMetricEntry.count({ where: entryFilter })).toBe(0);
+    await recordMemberMetrics(input);
+    await expect(recordMemberMetrics(input)).rejects.toThrow("no longer open");
+    expect(await prisma.memberMetricEntry.count({ where: entryFilter })).toBe(1);
+    expect(await prisma.qaManualTiming.findUniqueOrThrow({ where: { id: open.id } })).toMatchObject({ savedRows: 1, endedAt: expect.any(Date) });
+    expect(await prisma.qaManualTiming.findUniqueOrThrow({ where: { id: other.id } })).toMatchObject({ savedRows: null, endedAt: null });
+  });
 
   it("accepts 0 and 1 for a BOOLEAN metric", async () => {
     const { alliance, member, period, metric } = await makeSetup("BOOLEAN");

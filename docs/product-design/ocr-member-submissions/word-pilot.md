@@ -9,3 +9,9 @@ WORD is the first requested alliance. The selected account is recorded privately
 5. Pause by disabling that rule. Verify direct reads and new reservations are blocked. Preserve history, consent and reservations. Review outcomes before requesting another participant or alliance.
 
 One alliance can expose onboarding friction. It cannot meet the public-beta breadth gate. Pricing, billing and public rollout each remain separate decisions.
+
+## Manual comparison rehearsal
+
+Platform → OCR release readiness shows the isolated manual-entry baseline. A qualified importer starts timing before entering any values. Reloading resumes the same timer. Stopping keeps the entered values on the page and excludes that session from the saved-duration percentiles. A successful confirmation records one task and its number of saved rows in the same transaction as the scores. Untimed entries continue through the ordinary path. Elapsed time includes corrections, confirmation and time away from the page.
+
+Platform groups saved times by row count with sample size, median and 90th percentile. These are all-time QA observations for period-value tasks. A daily VS comparison requires the same task scope and comparable row counts on both methods. QA observations never qualify the real cohort. The timing table stores opaque context IDs, timestamps and row count only.

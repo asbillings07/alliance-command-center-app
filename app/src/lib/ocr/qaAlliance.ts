@@ -5,19 +5,13 @@ import { buildPermissionSet } from "../auth/permissions";
 import { touchAllianceSetupActivity } from "../touchAllianceSetupActivity";
 import { localOcrFixtureEnabled, OcrEvaluationError, requireOcrEvaluation } from "./config";
 import { requireOcrRollout } from "./rollout";
-import { checkOcrDeploymentIsolation } from "./deploymentIsolation";
+import { checkOcrDeploymentIsolation, isLocalOcrDatabase } from "./deploymentIsolation";
 
 /** The QA name editor may never run against an ordinary preview or live DB. */
 export function requireQaAllianceEditing(allianceId: string) {
   requireOcrEvaluation(allianceId);
   if (localOcrFixtureEnabled()) {
-    try {
-      const url = new URL(process.env.DATABASE_URL ?? "");
-      // The driver honors routing query parameters such as host/hostaddr.
-      // Local synthetic tests need none; reject all to preserve loopback scope.
-      if (["postgres:", "postgresql:"].includes(url.protocol) && !url.search
-        && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return;
-    } catch { /* Fail closed without exposing the connection string. */ }
+    if (isLocalOcrDatabase(process.env.DATABASE_URL)) return;
   } else if (checkOcrDeploymentIsolation(process.env).length === 0) return;
   throw new OcrEvaluationError("QA alliance editing is available only in the isolated test database.");
 }

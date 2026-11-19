@@ -1274,3 +1274,16 @@ model FeedbackTriageEvent {
   @@index([feedbackId, createdAt, id])
   @@index([actorUserId])
 }
+
+// Isolated QA timing only. Production cohort measurements require separate enrollment.
+model QaManualTiming {
+  id String @id @default(uuid())
+  userId String
+  allianceId String
+  periodId String
+  metricId String
+  startedAt DateTime @default(now())
+  endedAt DateTime?
+  savedRows Int?
+  // One open timer per context is enforced by a partial unique index in SQL.
+}
