@@ -40,7 +40,7 @@ async function context(tx: Tx, target: EvaluationTarget, processing = true, cons
     const members: RosterMember[] = roster.map(m => ({ id: m.id, playerName: m.playerName, archived: !!m.archivedAt }));
     return { consent, memberId: null, actorName: actor.displayName, actorRole: membership.role, playerName: "Alliance ranking capture",
       allianceName: alliance.name, server: alliance.server, members,
-      contextKey: createHash("sha256").update(JSON.stringify([allianceIdentity, membership.role, roster, consent.processing?.id])).digest("hex") };
+      contextKey: createHash("sha256").update(JSON.stringify([allianceIdentity, membership.role, roster])).digest("hex") };
   }
   let memberId: string; let role: AllianceRole | "MEMBER"; let grantId: number | null = null;
   if (target.memberId) {
@@ -73,7 +73,7 @@ async function context(tx: Tx, target: EvaluationTarget, processing = true, cons
   await requireOcrRollout({ userId: actor.id, allianceId: identity.member.alliance.id });
   return { consent, members: [] as RosterMember[], memberId, actorName: actor.displayName, actorRole: role, playerName: identity.member.playerName,
     allianceName: identity.member.alliance.name, server: identity.member.alliance.server,
-    contextKey: JSON.stringify([identity.reviewKey, role, grantId, consent.processing?.id]) };
+    contextKey: JSON.stringify([identity.reviewKey, role, grantId]) };
 }
 
 function transaction<T>(fn: (tx: Tx) => Promise<T>) {
@@ -97,7 +97,7 @@ export async function loadEvaluationContext(target: EvaluationTarget) {
       allianceId: target.allianceId, memberId: current.memberId,
       ...(current.actorRole === "MEMBER" ? { actorUserId: target.actorId } : {}),
     }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 20 });
-    return { consent: current.consent, playerName: current.playerName, allianceName: current.allianceName, server: current.server,
+    return { consent: current.consent, processingConsentId: current.consent.processing?.id ?? null, playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       leader: current.actorRole !== "MEMBER", members: current.members, contextKey: current.contextKey,
       attempts: attempts.map(auditView) };
   });
@@ -109,10 +109,12 @@ function auditView(attempt: OcrEvaluationAttempt) {
     status: attempt.status, outcome: attempt.outcome, retryOf: attempt.retryOf };
 }
 
-async function unchanged(target: EvaluationTarget, key: string) {
+async function unchanged(target: EvaluationTarget, key: string, processingConsentId: number) {
   requireOcrEvaluation(target.allianceId);
   await transaction(async tx => {
-    if ((await context(tx, target)).contextKey !== key) throw new OcrEvaluationError("The member's identity or access changed. Reload and review the current details.");
+    const current = await context(tx, target);
+    if (current.consent.processing?.id !== processingConsentId) throw new OcrEvaluationError("Your OCR preference changed. Reload before continuing.");
+    if (current.contextKey !== key) throw new OcrEvaluationError("The member's identity or access changed. Reload and review the current details.");
   });
 }
 
@@ -122,17 +124,19 @@ export async function authorizeScreenshotUpload(target: EvaluationTarget) {
 }
 
 export async function evaluateScreenshot(input: EvaluationTarget & {
-  requestId: string; contextKey: string; bytes: Uint8Array; retryFailed?: boolean;
+  requestId: string; contextKey: string; bytes: Uint8Array; processingConsentId: number; retryFailed?: boolean;
 }, transport: OcrTransport) {
   requireOcrEvaluation(input.allianceId);
+  if (!Number.isSafeInteger(input.processingConsentId) || input.processingConsentId < 1) throw new OcrEvaluationError("Reload to review your OCR processing preference.");
   if (!/^[a-f0-9-]{36}$/i.test(input.requestId) || input.contextKey.length > 1500) throw new OcrEvaluationError("Reload this review before uploading.");
   if (input.retryFailed && input.scope !== "batch") throw new OcrEvaluationError("Explicit retries are available only in the leader ranking trial.");
-  await unchanged(input, input.contextKey);
+  await unchanged(input, input.contextKey, input.processingConsentId);
   const image = await normalizeScreenshot(input.bytes);
   // Preflight cannot process or store the screenshot, and precedes spending.
   await transport.preflight();
   const admitted = await transaction(async tx => {
     const current = await context(tx, input);
+    if (current.consent.processing?.id !== input.processingConsentId) throw new OcrEvaluationError("Your OCR preference changed. Reload before continuing.");
     if (current.contextKey !== input.contextKey) throw new OcrEvaluationError("The member's identity or access changed. Reload this review.");
     // One shared ledger lock serializes reservations across every instance.
     await tx.$queryRaw`SELECT "id" FROM "OcrEvaluationBudget" WHERE "id" = ${OCR_CAMPAIGN} FOR UPDATE`;
@@ -140,7 +144,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     if (existing) {
       if (existing.allianceId !== input.allianceId || existing.memberId !== current.memberId
         || existing.sourceDigest !== image.digest || existing.processingVersion !== OCR_VERSION
-        || existing.contextKey !== current.contextKey) throw new OcrEvaluationError("This upload reference belongs to a different review. Choose the screenshot again.");
+        || existing.contextKey !== current.contextKey || existing.processingConsentId !== input.processingConsentId) throw new OcrEvaluationError("This upload reference belongs to a different review. Choose the screenshot again.");
       return { attempt: existing, dispatched: false };
     }
     // Reuse identical batch captures in this unchanged review context. A failed
@@ -148,7 +152,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     let retryOf: string | null = null;
     if (input.scope === "batch") {
       const duplicate = await tx.ocrEvaluationAttempt.findFirst({ where: { allianceId: input.allianceId, memberId: null,
-        actorUserId: input.actorId, sourceDigest: image.digest, contextKey: current.contextKey,
+        actorUserId: input.actorId, sourceDigest: image.digest, contextKey: current.contextKey, processingConsentId: input.processingConsentId,
         processingVersion: OCR_VERSION, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
       if (duplicate) {
         if (duplicate.status !== "FAILED" || isAllianceRejection(duplicate) || input.retryFailed !== true) return { attempt: duplicate, dispatched: false };
@@ -178,12 +182,12 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
   const attempt = admitted.attempt;
   let failureStage = "source-storage";
   try {
-    await unchanged(input, attempt.contextKey);
+    await unchanged(input, attempt.contextKey, input.processingConsentId);
     await transport.put(`${attempt.id}/source.png`, image.bytes, "image/png");
     failureStage = "recognition";
-    await unchanged(input, attempt.contextKey);
+    await unchanged(input, attempt.contextKey, input.processingConsentId);
     const recognition = await transport.recognize(image);
-    await unchanged(input, attempt.contextKey);
+    await unchanged(input, attempt.contextKey, input.processingConsentId);
     const rankingContext = await readRankingContext(image.bytes, recognition);
     const content = Buffer.from(JSON.stringify({ ...recognition, rankingContext }));
     if (content.length > OCR_MAX_RESULT_BYTES) throw new Error("Recognition too large");
@@ -191,7 +195,9 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     await transport.put(`${attempt.id}/recognition.json`, content, "application/json");
     failureStage = "finalization";
     const complete = await transaction(async tx => {
-      if ((await context(tx, input)).contextKey !== attempt.contextKey) throw new OcrEvaluationError("The member's identity or access changed. Reload this review.");
+      const current = await context(tx, input);
+      if (current.consent.processing?.id !== input.processingConsentId) throw new OcrEvaluationError("Your OCR preference changed. Reload before continuing.");
+      if (current.contextKey !== attempt.contextKey) throw new OcrEvaluationError("The member's identity or access changed. Reload this review.");
       const allianceEvidence = checkScreenshotAlliance({ ...recognition, rankingContext }, { name: attempt.allianceName, server: attempt.server });
       return tx.ocrEvaluationAttempt.update({ where: { id: attempt.id }, data: allianceEvidence === "matched"
         ? { status: "READY", outcome: "recognition-ready" }

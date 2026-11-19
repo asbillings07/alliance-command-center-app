@@ -13,7 +13,7 @@ import { allianceRejectionMessage, isAllianceRejection, allianceBatchNotice } fr
 type Attempt = { id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
 type Result = { attempt: Attempt; batchReview: RankingReview; contextChanged: boolean };
 type Item = { requestId: string; file: File | null; state: "queued" | "reading" | "ready" | "failed" | "blocked"; error?: string; outcome?: string; attemptId?: string; result?: Result };
-type Props = { allianceId: string; initial: { contextKey: string; allianceName: string; server: string; members: RosterMember[]; attempts: Attempt[] }; synthetic: boolean; qaSettings?: QaAllianceSettingsData | null };
+type Props = { allianceId: string; initial: { contextKey: string; processingConsentId: number | null; allianceName: string; server: string; members: RosterMember[]; attempts: Attempt[] }; synthetic: boolean; qaSettings?: QaAllianceSettingsData | null };
 const statusText = { exact: "Exact name candidate", suggested: "Suggested match — confirm the name", ambiguous: "Ambiguous roster name", unmatched: "No roster match", invalid: "Unreadable name or score", archived: "Archived member — review required" };
 
 export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }: Props) {
@@ -60,7 +60,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
       update(item.requestId, { state: "reading" });
       try {
         const form = new FormData(); form.set("screenshot", item.file!, "screenshot"); form.set("requestId", item.requestId);
-        form.set("contextKey", initial.contextKey); form.set("retryFailed", String(retryFailed));
+        form.set("contextKey", initial.contextKey); form.set("processingConsentId", String(initial.processingConsentId)); form.set("retryFailed", String(retryFailed));
         const response = await fetch(endpoint, { method: "POST", body: form }); const attempt = await response.json();
         if (!response.ok) throw Object.assign(new Error(attempt.error || "This screenshot did not complete."), { outcome: attempt.outcome });
         update(item.requestId, { attemptId: attempt.id });

@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) throw new OcrEvaluationError("Choose a screenshot first.");
     const result = await evaluateScreenshot({ allianceId, actorId: session.user.id,
       memberId: url.searchParams.get("memberId") || null, scope: url.searchParams.get("scope") === "batch" ? "batch" : undefined, requestId: String(form.get("requestId") ?? ""),
-      contextKey: String(form.get("contextKey") ?? ""), retryFailed: form.get("retryFailed") === "true",
+      contextKey: String(form.get("contextKey") ?? ""), processingConsentId: Number(form.get("processingConsentId")), retryFailed: form.get("retryFailed") === "true",
       bytes: new Uint8Array(await file.arrayBuffer()) }, await evaluationTransport());
     return Response.json(result, { headers });
   } catch (error) { return fail(error); }

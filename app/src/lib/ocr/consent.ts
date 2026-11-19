@@ -1,7 +1,7 @@
 import "server-only";
 import { Prisma, type OcrConsentPurpose } from "@/app/generated/prisma/client";
 import { prisma } from "../prisma";
-import { ocrEvaluationVisible, OcrEvaluationError } from "./config";
+import { ocrPreferencesAvailable, OcrEvaluationError } from "./config";
 import { OCR_PROCESSING_NOTICE, OCR_QUALITY_NOTICE, processingAllowed, type OcrConsentState } from "./consentPolicy";
 
 type Tx = Prisma.TransactionClient;
@@ -20,7 +20,7 @@ export function requireProcessingConsent(state: OcrConsentState) {
 }
 
 export async function loadOcrConsent(userId: string) {
-  if (!ocrEvaluationVisible()) throw new OcrEvaluationError("OCR settings are unavailable here.");
+  if (!ocrPreferencesAvailable()) throw new OcrEvaluationError("OCR settings are unavailable here.");
   return prisma.$transaction(async tx => {
     if (!await tx.user.findUnique({ where: { id: userId }, select: { id: true } })) throw new OcrEvaluationError("Sign in again.");
     return readOcrConsent(tx, userId);
@@ -31,7 +31,7 @@ export async function loadOcrConsent(userId: string) {
 export async function decideOcrConsent(userId: string, input: {
   purpose: OcrConsentPurpose; granted: boolean; expectedId: number | null; noticeVersion: string;
 }) {
-  if (!ocrEvaluationVisible()) throw new OcrEvaluationError("OCR settings are unavailable here.");
+  if (!ocrPreferencesAvailable()) throw new OcrEvaluationError("OCR settings are unavailable here.");
   if (!["PROCESSING", "QUALITY_REVIEW"].includes(input.purpose) || typeof input.granted !== "boolean"
     || (input.expectedId !== null && (!Number.isSafeInteger(input.expectedId) || input.expectedId < 1))) {
     throw new OcrEvaluationError("Reload your OCR settings before saving.");

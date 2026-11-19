@@ -13,7 +13,7 @@ type Attempt = { id: string; createdAt: string; expiresAt: string; actorName: st
 type Result = { recognition: Recognition; review: VsReview; attempt: Attempt;
   capturedTarget: { playerName: string; allianceName: string; server: string }; contextChanged: boolean };
 type Props = { allianceId: string; memberId: string | null; synthetic: boolean; initial: {
-  playerName: string; allianceName: string; server: string; leader: boolean; contextKey: string; attempts: Attempt[];
+  playerName: string; allianceName: string; server: string; leader: boolean; contextKey: string; processingConsentId: number | null; attempts: Attempt[];
 } };
 
 export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: Props) {
@@ -58,7 +58,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
     if (!file || busy) return;
     const token = ++operation.current; controller.current = new AbortController(); setBusy(true); setMessage(""); setResult(null); setNotice(null); setBlockedOutcome(null);
     const form = new FormData(); form.set("screenshot", file, "screenshot"); form.set("requestId", requestId);
-    form.set("contextKey", initial.contextKey);
+    form.set("contextKey", initial.contextKey); form.set("processingConsentId", String(initial.processingConsentId));
     try {
       const response = await fetch(endpoint, { method: "POST", body: form, signal: controller.current.signal });
       const body = await response.json(); if (!response.ok) throw Object.assign(new Error(body.error || "The scan did not complete."), { outcome: body.outcome });

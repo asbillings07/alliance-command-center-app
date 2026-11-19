@@ -24,7 +24,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
   const leader = (): EvaluationTarget => ({ allianceId, actorId, memberId });
   const member = (): EvaluationTarget => ({ allianceId, actorId: accountId, memberId: null });
   async function input(target = leader(), requestId = crypto.randomUUID()) {
-    return { ...target, requestId, bytes, contextKey: (await loadEvaluationContext(target)).contextKey };
+    return { ...target, requestId, bytes, processingConsentId: (await loadOcrConsent(target.actorId)).processing!.id, contextKey: (await loadEvaluationContext(target)).contextKey };
   }
   async function approve() {
     await decideMemberIdentity({ allianceId, memberId, actorId, confirm: true, acknowledged: true,
@@ -134,6 +134,31 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     // Optional review off never prevents normal OCR access.
     await changeQuality(false);
     await expect(readEvaluationContent(leader(), saved.id, "result", transport)).resolves.toHaveProperty("recognition");
+  });
+
+  it("personal consent does not invalidate another authorized leader's retained scan", async () => {
+    await db.allianceMembership.create({ data: { allianceId, userId: accountId, role: "LEADER" } });
+    const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
+    const saved = await evaluateScreenshot(await input(batch), transport);
+    const colleague = { ...batch, actorId: accountId };
+    expect((await loadEvaluationContext(colleague)).contextKey).toBe((await loadEvaluationContext(batch)).contextKey);
+    await expect(readEvaluationContent(colleague, saved.id, "result", transport)).resolves.toHaveProperty("contextChanged", false);
+    await changeProcessing(false); await changeProcessing(true);
+    await expect(readEvaluationContent(batch, saved.id, "result", transport)).resolves.toHaveProperty("contextChanged", false);
+    // Legacy captures have no permission metadata, but normal authorized source
+    // review still works. They are never retroactively eligible for quality audit.
+    await db.ocrEvaluationAttempt.update({ where: { id: saved.id }, data: { processingConsentId: null, qualityConsentId: null } });
+    await expect(readEvaluationContent(colleague, saved.id, "result", transport)).resolves.toHaveProperty("contextChanged", false);
+  });
+  it("keeps personal withdrawal available when global scans are switched off", async () => {
+    vi.stubEnv("VERCEL", "1"); vi.stubEnv("VERCEL_ENV", "preview"); vi.stubEnv("VERCEL_TARGET_ENV", "acc-ocr-eval");
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "codex/ocr-account-consent"); vi.stubEnv("OCR_EVAL_ENABLED", "false");
+    await changeProcessing(false);
+    expect((await loadOcrConsent(actorId)).processing!.granted).toBe(false);
+    await expect(ocrEvaluationAvailable(leader())).resolves.toBe(false);
+    expect(await db.ocrEvaluationAttempt.count()).toBe(0);
+    vi.stubEnv("VERCEL_ENV", "production");
+    await expect(loadOcrConsent(actorId)).rejects.toThrow("unavailable here");
   });
 
   it("disabled rollout rejects direct load, scan, read and QA edits without budget or history changes", async () => {
@@ -360,7 +385,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
   });
   it("denies an account outside the alliance before any provider operation", async () => {
     await db.allianceMembership.delete({ where: { allianceId_userId: { allianceId, userId: actorId } } });
-    await expect(evaluateScreenshot({ allianceId, actorId, memberId: null, scope: "batch", requestId: crypto.randomUUID(), contextKey: "forged", bytes }, transport)).rejects.toThrow("permission");
+    await expect(evaluateScreenshot({ allianceId, actorId, memberId: null, scope: "batch", requestId: crypto.randomUUID(), contextKey: "forged", processingConsentId: (await loadOcrConsent(actorId)).processing!.id, bytes }, transport)).rejects.toThrow("permission");
     expect(transport.preflight).not.toHaveBeenCalled();
     expect(transport.recognize).not.toHaveBeenCalled();
     expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 0, reservedMicros: 0 });

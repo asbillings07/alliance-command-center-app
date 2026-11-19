@@ -27,11 +27,15 @@ identity and source-alliance check remains. Platform cannot consent for users.
 on the account; `ocrConsentVersion` invalidates stale Serializable processing
 snapshots. Conditional writes reject a stale opposite choice; identical delivery
 is a no-op. The actor comes from server authentication, not a submitted account ID.
+Personal Settings remain available in the isolated environment when the global
+scan switch is off, so disabling processing never prevents withdrawal.
 
 Processing permission is checked before multipart ingestion, before admission,
 before storage/recognition dispatch, after external responses, and when reading
-retained results. It is part of the review context, so revocation followed by
-re-enabling cannot silently resume an old in-flight review. Revocation cannot
+retained results. A separate processing-permission reference binds in-flight operations, so
+revocation followed by re-enabling cannot silently resume them. Shared roster/
+identity context stays independent of a viewer's personal consent decision;
+authorized colleagues can still inspect retained scans with their own consent. Revocation cannot
 recall an already-dispatched operation. Any reserved allowance and attempt
 history remain recorded, including failures. The lifetime $5 ledger and 30-day
 private source expiry are unchanged.

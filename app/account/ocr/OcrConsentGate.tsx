@@ -9,7 +9,7 @@ import { refreshOcrConsent, updateOcrConsent } from "./actions";
 export function OcrProcessingNotice() {
   return <div className="space-y-3 text-sm text-text-secondary">
     <p>Alliance Command Center sends the screenshots you choose to Google Cloud to read names, scores and other visible text for your review.</p>
-    <p>Prepared screenshots and recognized text are stored privately for up to 30 days from upload, then scheduled for deletion. Upload history remains. Only share screenshots you are allowed to provide.</p>
+    <p>Prepared screenshots and recognized text are available privately for 30 days from upload, then scheduled for deletion. Upload history remains. Only share screenshots you are allowed to provide.</p>
     <p>This choice applies to your account across devices and alliances. You can turn it off in Settings. That stops screenshot uploads and retries; manual entry, spreadsheets and saved score history remain available where you have access.</p>
   </div>;
 }

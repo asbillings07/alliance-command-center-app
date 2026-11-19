@@ -18,12 +18,15 @@ export function localOcrFixtureEnabled() {
     && process.env.ACC_E2E_MODE === "1" && process.env.OCR_EVAL_TEST_FIXTURE === "1";
 }
 
-export function ocrEvaluationVisible() {
+export function ocrPreferencesAvailable() {
   if (localOcrFixtureEnabled()) return true;
   return process.env.VERCEL_ENV === "preview"
     && process.env.VERCEL_TARGET_ENV === "acc-ocr-eval"
-    && OCR_EVALUATION_BRANCHES.includes(process.env.VERCEL_GIT_COMMIT_REF ?? "")
-    && process.env.OCR_EVAL_ENABLED === "true";
+    && OCR_EVALUATION_BRANCHES.includes(process.env.VERCEL_GIT_COMMIT_REF ?? "");
+}
+
+export function ocrEvaluationVisible() {
+  return localOcrFixtureEnabled() || (ocrPreferencesAvailable() && process.env.OCR_EVAL_ENABLED === "true");
 }
 
 export function requireOcrEvaluation(allianceId: string) {
