@@ -20,7 +20,7 @@ export type FeatureFlagCategory = "temporary-release" | "operational-kill-switch
  * (targeting rules/segments); recording it here too would create a second,
  * driftable source of truth for the same fact (ADR-019 §8).
  */
-export type FeatureFlagTargetingStrategy = "global" | "alliance-targeted" | "operator-only";
+export type FeatureFlagTargetingStrategy = "global" | "alliance-targeted" | "user-and-alliance-targeted" | "operator-only";
 
 export type FeatureFlagDefinition = {
   key: string;
@@ -47,9 +47,20 @@ export type FeatureFlagDefinition = {
   removalIssue: string;
 };
 
-export type FeatureFlagKey = "reports" | "dashboard-workflow-groups";
+export type FeatureFlagKey = "reports" | "dashboard-workflow-groups" | "ocr-screenshot-evaluation";
 
 export const featureFlagRegistry: Record<FeatureFlagKey, FeatureFlagDefinition> = {
+  "ocr-screenshot-evaluation": {
+    key: "ocr-screenshot-evaluation",
+    description: "Isolated screenshot recognition trial for selected users within their authorized alliance. Never grants permissions or bypasses the QA-only environment, lifetime $5 budget or 30-day retention.",
+    category: "temporary-release",
+    owner: "Engineering",
+    issue: "#405",
+    productionDefault: false,
+    targetingStrategy: "user-and-alliance-targeted",
+    expiresOn: "2026-12-18",
+    removalIssue: "#406",
+  },
   reports: {
     key: "reports",
     description:

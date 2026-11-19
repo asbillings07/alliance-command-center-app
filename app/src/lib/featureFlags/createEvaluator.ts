@@ -30,6 +30,13 @@ export function createEvaluator<Key extends string>(
 ): Evaluator<Key> {
   return async (flag, context) => {
     const definition = registry[flag];
+    if (!hasRequiredTargetingContext(definition, context)) return false;
     return provider.resolve(definition, context);
   };
+}
+
+/** Paired targeting must never fall through to a provider rule without both identities. */
+export function hasRequiredTargetingContext(definition: FeatureFlagDefinition, context: FeatureContext): boolean {
+  return definition.targetingStrategy !== "user-and-alliance-targeted"
+    || !!(context.userId?.trim() && context.alliance?.id.trim());
 }

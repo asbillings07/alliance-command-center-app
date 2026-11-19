@@ -7,8 +7,8 @@ import { PageLayout, Card, EmptyState } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvisionMetricsForPeriod";
 
-import { ocrEvaluationVisible, localOcrFixtureEnabled } from "@/app/src/lib/ocr/config";
-import { loadEvaluationContext } from "@/app/src/lib/ocr/evaluation";
+import { localOcrFixtureEnabled } from "@/app/src/lib/ocr/config";
+import { loadEvaluationContext, ocrEvaluationAvailable } from "@/app/src/lib/ocr/evaluation";
 import { loadQaAllianceSettings } from "@/app/src/lib/ocr/qaAlliance";
 import { LeaderBatchReview } from "../../../screenshots/LeaderBatchReview";
 
@@ -123,8 +123,8 @@ export default async function ImportPage({ params, searchParams }: Params) {
         { label: "Capture Evaluation Results" },
       ];
 
-  const screenshotTrial = ocrEvaluationVisible();
-  const screenshots = screenshotTrial && (await searchParams).method === "screenshots";
+  const screenshotTrial = await ocrEvaluationAvailable({ allianceId, actorId: auth.user.id, memberId: null, scope: "batch" });
+  const screenshots = (await searchParams).method === "screenshots";
   const methodLinks = screenshotTrial ? <nav aria-label="Add results" className="mb-6 flex flex-wrap gap-3">
     <Button variant={screenshots ? "primary" : "secondary"} href={`/alliances/${allianceId}/periods/${periodId}/import?method=screenshots`}>Screenshots</Button>
     <Button variant={screenshots ? "secondary" : "primary"} href={`/alliances/${allianceId}/periods/${periodId}/import`}>Spreadsheet</Button>

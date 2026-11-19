@@ -5,6 +5,7 @@ import { prisma } from "../prisma";
 import { buildPermissionSet } from "../auth/permissions";
 import { readIdentitySnapshot } from "../memberIdentity";
 import { OCR_CAMPAIGN, OCR_MAX_IMAGE_BYTES, OCR_MAX_RESULT_BYTES, OCR_RESERVATION_MICROS, OCR_RETENTION_MS, OCR_VERSION, OcrEvaluationError, requireOcrEvaluation } from "./config";
+import { requireOcrRollout } from "./rollout";
 import { normalizeScreenshot } from "./image";
 import type { OcrTransport } from "./provider";
 import { reviewDailyVs } from "./recognition";
@@ -24,15 +25,17 @@ async function context(tx: Tx, target: EvaluationTarget, processing = true) {
       SELECT "role" FROM "AllianceMembership" WHERE "allianceId" = ${target.allianceId}
         AND "userId" = ${target.actorId} FOR SHARE`;
     if (!membership || !buildPermissionSet(membership.role).canImportMetrics) throw new OcrEvaluationError("You do not have permission to import ranking screenshots.");
-    const alliance = await tx.alliance.findUnique({ where: { id: target.allianceId }, select: { name: true, server: true, identityVersion: true } });
+    const alliance = await tx.alliance.findUnique({ where: { id: target.allianceId }, select: { id: true, name: true, server: true, identityVersion: true } });
     if (!alliance?.name.trim() || !alliance.server.trim()) throw new OcrEvaluationError("Review the alliance name and server before importing screenshots.");
+    const { id: authorizedAllianceId, ...allianceIdentity } = alliance;
+    await requireOcrRollout({ userId: actor.id, allianceId: authorizedAllianceId });
     const roster = await tx.allianceMember.findMany({ where: { allianceId: target.allianceId },
       select: { id: true, playerName: true, archivedAt: true, identityVersion: true }, orderBy: { id: "asc" }, take: 2001 });
     if (roster.length > 2000) throw new OcrEvaluationError("This trial supports up to 2,000 roster records.");
     const members: RosterMember[] = roster.map(m => ({ id: m.id, playerName: m.playerName, archived: !!m.archivedAt }));
     return { memberId: null, actorName: actor.displayName, actorRole: membership.role, playerName: "Alliance ranking capture",
       allianceName: alliance.name, server: alliance.server, members,
-      contextKey: createHash("sha256").update(JSON.stringify([alliance, membership.role, roster])).digest("hex") };
+      contextKey: createHash("sha256").update(JSON.stringify([allianceIdentity, membership.role, roster])).digest("hex") };
   }
   let memberId: string; let role: AllianceRole | "MEMBER"; let grantId: number | null = null;
   if (target.memberId) {
@@ -62,6 +65,7 @@ async function context(tx: Tx, target: EvaluationTarget, processing = true) {
     || !identity.member.alliance.name.trim() || !identity.member.alliance.server.trim())) {
     throw new OcrEvaluationError("Review the active member's name, alliance and server before evaluating a screenshot.");
   }
+  await requireOcrRollout({ userId: actor.id, allianceId: identity.member.alliance.id });
   return { members: [] as RosterMember[], memberId, actorName: actor.displayName, actorRole: role, playerName: identity.member.playerName,
     allianceName: identity.member.alliance.name, server: identity.member.alliance.server,
     contextKey: JSON.stringify([identity.reviewKey, role, grantId]) };
@@ -69,6 +73,15 @@ async function context(tx: Tx, target: EvaluationTarget, processing = true) {
 
 function transaction<T>(fn: (tx: Tx) => Promise<T>) {
   return prisma.$transaction(fn, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 10_000 });
+}
+
+/** Discovery uses the same current authorization and flag as direct requests. */
+export async function ocrEvaluationAvailable(target: EvaluationTarget): Promise<boolean> {
+  try {
+    requireOcrEvaluation(target.allianceId);
+    await transaction(tx => context(tx, target));
+    return true;
+  } catch { return false; }
 }
 
 export async function loadEvaluationContext(target: EvaluationTarget) {

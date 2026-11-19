@@ -19,6 +19,8 @@ provider configuration - both are linked to, never copied.
 | `reports` | Metric Summary Reports (#190): per-metric alliance rollups, rankings, and member breakdowns. Ships dark - both report routes fail closed (`notFound`) while disabled, and all discovery touchpoints hide their links too. | `temporary-release` | Engineering | #190 | `false` | `global` | 2026-11-11 | [#336](https://github.com/asbillings07/alliance-command-center-app/issues/336) | 2026-08-12 (#336 opened) |
 | `dashboard-workflow-groups` | Grouped alliance dashboard (#192): reorganizes the dashboard into leader-workflow groups (Setup, Roster health, Participation and evaluation) instead of a flat module grid. ACC's first alliance-targeted flag (#332). Ships dark - disabled renders the existing dashboard unchanged. | `temporary-release` | Engineering | #192 | `false` | `alliance-targeted` | 2026-12-01 | [#342](https://github.com/asbillings07/alliance-command-center-app/issues/342) | 2026-08-12 (#342 opened) |
 
+| `ocr-screenshot-evaluation` | Isolated recognition trial for selected users in their authorized alliance; no accepted-score writes. | `temporary-release` | Engineering | #405 | `false` | `user-and-alliance-targeted` | 2026-12-18 | [#406](https://github.com/asbillings07/alliance-command-center-app/issues/406) | 2026-11-18 (#406 opened) |
+
 This table is a **human-readable index**, not a second source of truth. If it
 ever looks stale, `registry.ts` wins - update the table to match the code,
 never the other way around. Two column notes:
@@ -206,3 +208,11 @@ dead code.
 - [release-checklist.md](./release-checklist.md), [rollback.md](./rollback.md) - general release/rollback procedures this document extends for flag-specific cases.
 - [#333](https://github.com/asbillings07/alliance-command-center-app/issues/333) - the issue this document satisfies.
 - [#332](https://github.com/asbillings07/alliance-command-center-app/issues/332)/[#192](https://github.com/asbillings07/alliance-command-center-app/issues/192) - the first flag expected to follow this runbook end to end.
+
+## OCR pilot (#405)
+
+See [ADR-020](../adr/020-user-and-alliance-feature-targeting.md) and the [qualification record](../product-design/ocr-member-submissions/feature-rollout.md). Configure the exact user and alliance together (AND) in Preview, with Off fallback; Production and Development remain Off. Vercel custom environments use Preview flag configuration by default ([provider documentation](https://vercel.com/kb/guide/how-vercel-flags-resolves-environments)); the application independently requires `acc-ocr-eval`. Do not copy live cohort IDs into code or add a client-selected identity.
+
+For disabling, save Preview Off in the provider, reopen a private OCR page with the test account and verify it is unavailable, and check that no new reservation or dispatch occurred. Preserve existing attempts and costs. If provider failure prevents confirming the changed configuration, set `OCR_EVAL_ENABLED=false` only in the isolated custom environment and redeploy that environment with the isolation preflight. Neither a flag nor this runbook authorizes production activation.
+
+The production ignored-build hold installed before merging #403 skips automatic production builds before installation/migrations (`if [ "$VERCEL_ENV" = "production" ]; then exit 0; else exit 1; fi`). Keep it until a separately approved production release. It is not an OCR feature flag. Preview builds remain enabled.

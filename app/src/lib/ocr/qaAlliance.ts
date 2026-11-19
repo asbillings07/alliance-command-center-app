@@ -4,6 +4,7 @@ import { prisma } from "../prisma";
 import { buildPermissionSet } from "../auth/permissions";
 import { touchAllianceSetupActivity } from "../touchAllianceSetupActivity";
 import { localOcrFixtureEnabled, OcrEvaluationError, requireOcrEvaluation } from "./config";
+import { requireOcrRollout } from "./rollout";
 import { checkOcrDeploymentIsolation } from "./deploymentIsolation";
 
 /** The QA name editor may never run against an ordinary preview or live DB. */
@@ -30,14 +31,15 @@ export function validateQaAllianceName(value: string) {
 }
 
 async function authorize(tx: Prisma.TransactionClient, allianceId: string, actorId: string) {
-  const [actor] = await tx.$queryRaw<{ id: string; displayName: string; role: AllianceRole }[]>`
-    SELECT u."id", u."displayName", m."role" FROM "AllianceMembership" m
+  const [actor] = await tx.$queryRaw<{ id: string; displayName: string; role: AllianceRole; allianceId: string }[]>`
+    SELECT u."id", u."displayName", m."role", m."allianceId" FROM "AllianceMembership" m
     JOIN "User" u ON u."id" = m."userId"
     WHERE m."allianceId" = ${allianceId} AND m."userId" = ${actorId} FOR SHARE OF m, u`;
   // This is isolated trial setup, not the production alliance-management grant.
   if (!actor || !buildPermissionSet(actor.role).canImportMetrics) {
     throw new OcrEvaluationError("Only this test alliance's authorized importers can change its QA name.");
   }
+  await requireOcrRollout({ userId: actor.id, allianceId: actor.allianceId });
   return actor;
 }
 

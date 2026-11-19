@@ -25,6 +25,42 @@ describe("evaluateFeature", () => {
     vi.unstubAllEnvs();
   });
 
+  it("targets an exact user and alliance pair without sharing decisions across calls", async () => {
+    decideMock.mockImplementation(({ entities }: { entities: { user?: { id?: string }; alliance?: { id?: string } } }) =>
+      entities.user?.id === "selected-user" && entities.alliance?.id === "selected-alliance");
+    const { evaluateFeature } = await import("./evaluateFeature");
+    for (const [userId, allianceId, expected] of [
+      ["selected-user", "selected-alliance", true], ["other-user", "selected-alliance", false],
+      ["selected-user", "other-alliance", false], ["selected-user", "selected-alliance", true],
+    ] as const) {
+      await expect(evaluateFeature("ocr-screenshot-evaluation", { environment: "preview", userId, alliance: { id: allianceId } })).resolves.toBe(expected);
+    }
+  });
+
+  it("requires both identities even if the provider or local test override would enable OCR", async () => {
+    decideMock.mockReturnValue(true);
+    const { evaluateFeature } = await import("./evaluateFeature");
+    for (const raw of ["", '{"ocr-screenshot-evaluation":true}']) {
+      vi.stubEnv("FEATURE_FLAG_TEST_OVERRIDES", raw);
+      for (const context of [{ environment: "preview" as const },
+        { environment: "preview" as const, userId: "selected-user" },
+        { environment: "preview" as const, alliance: { id: "selected-alliance" } }]) {
+        await expect(evaluateFeature("ocr-screenshot-evaluation", context)).resolves.toBe(false);
+      }
+    }
+    expect(decideMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps OCR off when provider resolution fails", async () => {
+    decideMock.mockRejectedValue(new Error("provider unavailable"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { evaluateFeature } = await import("./evaluateFeature");
+    await expect(evaluateFeature("ocr-screenshot-evaluation", {
+      environment: "preview", userId: "selected-user", alliance: { id: "selected-alliance" },
+    })).resolves.toBe(false);
+    warn.mockRestore();
+  });
+
   it("resolves via the real provider when no test override is configured", async () => {
     decideMock.mockReturnValue(true);
     const { evaluateFeature } = await import("./evaluateFeature");

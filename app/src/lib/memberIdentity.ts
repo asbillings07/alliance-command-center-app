@@ -12,7 +12,7 @@ export async function readIdentitySnapshot(tx: Prisma.TransactionClient, allianc
     where: { id: memberId, allianceId },
     select: { id: true, playerName: true, userId: true, archivedAt: true, identityVersion: true,
       user: { select: { id: true, displayName: true, email: true } },
-      alliance: { select: { name: true, server: true, identityVersion: true } } },
+      alliance: { select: { id: true, name: true, server: true, identityVersion: true } } },
   });
   if (!member) throw new IdentityReviewError("Member not found.");
   const decisions = await tx.memberIdentityDecision.findMany({ where: { allianceId, memberId }, orderBy: { id: "desc" }, take: 20 });

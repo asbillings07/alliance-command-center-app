@@ -2,7 +2,7 @@ import { PageLayout, Card, Badge } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
 import { loadOwnMemberRecord } from "@/app/src/lib/memberSelfAccess";
-import { ocrEvaluationVisible } from "@/app/src/lib/ocr/config";
+import { ocrEvaluationAvailable } from "@/app/src/lib/ocr/evaluation";
 
 export default async function MyMemberRecordPage({ params }: { params: Promise<{ allianceId: string }> }) {
   const { allianceId } = await params;
@@ -21,7 +21,7 @@ export default async function MyMemberRecordPage({ params }: { params: Promise<{
       </Card.Body></Card>
       <Card><Card.Body><h2 className="text-lg font-semibold">Screenshot submissions</h2><p className="mt-3 text-text-secondary">Your identity and member access are approved. Screenshot uploads are not available yet.</p>
         <p className="mt-3 text-sm text-text-muted">When uploads become available, the screenshot must clearly identify you and match this verified record. An identity change or revoked approval will require another review.</p>
-        <div className="mt-4">{ocrEvaluationVisible() ? <Button href={`/alliances/${allianceId}/screenshots`}>Try daily VS screenshot review</Button> : <Button disabled>Screenshot uploads unavailable</Button>}</div>
+        <div className="mt-4">{await ocrEvaluationAvailable({ allianceId, actorId: user.id, memberId: null }) ? <Button href={`/alliances/${allianceId}/screenshots`}>Try daily VS screenshot review</Button> : <Button disabled>Screenshot uploads unavailable</Button>}</div>
       </Card.Body></Card>
     </div>}
   </PageLayout></main>;

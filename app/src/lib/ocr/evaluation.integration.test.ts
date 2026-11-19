@@ -3,7 +3,8 @@ import sharp from "sharp";
 import { prisma as db } from "../prisma";
 import { loadIdentityReview, decideMemberIdentity } from "../memberIdentity";
 import { loadMemberAccessReview, decideMemberSelfAccess } from "../memberSelfAccess";
-import { evaluateScreenshot, loadEvaluationContext, readEvaluationContent, type EvaluationTarget } from "./evaluation";
+import { evaluateScreenshot, loadEvaluationContext, ocrEvaluationAvailable, readEvaluationContent, type EvaluationTarget } from "./evaluation";
+import * as flags from "../featureFlags/evaluateFeature";
 import { OCR_CAMPAIGN, OCR_RETENTION_MS } from "./config";
 import type { OcrTransport } from "./provider";
 import type { Recognition } from "./recognition";
@@ -30,6 +31,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
       reviewKey: (await loadMemberAccessReview(allianceId, memberId, actorId)).reviewKey });
   }
   beforeEach(async () => {
+    vi.stubEnv("FEATURE_FLAG_TEST_OVERRIDES", '{"ocr-screenshot-evaluation":true}');
     vi.stubEnv("ACC_E2E_MODE", "1"); vi.stubEnv("OCR_EVAL_TEST_FIXTURE", "1"); vi.stubEnv("SENTRY_DSN", "");
     vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", ""); vi.stubEnv("NEXT_PUBLIC_SENTRY_REPLAY", "false");
     // Only the explicitly enabled loopback test database. These are synthetic
@@ -54,6 +56,79 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     await db.alliance.deleteMany({ where: { id: allianceId } });
     await db.user.deleteMany({ where: { id: { in: [actorId, accountId] } } });
   });
+  it("disabled rollout rejects direct load, scan, read and QA edits without budget or history changes", async () => {
+    const scanInput = await input();
+    const saved = await evaluateScreenshot(scanInput, transport);
+    const ledger = await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } });
+    const history = await db.ocrEvaluationAttempt.findUniqueOrThrow({ where: { id: saved.id } });
+    vi.mocked(transport.recognize).mockClear(); vi.mocked(transport.read).mockClear(); vi.mocked(transport.put).mockClear(); vi.mocked(transport.preflight).mockClear();
+    vi.stubEnv("FEATURE_FLAG_TEST_OVERRIDES", '{"ocr-screenshot-evaluation":false}');
+    await expect(ocrEvaluationAvailable(leader())).resolves.toBe(false);
+    await expect(loadEvaluationContext(leader())).rejects.toThrow("unavailable for this account");
+    await expect(evaluateScreenshot({ ...scanInput, requestId: crypto.randomUUID() }, transport)).rejects.toThrow("unavailable for this account");
+    await expect(readEvaluationContent(leader(), saved.id, "image", transport)).rejects.toThrow("unavailable for this account");
+    await expect(loadQaAllianceSettings(allianceId, actorId)).rejects.toThrow("unavailable for this account");
+    await expect(renameQaAlliance({ allianceId, actorId, name: "Changed", identityVersion: 0, acknowledged: true })).rejects.toThrow("unavailable for this account");
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toEqual(ledger);
+    expect(await db.ocrEvaluationAttempt.findUniqueOrThrow({ where: { id: saved.id } })).toEqual(history);
+    for (const fn of [transport.preflight, transport.recognize, transport.read, transport.put]) expect(fn).not.toHaveBeenCalled();
+    expect(await db.ocrQaAllianceNameChange.count({ where: { allianceId } })).toBe(0);
+  });
+
+  it("uses authorized DB identities to target one user within an alliance, without granting import access", async () => {
+    const evaluate = vi.spyOn(flags, "evaluateFeature").mockImplementation(async (_key, context) =>
+      context.userId === actorId && context.alliance?.id === allianceId);
+    const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
+    await expect(ocrEvaluationAvailable(batch)).resolves.toBe(true);
+    await approve();
+    await expect(loadEvaluationContext(member())).rejects.toThrow("unavailable for this account");
+    await db.allianceMembership.create({ data: { allianceId, userId: accountId, role: "LEADER" } });
+    await expect(loadEvaluationContext({ ...batch, actorId: accountId })).rejects.toThrow("unavailable for this account");
+    evaluate.mockClear();
+    await expect(loadEvaluationContext({ ...batch, allianceId: "foreign-alliance" })).rejects.toThrow("permission");
+    expect(evaluate).not.toHaveBeenCalled();
+    await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role: "VIEWER" } });
+    await expect(loadEvaluationContext(batch)).rejects.toThrow("permission");
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
+  it("rechecks rollout after preflight before reserving or sending anything", async () => {
+    const scanInput = await input();
+    vi.mocked(transport.preflight).mockImplementation(async () => { vi.stubEnv("FEATURE_FLAG_TEST_OVERRIDES", '{"ocr-screenshot-evaluation":false}'); });
+    await expect(evaluateScreenshot(scanInput, transport)).rejects.toThrow("unavailable for this account");
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 0, reservedMicros: 0 });
+    expect(transport.put).not.toHaveBeenCalled(); expect(transport.recognize).not.toHaveBeenCalled();
+  });
+
+  it("stops before recognition when rollout turns off after storage, retaining the reservation and failed attempt", async () => {
+    const scanInput = await input();
+    vi.mocked(transport.put).mockImplementation(async () => { vi.stubEnv("FEATURE_FLAG_TEST_OVERRIDES", '{"ocr-screenshot-evaluation":false}'); });
+    await expect(evaluateScreenshot(scanInput, transport)).rejects.toThrow("unavailable for this account");
+    expect(transport.recognize).not.toHaveBeenCalled();
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 1, reservedMicros: 10000 });
+    expect(await db.ocrEvaluationAttempt.findFirstOrThrow({ where: { allianceId } })).toMatchObject({ status: "FAILED", outcome: "processing-failed:recognition" });
+  });
+
+  it("does not disclose content when rollout turns off while storage responds", async () => {
+    const saved = await evaluateScreenshot(await input(), transport);
+    const originalRead = transport.read;
+    transport.read = vi.fn(async (name, maxBytes) => {
+      const result = await originalRead(name, maxBytes);
+      vi.stubEnv("FEATURE_FLAG_TEST_OVERRIDES", '{"ocr-screenshot-evaluation":false}');
+      return result;
+    });
+    await expect(readEvaluationContent(leader(), saved.id, "result", transport)).rejects.toThrow("unavailable for this account");
+    expect(await db.ocrEvaluationAttempt.findUniqueOrThrow({ where: { id: saved.id } })).toMatchObject({ status: "READY" });
+  });
+
+  it("a provider exception cannot reserve budget or dispatch OCR", async () => {
+    const scanInput = await input();
+    vi.spyOn(flags, "evaluateFeature").mockRejectedValue(new Error("provider failure"));
+    await expect(evaluateScreenshot(scanInput, transport)).rejects.toThrow("unavailable for this account");
+    expect(transport.preflight).not.toHaveBeenCalled(); expect(transport.recognize).not.toHaveBeenCalled();
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 0, reservedMicros: 0 });
+  });
+
   it.each(["OWNER", "ADMIN", "LEADER"] as const)("%s QA rename preserves prior source history/budget, invalidates identity and permits a fresh review of the same file", async role => {
     await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role } });
     await approve();
