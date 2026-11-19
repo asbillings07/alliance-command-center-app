@@ -21,7 +21,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
   const [items, setItems] = useState<Item[]>([]); const [week, setWeek] = useState(""); const [captureDate, setCaptureDate] = useState("");
   const [retryFailed, setRetryFailed] = useState(false);
   const [notice, setNotice] = useState<ReturnType<typeof allianceBatchNotice>>(null);
-  const [dateConfirmed, setDateConfirmed] = useState(false); const [consent, setConsent] = useState(false);
+  const [dateConfirmed, setDateConfirmed] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [source, setSource] = useState<{ result: Result; title: string } | null>(null);
   const [excluded, setExcluded] = useState<string[]>([]); const [reviewed, setReviewed] = useState(false);
@@ -48,7 +48,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
     return result;
   }
   async function scan() {
-    if (busy || !consent || !queued.length) return;
+    if (busy || !queued.length) return;
     cancel.current = false; setBusy(true); setMessage(""); invalidate();
     let nextItems = items;
     function update(requestId: string, patch: Partial<Item>) {
@@ -60,7 +60,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
       update(item.requestId, { state: "reading" });
       try {
         const form = new FormData(); form.set("screenshot", item.file!, "screenshot"); form.set("requestId", item.requestId);
-        form.set("consent", "true"); form.set("contextKey", initial.contextKey); form.set("retryFailed", String(retryFailed));
+        form.set("contextKey", initial.contextKey); form.set("retryFailed", String(retryFailed));
         const response = await fetch(endpoint, { method: "POST", body: form }); const attempt = await response.json();
         if (!response.ok) throw Object.assign(new Error(attempt.error || "This screenshot did not complete."), { outcome: attempt.outcome });
         update(item.requestId, { attemptId: attempt.id });
@@ -86,7 +86,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
       }
     }
     if (active.current) {
-      router.refresh(); setBusy(false); setConsent(false); setRetryFailed(false);
+      router.refresh(); setBusy(false); setRetryFailed(false);
       setNotice(allianceBatchNotice(nextItems));
       setMessage(cancel.current ? "Stopped. Completed scans remain below; unstarted images are still queued. No scan is retried automatically."
         : nextItems.some(item => item.state === "blocked") ? "Batch checked. Each blocked screenshot has its own warning. Matching screenshots remain available for review. No scores were saved."
@@ -127,7 +127,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
       <input id="ranking-screenshots" ref={input} type="file" accept="image/png,image/jpeg" multiple disabled={busy} className="mt-2 block w-full min-w-0 rounded-lg border border-border p-2 text-sm focus:outline-2 focus:outline-primary"
         onChange={event => { const files = Array.from(event.target.files ?? []); if (!files.length) return;
           if (files.length + items.length > 20 || files.some(f => f.size > 2 * 1024 * 1024 || !["image/png", "image/jpeg"].includes(f.type))) { setMessage("Choose up to 20 PNG or JPEG images, each no larger than 2 MB."); event.target.value = ""; return; }
-          setItems(previous => [...previous, ...files.map(file => ({ file, requestId: crypto.randomUUID(), state: "queued" as const }))]); setConsent(false); setRetryFailed(false); invalidate(); setMessage(""); event.target.value = ""; }} />
+          setItems(previous => [...previous, ...files.map(file => ({ file, requestId: crypto.randomUUID(), state: "queued" as const }))]); setRetryFailed(false); invalidate(); setMessage(""); event.target.value = ""; }} />
       {items.length > 0 && <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{items.map((item, index) => <li key={item.requestId} aria-label={`Screenshot ${index + 1}`} className="min-w-0 rounded-lg border border-border p-3 text-sm">
         <strong>Screenshot {index + 1}</strong><p className="mt-1 text-text-secondary">{item.state === "ready" ? item.result!.batchReview.context.label : item.state === "reading" ? "Reading…" : item.state === "blocked" ? "Blocked — alliance check" : item.state === "failed" ? "Needs attention" : "Queued"}</p>
         {item.error && <p className="mt-2 break-words text-warning-light">{item.error}</p>}
@@ -136,11 +136,9 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
       </li>)}</ol>}
       {(initial.attempts.some(a => a.status === "FAILED" && !isAllianceRejection(a)) || items.some(i => i.state === "failed")) && <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={retryFailed} disabled={busy || !queued.length} onChange={e => setRetryFailed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
         <span>Start a new attempt for failed images I selected again. Each reserves another $0.01 from the $5 trial cap. Earlier failures stay in history. Completed scans are reused.</span></label>}
-      <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={consent} disabled={busy || !queued.length} onChange={e => setConsent(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
-        <span>I can share these screenshots with ACC and Google Cloud for text recognition. Prepared images and recognized text are available for 30 days, then scheduled for deletion. Upload history is retained.</span></label>
-      <div className="mt-4 flex flex-wrap gap-3"><Button disabled={busy || !consent || !queued.length} onClick={scan}>{busy ? "Reading screenshots…" : `Read ${queued.length || "selected"} screenshots`}</Button>
+      <div className="mt-4 flex flex-wrap gap-3"><Button disabled={busy || !queued.length} onClick={scan}>{busy ? "Reading screenshots…" : `Read ${queued.length || "selected"} screenshots`}</Button>
         {busy ? <Button variant="secondary" onClick={() => { cancel.current = true; setMessage("Stopping after the current image. A scan already sent cannot be recalled."); }}>Stop after this image</Button>
-          : <Button variant="secondary" disabled={!items.length} onClick={() => { setItems([]); setSource(null); setConsent(false); invalidate(); setMessage("Review cleared. Retained scans remain in upload history."); }}>Clear review</Button>}</div>
+          : <Button variant="secondary" disabled={!items.length} onClick={() => { setItems([]); setSource(null); invalidate(); setMessage("Review cleared. Retained scans remain in upload history."); }}>Clear review</Button>}</div>
     </Card>
     <section aria-labelledby="batch-review-heading"><h2 id="batch-review-heading" className="text-lg font-semibold">2. Review all recognized members</h2>
       <h3 className="mt-4 font-semibold">Confirm the screenshot dates</h3>

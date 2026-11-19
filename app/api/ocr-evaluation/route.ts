@@ -1,5 +1,5 @@
 import { auth } from "@/app/src/lib/auth";
-import { evaluateScreenshot, readEvaluationContent } from "@/app/src/lib/ocr/evaluation";
+import { authorizeScreenshotUpload, evaluateScreenshot, readEvaluationContent } from "@/app/src/lib/ocr/evaluation";
 import { evaluationTransport } from "@/app/src/lib/ocr/transport";
 import { OCR_MAX_INPUT_BYTES, OcrEvaluationError, requireOcrEvaluation } from "@/app/src/lib/ocr/config";
 import { boundedBody } from "@/app/src/lib/ocr/provider";
@@ -19,6 +19,9 @@ export async function POST(request: Request) {
   try {
     const url = new URL(request.url); const allianceId = url.searchParams.get("allianceId") ?? "";
     requireOcrEvaluation(allianceId);
+    const target = { allianceId, actorId: session.user.id, memberId: url.searchParams.get("memberId") || null,
+      scope: url.searchParams.get("scope") === "batch" ? "batch" as const : undefined };
+    await authorizeScreenshotUpload(target);
     const limit = OCR_MAX_INPUT_BYTES + 16 * 1024;
     if (Number(request.headers.get("content-length")) > limit) throw new OcrEvaluationError("Choose one PNG or JPEG no larger than 2 MB.");
     // Bound the stream even when Content-Length is absent or forged.
@@ -28,7 +31,7 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) throw new OcrEvaluationError("Choose a screenshot first.");
     const result = await evaluateScreenshot({ allianceId, actorId: session.user.id,
       memberId: url.searchParams.get("memberId") || null, scope: url.searchParams.get("scope") === "batch" ? "batch" : undefined, requestId: String(form.get("requestId") ?? ""),
-      contextKey: String(form.get("contextKey") ?? ""), consent: form.get("consent") === "true", retryFailed: form.get("retryFailed") === "true",
+      contextKey: String(form.get("contextKey") ?? ""), retryFailed: form.get("retryFailed") === "true",
       bytes: new Uint8Array(await file.arrayBuffer()) }, await evaluationTransport());
     return Response.json(result, { headers });
   } catch (error) { return fail(error); }

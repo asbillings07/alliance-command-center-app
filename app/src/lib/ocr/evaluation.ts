@@ -6,6 +6,8 @@ import { buildPermissionSet } from "../auth/permissions";
 import { readIdentitySnapshot } from "../memberIdentity";
 import { OCR_CAMPAIGN, OCR_MAX_IMAGE_BYTES, OCR_MAX_RESULT_BYTES, OCR_RESERVATION_MICROS, OCR_RETENTION_MS, OCR_VERSION, OcrEvaluationError, requireOcrEvaluation } from "./config";
 import { requireOcrRollout } from "./rollout";
+import { readOcrConsent, requireProcessingConsent } from "./consent";
+import { qualityAllowed } from "./consentPolicy";
 import { normalizeScreenshot } from "./image";
 import type { OcrTransport } from "./provider";
 import { reviewDailyVs } from "./recognition";
@@ -16,9 +18,12 @@ import { allianceRejectionMessage, checkScreenshotAlliance, isAllianceRejection 
 export type EvaluationTarget = { allianceId: string; actorId: string; memberId: string | null; scope?: "batch" };
 type Tx = Prisma.TransactionClient;
 
-async function context(tx: Tx, target: EvaluationTarget, processing = true) {
+async function context(tx: Tx, target: EvaluationTarget, processing = true, consentRequired = true) {
+  await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${target.actorId} FOR SHARE`;
   const actor = await tx.user.findUnique({ where: { id: target.actorId }, select: { id: true, displayName: true } });
   if (!actor) throw new OcrEvaluationError("Sign in again before evaluating a screenshot.");
+  const consent = await readOcrConsent(tx, actor.id);
+  if (consentRequired) requireProcessingConsent(consent);
   if (target.scope === "batch") {
     if (target.memberId) throw new OcrEvaluationError("Choose either a batch or a member review.");
     const [membership] = await tx.$queryRaw<{ role: AllianceRole }[]>`
@@ -33,9 +38,9 @@ async function context(tx: Tx, target: EvaluationTarget, processing = true) {
       select: { id: true, playerName: true, archivedAt: true, identityVersion: true }, orderBy: { id: "asc" }, take: 2001 });
     if (roster.length > 2000) throw new OcrEvaluationError("This trial supports up to 2,000 roster records.");
     const members: RosterMember[] = roster.map(m => ({ id: m.id, playerName: m.playerName, archived: !!m.archivedAt }));
-    return { memberId: null, actorName: actor.displayName, actorRole: membership.role, playerName: "Alliance ranking capture",
+    return { consent, memberId: null, actorName: actor.displayName, actorRole: membership.role, playerName: "Alliance ranking capture",
       allianceName: alliance.name, server: alliance.server, members,
-      contextKey: createHash("sha256").update(JSON.stringify([allianceIdentity, membership.role, roster])).digest("hex") };
+      contextKey: createHash("sha256").update(JSON.stringify([allianceIdentity, membership.role, roster, consent.processing?.id])).digest("hex") };
   }
   let memberId: string; let role: AllianceRole | "MEMBER"; let grantId: number | null = null;
   if (target.memberId) {
@@ -66,9 +71,9 @@ async function context(tx: Tx, target: EvaluationTarget, processing = true) {
     throw new OcrEvaluationError("Review the active member's name, alliance and server before evaluating a screenshot.");
   }
   await requireOcrRollout({ userId: actor.id, allianceId: identity.member.alliance.id });
-  return { members: [] as RosterMember[], memberId, actorName: actor.displayName, actorRole: role, playerName: identity.member.playerName,
+  return { consent, members: [] as RosterMember[], memberId, actorName: actor.displayName, actorRole: role, playerName: identity.member.playerName,
     allianceName: identity.member.alliance.name, server: identity.member.alliance.server,
-    contextKey: JSON.stringify([identity.reviewKey, role, grantId]) };
+    contextKey: JSON.stringify([identity.reviewKey, role, grantId, consent.processing?.id]) };
 }
 
 function transaction<T>(fn: (tx: Tx) => Promise<T>) {
@@ -79,7 +84,7 @@ function transaction<T>(fn: (tx: Tx) => Promise<T>) {
 export async function ocrEvaluationAvailable(target: EvaluationTarget): Promise<boolean> {
   try {
     requireOcrEvaluation(target.allianceId);
-    await transaction(tx => context(tx, target));
+    await transaction(tx => context(tx, target, true, false));
     return true;
   } catch { return false; }
 }
@@ -87,12 +92,12 @@ export async function ocrEvaluationAvailable(target: EvaluationTarget): Promise<
 export async function loadEvaluationContext(target: EvaluationTarget) {
   requireOcrEvaluation(target.allianceId);
   return transaction(async tx => {
-    const current = await context(tx, target);
+    const current = await context(tx, target, true, false);
     const attempts = await tx.ocrEvaluationAttempt.findMany({ where: {
       allianceId: target.allianceId, memberId: current.memberId,
       ...(current.actorRole === "MEMBER" ? { actorUserId: target.actorId } : {}),
     }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 20 });
-    return { playerName: current.playerName, allianceName: current.allianceName, server: current.server,
+    return { consent: current.consent, playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       leader: current.actorRole !== "MEMBER", members: current.members, contextKey: current.contextKey,
       attempts: attempts.map(auditView) };
   });
@@ -111,11 +116,15 @@ async function unchanged(target: EvaluationTarget, key: string) {
   });
 }
 
+export async function authorizeScreenshotUpload(target: EvaluationTarget) {
+  requireOcrEvaluation(target.allianceId);
+  await transaction(tx => context(tx, target));
+}
+
 export async function evaluateScreenshot(input: EvaluationTarget & {
-  requestId: string; contextKey: string; bytes: Uint8Array; consent: boolean; retryFailed?: boolean;
+  requestId: string; contextKey: string; bytes: Uint8Array; retryFailed?: boolean;
 }, transport: OcrTransport) {
   requireOcrEvaluation(input.allianceId);
-  if (input.consent !== true) throw new OcrEvaluationError("Confirm screenshot processing and retention before continuing.");
   if (!/^[a-f0-9-]{36}$/i.test(input.requestId) || input.contextKey.length > 1500) throw new OcrEvaluationError("Reload this review before uploading.");
   if (input.retryFailed && input.scope !== "batch") throw new OcrEvaluationError("Explicit retries are available only in the leader ranking trial.");
   await unchanged(input, input.contextKey);
@@ -160,6 +169,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
       actorUserId: input.actorId, actorName: current.actorName, actorRole: current.actorRole,
       playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       contextKey: current.contextKey, sourceDigest: image.digest, processingVersion: OCR_VERSION,
+      processingConsentId: current.consent.processing!.id, qualityConsentId: qualityAllowed(current.consent) ? current.consent.quality!.id : null,
       imageBytes: image.bytes.length, createdAt: now, expiresAt: new Date(now.getTime() + OCR_RETENTION_MS),
     } });
     return { attempt, dispatched: true };
@@ -168,6 +178,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
   const attempt = admitted.attempt;
   let failureStage = "source-storage";
   try {
+    await unchanged(input, attempt.contextKey);
     await transport.put(`${attempt.id}/source.png`, image.bytes, "image/png");
     failureStage = "recognition";
     await unchanged(input, attempt.contextKey);

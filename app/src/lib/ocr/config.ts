@@ -1,4 +1,5 @@
 import "server-only";
+import { OCR_EVALUATION_BRANCHES } from "./evaluationBranches";
 
 export const OCR_CAMPAIGN = "acc-managed-ocr-v1";
 export const OCR_VERSION = "daily-vs-evaluation-v1";
@@ -21,7 +22,7 @@ export function ocrEvaluationVisible() {
   if (localOcrFixtureEnabled()) return true;
   return process.env.VERCEL_ENV === "preview"
     && process.env.VERCEL_TARGET_ENV === "acc-ocr-eval"
-    && process.env.VERCEL_GIT_COMMIT_REF === "codex/ocr-recognition-trial"
+    && OCR_EVALUATION_BRANCHES.includes(process.env.VERCEL_GIT_COMMIT_REF ?? "")
     && process.env.OCR_EVAL_ENABLED === "true";
 }
 

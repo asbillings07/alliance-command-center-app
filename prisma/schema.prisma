@@ -121,6 +121,9 @@ model OcrEvaluationAttempt {
   contextKey String
   sourceDigest String
   processingVersion String
+  // Historical permission references, not retroactive grants for legacy scans.
+  processingConsentId Int?
+  qualityConsentId Int?
   imageBytes Int
   createdAt DateTime @default(now())
   expiresAt DateTime
@@ -130,6 +133,24 @@ model OcrEvaluationAttempt {
   @@unique([actorUserId, requestId])
   @@index([allianceId, memberId, createdAt])
   @@index([actorUserId, createdAt])
+}
+
+enum OcrConsentPurpose {
+  PROCESSING
+  QUALITY_REVIEW
+}
+
+// Append-only decisions serialized per account. Default off creates no refusal.
+model OcrConsentDecision {
+  id Int @id @default(autoincrement())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose OcrConsentPurpose
+  granted Boolean
+  noticeVersion String
+  createdAt DateTime @default(now())
+
+  @@index([userId, purpose, id])
 }
 
 // QA setup history. No cascading relation can erase the recorded change.
@@ -575,6 +596,8 @@ model User {
   // it (see revokeSessions) rejects all previously issued tokens. Unlike the
   // isPlatformAdmin hint, this is an invariant, not a snapshot. See issue #132.
   sessionVersion          Int       @default(0)
+  ocrConsentVersion       Int       @default(0)
+  ocrConsentDecisions     OcrConsentDecision[]
 
   memberships                       AllianceMembership[]
   authoredNotes                     LeadershipNote[]

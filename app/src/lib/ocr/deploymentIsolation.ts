@@ -1,9 +1,10 @@
 import { checkDbIdentity, connectionIdentity, productionIdentities } from "../productionDb";
+import { OCR_EVALUATION_BRANCHES } from "./evaluationBranches";
 
 /** Read-only configuration preflight. Call before Prisma can open a connection. */
 export function checkOcrDeploymentIsolation(env: Record<string, string | undefined>): string[] {
   if (env.VERCEL_ENV !== "preview" || env.VERCEL_TARGET_ENV !== "acc-ocr-eval"
-    || env.VERCEL_GIT_COMMIT_REF !== "codex/ocr-recognition-trial") {
+    || !OCR_EVALUATION_BRANCHES.includes(env.VERCEL_GIT_COMMIT_REF ?? "")) {
     return ["OCR deployment preflight requires the dedicated evaluation environment and reviewed branch."];
   }
 
