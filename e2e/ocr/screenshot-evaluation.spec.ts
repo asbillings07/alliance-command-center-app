@@ -496,7 +496,8 @@ test("stopping a batch after a mismatch leaves the unstarted screenshot unclassi
   expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(1);
 });
 
-test("failed batch scans require deliberate new-charge consent and preserve earlier attempts", async ({ page, login, ownerScenario }) => {
+for (const origin of ["card", "history"] as const) {
+  test(`retrying from the ${origin} scans only the failed screenshot`, async ({ page, login, ownerScenario }) => {
   test.setTimeout(120000);
   const {allianceId,email,password} = ownerScenario;
   await prisma.alliance.update({ where: { id: allianceId }, data: { name: "QA", server: allianceId } });
@@ -513,26 +514,34 @@ test("failed batch scans require deliberate new-charge consent and preserve earl
   expect(failed.status).toBe("FAILED");
   const card = page.getByRole("listitem",{name:"Screenshot 1",exact:true});
   await expect(card.getByRole("button",{name:"Retry scan",exact:true})).toBeVisible();
-  await page.reload();
-  // Add another file to the queue. Retrying from history must leave it queued.
+  if (origin === "history") await page.reload();
+  // A targeted retry must never start an unrelated queued screenshot.
   await upload.setInputFiles({name:"weekly.png",mimeType:"image/png",buffer:await sharp(Buffer.from(rankingFixture("weekly").svg)).png().toBuffer()});
-  await expect(card).toContainText("Queued");
-  const picker = page.waitForEvent("filechooser");
-  await page.getByRole("button",{name:"Retry scan",exact:true}).click();
-  await (await picker).setFiles(file);
+  const queuedNumber = origin === "history" ? 1 : 2;
+  const queuedCard = page.getByRole("listitem",{name:`Screenshot ${queuedNumber}`,exact:true});
+  await expect(queuedCard).toContainText("Queued");
+  const retry = page.getByRole("button",{name:"Retry scan",exact:true});
+  if (origin === "history") {
+    const picker = page.waitForEvent("filechooser");
+    await retry.click();
+    await (await picker).setFiles(file);
+  } else {
+    await retry.click();
+  }
   await expect.poll(()=>prisma.ocrEvaluationAttempt.count({where:{allianceId}})).toBe(2);
   await expect(page.getByText(/Screenshot retry complete/)).toBeVisible();
   expect(await prisma.ocrEvaluationAttempt.findUniqueOrThrow({where:{retryOf:failed.id}})).toMatchObject({status:"READY",retryOf:failed.id});
-  await expect(card).toContainText("Queued");
-  const successful = page.getByRole("listitem",{name:"Screenshot 2",exact:true});
+  await expect(queuedCard).toContainText("Queued");
+  const successful = page.getByRole("listitem",{name:`Screenshot ${origin === "history" ? 2 : 1}`,exact:true});
   await expect(successful.getByRole("button",{name:"Retry scan"})).toHaveCount(0);
   await expect(page.getByRole("button",{name:"Retry scan",exact:true})).toHaveCount(0);
-  await card.getByRole("button",{name:"Remove screenshot 1 from review",exact:true}).click();
+  await queuedCard.getByRole("button",{name:`Remove screenshot ${queuedNumber} from review`,exact:true}).click();
   await page.getByLabel("Week beginning (Monday)").fill("2026-11-16");
   await page.getByRole("button",{name:"Finish recognition review"}).click();
   await expect(page.getByText(/^Recognition reviewed(?: · No scores saved)?$/)).toBeVisible();
   expect(await prisma.ocrEvaluationAttempt.findUniqueOrThrow({where:{id:failed.id}})).toMatchObject({status:"FAILED",retryOf:null});
 });
+}
 
 // Browser timezone differs from the CI server's UTC timezone. Historical
 // instants stay identical; each viewer gets the appropriate calendar date/DST.
