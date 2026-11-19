@@ -239,7 +239,7 @@ for (const width of [320, 820, 1280]) {
     const calendar = page.getByRole("button", { name: "Review screenshot dates", exact: true });
     await expect(calendar).toBeDisabled();
     await page.getByLabel("Week beginning (Monday)").fill("2026-11-17");
-    await expect(page.getByRole("alert")).toContainText("Choose a Monday");
+    await expect(page.getByRole("alert").filter({ hasText: "Choose a Monday" })).toBeVisible();
     await expect(calendar).toBeDisabled();
     await expect(finish).toBeDisabled();
     await page.getByLabel("Week beginning (Monday)").fill("2026-11-16");
