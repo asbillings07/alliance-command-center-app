@@ -1,3 +1,4 @@
+import { CaptureMethodLinks } from "@/app/src/components/CaptureMethodLinks";
 import { redirect } from "next/navigation";
 import { captureDestinations } from "@/app/src/lib/ocr/captureDestinations";
 import { SavedScoreBatches } from "./SavedScoreBatches";
@@ -20,10 +21,10 @@ export default async function ScreenshotsPage({ params, searchParams }: {
   const review = await loadEvaluationContext({ allianceId, actorId: user.id, memberId: null, scope: scope === "batch" ? "batch" : undefined }).catch(() => null);
   const qaSettings = review && scope === "batch" ? await loadQaAllianceSettings(allianceId, user.id).catch(() => null) : null;
   const back = scope === "batch" ? `/alliances/${allianceId}` : `/alliances/${allianceId}/my-record`;
-  return <main className="sentry-block" data-sentry-block><PageLayout title={scope === "batch" ? "Capture Evaluation Results" : "Daily VS screenshot review"} maxWidth="6xl"
+  return <main className="sentry-block" data-sentry-block><PageLayout title={scope === "batch" ? "Capture Evaluation Results" : "Daily VS screenshot review"} maxWidth={scope === "batch" ? "2xl" : "6xl"}
     description={scope === "batch" ? "Review ranking screenshots and save scores to your alliance." : "Review your daily VS screenshot."}
     action={<Button href={back} variant="secondary">{scope === "batch" ? "Back to alliance" : "Back to member"}</Button>}>
-    {review && scope === "batch" && <nav aria-label="Add results" className="mb-4 flex flex-wrap gap-3"><Button href={`/alliances/${allianceId}/screenshots?scope=batch`}>Screenshots</Button><Button variant="secondary" href={`/alliances/${allianceId}/setup/import?method=spreadsheet`}>Spreadsheet</Button><Button variant="secondary" href={`/alliances/${allianceId}/setup/import?method=manual`}>Manual entry</Button></nav>}
+    {review && scope === "batch" && <CaptureMethodLinks allianceId={allianceId} selected="screenshots" />}
     {!review ? <Card><h2 className="text-lg font-semibold">Screenshot evaluation is unavailable</h2>
       <p className="mt-3 text-text-secondary">This trial requires an enabled preview, current access and complete member identity. Ask your leadership team to review your access, or return to your member record.</p></Card>
       : <OcrConsentGate key={review.consent.processing?.id ?? "first-use"} initial={review.consent}>{scope === "batch" ? <LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} destination={await captureDestinations(allianceId)} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} />

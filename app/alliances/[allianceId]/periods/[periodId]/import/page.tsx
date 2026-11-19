@@ -1,3 +1,4 @@
+import { CaptureMethodLinks } from "@/app/src/components/CaptureMethodLinks";
 import { captureDestinations } from "@/app/src/lib/ocr/captureDestinations";
 import { OcrConsentGate } from "@/app/account/ocr/OcrConsentGate";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
@@ -129,15 +130,11 @@ export default async function ImportPage({ params, searchParams }: Params) {
   const screenshotTrial = await ocrEvaluationAvailable({ allianceId, actorId: auth.user.id, memberId: null, scope: "batch" });
   const method = (await searchParams).method;
   const screenshots = method === "screenshots" || (method !== "spreadsheet" && screenshotTrial);
-  const methodLinks = screenshotTrial ? <nav aria-label="Add results" className="mb-6 flex flex-wrap gap-3">
-    <Button variant={screenshots ? "primary" : "secondary"} href={`/alliances/${allianceId}/periods/${periodId}/import?method=screenshots`}>Screenshots</Button>
-    <Button variant={screenshots ? "secondary" : "primary"} href={`/alliances/${allianceId}/periods/${periodId}/import?method=spreadsheet`}>Spreadsheet</Button>
-    <Button variant="secondary" href={`/alliances/${allianceId}/periods/${periodId}/record`}>Manual entry</Button>
-  </nav> : null;
+  const methodLinks = screenshotTrial ? <CaptureMethodLinks allianceId={allianceId} periodId={periodId} selected={screenshots ? "screenshots" : "spreadsheet"} /> : null;
   if (screenshots) {
     const review = await loadEvaluationContext({ allianceId, actorId: auth.user.id, memberId: null, scope: "batch" }).catch(() => null);
     const qaSettings = review && auth.permissions.canImportMetrics ? await loadQaAllianceSettings(allianceId, auth.user.id).catch(() => null) : null;
-    return <main className="sentry-block" data-sentry-block><PageLayout breadcrumb={breadcrumb} title="Capture Evaluation Results" description={`Review ranking screenshots for ${period.name}.`} maxWidth="6xl">
+    return <main className="sentry-block" data-sentry-block><PageLayout breadcrumb={breadcrumb} title="Capture Evaluation Results" description={`Review ranking screenshots for ${period.name}.`} maxWidth="2xl">
       {methodLinks}
       {review ? <OcrConsentGate key={review.consent.processing?.id ?? "first-use"} initial={review.consent}><LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} destination={await captureDestinations(allianceId,period)} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} /></OcrConsentGate>
         : <Card><h2 className="text-lg font-semibold">Screenshot evaluation is unavailable</h2><p className="mt-2 text-text-secondary">This trial requires an enabled preview and current import access.</p></Card>}

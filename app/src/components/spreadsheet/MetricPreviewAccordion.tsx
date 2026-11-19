@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ImportReviewTable } from "../ImportReviewTable";
 import { Badge } from "@/app/src/components/Badge";
 import {
   getDefaultActiveMetricIndex,
@@ -434,16 +435,9 @@ function PreviewRowTable({
   if (rowIndices.length === 0) return null;
 
   return (
-    <table className="w-full text-sm">
-      <thead className="bg-surface-secondary border-b border-border">
-        <tr className="text-text-primary font-semibold">
-          <th className="px-3 py-2 text-left">File Name</th>
-          <th className="px-3 py-2 text-left">Matched To</th>
-          <th className="px-3 py-2 text-right">Value</th>
-          <th className="px-3 py-2 text-center">Status</th>
-        </tr>
-      </thead>
-      <tbody>
+    <ImportReviewTable label="Spreadsheet member results" columns={[
+      {label:"File Name"}, {label:"Matched To"}, {label:"Value",align:"right"}, {label:"Status",align:"center"},
+    ]}>
         {rowIndices.map((i) => {
           const result = summary.results[i];
           return (
@@ -458,8 +452,7 @@ function PreviewRowTable({
             />
           );
         })}
-      </tbody>
-    </table>
+    </ImportReviewTable>
   );
 }
 

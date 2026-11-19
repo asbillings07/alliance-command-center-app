@@ -51,7 +51,7 @@ for (const [width, role] of [[320, "LEADER"], [820, "ADMIN"], [1280, "OWNER"]] a
     await page.getByLabel("QA alliance name", { exact: true }).fill("Different test alliance");
     await page.getByRole("button", { name: "Review QA name change", exact: true }).click();
     await dialog.getByRole("button", { name: "Save QA name", exact: true }).click();
-    await expect(page.getByText(/0 unique rows/)).toBeVisible();
+    await expect(page.getByRole("table", { name:"Screenshot member results" })).toHaveCount(0);
     expect(await prisma.ocrEvaluationAttempt.findUniqueOrThrow({ where: { id: saved.id } })).toEqual(saved);
     expect(await prisma.ocrQaAllianceNameChange.count({ where: { allianceId } })).toBe(2);
     expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(1);
@@ -253,7 +253,20 @@ for (const width of [320, 820, 1280]) {
     const files = await Promise.all((["monday", "weekly"] as const).map(async kind => ({
       name: `${kind}.png`, mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture(kind).svg)).png().toBuffer(),
     })));
-    await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles(files);
+    if (width === 1280) {
+      const transfer = await page.evaluateHandle(payload => {
+        const data = new DataTransfer();
+        for (const file of payload) {
+          data.items.add(new File([Uint8Array.from(file.bytes)], file.name, { type: "image/png" }));
+        }
+        return data;
+      }, files.map(file => ({ name: file.name, bytes: [...file.buffer] })));
+      await page.getByRole("button", { name: "Select ranking screenshots" }).dispatchEvent("drop", { dataTransfer: transfer });
+      await transfer.dispose();
+    } else {
+      await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles(files);
+    }
+    expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(0);
     const scan = page.getByRole("button", { name: "Read 2 screenshots", exact: true });
     await expect(scan).toBeEnabled();
     await scan.click();
@@ -270,9 +283,16 @@ for (const width of [320, 820, 1280]) {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByText("Daily score · 2026-11-16", { exact: true })).toHaveCount(3);
     await expect(page.getByText("Weekly total · week of 2026-11-16", { exact: true })).toHaveCount(3);
-    const row = page.getByRole("listitem").filter({has: page.getByRole("button", {name:"View source for Jordan Vale", exact:true})}).first();
+    const reviewTable = page.getByRole("table", { name: "Screenshot member results" });
+    await expect(reviewTable).toBeVisible();
+    const filter = page.getByRole("checkbox", { name: "Needs review only" });
+    await filter.check();
+    await expect(page.getByText("No rows need review.")).toBeVisible();
+    await filter.uncheck();
+    await expect(finish).toBeEnabled();
+    const row = page.getByRole("row").filter({has: page.getByRole("button", {name:"View source for Jordan Vale", exact:true})}).first();
     await row.getByRole("button", {name:"Exclude from review"}).click();
-    const minimized = page.getByRole("listitem").filter({has:page.getByRole("button", {name:"Include in review"})});
+    const minimized = page.getByRole("row").filter({has:page.getByRole("button", {name:"Include in review"})});
     await expect(minimized).toContainText("Jordan Vale");
     await expect(minimized.getByRole("button", {name:/View source/})).toHaveCount(0);
     await week.fill("2026-11-23");
@@ -402,7 +422,7 @@ for (const [width, role] of [[320, "OWNER"], [820, "ADMIN"], [1280, "LEADER"]] a
     await checkA11y(page);
     const bounds = await dialog.boundingBox(); expect(bounds).not.toBeNull();
     expect(bounds!.x).toBeGreaterThanOrEqual(0); expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
-    await close.press("Escape"); await expect(dialog).toHaveCount(0); await expect(upload).toBeFocused();
+    await close.press("Escape"); await expect(dialog).toHaveCount(0); await expect(page.getByRole("button",{name:"Select ranking screenshots",exact:true})).toBeFocused();
     for (const index of [1, 2]) await expect(page.getByRole("listitem", { name: `Screenshot ${index}`, exact: true })).toContainText("This screenshot does not match the alliance");
     await expect(page.getByText("Queued", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /View screenshot/ })).toHaveCount(0);
@@ -605,7 +625,7 @@ test("a confirmed ranking batch persists under the correct members for a second 
     await page.getByRole("button",{ name: "Read 1 screenshots", exact: true }).click();
     await expect(page.getByText(/Batch recognition is ready/)).toBeVisible();
     await page.getByLabel("Week beginning (Monday)").fill("2026-11-16");
-    await expect(page.locator("li").filter({has:page.getByRole("button",{name:"View source for Riley Chen"})})).toContainText("New roster member");
+    await expect(page.getByRole("row").filter({has:page.getByRole("button",{name:"View source for Riley Chen"})})).toContainText("New roster member");
     await page.getByRole("button",{name:"Finish recognition review"}).click();
     await page.getByLabel("Daily score metric").selectOption(metric.id);
     await page.getByRole("button",{name:"Review score changes"}).click();

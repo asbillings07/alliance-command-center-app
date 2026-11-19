@@ -30,8 +30,8 @@ export function BatchConfirmation({ destination, daily, weekly, selection }: {
     finally { setBusy(false); }
   };
   return <section className="mt-4 space-y-3 border-t border-border pt-4">
-    <h3 className="font-semibold">Save reviewed scores</h3>
-    {review?.saved ? <div role="status"><strong>{review.comparisons.length} scores saved</strong> {review.periodId && <Link className="text-primary underline" href={`/alliances/${selection.allianceId}/periods/${review.periodId}/import?method=screenshots`}>View saved batch</Link>} · {review.excluded} excluded
+    <h3 className="font-semibold">{review?.saved ? "Import complete" : "Save reviewed scores"}</h3>
+    {review?.saved ? <div role="status" className="rounded-lg border border-success/30 bg-success/10 p-4"><strong>{review.comparisons.length} scores saved</strong> {review.periodId && <Link className="text-primary underline" href={`/alliances/${selection.allianceId}/periods/${review.periodId}/import?method=screenshots`}>View saved batch</Link>} · {review.excluded} excluded
       <ul>{review.comparisons.map(r => <li key={r.memberId + r.window}><Link className="text-primary underline" href={`/alliances/${selection.allianceId}/members/${r.memberId}/history?metricId=${r.metricId}`}>{r.member}</Link> · {r.value.toLocaleString()} · {r.window.replace("week:", "Week of ")}</li>)}</ul></div> : <>
       <label className="block">Evaluation period
         <select className="block w-full rounded border border-border bg-surface p-2" value={periodId} onChange={e=>setPeriod(e.target.value)} disabled={busy}>

@@ -1,3 +1,4 @@
+import { CaptureMethodLinks } from "@/app/src/components/CaptureMethodLinks";
 import { ocrEvaluationAvailable } from "@/app/src/lib/ocr/evaluation";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
@@ -23,6 +24,8 @@ export default async function SetupImportPage({ params, searchParams }: Params) 
   });
 
   const method = (await searchParams)?.method;
+  const screenshotTrial = await ocrEvaluationAvailable({allianceId,actorId:auth.user.id,memberId:null,scope:"batch"});
+  const methodLinks = screenshotTrial && <CaptureMethodLinks allianceId={allianceId} selected={method === "manual" ? "manual" : "spreadsheet"} />;
   if (method === "manual") {
     const periods = await prisma.metricPeriod.findMany({
       where: { allianceId, active: true },
@@ -30,12 +33,13 @@ export default async function SetupImportPage({ params, searchParams }: Params) 
       orderBy: [{ startsAt: "desc" }, { name: "asc" }],
     });
     return <PageLayout title="Manual entry" maxWidth="md">
+      {methodLinks}
       {periods.length ? <section><h2 className="mb-3 font-semibold">Choose an evaluation period</h2><ul className="space-y-2">{periods.map(period => <li key={period.id}><Button href={`/alliances/${allianceId}/periods/${period.id}/record`}>{period.name}</Button></li>)}</ul></section>
         : <EmptyState title="Manual entry needs an evaluation period" description={auth.permissions.canConfigurePeriods ? "Create a period to start recording results." : "Ask your alliance leadership to set up an evaluation period."} action={auth.permissions.canConfigurePeriods ? <Button href={`/alliances/${allianceId}/periods`}>Manage evaluation periods</Button> : undefined} />}
       <div className="mt-4"><Button variant="secondary" href={`/alliances/${allianceId}/setup/import`}>Back to capture</Button></div>
     </PageLayout>;
   }
-  if (method !== "spreadsheet" && await ocrEvaluationAvailable({allianceId,actorId:auth.user.id,memberId:null,scope:"batch"})) {
+  if (method !== "spreadsheet" && screenshotTrial) {
     redirect(`/alliances/${allianceId}/screenshots?scope=batch`);
   }
 
@@ -108,6 +112,7 @@ export default async function SetupImportPage({ params, searchParams }: Params) 
         description="Upload your existing spreadsheet to populate evaluation periods, metrics, and member results."
         maxWidth="md"
       >
+        {methodLinks}
         <EmptyState
           title="Import members first"
           description="Alliance Command Center handles member rosters and evaluation results as separate uploads in this version. Import your member list first, then return here to upload evaluation results."
@@ -146,6 +151,7 @@ export default async function SetupImportPage({ params, searchParams }: Params) 
       description="Upload your existing spreadsheet to detect evaluation periods and import member results."
       maxWidth="2xl"
     >
+      {methodLinks}
       <Card>
         <Card.Body>
           <SetupImportForm
