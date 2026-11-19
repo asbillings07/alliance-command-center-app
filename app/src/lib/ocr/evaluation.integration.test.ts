@@ -104,6 +104,13 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     vi.mocked(transport.recognize).mockResolvedValue({ ...recognition, words: recognition.words.map(w => ({ ...w, text: w.text.replace("[TEST]", "[OTHER]") })) });
     expect(await evaluateScreenshot(await input(), transport)).toMatchObject({ status: "FAILED", outcome: "alliance-mismatch" });
   });
+  it("rejects an untagged Duel row even when another row has the same player name", async () => {
+    vi.mocked(transport.recognize).mockResolvedValue({ ...recognition, words: [...recognition.words,
+      { text: "Jordan Vale", x: 120, y: 300, width: 200, height: 24 },
+      { text: "19,317,601", x: 150, y: 340, width: 150, height: 24 },
+    ] });
+    expect(await evaluateScreenshot(await input(), transport)).toMatchObject({ status: "FAILED", outcome: "alliance-missing" });
+  });
   it("a Leader cannot bypass source checks through an approved own-record route", async () => {
     await db.allianceMembership.create({ data: { allianceId, userId: accountId, role: "LEADER" } });
     await approve();

@@ -58,6 +58,8 @@ describe("source alliance evidence", () => {
     expect(checkScreenshotAlliance(source, expected)).toBe("matched");
     source.words[2].text = "Morgan Reed";
     expect(checkScreenshotAlliance(source, expected)).toBe("missing");
+    source.words[2].text = "Jordan Vale";
+    expect(checkScreenshotAlliance(source, expected)).toBe("missing");
     source.words[2].text = "[ELSE]Morgan Reed";
     expect(checkScreenshotAlliance(source, expected)).toBe("mixed");
   });

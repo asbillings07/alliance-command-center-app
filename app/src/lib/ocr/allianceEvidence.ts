@@ -21,8 +21,14 @@ export function checkScreenshotAlliance(recognition: RankingRecognition, expecte
   if (rows.some(row => !row.allianceLabel)) return "missing";
   // The tagged-row parser must not silently hide a player whose tag was cropped
   // out or missed by OCR. Check recognizable untagged name/score pairs too.
-  if (today && lines.some(line => !/^\[/u.test(line.text)
-    && reviewDailyVs(recognition, line.text.replace(/\s+You$/u, "")).score !== null)) return "missing";
+  if (today && lines.some(line => {
+    if (/^\[/u.test(line.text)) return false;
+    const below = lines.find(candidate => candidate.y > line.y + line.height * .75);
+    // Qualify this local pair: duplicate names elsewhere in the image must not
+    // turn a visibly untagged row into an absent result of a whole-image lookup.
+    const pair = { ...recognition, words: [...line.words, ...(below?.words ?? [])] };
+    return reviewDailyVs(pair, line.text.replace(/\s+You$/u, "")).score !== null;
+  })) return "missing";
   // Inspect every visible ranking alliance line, including rows whose score was
   // unreadable. A correct name elsewhere cannot launder another alliance's data.
   const values = today ? rows.map(row => row.allianceLabel!) : lines.filter(line => line.y > points!.y && /^(?:#\d+\s*)?\[/u.test(line.text)).map(line => line.text);
