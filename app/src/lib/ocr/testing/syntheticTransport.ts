@@ -20,11 +20,11 @@ export function syntheticOcrTransport(): OcrTransport {
       if (!failures.has(digest)) {failures.add(digest); throw new Error("Synthetic interrupted recognition");}
     }
     if ((image.width === 600 || image.width === 601) && image.height === 900) return rankingFixture().recognition; return {
-      text: "ALLIANCE DUEL\nToday's Duel\nTrain Heroes\n23:39:25\n[TEST]Jordan Vale\n23,340,000\n[OTHER]Morgan Reed\n19,317,601",
+      text: "ALLIANCE DUEL\nToday's Duel\nTrain Heroes\n23:39:25\n[TEST]Jordan Vale\n23,340,000\n[TEST]Morgan Reed\n19,317,601",
       words: [
         { text: "[TEST]Jordan", x: 150, y: 350, width: 140, height: 26 }, { text: "Vale", x: 300, y: 350, width: 60, height: 26 },
         { text: "23,340,000", x: 220, y: 395, width: 180, height: 26 },
-        { text: "[OTHER]Morgan", x: 150, y: 460, width: 180, height: 26 }, { text: "Reed", x: 340, y: 460, width: 65, height: 26 },
+        { text: "[TEST]Morgan", x: 150, y: 460, width: 180, height: 26 }, { text: "Reed", x: 340, y: 460, width: 65, height: 26 },
         { text: "19,317,601", x: 220, y: 505, width: 180, height: 26 },
       ],
     }; },

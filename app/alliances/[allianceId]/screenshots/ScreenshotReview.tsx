@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Card, Badge } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import type { Recognition, VsReview } from "@/app/src/lib/ocr/recognition";
+import { allianceRejectionMessage, isAllianceRejection } from "@/app/src/lib/ocr/allianceEvidence";
 
 type Attempt = { id: string; createdAt: string; expiresAt: string; actorName: string; actorRole: string; playerName: string; status: string; outcome: string | null };
 type Result = { recognition: Recognition; review: VsReview; attempt: Attempt;
@@ -55,6 +56,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
       const attempt = body as Attempt;
       if (token !== operation.current) return;
       setAdditionalAttempts(previous => [attempt, ...previous.filter(a => a.id !== attempt.id)].slice(0, 20));
+      if (isAllianceRejection(attempt)) { setFile(null); setMessage(allianceRejectionMessage(attempt.outcome)); return; }
       if (attempt.status !== "READY") { setMessage("This attempt has not completed. It will not be sent again automatically. Reload to check its history."); return; }
       const next = await readResult(attempt.id);
       if (token === operation.current) { setResult(next); setFile(null); setMessage("Recognition is ready to review. No scores were changed."); }
@@ -71,6 +73,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
       <section className="min-w-0 space-y-4" aria-labelledby="screenshot-heading">
         <Card><h2 id="screenshot-heading" className="text-lg font-semibold">1. Choose a daily VS screenshot</h2>
           <p className="mt-2 text-sm text-text-secondary">Keep the full Alliance Duel screen, player names, scores and countdown visible. PNG or JPEG, up to 2 MB.</p>
+          {initial.leader && <p className="mt-2 text-sm text-text-secondary">Only this alliance&apos;s screenshots are accepted. Different, mixed or unreadable alliances are blocked, with no override. Reading an image to check its alliance still uses one scan reservation.</p>}
           <label htmlFor="vs-screenshot" className="mt-4 block text-sm font-medium">Screenshot</label>
           <input ref={input} id="vs-screenshot" type="file" accept="image/png,image/jpeg" disabled={busy} className="mt-2 block w-full min-w-0 rounded-lg border border-border p-2 text-sm focus:outline-2 focus:outline-primary"
             onChange={event => { const selected = event.target.files?.[0] ?? null; setResult(null); setMessage(""); setConsent(false);
@@ -114,7 +117,8 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
       <p className="mb-4 mt-1 text-sm text-text-muted">Latest 20 attempts · Times in UTC · This is upload history, not accepted score history.</p>
       {attempts.length === 0 ? <Card><p className="text-sm text-text-secondary">No screenshot evaluations yet.</p></Card> : <ol className="grid gap-3 lg:grid-cols-2">{attempts.map(attempt => <li key={attempt.id} className="min-w-0 rounded-xl border border-border bg-surface p-4">
         <p className="break-words font-medium">{attempt.playerName}</p><p className="mt-1 break-words text-sm text-text-secondary">{attempt.actorName} · {attempt.actorRole.toLowerCase()} · {date(attempt.createdAt)} UTC</p>
-        <p className="mt-2 text-sm text-text-muted">{attempt.status === "READY" ? "Recognition complete" : attempt.status === "FAILED" ? "Scan failed — no automatic retry" : "Processing or interrupted — no automatic retry"}</p>
+        <p className="mt-2 text-sm text-text-muted">{attempt.status === "READY" ? "Recognition complete" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Scan failed — no automatic retry" : "Processing or interrupted — no automatic retry"}</p>
+        {isAllianceRejection(attempt) && <p className="mt-2 text-sm text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}
         <div className="mt-3"><Button variant="secondary" disabled={busy || attempt.status !== "READY"} onClick={() => inspect(attempt)}>Review scan</Button></div>
       </li>)}</ol>}
     </section>

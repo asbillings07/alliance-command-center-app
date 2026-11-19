@@ -5,11 +5,12 @@ import { Badge, Card } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { RankingScreenshotDialog } from "./RankingScreenshotDialog";
 import { rankingWindow, reconcileOverlap, showCurrentDayProgress, type RankingReview, type RosterMember } from "@/app/src/lib/ocr/ranking";
+import { allianceRejectionMessage, isAllianceRejection } from "@/app/src/lib/ocr/allianceEvidence";
 
-type Attempt = { id: string; status: string; createdAt: string; actorName: string; actorRole: string };
+type Attempt = { id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
 type Result = { attempt: Attempt; batchReview: RankingReview; contextChanged: boolean };
-type Item = { requestId: string; file: File | null; state: "queued" | "reading" | "ready" | "failed"; error?: string; result?: Result };
-type Props = { allianceId: string; initial: { contextKey: string; members: RosterMember[]; attempts: Attempt[] }; synthetic: boolean };
+type Item = { requestId: string; file: File | null; state: "queued" | "reading" | "ready" | "failed" | "blocked"; error?: string; result?: Result };
+type Props = { allianceId: string; initial: { contextKey: string; allianceName: string; server: string; members: RosterMember[]; attempts: Attempt[] }; synthetic: boolean };
 const statusText = { exact: "Exact name candidate", suggested: "Suggested match — confirm the name", ambiguous: "Ambiguous roster name", unmatched: "No roster match", invalid: "Unreadable name or score", archived: "Archived member — review required" };
 
 export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
@@ -31,6 +32,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
   const unresolvedImages = items.filter(item => item.state !== "ready" || !item.result?.batchReview.rows.length || item.result.contextChanged).length;
   const queued = items.filter(i => i.state === "queued");
   const existing = initial.attempts.filter(a => !results.some(r => r.attempt.id === a.id));
+  const calendarReady = results.length > 0 && results.every(r => rankingWindow(r.batchReview.context, week, captureDate));
 
   function invalidate() { setReviewed(false); setDateConfirmed(false); setExcluded([]); }
   async function read(id: string): Promise<Result> {
@@ -50,6 +52,10 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
         form.set("consent", "true"); form.set("contextKey", initial.contextKey); form.set("retryFailed", String(retryFailed));
         const response = await fetch(endpoint, { method: "POST", body: form }); const attempt = await response.json();
         if (!response.ok) throw new Error(attempt.error || "This screenshot did not complete.");
+        if (isAllianceRejection(attempt)) {
+          if (active.current) setItems(previous => previous.map(p => p.requestId === item.requestId ? { ...p, file: null, state: "blocked", error: allianceRejectionMessage(attempt.outcome) } : p));
+          cancel.current = true; break;
+        }
         if (attempt.status !== "READY") throw new Error("This attempt failed or is still pending. It was not sent again. Check upload history before starting another scan.");
         const result = await read(attempt.id);
         if (active.current) setItems(previous => {
@@ -74,6 +80,8 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
     <div className="rounded-xl border border-border bg-surface p-4"><div className="flex flex-wrap items-center gap-3"><Badge variant="info">{synthetic ? "Synthetic test fixture" : "Recognition trial"}</Badge><strong>Review only · Scores are not saved</strong></div>
       <p className="mt-2 text-sm text-text-secondary">Upload the ranking capture once. Review every recognized member here, without opening individual member pages.</p></div>
     <Card><h2 className="text-lg font-semibold">1. Add your ranking screenshots</h2>
+      <p className="mt-2 text-sm font-medium">Capturing for {initial.allianceName} · Server {initial.server}</p>
+      <p className="mt-2 text-sm text-text-secondary">Only this alliance&apos;s screenshots are accepted. Keep the alliance tag or name visible for every row; use Your Alliance in the game to filter rankings. Different, mixed or unreadable alliances are blocked, with no leader override. Reading an image to check its alliance still uses one scan reservation.</p>
       <p className="mt-2 text-sm text-text-secondary">Keep the selected weekday or Weekly Rank visible on every image, with the full names and points. PNG or JPEG, up to 2 MB each. Choose up to 20 images; scans also have a daily account limit.</p>
       <label htmlFor="ranking-screenshots" className="mt-4 block font-medium">Ranking screenshots</label>
       <input id="ranking-screenshots" ref={input} type="file" accept="image/png,image/jpeg" multiple disabled={busy} className="mt-2 block w-full min-w-0 rounded-lg border border-border p-2 text-sm focus:outline-2 focus:outline-primary"
@@ -81,12 +89,12 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
           if (files.length + items.length > 20 || files.some(f => f.size > 2 * 1024 * 1024 || !["image/png", "image/jpeg"].includes(f.type))) { setMessage("Choose up to 20 PNG or JPEG images, each no larger than 2 MB."); event.target.value = ""; return; }
           setItems(previous => [...previous, ...files.map(file => ({ file, requestId: crypto.randomUUID(), state: "queued" as const }))]); setConsent(false); setRetryFailed(false); invalidate(); setMessage(""); event.target.value = ""; }} />
       {items.length > 0 && <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{items.map((item, index) => <li key={item.requestId} className="min-w-0 rounded-lg border border-border p-3 text-sm">
-        <strong>Screenshot {index + 1}</strong><p className="mt-1 text-text-secondary">{item.state === "ready" ? item.result!.batchReview.context.label : item.state === "reading" ? "Reading…" : item.state === "failed" ? "Needs attention" : "Queued"}</p>
+        <strong>Screenshot {index + 1}</strong><p className="mt-1 text-text-secondary">{item.state === "ready" ? item.result!.batchReview.context.label : item.state === "reading" ? "Reading…" : item.state === "blocked" ? "Blocked — alliance check" : item.state === "failed" ? "Needs attention" : "Queued"}</p>
         {item.error && <p className="mt-2 break-words text-warning-light">{item.error}</p>}
-        {!busy && (item.state === "failed" || item.state === "queued") && <div className="mt-3"><Button variant="secondary" onClick={() => {setItems(previous => previous.filter(p => p.requestId !== item.requestId)); invalidate();}}>Remove screenshot {index + 1} from review</Button></div>}
+        {!busy && (item.state === "failed" || item.state === "queued" || item.state === "blocked") && <div className="mt-3"><Button variant="secondary" onClick={() => {setItems(previous => previous.filter(p => p.requestId !== item.requestId)); invalidate();}}>Remove screenshot {index + 1} from review</Button></div>}
         {item.result && <div className="mt-3"><Button variant="secondary" onClick={() => setSource({ result: item.result!, title: `Screenshot ${index + 1}` })}>View screenshot {index + 1}</Button></div>}
       </li>)}</ol>}
-      {(initial.attempts.some(a => a.status === "FAILED") || items.some(i => i.state === "failed")) && <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={retryFailed} disabled={busy || !queued.length} onChange={e => setRetryFailed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
+      {(initial.attempts.some(a => a.status === "FAILED" && !isAllianceRejection(a)) || items.some(i => i.state === "failed")) && <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={retryFailed} disabled={busy || !queued.length} onChange={e => setRetryFailed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
         <span>Start a new attempt for failed images I selected again. Each reserves another $0.01 from the $5 trial cap. Earlier failures stay in history. Completed scans are reused.</span></label>}
       <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={consent} disabled={busy || !queued.length} onChange={e => setConsent(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
         <span>I can share these screenshots with ACC and Google Cloud for text recognition. Prepared images and recognized text are available for 30 days, then scheduled for deletion. Upload history is retained.</span></label>
@@ -95,10 +103,13 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
           : <Button variant="secondary" disabled={!items.length} onClick={() => { setItems([]); setSource(null); setConsent(false); invalidate(); setMessage("Review cleared. Retained scans remain in upload history."); }}>Clear review</Button>}</div>
     </Card>
     <section aria-labelledby="batch-review-heading"><h2 id="batch-review-heading" className="text-lg font-semibold">2. Review all recognized members</h2>
-      <div className="my-4 grid gap-4 md:grid-cols-2"><label className="grid gap-2 text-sm font-medium">Week beginning (Monday)<input type="date" value={week} onChange={e => { setWeek(e.target.value); invalidate(); }} className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-base" /></label>
+      <h3 className="mt-4 font-semibold">Confirm the screenshot dates</h3>
+      <p className="mt-2 text-sm text-text-secondary">Choose the Monday that starts the week these screenshots came from. Check the dates shown below, then tick the confirmation box once for this batch. Review different weeks separately. A weekday in an image does not tell us which calendar week it belongs to.</p>
+      <div className="my-4 grid gap-4 md:grid-cols-2"><label className="grid gap-2 text-sm font-medium">Week beginning (Monday)<input id="ranking-calendar-week" type="date" value={week} onChange={e => { setWeek(e.target.value); invalidate(); }} className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-base" /></label>
         {results.some(r => r.batchReview.context.kind === "today") && <label className="grid gap-2 text-sm font-medium">Game date shown as Today&apos;s Duel<input type="date" value={captureDate} onChange={e => { setCaptureDate(e.target.value); invalidate(); }} className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-base" /></label>}</div>
       <p className="text-sm text-text-secondary">The selected source tab determines daily versus weekly results. Choose the week these images came from; the upload date is not evidence of their game date.</p>
-      <label className="my-4 flex items-start gap-3 text-sm"><input type="checkbox" checked={dateConfirmed} onChange={e => { setDateConfirmed(e.target.checked); setReviewed(false); }} className="mt-1 h-4 w-4 shrink-0 accent-primary" /><span>I have checked the calendar context for these screenshots.</span></label>
+      {results.length > 0 && <ul className="mt-3 space-y-1 text-sm">{items.map((item, i) => item.result && (() => { const window = rankingWindow(item.result.batchReview.context, week, captureDate); return <li key={item.requestId}>Screenshot {i + 1} · {item.result.batchReview.context.label}: {window?.startsWith("week:") ? `week beginning ${window.slice(5)}` : window || "Choose the correct week or game date above"}</li>; })())}</ul>}
+      <label className="my-4 flex items-start gap-3 text-sm"><input type="checkbox" checked={dateConfirmed} disabled={!calendarReady} onChange={e => { setDateConfirmed(e.target.checked); setReviewed(false); }} className="mt-1 h-4 w-4 shrink-0 accent-primary" /><span>I have checked the calendar context for these screenshots.</span></label>
       {items.map((item, i) => item.result && (() => { const r = item.result; return <div key={r.attempt.id} className="mb-3 text-sm">
         {(r.batchReview.context.kind === "missing" || !r.batchReview.rows.length) && <p className="rounded-lg border border-warning p-3 text-warning-light">Screenshot {i + 1}: {r.batchReview.context.kind === "missing" ? "The selected weekday or Weekly Rank could not be verified. Upload an uncropped image with the selection visible." : "No complete name-and-score rows could be read. Check the image and use a clearer capture."}</p>}
         {r.contextChanged && <p className="rounded-lg border border-warning p-3 text-warning-light">The roster or access changed since screenshot {i + 1}. This is historical evidence; refresh and start a new review before using it.</p>}
@@ -108,7 +119,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
       {grouped.length === 0 ? <Card><p className="text-text-secondary">Recognized names and scores will appear together here.</p></Card> : <ol className="grid gap-3 lg:grid-cols-2">{grouped.map(({ row, sources, conflict }) => {
         const key = `${row.attemptId}:${row.key}`; const skip = excluded.includes(key);
         return <li key={key} className="min-w-0 rounded-xl border border-border bg-surface p-4"><div className="flex flex-wrap justify-between gap-2"><strong className="break-words">{row.sourceName || "Unreadable name"}</strong><strong className="tabular-nums">{row.value?.toLocaleString("en-US") ?? row.sourceValue}</strong></div>
-          <p className="mt-2 text-sm text-text-secondary">{row.window?.startsWith("week:") ? `Weekly total · week of ${row.window.slice(5)}` : row.window ? `Daily score · ${row.window}` : "Calendar context needs review"}</p>
+          <p className="mt-2 text-sm text-text-secondary">{row.window?.startsWith("week:") ? `Weekly total · week of ${row.window.slice(5)}` : row.window ? `Daily score · ${row.window}` : <>Calendar context needs review — <a href="#ranking-calendar-week" className="text-primary-light underline">choose the week and confirm the dates above</a>.</>}</p>
           <p className="mt-2 text-sm text-text-secondary">{statusText[row.status]}{row.status !== "exact" && row.matchedName ? `: ${row.matchedName}` : ""}</p>
           {row.allianceLabel && <p className="mt-1 break-words text-sm text-text-muted">Source alliance: {row.allianceLabel}</p>}
           {conflict && <p className="mt-2 text-sm text-warning-light">These images show different values for the same member and result window. No value has been chosen automatically.</p>}
@@ -119,6 +130,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
         </li>;
       })}</ol>}
       {grouped.length > 0 && <div className="mt-4 rounded-lg border border-border p-4 text-sm"><p>Ranking tabs identify the score&apos;s period. No timer does not prove completion. Weekly totals stay separate from daily scores and are never added to them.</p>
+        <p className="mt-2 text-text-secondary">Monday and Weekly Rank can be reviewed together for the same week. A weekly total includes daily scores; it does not replace them or tell us the missing days. This trial flags conflicting values for the same day or week, but does not yet compare weekly totals against the daily scores. Upload order does not establish when a screenshot was taken.</p>
         <p className="mt-2 text-text-secondary">This trial stops at recognition review. Name exceptions, lower-score confirmation and saving through the shared score-history rules will be available in the next submission step.</p>
         <div className="mt-4"><Button disabled={busy || pending.length > 0 || unresolvedImages > 0 || !chosen.length} onClick={() => { setReviewed(true); setMessage("Recognition review complete. No member scores or reports were changed."); }}>Finish recognition review</Button></div>
         {reviewed && <p className="mt-3 text-primary-light">Recognition reviewed · No scores saved</p>}</div>}
@@ -130,7 +142,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
       onClose={() => setSource(null)} />}
     <p role="status" aria-live="polite" className="break-words text-sm text-text-secondary">{message}</p>
     <section><h2 className="text-lg font-semibold">Ranking upload history</h2><p className="mt-1 text-sm text-text-muted">Latest 20 captures · Reopening a scan does not send it to Google again. To retry a failed image, select it again and explicitly confirm a new paid attempt above.</p>
-      <ol className="mt-3 grid gap-3 md:grid-cols-2">{existing.map(attempt => <li key={attempt.id} className="min-w-0 rounded-lg border border-border p-3 text-sm"><p className="break-words">{attempt.actorName} · {new Date(attempt.createdAt).toISOString()}</p><div className="mt-2"><Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : "Failed or pending — not retried"}</Button></div></li>)}</ol>
+      <ol className="mt-3 grid gap-3 md:grid-cols-2">{existing.map(attempt => <li key={attempt.id} className="min-w-0 rounded-lg border border-border p-3 text-sm"><p className="break-words">{attempt.actorName} · {new Date(attempt.createdAt).toISOString()}</p>{isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}<div className="mt-2"><Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : isAllianceRejection(attempt) ? "Blocked — alliance check" : "Failed or pending — not retried"}</Button></div></li>)}</ol>
     </section>
   </div>;
 }

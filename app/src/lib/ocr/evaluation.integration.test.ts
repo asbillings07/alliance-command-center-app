@@ -38,7 +38,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     const suffix = crypto.randomUUID();
     actorId = (await db.user.create({ data: { email: `ocr-owner-${suffix}@example.test`, displayName: "Morgan Owner" } })).id;
     accountId = (await db.user.create({ data: { email: `ocr-member-${suffix}@example.test`, displayName: "Jordan Account" } })).id;
-    allianceId = (await db.alliance.create({ data: { name: `OCR ${suffix}`, server: "956" } })).id;
+    allianceId = (await db.alliance.create({ data: { name: "TEST", server: `956-${suffix}` } })).id;
     await db.allianceMembership.create({ data: { allianceId, userId: actorId, role: "LEADER" } });
     memberId = (await db.allianceMember.create({ data: { allianceId, playerName: "Jordan Vale", userId: accountId } })).id;
     bytes = await sharp({ create: { width: 500, height: 700, channels: 3, background: "#112233" } }).png().toBuffer();
@@ -55,6 +55,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
   });
   it("reads a whole ranking capture once without member links or accepted metric writes", async () => {
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
+    await db.alliance.update({ where: { id: allianceId }, data: { name: "QA" } });
     const fixture = rankingFixture();
     bytes = await sharp(Buffer.from(fixture.svg)).png().toBuffer();
     vi.mocked(transport.recognize).mockResolvedValue(fixture.recognition);
@@ -75,6 +76,64 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     await expect(loadEvaluationContext({ ...batch, memberId })).rejects.toThrow("either");
     expect(await db.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })).toBe(0);
     expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 1, reservedMicros: 10000 });
+  });
+  it.each(["mismatch", "mixed", "missing"])("blocks %s alliance evidence despite an exact roster name and cannot retry it", async outcome => {
+    const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
+    await db.alliance.update({ where: { id: allianceId }, data: { name: "QA" } });
+    const fixture = rankingFixture();
+    bytes = await sharp(Buffer.from(fixture.svg)).png().toBuffer();
+    let i = 0;
+    const words = fixture.recognition.words.flatMap(w => {
+      if (!w.text.startsWith("[")) return [w];
+      return outcome === "missing" ? [] : [{ ...w, text: outcome === "mismatch" || i++ === 1 ? "[OTHER] Foreign" : w.text }];
+    });
+    vi.mocked(transport.recognize).mockResolvedValue({ ...fixture.recognition, words });
+    const first = await evaluateScreenshot(await input(batch), transport);
+    expect(first).toMatchObject({ status: "FAILED", outcome: `alliance-${outcome}` });
+    expect((await evaluateScreenshot({ ...await input(batch), retryFailed: true }, transport)).id).toBe(first.id);
+    for (const kind of ["result", "image"] as const) {
+      await expect(readEvaluationContent(batch, first.id, kind, transport)).rejects.toThrow("No results were added");
+    }
+    expect(transport.recognize).toHaveBeenCalledTimes(1);
+    expect(transport.read).not.toHaveBeenCalled();
+    expect(objects.has(`${first.id}/recognition.json`)).toBe(true);
+    expect(await db.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })).toBe(0);
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 1, reservedMicros: 10000 });
+  });
+  it("also enforces the source alliance on the individual leader route", async () => {
+    vi.mocked(transport.recognize).mockResolvedValue({ ...recognition, words: recognition.words.map(w => ({ ...w, text: w.text.replace("[TEST]", "[OTHER]") })) });
+    expect(await evaluateScreenshot(await input(), transport)).toMatchObject({ status: "FAILED", outcome: "alliance-mismatch" });
+  });
+  it("reauthorizes older READY source evidence for both results and direct image requests", async () => {
+    const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
+    const saved = await evaluateScreenshot(await input(batch), transport);
+    const path = `${saved.id}/recognition.json`;
+    const legacy = JSON.parse(Buffer.from(objects.get(path)!).toString());
+    legacy.words[0].text = "[OTHER]Jordan Vale";
+    // Model a retained pre-policy READY response, without rewriting its audit.
+    objects.set(path, Buffer.from(JSON.stringify(legacy)));
+    for (const kind of ["result", "image"] as const) {
+      await expect(readEvaluationContent(batch, saved.id, kind, transport)).rejects.toThrow("does not match the alliance");
+    }
+    expect(transport.read).not.toHaveBeenCalledWith(`${saved.id}/source.png`, expect.anything());
+    expect(transport.recognize).toHaveBeenCalledTimes(1);
+    expect(await db.ocrEvaluationAttempt.findUniqueOrThrow({ where: { id: saved.id } })).toMatchObject({ status: "READY", outcome: "recognition-ready" });
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 1, reservedMicros: 10000 });
+  });
+  it("blocks a changed alliance identity while a source read is in flight", async () => {
+    const saved = await evaluateScreenshot(await input(), transport);
+    vi.mocked(transport.read).mockImplementation(async name => {
+      if (name.endsWith("source.png")) await db.alliance.update({ where: { id: allianceId }, data: { server: "changed-server" } });
+      return objects.get(name)!;
+    });
+    await expect(readEvaluationContent(leader(), saved.id, "image", transport)).rejects.toThrow("alliance identity changed");
+  });
+  it("denies an account outside the alliance before any provider operation", async () => {
+    await db.allianceMembership.delete({ where: { allianceId_userId: { allianceId, userId: actorId } } });
+    await expect(evaluateScreenshot({ allianceId, actorId, memberId: null, scope: "batch", requestId: crypto.randomUUID(), contextKey: "forged", bytes, consent: true }, transport)).rejects.toThrow("permission");
+    expect(transport.preflight).not.toHaveBeenCalled();
+    expect(transport.recognize).not.toHaveBeenCalled();
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 0, reservedMicros: 0 });
   });
   it("requires an unchanged batch roster before spending and rechecks Leader access after storage", async () => {
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };

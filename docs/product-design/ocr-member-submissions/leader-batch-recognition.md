@@ -9,13 +9,25 @@ Use the permanent [OCR QA origin](https://alliance-command-center-env-acc-ocr-ev
 ## Source context
 
 - A ranking image must visibly establish the highlighted Daily Rank tab plus one selected weekday, or the highlighted Weekly Rank tab. Merely reading both labels is insufficient. Missing or ambiguous selection leaves the image unresolved.
-- A weekday is not a calendar date. The reviewer selects a Monday week start and confirms the calendar context. Weekly totals retain a distinct weekly window and are never added to daily scores.
+- A weekday is not a calendar date. The reviewer selects a Monday week start, sees each screenshot's resulting date/window, and confirms once for the batch. Different weeks need separate reviews. Weekly totals retain a distinct weekly window and are never added to daily scores.
 - Today's Duel is a separate supported layout. Only a confirmed current game date plus a nonzero visible countdown produces a current-day progress notice. The fixed reset is 01:00 UTC; local daylight-saving changes do not shift it.
 - Absence of a countdown never establishes finality. Neither upload time nor an editable date proves when the image was captured.
 
 ## Matching and review
 
 The existing source-neutral import matcher supplies roster suggestions and the canonical integer parser validates points. Full exact names remain distinct from fuzzy suggestions, duplicate names, unreadable values and archived members. Each candidate retains its image reference. Identical overlaps collapse only for an exact member and the same confirmed result window; conflicting values remain unresolved.
+
+Monday and Weekly Rank for the same member/week can coexist in one review: the weekly total includes Monday, so the two are neither summed nor treated as competing values. The current slice does **not** compare weekly totals against daily observations. That future comparison must account for incomplete daily coverage and different capture times, flag inconsistencies for leadership, and never invent missing daily results. Upload order is not capture-time evidence.
+
+### Source alliance boundary — owner QA correction
+
+A leader may capture results only for an alliance in which they hold the existing import permission, and the screenshot itself must match that alliance. This is a hard source-alliance boundary, distinct from the future leader override for a member-name discrepancy. There is no source-alliance override.
+
+The server compares visible row alliance tags/full names against the saved alliance name, using only Unicode normalization, whitespace and case normalization. There is no fuzzy, accent-stripping or substring match. The current alliance model has one name, not a separately verified tag; either an exact tag or exact full-name match is supported. A configured `[TAG] Full name` must agree with both when shown. Missing/unreadable row evidence, mixed alliances, nonmatching alliances and a reliably associated conflicting server are blocked. A ranking without a server number does not establish server identity. The in-game **Your Alliance** filter is guidance, not identity proof; matching player names cannot override contradictory alliance evidence.
+
+New source rejections preserve a terminal `FAILED` audit with a specific `alliance-*` outcome, the consumed reservation and private retention schedule. They expose no result candidates or private source through the review API and cannot use the processing-failure paid retry control. The queue stops for review without dispatching unstarted files. Removing a blocked item only removes it from the current review. Older `READY` scans are requalified on every result/image read without rewriting history or calling Google again. Individual leader uploads use the same source check. Ordinary-member eligibility remains unchanged.
+
+The private trial alliance is synthetic. Earlier real samples from a different alliance remain historical provider/parser evidence; they must now be blocked when reopened in that synthetic alliance. Do not rename the QA alliance to turn those samples into an apparent successful qualification.
 
 This slice stops at recognition review. It does not insert accepted metric entries or change reports. Member identity blockers, leader mismatch resolution, lower-score confirmation, authoritative provenance and final-score acceptance must be connected through the shared score-acceptance contract (#400 / PR #401), not bypassed via the existing weekly import writer.
 
