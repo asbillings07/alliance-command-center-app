@@ -34,7 +34,7 @@ export function ocrEvaluationVisible() {
 export function requireOcrEvaluation(allianceId: string) {
   if (!ocrEvaluationVisible()) throw new OcrEvaluationError("Screenshot evaluation is not enabled here.");
   // The reviewed preview explicitly disables telemetry rather than relying on
-  // SDK defaults to scrub screenshot/request content. Production is untouched.
+  // SDK defaults to scrub screenshot/request content. The live pilot filters server events and disallows browser telemetry.
   if ((process.env.SENTRY_DSN && !productionPilotConfigured()) || process.env.NEXT_PUBLIC_SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_REPLAY === "true") {
     throw new OcrEvaluationError("Screenshot evaluation is awaiting its privacy configuration.");
   }

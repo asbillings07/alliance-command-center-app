@@ -1,8 +1,8 @@
-import { checkOcrDeploymentIsolation } from "@/app/src/lib/ocr/deploymentIsolation";
+import { originalOcrAllowanceDatabase } from "@/app/src/lib/ocr/deploymentIsolation";
 import { pilotReservationId, reservePilotAllowance } from "@/app/src/lib/ocr/pilotAllowance";
 
 export async function POST(request: Request) {
-  if (process.env.OCR_PILOT_RESERVATIONS !== "true" || checkOcrDeploymentIsolation(process.env).length) {
+  if (process.env.OCR_PILOT_RESERVATIONS !== "true" || !originalOcrAllowanceDatabase(process.env)) {
     return new Response(null, { status: 404 });
   }
   const id = await pilotReservationId(request.headers.get("authorization"));
