@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Card } from "@/app/src/components";
-import { Button } from "@/app/src/components/client";
+import { Button, ConfirmDialog } from "@/app/src/components/client";
 import { LocalTimestamp } from "./LocalTimestamp";
 import { RankingScreenshotDialog } from "./RankingScreenshotDialog";
 import { AllianceBatchDialog } from "./AllianceBatchDialog";
@@ -22,6 +22,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
   const [retryFailed, setRetryFailed] = useState(false);
   const [notice, setNotice] = useState<ReturnType<typeof allianceBatchNotice>>(null);
   const [dateConfirmed, setDateConfirmed] = useState(false); const [consent, setConsent] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [source, setSource] = useState<{ result: Result; title: string } | null>(null);
   const [excluded, setExcluded] = useState<string[]>([]); const [reviewed, setReviewed] = useState(false);
   const cancel = useRef(false); const active = useRef(true); const input = useRef<HTMLInputElement>(null);
@@ -36,9 +37,10 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
   const unresolvedImages = items.filter(item => item.state !== "ready" || !item.result?.batchReview.rows.length || item.result.contextChanged).length;
   const queued = items.filter(i => i.state === "queued");
   const existing = initial.attempts.filter(a => !items.some(item => item.attemptId === a.id || item.result?.attempt.id === a.id));
-  const calendarReady = results.length > 0 && results.every(r => rankingWindow(r.batchReview.context, week, captureDate));
+  const weekInvalid = !!week && !rankingWindow({ kind: "weekly", label: "Weekly Rank" }, week);
+  const calendarReady = !busy && !weekInvalid && results.length > 0 && results.every(r => !r.contextChanged && rankingWindow(r.batchReview.context, week, captureDate));
 
-  function invalidate() { setNotice(null); setReviewed(false); setDateConfirmed(false); setExcluded([]); }
+  function invalidate() { setNotice(null); setReviewed(false); setDateConfirmed(false); setCalendarOpen(false); setExcluded([]); }
   async function read(id: string): Promise<Result> {
     const response = await fetch(`${endpoint}&id=${encodeURIComponent(id)}&kind=result`, { cache: "no-store" });
     const result = await response.json(); if (!response.ok) throw Object.assign(new Error(result.error || "This scan is unavailable."), { outcome: result.outcome });
@@ -47,7 +49,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
   }
   async function scan() {
     if (busy || !consent || !queued.length) return;
-    cancel.current = false; setBusy(true); setMessage(""); setReviewed(false); setNotice(null);
+    cancel.current = false; setBusy(true); setMessage(""); invalidate();
     let nextItems = items;
     function update(requestId: string, patch: Partial<Item>) {
       nextItems = nextItems.map(item => item.requestId === requestId ? { ...item, ...patch } : item);
@@ -142,12 +144,19 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
     </Card>
     <section aria-labelledby="batch-review-heading"><h2 id="batch-review-heading" className="text-lg font-semibold">2. Review all recognized members</h2>
       <h3 className="mt-4 font-semibold">Confirm the screenshot dates</h3>
-      <p className="mt-2 text-sm text-text-secondary">Choose the Monday that starts the week these screenshots came from. Check the dates shown below, then tick the confirmation box once for this batch. Review different weeks separately. A weekday in an image does not tell us which calendar week it belongs to.</p>
-      <div className="my-4 grid gap-4 md:grid-cols-2"><label className="grid gap-2 text-sm font-medium">Week beginning (Monday)<input id="ranking-calendar-week" type="date" value={week} onChange={e => { setWeek(e.target.value); invalidate(); }} className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-base" /></label>
-        {results.some(r => r.batchReview.context.kind === "today") && <label className="grid gap-2 text-sm font-medium">Game date shown as Today&apos;s Duel<input type="date" value={captureDate} onChange={e => { setCaptureDate(e.target.value); invalidate(); }} className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-base" /></label>}</div>
-      <p className="text-sm text-text-secondary">The selected source tab determines daily versus weekly results. Choose the week these images came from; the upload date is not evidence of their game date.</p>
+      <p className="mt-2 text-sm text-text-secondary">Choose the Monday that starts the week these screenshots came from, then review and confirm each resulting date. Review different weeks separately. A weekday in an image does not tell us which calendar week it belongs to.</p>
+      <div className="my-4 grid gap-4 md:grid-cols-2"><label className="grid gap-2 text-sm font-medium">Week beginning (Monday)<input id="ranking-calendar-week" type="date" value={week} disabled={busy} aria-invalid={weekInvalid} aria-describedby={weekInvalid ? "ranking-week-error" : undefined} onChange={e => { setWeek(e.target.value); invalidate(); }} className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-base" /></label>
+        {results.some(r => r.batchReview.context.kind === "today") && <label className="grid gap-2 text-sm font-medium">Game date shown as Today&apos;s Duel<input type="date" value={captureDate} disabled={busy} onChange={e => { setCaptureDate(e.target.value); invalidate(); }} className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-base" /></label>}</div>
+      {weekInvalid && <p id="ranking-week-error" role="alert" className="mb-3 rounded-lg border border-warning p-3 text-sm text-warning-light">Choose a Monday for the start of the week. This field selects the week, not a replacement day for the screenshot. The detected weekday cannot be changed.</p>}
+      <p className="text-sm text-text-secondary">A Monday screenshot stays on Monday, and a Tuesday screenshot stays on Tuesday within the chosen week. Weekly Rank stays a separate weekly total. The upload date is not evidence of the game date.</p>
       {results.length > 0 && <ul className="mt-3 space-y-1 text-sm">{items.map((item, i) => item.result && (() => { const window = rankingWindow(item.result.batchReview.context, week, captureDate); return <li key={item.requestId}>Screenshot {i + 1} · {item.result.batchReview.context.label}: {window?.startsWith("week:") ? `week beginning ${window.slice(5)}` : window || "Choose the correct week or game date above"}</li>; })())}</ul>}
-      <label className="my-4 flex items-start gap-3 text-sm"><input type="checkbox" checked={dateConfirmed} disabled={!calendarReady} onChange={e => { setDateConfirmed(e.target.checked); setReviewed(false); }} className="mt-1 h-4 w-4 shrink-0 accent-primary" /><span>I have checked the calendar context for these screenshots.</span></label>
+      <div className="my-4"><Button variant="secondary" disabled={!calendarReady} onClick={() => setCalendarOpen(true)}>Review screenshot dates</Button>
+        {dateConfirmed && <p className="mt-2 text-sm text-primary-light">Screenshot dates confirmed. Changing the week, game date or screenshots requires confirmation again.</p>}</div>
+      {calendarOpen && <ConfirmDialog isOpen onClose={() => setCalendarOpen(false)} title="Use these screenshot dates?" confirmLabel="Confirm dates" confirmDisabled={!calendarReady}
+        description={<div className="space-y-3 text-sm text-text-secondary"><p>Check the detected source day against the date assigned below. You are confirming the calendar week; the screenshot&apos;s weekday will not change.</p>
+          <ul className="space-y-2">{items.map((item, i) => item.result && <li key={item.requestId}><strong>Screenshot {i + 1} · {item.result.batchReview.context.label}</strong><br />{(() => { const window = rankingWindow(item.result.batchReview.context, week, captureDate); return window?.startsWith("week:") ? `Weekly total · week beginning ${window.slice(5)}` : window ? `Daily score · ${window}` : "Date unavailable"; })()}</li>)}</ul>
+          <p>Different daily dates and weekly totals remain separate. If these dates are wrong, cancel and choose the correct week. This recognition review does not save scores.</p></div>}
+        onConfirm={async () => { if (!calendarReady) return { error: "Check the screenshot dates before confirming." }; setDateConfirmed(true); setReviewed(false); }} />}
       {items.map((item, i) => item.result && (() => { const r = item.result; return <div key={r.attempt.id} className="mb-3 text-sm">
         {(r.batchReview.context.kind === "missing" || !r.batchReview.rows.length) && <p className="rounded-lg border border-warning p-3 text-warning-light">Screenshot {i + 1}: {r.batchReview.context.kind === "missing" ? "The selected weekday or Weekly Rank could not be verified. Upload an uncropped image with the selection visible." : "No complete name-and-score rows could be read. Check the image and use a clearer capture."}</p>}
         {r.contextChanged && <p className="rounded-lg border border-warning p-3 text-warning-light">The roster or access changed since screenshot {i + 1}. This is historical evidence; refresh and start a new review before using it.</p>}

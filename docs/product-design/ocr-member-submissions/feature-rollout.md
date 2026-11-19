@@ -19,3 +19,9 @@ The read-only QA ledger before these checks was 13 attempts / $0.13 reserved / 4
 ## Upload-history time display
 
 Owner feedback during rollout qualification requested the viewer's timezone instead of raw UTC. Ranking and individual upload history, source dialogs, retention deadlines and QA name history now format the original ISO instant in the browser's locale/timezone, including a timezone label. Server rendering uses a neutral loading label until hydration; storage, audit order, retention and the fixed game-server day/week rules do not change. Browser regressions cover New York and Tokyo, date rollover, winter/summer offsets and hydration consistency using synthetic history only.
+
+## Human QA navigation and calendar corrections
+
+Owner QA found that dashboard navigation still defaulted to Spreadsheet and that non-Monday week selections lacked a clear explanation. The shared capture route now defaults to Screenshots only when OCR is available for the authorized account/alliance; an explicit `method=spreadsheet` preserves spreadsheet selection, and unavailable OCR keeps the spreadsheet default.
+
+Calendar review now explains that the input selects a week, not a replacement weekday. A non-Monday is visibly invalid and cannot be confirmed. Before assigning date windows to the recognition review, a confirmation dialog lists every screenshot's detected day and resulting date, keeping daily and weekly totals separate. Cancel/Escape leave dates unconfirmed. Changing dates or screenshots invalidates confirmation. A visible source weekday cannot be overridden; no accepted metric writes or new scans are introduced. Browser regressions start at the dashboard and cover explicit spreadsheet selection, invalid dates, confirmation/cancellation and re-confirmation at phone/tablet/desktop widths. Revised Human QA is required before merge.
