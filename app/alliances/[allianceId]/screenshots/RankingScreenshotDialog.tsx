@@ -37,8 +37,8 @@ export function RankingScreenshotDialog({ imageUrl, title, periodLabel, uploaded
     // Strict Mode can reopen after cleanup before the native queued close event arrives.
     if (!event.currentTarget.open) onClose();
   }} aria-labelledby={titleId} aria-describedby={descriptionId}
-    className="fixed inset-0 m-auto w-[calc(100vw-1rem)] max-w-5xl max-h-[calc(100dvh-1rem)] overflow-hidden rounded-xl border border-border bg-surface p-0 text-text-primary shadow-2xl backdrop:bg-black/70">
-    <div className="flex max-h-[calc(100dvh-1rem)] flex-col">
+    className="fixed inset-0 m-auto h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-5xl max-h-[calc(100dvh-1rem)] overflow-hidden rounded-xl border border-border bg-surface p-0 text-text-primary shadow-2xl backdrop:bg-black/70">
+    <div className="flex h-full min-h-0 flex-col">
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border p-4">
         <div className="min-w-0"><h2 id={titleId} className="break-words text-lg font-semibold">{title}</h2>
           <p id={descriptionId} className="mt-1 text-sm text-text-secondary">{periodLabel} · Read-only source preview</p></div>
@@ -56,7 +56,7 @@ export function RankingScreenshotDialog({ imageUrl, title, periodLabel, uploaded
           {/* Private evidence must bypass the public image optimizer. Viewing never dispatches OCR. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={imageUrl} alt="Original ranking screenshot for batch review" referrerPolicy="no-referrer"
-            className="block h-auto" style={enlarged ? { width: "max(100%, 900px)", maxWidth: "none" } : { width: "100%", maxHeight: "65dvh", objectFit: "contain" }}
+            className="block" style={enlarged ? { width: "max(100%, 900px)", maxWidth: "none", height: "auto" } : { width: "100%", height: "100%", objectFit: "contain" }}
             onLoad={() => setLoaded(true)} onError={() => setFailed(true)} />
         </>}
       </div>

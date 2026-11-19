@@ -200,8 +200,24 @@ for (const width of [320, 820, 1280]) {
     expect(box.y).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(width);
     expect(box.y + box.height).toBeLessThanOrEqual(900);
-    await preview.getByRole("button", { name: "Enlarge image", exact: true }).click();
     const imageRegion = preview.getByRole("region", { name: "Screenshot image", exact: true });
+    const fitWithinRegion = async () => {
+      const regionBox = (await imageRegion.boundingBox())!;
+      const imageBox = (await image.boundingBox())!;
+      expect(imageBox.y).toBeGreaterThanOrEqual(regionBox.y);
+      expect(imageBox.x).toBeGreaterThanOrEqual(regionBox.x);
+      expect(imageBox.y + imageBox.height).toBeLessThanOrEqual(regionBox.y + regionBox.height);
+      expect(imageBox.x + imageBox.width).toBeLessThanOrEqual(regionBox.x + regionBox.width);
+    };
+    await fitWithinRegion();
+    if (width === 320) {
+      for (const size of [{width:320,height:480},{width:568,height:320}]) {
+        await page.setViewportSize(size); await fitWithinRegion();
+        await expect(closePreview).toBeInViewport();
+      }
+      await page.setViewportSize({width,height:900});
+    }
+    await preview.getByRole("button", { name: "Enlarge image", exact: true }).click();
     expect(await imageRegion.evaluate(el => el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth)).toBe(true);
     await preview.getByRole("button", { name: "Fit image", exact: true }).click();
     await closePreview.focus();
