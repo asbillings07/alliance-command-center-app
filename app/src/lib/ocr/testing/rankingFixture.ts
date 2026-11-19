@@ -1,7 +1,7 @@
 import type { Recognition, OcrWord } from "../recognition";
 
 // Invented people/data only. The selected tab is expressed in pixels, not text.
-export function rankingFixture(kind: "monday" | "tuesday" | "weekly" | "missing" = "monday") {
+export function rankingFixture(kind: "monday" | "tuesday" | "weekly" | "missing" = "monday", allianceLabel = "[QA] Synthetic") {
   const words: OcrWord[] = [
     { text: "RANKING", x: 20, y: 30, width: 150, height: 30 },
     { text: "Daily", x: 45, y: 100, width: 65, height: 24 }, { text: "Rank", x: 115, y: 100, width: 60, height: 24 },
@@ -11,7 +11,7 @@ export function rankingFixture(kind: "monday" | "tuesday" | "weekly" | "missing"
     { text: "Points", x: 470, y: 245, width: 80, height: 20 },
     ...["Jordan Vale", "Morgan Reed", "Riley Chen"].flatMap((text, i) => [
       { text, x: 180, y: 320 + i * 100, width: 150, height: 22 },
-      { text: "[QA] Synthetic", x: 180, y: 355 + i * 100, width: 150, height: 20 },
+      { text: allianceLabel, x: 180, y: 355 + i * 100, width: 150, height: 20 },
       { text: ["23,340,000", "19,317,601", "17,512,500"][i], x: 430, y: 337 + i * 100, width: 140, height: 22 },
     ]),
   ];

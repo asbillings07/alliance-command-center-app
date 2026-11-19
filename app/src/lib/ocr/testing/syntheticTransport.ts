@@ -19,6 +19,7 @@ export function syntheticOcrTransport(): OcrTransport {
       const failures = state.ocrFixtureFailures ??= new Set();
       if (!failures.has(digest)) {failures.add(digest); throw new Error("Synthetic interrupted recognition");}
     }
+    if (image.width === 602 && image.height === 900) return rankingFixture("monday", "[OTHER] Foreign").recognition;
     if ((image.width === 600 || image.width === 601) && image.height === 900) return rankingFixture().recognition; return {
       text: "ALLIANCE DUEL\nToday's Duel\nTrain Heroes\n23:39:25\n[TEST]Jordan Vale\n23,340,000\n[TEST]Morgan Reed\n19,317,601",
       words: [

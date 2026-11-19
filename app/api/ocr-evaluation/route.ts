@@ -3,12 +3,14 @@ import { evaluateScreenshot, readEvaluationContent } from "@/app/src/lib/ocr/eva
 import { evaluationTransport } from "@/app/src/lib/ocr/transport";
 import { OCR_MAX_INPUT_BYTES, OcrEvaluationError, requireOcrEvaluation } from "@/app/src/lib/ocr/config";
 import { boundedBody } from "@/app/src/lib/ocr/provider";
+import { isAllianceRejection } from "@/app/src/lib/ocr/allianceEvidence";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
-const fail = (error: unknown) => Response.json({ error: error instanceof OcrEvaluationError ? error.message : "Screenshot evaluation is unavailable. Reload to check your access and scan history before trying again." }, { status: 400, headers });
+const fail = (error: unknown) => Response.json({ error: error instanceof OcrEvaluationError ? error.message : "Screenshot evaluation is unavailable. Reload to check your access and scan history before trying again.",
+  ...(error instanceof OcrEvaluationError && isAllianceRejection(error) ? { outcome: error.outcome } : {}) }, { status: 400, headers });
 
 export async function POST(request: Request) {
   if (request.headers.get("origin") !== new URL(request.url).origin) return Response.json({ error: "Reload this page before uploading." }, { status: 403, headers });

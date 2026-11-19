@@ -275,6 +275,8 @@ for (const width of [320, 820, 1280]) {
     expect((await page.request.get(imageUrl)).status()).toBe(400);
     await page.reload();
     await page.getByRole("button", { name: "Add scan to review" }).first().click();
+    await expect(page.getByRole("dialog", { name: "No screenshots match your alliance" })).toBeVisible();
+    await page.getByRole("button", { name: "Back to screenshots", exact: true }).click();
     await expect(page.getByRole("status")).toContainText("does not match the alliance");
     await expect(page.getByRole("button", { name: /View screenshot/ })).toHaveCount(0);
     await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "VIEWER" } });
@@ -282,15 +284,15 @@ for (const width of [320, 820, 1280]) {
   });
 }
 
-for (const width of [320, 820, 1280]) {
-  test(`Leader cannot admit a different alliance screenshot at ${width}px`, async ({ page, login, ownerScenario }) => {
+for (const [width, role] of [[320, "OWNER"], [820, "ADMIN"], [1280, "LEADER"]] as const) {
+  test(`${role} sees every rejected image and an all-mismatch modal at ${width}px`, async ({ page, login, ownerScenario }) => {
     test.setTimeout(120000);
     const { allianceId, userId, email, password } = ownerScenario;
     await prisma.alliance.update({ where: { id: allianceId }, data: { name: "Different Alliance", server: allianceId } });
-    await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "LEADER" } });
+    await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role } });
     await prisma.allianceMember.create({ data: { allianceId, playerName: "Jordan Vale" } });
     await page.setViewportSize({ width, height: 900 });
-    await login({ email, password, displayName: "Leader" });
+    await login({ email, password, displayName: role });
     await page.goto(`/alliances/${allianceId}/screenshots?scope=batch`);
     const files = await Promise.all((["monday", "weekly"] as const).map(async kind => ({
       name: `${kind}.png`, mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture(kind).svg)).png().toBuffer(),
@@ -299,26 +301,112 @@ for (const width of [320, 820, 1280]) {
     await upload.setInputFiles(files);
     await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
     await page.getByRole("button", { name: "Read 2 screenshots", exact: true }).click();
-    await expect(page.getByText(/This screenshot does not match the alliance/).first()).toBeVisible();
-    await expect(page.getByText("Queued", { exact: true })).toHaveCount(1);
+    const dialog = page.getByRole("dialog", { name: "No screenshots match your alliance", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("None of the 2 selected screenshots match");
+    const close = dialog.getByRole("button", { name: "Back to screenshots" });
+    await expect(close).toBeFocused(); await close.press("Tab"); await expect(close).toBeFocused();
+    await close.press("Shift+Tab"); await expect(close).toBeFocused();
+    await checkA11y(page);
+    const bounds = await dialog.boundingBox(); expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0); expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    await close.press("Escape"); await expect(dialog).toHaveCount(0); await expect(upload).toBeFocused();
+    for (const index of [1, 2]) await expect(page.getByRole("listitem", { name: `Screenshot ${index}`, exact: true })).toContainText("This screenshot does not match the alliance");
+    await expect(page.getByText("Queued", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /View screenshot/ })).toHaveCount(0);
     await expect(page.getByRole("checkbox", { name: /Start a new attempt for failed images/ })).toHaveCount(0);
     const attempt = await prisma.ocrEvaluationAttempt.findFirstOrThrow({ where: { allianceId } });
     expect(attempt).toMatchObject({ status: "FAILED", outcome: "alliance-mismatch" });
-    expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(1);
+    expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(2);
     const sourceUrl = `/api/ocr-evaluation?allianceId=${allianceId}&scope=batch&id=${attempt.id}&kind=image`;
-    expect((await page.request.get(sourceUrl)).status()).toBe(400);
-    await checkA11y(page);
+    const rejected = await page.request.get(sourceUrl); expect(rejected.status()).toBe(400);
+    expect(await rejected.json()).toMatchObject({ outcome: "alliance-mismatch" });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByRole("button", { name: "Clear review", exact: true }).click();
     await upload.setInputFiles(files[0]);
     await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
     await page.getByRole("button", { name: "Read 1 screenshots", exact: true }).click();
-    await expect(page.getByText(/This screenshot does not match the alliance/).first()).toBeVisible();
-    expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(1);
+    await expect(dialog).toBeVisible(); await close.click(); await expect(dialog).toHaveCount(0);
+    expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(2);
     expect(await prisma.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })).toBe(0);
   });
 }
+
+for (const [width, role] of [[320, "LEADER"], [820, "OWNER"], [1280, "ADMIN"]] as const) {
+  test(`${role} keeps matching images and marks every mismatch without a modal at ${width}px`, async ({ page, login, ownerScenario }) => {
+    test.setTimeout(120000);
+    const { allianceId, userId, email, password } = ownerScenario;
+    await prisma.alliance.update({ where: { id: allianceId }, data: { name: "QA", server: allianceId } });
+    await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role } });
+    await prisma.allianceMember.createMany({ data: ["Jordan Vale", "Morgan Reed", "Riley Chen"].map(playerName => ({ allianceId, playerName })) });
+    await page.setViewportSize({ width, height: 900 }); await login({ email, password, displayName: role });
+    await page.goto(`/alliances/${allianceId}/screenshots?scope=batch`);
+    const foreign = async (kind: "monday" | "weekly") => ({ name: `foreign-${kind}.png`, mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture(kind, "[OTHER] Foreign").svg)).resize(602,900).png().toBuffer() });
+    await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles([
+      await foreign("monday"), { name: "matching.png", mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture().svg)).png().toBuffer() }, await foreign("weekly"),
+    ]);
+    await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
+    await page.getByRole("button", { name: "Read 3 screenshots", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText("Batch checked");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    for (const index of [1, 3]) await expect(page.getByRole("listitem", { name: `Screenshot ${index}`, exact: true })).toContainText("This screenshot does not match the alliance");
+    await expect(page.getByRole("button", { name: "View screenshot 2", exact: true })).toBeVisible();
+    await expect(page.getByText("3 unique rows", { exact: false })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Finish recognition review" })).toBeDisabled();
+    expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(3);
+    expect(await prisma.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })).toBe(0);
+    await checkA11y(page); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
+
+test("a processing failure after a mismatch stops dispatch without claiming the whole batch is foreign", async ({ page, login, ownerScenario }) => {
+  test.setTimeout(120000);
+  const { allianceId, email, password } = ownerScenario;
+  await prisma.alliance.update({ where: { id: allianceId }, data: { name: "QA", server: allianceId } });
+  await login({ email, password, displayName: "Owner" });
+  await page.goto(`/alliances/${allianceId}/screenshots?scope=batch`);
+  const unique = rankingFixture().svg.replace('</svg>', `<text x="10" y="850">${crypto.randomUUID()}</text></svg>`);
+  await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles([
+    { name: "foreign.png", mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture("monday", "[OTHER] Foreign").svg)).resize(602,900).png().toBuffer() },
+    { name: "interruption.png", mimeType: "image/png", buffer: await sharp(Buffer.from(unique)).resize(601,900).png().toBuffer() },
+    { name: "unstarted.png", mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture().svg)).png().toBuffer() },
+  ]);
+  await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
+  await page.getByRole("button", { name: "Read 3 screenshots", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Stopped. Completed scans remain");
+  await expect(page.getByRole("listitem", { name: "Screenshot 1", exact: true })).toContainText("Blocked — alliance check");
+  await expect(page.getByRole("listitem", { name: "Screenshot 2", exact: true })).toContainText("Needs attention");
+  await expect(page.getByRole("listitem", { name: "Screenshot 3", exact: true })).toContainText("Queued");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(2);
+});
+
+test("stopping a batch after a mismatch leaves the unstarted screenshot unclassified", async ({ page, login, ownerScenario }) => {
+  test.setTimeout(120000);
+  const { allianceId, email, password } = ownerScenario;
+  await prisma.alliance.update({ where: { id: allianceId }, data: { name: "Different Alliance", server: allianceId } });
+  await login({ email, password, displayName: "Owner" });
+  await page.goto(`/alliances/${allianceId}/screenshots?scope=batch`);
+  let release!: () => void; let responded!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const responseReady = new Promise<void>(resolve => { responded = resolve; });
+  await page.route("**/api/ocr-evaluation?**", async route => {
+    if (route.request().method() !== "POST") { await route.continue(); return; }
+    const response = await route.fetch(); responded(); await held; await route.fulfill({ response });
+  });
+  await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles(await Promise.all((["monday", "weekly"] as const).map(async kind => ({
+    name: `${kind}.png`, mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture(kind).svg)).png().toBuffer(),
+  }))));
+  await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
+  await page.getByRole("button", { name: "Read 2 screenshots", exact: true }).click();
+  try { await responseReady; await page.getByRole("button", { name: "Stop after this image", exact: true }).click(); }
+  finally { release(); }
+  await expect(page.getByRole("status")).toContainText("Stopped. Completed scans remain");
+  await expect(page.getByRole("listitem", { name: "Screenshot 1", exact: true })).toContainText("Blocked — alliance check");
+  await expect(page.getByRole("listitem", { name: "Screenshot 2", exact: true })).toContainText("Queued");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(1);
+});
 
 test("failed batch scans require deliberate new-charge consent and preserve earlier attempts", async ({ page, login, ownerScenario }) => {
   test.setTimeout(120000);

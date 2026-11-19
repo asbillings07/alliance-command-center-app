@@ -195,7 +195,7 @@ export async function readEvaluationContent(target: EvaluationTarget, id: string
   requireOcrEvaluation(target.allianceId);
   const attempt = await transaction(async tx => {
     const { attempt } = await authorizedAttempt(tx, target, id);
-    if (isAllianceRejection(attempt)) throw new OcrEvaluationError(allianceRejectionMessage(attempt.outcome));
+    if (isAllianceRejection(attempt)) throw new OcrEvaluationError(allianceRejectionMessage(attempt.outcome), attempt.outcome);
     if (attempt.status !== "READY") throw new OcrEvaluationError("Recognition is not ready. Interrupted scans are never automatically retried.");
     const reserved = await tx.ocrEvaluationBudget.updateMany({ where: { id: OCR_CAMPAIGN, reads: { lt: 5000 } }, data: { reads: { increment: 1 } } });
     if (!reserved.count) throw new OcrEvaluationError("The evaluation viewing limit has been reached.");
@@ -220,7 +220,7 @@ export async function readEvaluationContent(target: EvaluationTarget, id: string
   }
   const recognition = JSON.parse(Buffer.from(bytes).toString()) as RankingRecognition;
   const evidence = checkScreenshotAlliance(recognition, { name: current.allianceName, server: current.server });
-  if (evidence !== "matched") throw new OcrEvaluationError(allianceRejectionMessage(`alliance-${evidence}`));
+  if (evidence !== "matched") throw new OcrEvaluationError(allianceRejectionMessage(`alliance-${evidence}`), `alliance-${evidence}`);
   if (current.allianceName !== attempt.allianceName || current.server !== attempt.server) {
     throw new OcrEvaluationError("The alliance identity changed since this scan. Start a new review with the current alliance details. No results were added.");
   }

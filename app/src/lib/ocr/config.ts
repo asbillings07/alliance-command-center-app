@@ -8,7 +8,9 @@ export const OCR_MAX_INPUT_BYTES = 2 * 1024 * 1024;
 export const OCR_MAX_IMAGE_BYTES = 1024 * 1024;
 export const OCR_MAX_RESULT_BYTES = 64 * 1024;
 
-export class OcrEvaluationError extends Error {}
+export class OcrEvaluationError extends Error {
+  constructor(message: string, readonly outcome?: string) { super(message); }
+}
 
 export function localOcrFixtureEnabled() {
   return !process.env.VERCEL && !process.env.VERCEL_ENV

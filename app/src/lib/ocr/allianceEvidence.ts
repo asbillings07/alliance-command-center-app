@@ -57,6 +57,12 @@ export function allianceRejectionMessage(outcome: string | null | undefined) {
   return "This screenshot does not match the alliance you are capturing results for. Choose a screenshot from this alliance. No results were added.";
 }
 
-export function isAllianceRejection(attempt: { outcome?: string | null }) {
-  return ["alliance-missing", "alliance-mixed", "alliance-mismatch", "alliance-server-mismatch"].includes(attempt.outcome ?? "");
+export function isAllianceRejection(attempt: unknown): attempt is { outcome: string } {
+  return !!attempt && typeof attempt === "object" && "outcome" in attempt && typeof attempt.outcome === "string"
+    && ["alliance-missing", "alliance-mixed", "alliance-mismatch", "alliance-server-mismatch"].includes(attempt.outcome);
+}
+
+export function allianceBatchNotice(items: ReadonlyArray<{ state: string; outcome?: string }>) {
+  if (!items.length || !items.every(item => item.state === "blocked" && isAllianceRejection(item))) return null;
+  return { count: items.length, allForeign: items.every(item => item.outcome === "alliance-mismatch" || item.outcome === "alliance-server-mismatch") };
 }
