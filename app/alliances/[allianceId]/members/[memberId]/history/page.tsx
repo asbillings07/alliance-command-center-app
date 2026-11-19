@@ -54,10 +54,10 @@ export default async function MemberMetricHistoryPage({ params, searchParams }: 
       action={<Button href={memberHref} variant="secondary">Back to member</Button>}>
       <div className="flex flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-text-muted">Read-only history · Browsing never changes a result.</p>
+          <p className="text-sm text-text-muted">Filtering only changes which entries you see. Saved scores stay the same.</p>
           {member.archivedAt && <Badge variant="neutral">Archived member</Badge>}
         </div>
-        <form action={historyHref} className="flex flex-wrap items-end gap-3">
+        <form method="get" aria-label="Filter history" action={historyHref} className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-2 min-w-0 flex-1 sm:flex-none">
             <label htmlFor="history-metric" className="text-sm font-medium text-text-secondary">Metric</label>
             <select id="history-metric" name="metricId" defaultValue={metricId ?? ""}
@@ -66,11 +66,11 @@ export default async function MemberMetricHistoryPage({ params, searchParams }: 
               {metrics.map((metric) => <option key={metric.id} value={metric.id}>{metric.name}</option>)}
             </select>
           </div>
-          <Button type="submit" variant="secondary" size="lg">Apply</Button>
+          <Button type="submit" variant="secondary" size="lg">Filter history</Button>
         </form>
         {entries.length === 0 && !selected ? (
           <Card><h2 className="font-semibold text-text-primary">No metric history yet</h2>
-            <p className="mt-2 text-sm text-text-muted">Saved manual entries and spreadsheet imports will appear here. Earlier values are kept when a new value is recorded.</p>
+            <p className="mt-2 text-sm text-text-muted">Saved scores appear here with their earlier values.</p>
           </Card>
         ) : (
           <div className="grid gap-6 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">

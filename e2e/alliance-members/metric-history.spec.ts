@@ -62,6 +62,11 @@ for (const width of [320, 820, 1280]) {
     await page.goto(`/alliances/${allianceId}/members/${s.member.id}`);
     await page.getByRole("link", { name: "Go back in time", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Go back in time", exact: true })).toBeVisible();
+    const filter = page.getByRole("form", { name: "Filter history" });
+    await filter.getByRole("combobox", { name: "Metric" }).selectOption(s.metric.id);
+    await filter.getByRole("button", { name: "Filter history" }).click();
+    await expect(page).toHaveURL(url => url.searchParams.get("metricId") === s.metric.id);
+    expect(await prisma.memberMetricEntry.count({ where: { allianceMemberId: s.member.id } })).toBe(2);
     const list = page.getByRole("region", { name: "Recorded history" });
     const detail = page.getByRole("region", { name: "Entry details" });
     await expect(list.getByRole("link")).toHaveCount(2);

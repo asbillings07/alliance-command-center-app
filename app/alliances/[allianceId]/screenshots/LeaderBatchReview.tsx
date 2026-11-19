@@ -121,16 +121,19 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
     } finally { if (active.current) setBusy(false); }
   }
   return <div className="space-y-6 sentry-block" data-sentry-block>
-    <div className="rounded-xl border border-border bg-surface p-4"><div className="flex flex-wrap items-center gap-3"><Badge variant="info">{synthetic ? "Synthetic test fixture" : "Recognition trial"}</Badge><strong>{destination ? "Review and confirm scores" : "Recognition review"}</strong></div>
-      <p className="mt-2 text-sm text-text-secondary">Upload the ranking capture once. Review every recognized member here, without opening individual member pages.</p></div>
+    <div className="rounded-xl border border-border bg-surface p-4"><div className="flex flex-wrap items-center gap-3"><Badge variant="info">{synthetic ? "Synthetic test fixture" : "Recognition trial"}</Badge><strong>{destination ? "Review and confirm scores" : "Recognition review"}</strong></div></div>
     {qaSettings && <QaAllianceSettings key={qaSettings.identityVersion} allianceId={allianceId} initial={qaSettings} disabled={busy} />}
     <Card><h2 className="text-lg font-semibold">1. Add your ranking screenshots</h2>
       <p className="mt-2 text-sm font-medium">Capturing for {initial.allianceName} · Server {initial.server}</p>
-      <p className="mt-2 text-sm text-text-secondary">Only this alliance&apos;s screenshots are accepted. Keep the alliance tag or name visible for every row; use Your Alliance in the game to filter rankings. Different, mixed or unreadable alliances are blocked, with no leader override.</p>
-      <p className="mt-2 text-sm text-text-secondary">All selected screenshots are checked, including after an alliance mismatch. Processing failures or stopping the batch leave remaining images unprocessed.</p>
-      <p className="mt-2 text-sm text-text-secondary">Keep the selected weekday or Weekly Rank visible on every image, with the full names and points. PNG or JPEG, up to 2 MB each. Choose up to 20 images; scans also have a daily account limit.</p>
+      <p className="mt-2 text-sm text-text-secondary">Show the selected weekday or Weekly Rank, plus each player’s name, alliance and points.</p>
+      <details className="mt-2 text-sm text-text-secondary">
+        <summary className="w-fit cursor-pointer rounded py-2 font-medium text-primary-light focus-visible:outline-2 focus-visible:outline-primary">Learn more about screenshot requirements</summary>
+        <p className="mt-1">In the game, select Your Alliance to filter the rankings. Each row must show this alliance’s tag or name. Mixed, unreadable or different alliances are blocked.</p>
+        <p className="mt-2">An alliance mismatch skips that image. A processing failure or pressing Stop pauses the rest of the batch. Each account can start up to 20 scans per day.</p>
+      </details>
       <label htmlFor="ranking-screenshots" className="mt-4 block font-medium">Ranking screenshots</label>
-      <input id="ranking-screenshots" ref={input} type="file" accept="image/png,image/jpeg" multiple disabled={busy} className="mt-2 block w-full min-w-0 rounded-lg border border-border p-2 text-sm focus:outline-2 focus:outline-primary"
+      <p id="ranking-file-limits" className="text-sm text-text-muted">Up to 20 PNG or JPEG images, 2 MB each.</p>
+      <input aria-describedby="ranking-file-limits" id="ranking-screenshots" ref={input} type="file" accept="image/png,image/jpeg" multiple disabled={busy} className="mt-2 block w-full min-w-0 rounded-lg border border-border p-2 text-sm focus:outline-2 focus:outline-primary"
         onChange={event => { const files = Array.from(event.target.files ?? []); if (!files.length) return;
           if (files.length + items.length > 20 || files.some(f => f.size > 2 * 1024 * 1024 || !["image/png", "image/jpeg"].includes(f.type))) { setMessage("Choose up to 20 PNG or JPEG images, each no larger than 2 MB."); event.target.value = ""; return; }
           setItems(previous => [...previous, ...files.map(file => ({ file, requestId: crypto.randomUUID(), state: "queued" as const }))]); setRetryFailed(false); invalidate(); setMessage(""); event.target.value = ""; }} />
@@ -148,11 +151,15 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
     </Card>
     <section aria-labelledby="batch-review-heading"><h2 id="batch-review-heading" className="text-lg font-semibold">2. Review all recognized members</h2>
       <h3 className="mt-4 font-semibold">Scoring dates</h3>
-      <p className="mt-2 text-sm text-text-secondary">Choose the Monday that starts the week these screenshots came from, and the dates below update immediately. Review different weeks separately. A weekday in an image does not tell us which calendar week it belongs to.</p>
+      <p className="mt-2 text-sm text-text-secondary">Choose one scoring week per batch. The dates below update as you select it.</p>
       <div className="my-4 grid gap-4 md:grid-cols-2"><label className="grid gap-2 text-sm font-medium">Week beginning (Monday)<input id="ranking-calendar-week" type="date" value={week} disabled={busy} aria-invalid={weekInvalid} aria-describedby={weekInvalid ? "ranking-week-error" : undefined} onChange={e => { setWeek(e.target.value); setReviewed(false); setMessage(""); }} className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-base" /></label>
         {results.some(r => r.batchReview.context.kind === "today") && <label className="grid gap-2 text-sm font-medium">Game date shown as Today&apos;s Duel<input type="date" value={captureDate} disabled={busy} onChange={e => { setCaptureDate(e.target.value); setReviewed(false); setMessage(""); }} className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-base" /></label>}</div>
-      {weekInvalid && <p id="ranking-week-error" role="alert" className="mb-3 rounded-lg border border-warning p-3 text-sm text-warning-light">Choose a Monday for the start of the week. This field selects the week, not a replacement day for the screenshot. The detected weekday cannot be changed.</p>}
-      <p className="text-sm text-text-secondary">A Monday screenshot stays on Monday, and a Tuesday screenshot stays on Tuesday within the chosen week. Weekly Rank stays a separate weekly total.</p>
+      {weekInvalid && <p id="ranking-week-error" role="alert" className="mb-3 rounded-lg border border-warning p-3 text-sm text-warning-light">Choose a Monday to start the scoring week. Each screenshot keeps its detected weekday.</p>}
+      <details className="mb-3 text-sm text-text-secondary">
+        <summary className="w-fit cursor-pointer rounded py-2 font-medium text-primary-light focus-visible:outline-2 focus-visible:outline-primary">Learn more about scoring dates and totals</summary>
+        <p className="mt-1">A weekday on a ranking identifies its day within the week you choose. Upload order cannot tell you when a screenshot was taken. A visible countdown on today’s duel means the score can still increase.</p>
+        <p className="mt-2">Daily scores and Weekly Rank totals are recorded separately. The weekly total already includes the daily scores. It cannot fill in missing days. Review flags conflicting readings for the same day or week. Weekly totals are not checked against the sum of daily scores.</p>
+      </details>
       {results.length > 0 && <ul className="mt-3 space-y-1 text-sm">{items.map((item, i) => item.result && (() => { const window = rankingWindow(item.result.batchReview.context, week, captureDate); return <li key={item.requestId}>Screenshot {i + 1} · {item.result.batchReview.context.label}: {window?.startsWith("week:") ? `week beginning ${window.slice(5)}` : window || "Choose the correct week or game date above"}</li>; })())}</ul>}
       {items.map((item, i) => item.result && (() => { const r = item.result; return <div key={r.attempt.id} className="mb-3 text-sm">
         {(r.batchReview.context.kind === "missing" || !r.batchReview.rows.length) && <p className="rounded-lg border border-warning p-3 text-warning-light">Screenshot {i + 1}: {r.batchReview.context.kind === "missing" ? "The selected weekday or Weekly Rank could not be verified. Upload an uncropped image with the selection visible." : "No complete name-and-score rows could be read. Check the image and use a clearer capture."}</p>}
@@ -197,9 +204,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
           </div></>}
         </li>;
       })}</ol>}
-      {grouped.length > 0 && <div className="mt-4 rounded-lg border border-border p-4 text-sm"><p>Ranking tabs identify the score&apos;s period. No timer does not prove completion. Weekly totals stay separate from daily scores and are never added to them.</p>
-        <p className="mt-2 text-text-secondary">Monday and Weekly Rank can be reviewed together for the same week. A weekly total includes daily scores; it does not replace them or tell us the missing days. This trial flags conflicting values for the same day or week, but does not yet compare weekly totals against the daily scores. Upload order does not establish when a screenshot was taken.</p>
-        <p className="mt-2 text-text-secondary">Exclude uncertain matches and conflicting values. A score can be saved only after you review its destination and confirm the changes.</p>
+      {grouped.length > 0 && <div className="mt-4 rounded-lg border border-border p-4 text-sm"><p>Exclude uncertain rows before continuing. You’ll review the changes before saving.</p>
         <div className="mt-4"><Button disabled={busy || missingDates || weekInvalid || pending.length > 0 || unresolvedImages > 0 || !chosen.length} onClick={() => { setReviewed(true); setMessage("Recognition review complete. No member scores or reports were changed."); }}>Finish recognition review</Button></div>
         {reviewed && <><p className="mt-3 text-primary-light">{destination ? "Recognition reviewed" : "Recognition reviewed · No scores saved"}</p>
           {destination && results.some(r => r.batchReview.context.kind === "today") && <p className="mt-2">Today’s Duel is available for progress review. Use the selected Daily Rank or Weekly Rank screen to save scores.</p>}
@@ -213,7 +218,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       uploadedBy={source.result.attempt.actorName} uploadedAt={source.result.attempt.createdAt}
       onClose={() => setSource(null)} />}
     <p role="status" aria-live="polite" className="break-words text-sm text-text-secondary">{message}</p>
-    <section><h2 className="text-lg font-semibold">Ranking upload history</h2><p className="mt-1 text-sm text-text-muted">Latest 20 captures · Times shown in your timezone. Reopening a scan does not send it to Google again. To retry a failed image, select it again and confirm the new attempt above.</p>
+    <section><h2 className="text-lg font-semibold">Ranking upload history</h2><p className="mt-1 text-sm text-text-muted">Latest 20 captures · Times in your timezone. Reopen a scan to review it again.</p>
       <ol className="mt-3 grid gap-3 md:grid-cols-2">{existing.map(attempt => <li key={attempt.id} className="min-w-0 rounded-lg border border-border p-3 text-sm"><p className="break-words">{attempt.actorName} · <LocalTimestamp value={attempt.createdAt} /></p>{isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}<div className="mt-2"><Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : isAllianceRejection(attempt) ? "Blocked — alliance check" : "Failed or pending — not retried"}</Button></div></li>)}</ol>
     </section>
   </div>;
