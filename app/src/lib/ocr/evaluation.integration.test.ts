@@ -546,7 +546,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
   it("stops before dispatch when storage is full and bounds retained-content reads", async () => {
     const saved = await evaluateScreenshot(await input(), transport);
     await db.ocrEvaluationBudget.update({ where: { id: OCR_CAMPAIGN }, data: { storedBytes: 500 * 1024 * 1024, reads: 5000 } });
-    await expect(evaluateScreenshot(await input(), transport)).rejects.toThrow("budget");
+    await expect(evaluateScreenshot(await input(), transport)).rejects.toThrow("Screenshot scanning is paused");
     await expect(readEvaluationContent(leader(), saved.id, "image", transport)).rejects.toThrow("viewing limit");
     expect(transport.recognize).toHaveBeenCalledTimes(1);
     expect(transport.read).not.toHaveBeenCalled();

@@ -167,7 +167,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
       reservedMicros: { lte: 5_000_000 - OCR_RESERVATION_MICROS }, attempts: { lt: 500 },
       storedBytes: { lte: 500 * 1024 * 1024 - image.bytes.length } },
       data: { reservedMicros: { increment: OCR_RESERVATION_MICROS }, attempts: { increment: 1 }, storedBytes: { increment: image.bytes.length } } });
-    if (reserved.count !== 1) throw new OcrEvaluationError("The evaluation budget has been reached. Further scans are paused.");
+    if (reserved.count !== 1) throw new OcrEvaluationError("Screenshot scanning is paused. You can still use manual entry or spreadsheets where you have access.");
     const attempt = await tx.ocrEvaluationAttempt.create({ data: {
       id: randomUUID(), requestId: input.requestId, retryOf, allianceId: input.allianceId, memberId: current.memberId,
       actorUserId: input.actorId, actorName: current.actorName, actorRole: current.actorRole,

@@ -120,7 +120,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
     {qaSettings && <QaAllianceSettings key={qaSettings.identityVersion} allianceId={allianceId} initial={qaSettings} disabled={busy} />}
     <Card><h2 className="text-lg font-semibold">1. Add your ranking screenshots</h2>
       <p className="mt-2 text-sm font-medium">Capturing for {initial.allianceName} · Server {initial.server}</p>
-      <p className="mt-2 text-sm text-text-secondary">Only this alliance&apos;s screenshots are accepted. Keep the alliance tag or name visible for every row; use Your Alliance in the game to filter rankings. Different, mixed or unreadable alliances are blocked, with no leader override. Reading an image to check its alliance still uses one scan reservation.</p>
+      <p className="mt-2 text-sm text-text-secondary">Only this alliance&apos;s screenshots are accepted. Keep the alliance tag or name visible for every row; use Your Alliance in the game to filter rankings. Different, mixed or unreadable alliances are blocked, with no leader override.</p>
       <p className="mt-2 text-sm text-text-secondary">All selected screenshots are checked, including after an alliance mismatch. Processing failures or stopping the batch leave remaining images unprocessed.</p>
       <p className="mt-2 text-sm text-text-secondary">Keep the selected weekday or Weekly Rank visible on every image, with the full names and points. PNG or JPEG, up to 2 MB each. Choose up to 20 images; scans also have a daily account limit.</p>
       <label htmlFor="ranking-screenshots" className="mt-4 block font-medium">Ranking screenshots</label>
@@ -135,7 +135,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
         {item.result && <div className="mt-3"><Button variant="secondary" onClick={() => setSource({ result: item.result!, title: `Screenshot ${index + 1}` })}>View screenshot {index + 1}</Button></div>}
       </li>)}</ol>}
       {(initial.attempts.some(a => a.status === "FAILED" && !isAllianceRejection(a)) || items.some(i => i.state === "failed")) && <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={retryFailed} disabled={busy || !queued.length} onChange={e => setRetryFailed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
-        <span>Start a new attempt for failed images I selected again. Each reserves another $0.01 from the $5 trial cap. Earlier failures stay in history. Completed scans are reused.</span></label>}
+        <span>Start a new attempt for failed images I selected again. Earlier failures stay in history. Completed scans are reused.</span></label>}
       <div className="mt-4 flex flex-wrap gap-3"><Button disabled={busy || !queued.length} onClick={scan}>{busy ? "Reading screenshots…" : `Read ${queued.length || "selected"} screenshots`}</Button>
         {busy ? <Button variant="secondary" onClick={() => { cancel.current = true; setMessage("Stopping after the current image. A scan already sent cannot be recalled."); }}>Stop after this image</Button>
           : <Button variant="secondary" disabled={!items.length} onClick={() => { setItems([]); setSource(null); invalidate(); setMessage("Review cleared. Retained scans remain in upload history."); }}>Clear review</Button>}</div>

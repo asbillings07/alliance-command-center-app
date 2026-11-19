@@ -40,6 +40,11 @@ recall an already-dispatched operation. Any reserved allowance and attempt
 history remain recorded, including failures. The lifetime $5 ledger and 30-day
 private source expiry are unchanged.
 
+Internal provider costs and trial dollar limits belong only in explicitly
+labelled QA controls or operator evidence. Shared upload/retry messages explain
+the action, preserved history and available fallback without implying a user
+charge. QA controls remain server-gated to the isolated evaluation database.
+
 The gate refreshes on foreground return and same-browser preference broadcasts;
 server enforcement does not depend on those UI updates. A revoked account sees
 no active screenshot controls. Saved metric history is unaffected. Manual and

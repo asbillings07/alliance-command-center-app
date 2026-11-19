@@ -82,7 +82,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
       <section className="min-w-0 space-y-4" aria-labelledby="screenshot-heading">
         <Card><h2 id="screenshot-heading" className="text-lg font-semibold">1. Choose a daily VS screenshot</h2>
           <p className="mt-2 text-sm text-text-secondary">Keep the full Alliance Duel screen, player names, scores and countdown visible. PNG or JPEG, up to 2 MB.</p>
-          <p className="mt-2 text-sm text-text-secondary">Only this alliance&apos;s screenshots are accepted. Different, mixed or unreadable alliances are blocked, with no override. Reading an image to check its alliance still uses one scan reservation.</p>
+          <p className="mt-2 text-sm text-text-secondary">Only this alliance&apos;s screenshots are accepted. Different, mixed or unreadable alliances are blocked, with no override.</p>
           <label htmlFor="vs-screenshot" className="mt-4 block text-sm font-medium">Screenshot</label>
           <input ref={input} id="vs-screenshot" type="file" accept="image/png,image/jpeg" disabled={busy} className="mt-2 block w-full min-w-0 rounded-lg border border-border p-2 text-sm focus:outline-2 focus:outline-primary"
             onChange={event => { const selected = event.target.files?.[0] ?? null; setResult(null); setMessage(""); setBlockedOutcome(null); setNotice(null);
