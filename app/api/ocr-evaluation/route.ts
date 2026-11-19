@@ -10,7 +10,7 @@ export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
 const fail = (error: unknown) => Response.json({ error: error instanceof OcrEvaluationError ? error.message : "Screenshot evaluation is unavailable. Reload to check your access and scan history before trying again.",
-  ...(error instanceof OcrEvaluationError && isAllianceRejection(error) ? { outcome: error.outcome } : {}) }, { status: 400, headers });
+  ...(error instanceof OcrEvaluationError && (isAllianceRejection(error) || error.outcome === "retry-needs-file") ? { outcome: error.outcome } : {}) }, { status: 400, headers });
 
 export async function POST(request: Request) {
   if (request.headers.get("origin") !== new URL(request.url).origin) return Response.json({ error: "Reload this page before uploading." }, { status: 403, headers });
@@ -28,11 +28,12 @@ export async function POST(request: Request) {
     const bytes = await boundedBody(new Response(request.body), limit);
     const form = await new Response(bytes, { headers: { "Content-Type": request.headers.get("content-type") ?? "" } }).formData();
     const file = form.get("screenshot");
-    if (!(file instanceof File)) throw new OcrEvaluationError("Choose a screenshot first.");
+    const retryOf = String(form.get("retryOf") ?? "") || undefined;
+    if (!(file instanceof File) && !retryOf) throw new OcrEvaluationError("Choose a screenshot first.");
     const result = await evaluateScreenshot({ allianceId, actorId: session.user.id,
       memberId: url.searchParams.get("memberId") || null, scope: url.searchParams.get("scope") === "batch" ? "batch" : undefined, requestId: String(form.get("requestId") ?? ""),
-      contextKey: String(form.get("contextKey") ?? ""), processingConsentId: Number(form.get("processingConsentId")), retryFailed: form.get("retryFailed") === "true",
-      bytes: new Uint8Array(await file.arrayBuffer()) }, await evaluationTransport());
+      contextKey: String(form.get("contextKey") ?? ""), processingConsentId: Number(form.get("processingConsentId")), retryOf,
+      bytes: file instanceof File ? new Uint8Array(await file.arrayBuffer()) : undefined }, await evaluationTransport());
     return Response.json(result, { headers });
   } catch (error) { return fail(error); }
 }

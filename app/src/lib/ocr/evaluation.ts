@@ -102,7 +102,14 @@ export async function loadEvaluationContext(target: EvaluationTarget) {
     }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 20 });
     return { consent: current.consent, processingConsentId: current.consent.processing?.id ?? null, playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       leader: current.actorRole !== "MEMBER", members: current.members, contextKey: current.contextKey,
-      attempts: attempts.map(auditView) };
+      attempts: attempts.map(a => ({
+        ...auditView(a),
+        ownRequestId: a.actorUserId === target.actorId ? a.requestId : null,
+        retryable: target.scope === "batch" && a.status === "FAILED" && !isAllianceRejection(a)
+          && a.actorUserId === target.actorId && a.expiresAt > new Date() && a.contextKey === current.contextKey
+          && a.processingConsentId === current.consent.processing?.id && a.processingVersion === OCR_VERSION
+          && !attempts.some(child => child.retryOf === a.id),
+      })) };
   });
 }
 
@@ -134,14 +141,33 @@ export async function authorizeScreenshotUpload(target: EvaluationTarget) {
 }
 
 export async function evaluateScreenshot(input: EvaluationTarget & {
-  requestId: string; contextKey: string; bytes: Uint8Array; processingConsentId: number; retryFailed?: boolean;
+  requestId: string; contextKey: string; bytes?: Uint8Array; processingConsentId: number; retryOf?: string;
 }, transport: OcrTransport) {
   requireOcrEvaluation(input.allianceId);
   if (!Number.isSafeInteger(input.processingConsentId) || input.processingConsentId < 1) throw new OcrEvaluationError("Reload to review your OCR processing preference.");
   if (!/^[a-f0-9-]{36}$/i.test(input.requestId) || input.contextKey.length > 1500) throw new OcrEvaluationError("Reload this review before uploading.");
-  if (input.retryFailed && input.scope !== "batch") throw new OcrEvaluationError("Explicit retries are available only in the leader ranking trial.");
+  if (input.retryOf && (input.scope !== "batch" || !/^[a-f0-9-]{36}$/i.test(input.retryOf))) throw new OcrEvaluationError("Choose a failed ranking screenshot.");
   await unchanged(input, input.contextKey, input.processingConsentId);
-  const image = await normalizeScreenshot(input.bytes);
+  const parent = input.retryOf ? await transaction(async tx => {
+    const { attempt } = await authorizedAttempt(tx, input, input.retryOf!);
+    if (attempt.actorUserId !== input.actorId || attempt.status !== "FAILED" || isAllianceRejection(attempt)
+      || attempt.contextKey !== input.contextKey || attempt.processingConsentId !== input.processingConsentId
+      || attempt.processingVersion !== OCR_VERSION) throw new OcrEvaluationError("This scan is unavailable for retry in the current review.");
+    if (!input.bytes) {
+      const read = await tx.ocrEvaluationBudget.updateMany({where:{id:OCR_CAMPAIGN, reads:{lt:5000}},data:{reads:{increment:1}}});
+      if (!read.count) throw new OcrEvaluationError("The screenshot viewing limit has been reached.");
+    }
+    return attempt;
+  }) : null;
+  let bytes = input.bytes;
+  if (!bytes && parent) {
+    try { bytes = await transport.read(parent.id + "/source.png", OCR_MAX_IMAGE_BYTES); }
+    catch { throw new OcrEvaluationError("The saved image is unavailable. Select the original file to retry this scan.", "retry-needs-file"); }
+    if (createHash("sha256").update(bytes).digest("hex") !== parent.sourceDigest) throw new OcrEvaluationError("The saved image could not be verified.");
+  }
+  if (!bytes) throw new OcrEvaluationError("Choose a screenshot first.");
+  const image = await normalizeScreenshot(bytes);
+  if (parent && image.digest !== parent.sourceDigest) throw new OcrEvaluationError("Choose the same screenshot as the failed scan.");
   // Preflight cannot process or store the screenshot, and precedes spending.
   await transport.preflight();
   const admitted = await transaction(async tx => {
@@ -154,20 +180,20 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     if (existing) {
       if (existing.allianceId !== input.allianceId || existing.memberId !== current.memberId
         || existing.sourceDigest !== image.digest || existing.processingVersion !== OCR_VERSION
-        || existing.contextKey !== current.contextKey || existing.processingConsentId !== input.processingConsentId) throw new OcrEvaluationError("This upload reference belongs to a different review. Choose the screenshot again.");
+        || (parent && existing.retryOf !== parent.id) || existing.contextKey !== current.contextKey || existing.processingConsentId !== input.processingConsentId) throw new OcrEvaluationError("This upload reference belongs to a different review. Choose the screenshot again.");
       return { attempt: existing, dispatched: false };
     }
-    // Reuse identical batch captures in this unchanged review context. A failed
-    // attempt is not automatically sent again under a fresh client request ID.
-    let retryOf: string | null = null;
+    if (parent) {
+      if (parent.expiresAt <= new Date()) throw new OcrEvaluationError("This screenshot has expired.");
+      const child = await tx.ocrEvaluationAttempt.findUnique({ where: { retryOf: parent.id } });
+      if (child) return {attempt: child, dispatched: false};
+    }
+    const retryOf = parent?.id ?? null;
     if (input.scope === "batch") {
       const duplicate = await tx.ocrEvaluationAttempt.findFirst({ where: { allianceId: input.allianceId, memberId: null,
         actorUserId: input.actorId, sourceDigest: image.digest, contextKey: current.contextKey, processingConsentId: input.processingConsentId,
         processingVersion: OCR_VERSION, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
-      if (duplicate) {
-        if (duplicate.status !== "FAILED" || isAllianceRejection(duplicate) || input.retryFailed !== true) return { attempt: duplicate, dispatched: false };
-        retryOf = duplicate.id;
-      }
+      if (duplicate && duplicate.id !== retryOf) return { attempt: duplicate, dispatched: false };
     }
     const now = new Date(); const since = new Date(now); since.setUTCHours(0, 0, 0, 0);
     if (await tx.ocrEvaluationAttempt.count({ where: { actorUserId: input.actorId, createdAt: { gte: since } } }) >= 20) {
@@ -184,7 +210,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
       playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       contextKey: current.contextKey, sourceDigest: image.digest, processingVersion: OCR_VERSION,
       processingConsentId: current.consent.processing!.id, qualityConsentId: qualityAllowed(current.consent) ? current.consent.quality!.id : null,
-      imageBytes: image.bytes.length, createdAt: now, expiresAt: new Date(now.getTime() + OCR_RETENTION_MS),
+      imageBytes: image.bytes.length, createdAt: now, expiresAt: parent?.expiresAt ?? new Date(now.getTime() + OCR_RETENTION_MS),
     } });
     return { attempt, dispatched: true };
   });

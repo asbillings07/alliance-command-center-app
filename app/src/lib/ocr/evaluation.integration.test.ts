@@ -444,7 +444,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     vi.mocked(transport.recognize).mockResolvedValue({ ...fixture.recognition, words });
     const first = await evaluateScreenshot(await input(batch), transport);
     expect(first).toMatchObject({ status: "FAILED", outcome: `alliance-${outcome}` });
-    expect((await evaluateScreenshot({ ...await input(batch), retryFailed: true }, transport)).id).toBe(first.id);
+    await expect(evaluateScreenshot({ ...await input(batch), retryOf: first.id }, transport)).rejects.toThrow(/unavailable for retry/);
     for (const kind of ["result", "image"] as const) {
       await expect(readEvaluationContent(batch, first.id, kind, transport)).rejects.toThrow("No results were added");
     }
@@ -542,12 +542,14 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     vi.mocked(transport.recognize).mockRejectedValueOnce(new Error("private provider failure"));
     await expect(evaluateScreenshot(await input(batch), transport)).rejects.toThrow("did not complete");
     const failed = await db.ocrEvaluationAttempt.findFirstOrThrow();
-    const request = { ...await input(batch), retryFailed: true };
+    const wrong = await sharp({create:{width:300,height:300,channels:3,background:"#ab1234"}}).png().toBuffer();
+    await expect(evaluateScreenshot({...await input(batch), retryOf:failed.id, bytes:wrong}, transport)).rejects.toThrow("same screenshot");
+    const request = { ...await input(batch), retryOf: failed.id, bytes:undefined };
     const retried = await evaluateScreenshot(request, transport);
-    expect(retried).toMatchObject({status:"READY",retryOf:failed.id});
+    expect(retried).toMatchObject({status:"READY",retryOf:failed.id,expiresAt:failed.expiresAt.toISOString()});
     expect(await db.ocrEvaluationAttempt.findUniqueOrThrow({where:{id:failed.id}})).toMatchObject({status:"FAILED"});
     expect((await evaluateScreenshot(request, transport)).id).toBe(retried.id);
-    expect((await evaluateScreenshot({...await input(batch),retryFailed:true}, transport)).id).toBe(retried.id);
+    expect((await evaluateScreenshot({...await input(batch),retryOf:failed.id}, transport)).id).toBe(retried.id);
     expect(transport.recognize).toHaveBeenCalledTimes(2);
     expect(await db.ocrEvaluationBudget.findUniqueOrThrow({where:{id:OCR_CAMPAIGN}})).toMatchObject({attempts:2,reservedMicros:20000});
   });

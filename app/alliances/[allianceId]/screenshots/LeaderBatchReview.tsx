@@ -11,16 +11,15 @@ import { QaAllianceSettings, type QaAllianceSettingsData } from "./QaAllianceSet
 import { rankingWindow, reconcileOverlap, resolveRankingChoices, showCurrentDayProgress, type RankingReview, type RosterMember } from "@/app/src/lib/ocr/ranking";
 import { allianceRejectionMessage, isAllianceRejection, allianceBatchNotice } from "@/app/src/lib/ocr/allianceEvidence";
 
-type Attempt = { id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
+type Attempt = { ownRequestId?: string | null; retryable?: boolean; id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
 type Result = { attempt: Attempt; batchReview: RankingReview; contextChanged: boolean };
-type Item = { requestId: string; file: File | null; state: "queued" | "reading" | "ready" | "failed" | "blocked"; error?: string; outcome?: string; attemptId?: string; result?: Result };
+type Item = { needsOriginal?: boolean; requestId: string; file: File | null; state: "queued" | "reading" | "ready" | "failed" | "blocked"; error?: string; outcome?: string; attemptId?: string; result?: Result };
 type Props = { destination?: BatchDestination; allianceId: string; initial: { contextKey: string; processingConsentId: number | null; allianceName: string; server: string; members: RosterMember[]; attempts: Attempt[] }; synthetic: boolean; qaSettings?: QaAllianceSettingsData | null };
 const statusText = { exact: "Exact name candidate", suggested: "Suggested match — confirm the name", ambiguous: "Ambiguous roster name", unmatched: "No roster match", invalid: "Unreadable name or score", archived: "Archived member — review required" };
 
 export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, destination }: Props) {
   const router = useRouter();
   const [items, setItems] = useState<Item[]>([]); const [week, setWeek] = useState(""); const [captureDate, setCaptureDate] = useState("");
-  const [retryFailed, setRetryFailed] = useState(false);
   const [notice, setNotice] = useState<ReturnType<typeof allianceBatchNotice>>(null);
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [source, setSource] = useState<{ result: Result; title: string } | null>(null);
   const [sourcePicks, setPicks] = useState<string[]>([]);
@@ -43,7 +42,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
   const missingDates = results.some(r => !rankingWindow(r.batchReview.context, week, captureDate));
   const unresolvedImages = items.filter(item => item.state !== "ready" || !item.result?.batchReview.rows.length || item.result.contextChanged).length;
   const queued = items.filter(i => i.state === "queued");
-  const existing = initial.attempts.filter(a => !items.some(item => item.attemptId === a.id || item.result?.attempt.id === a.id));
+  const existing = initial.attempts.filter(a => !items.some(item => item.requestId === a.ownRequestId || item.attemptId === a.id || item.result?.attempt.id === a.id));
   const weekInvalid = !!week && !rankingWindow({ kind: "weekly", label: "Weekly Rank" }, week);
 
   function invalidate() { setPicks([]); setNotice(null); setReviewed(false); }
@@ -53,20 +52,30 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
     if (!result.batchReview) throw new Error("This is not an alliance ranking capture.");
     return result;
   }
-  async function scan() {
-    if (busy || !queued.length) return;
-    cancel.current = false; setBusy(true); setMessage(""); invalidate();
+  async function scan(retry?: {attempt: Attempt; card?: Item}) {
+    if (busy || (retry ? !retry.attempt.retryable : !queued.length)) return;
+    if (retry && !retry.card && items.length >= 20) { setMessage("Remove a screenshot or clear this review before retrying."); return; }
+    const retryItem: Item | undefined = retry && {requestId:crypto.randomUUID(), file:retry.card?.file ?? null, needsOriginal:retry.card?.needsOriginal, state:"reading", attemptId:retry.attempt.id};
+    const selected = retryItem ? [retryItem] : queued;
     let nextItems = items;
+    if (retryItem) {
+      nextItems = retry?.card ? items.map(i => i === retry.card ? retryItem : i) : [...items, retryItem];
+      setItems(nextItems);
+    }
+    cancel.current = false; setBusy(true); setMessage(""); invalidate();
     function update(requestId: string, patch: Partial<Item>) {
       nextItems = nextItems.map(item => item.requestId === requestId ? { ...item, ...patch } : item);
       if (active.current) setItems(nextItems);
     }
-    for (const item of queued) {
+    for (const item of selected) {
       if (cancel.current || !active.current) break;
       update(item.requestId, { state: "reading" });
       try {
-        const form = new FormData(); form.set("screenshot", item.file!, "screenshot"); form.set("requestId", item.requestId);
-        form.set("contextKey", initial.contextKey); form.set("processingConsentId", String(initial.processingConsentId)); form.set("retryFailed", String(retryFailed));
+        const form = new FormData();
+        if (item.file) form.set("screenshot", item.file, "screenshot");
+        if (retry) form.set("retryOf", retry.attempt.id);
+        form.set("requestId", item.requestId);
+        form.set("contextKey", initial.contextKey); form.set("processingConsentId", String(initial.processingConsentId));
         const response = await fetch(endpoint, { method: "POST", body: form }); const attempt = await response.json();
         if (!response.ok) throw Object.assign(new Error(attempt.error || "This screenshot did not complete."), { outcome: attempt.outcome });
         update(item.requestId, { attemptId: attempt.id });
@@ -74,7 +83,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
           update(item.requestId, { file: null, state: "blocked", outcome: attempt.outcome, error: allianceRejectionMessage(attempt.outcome) });
           continue;
         }
-        if (attempt.status === "FAILED") throw new Error("Scan failed. To try again, select the file, check “Retry failed scans for the selected files,” then choose Read screenshots.");
+        if (attempt.status === "FAILED") throw new Error("This scan failed. You can retry this screenshot.");
         if (attempt.status !== "READY") throw new Error("This scan is still pending. Check upload history before trying again.");
         const result = await read(attempt.id);
         if (nextItems.some(p => p.requestId !== item.requestId && p.result?.attempt.id === result.attempt.id)) {
@@ -85,7 +94,8 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         if (isAllianceRejection(error)) {
           update(item.requestId, { file: null, state: "blocked", outcome: error.outcome, error: allianceRejectionMessage(error.outcome) });
         } else {
-          update(item.requestId, { file: null, state: "failed", error: error instanceof Error ? error.message : "Scan failed." });
+          const description = error instanceof Error ? error.message : "Scan failed.";
+          update(item.requestId, { state: "failed", error: description, needsOriginal: item.needsOriginal || (error instanceof Error && "outcome" in error && error.outcome === "retry-needs-file") });
           // Uncertain processing or changed access stops dispatch. A confirmed
           // source rejection only excludes that image; other consented files continue.
           cancel.current = true;
@@ -93,9 +103,9 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       }
     }
     if (active.current) {
-      router.refresh(); setBusy(false); setRetryFailed(false);
+      router.refresh(); setBusy(false);
       setNotice(allianceBatchNotice(nextItems));
-      setMessage(cancel.current ? "Stopped. Completed scans remain below; unstarted images are still queued. No scan is retried automatically."
+      setMessage(retry ? (cancel.current ? "Check the message on the screenshot you retried." : "Screenshot retry complete. Review the result on its card.") : cancel.current ? "Stopped. Completed scans remain below; unstarted images are still queued. No scan is retried automatically."
         : nextItems.some(item => item.state === "blocked") ? "Batch checked. Each blocked screenshot has its own warning. Matching screenshots remain available for review. No scores were saved."
         : nextItems.some(item => item.state === "failed") ? "Remaining scans completed. Earlier failed images still need attention. No scores were saved."
         : "Batch recognition is ready. Review the names, scores and source periods together. No scores were saved.");
@@ -137,16 +147,21 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       <input aria-describedby="ranking-file-limits" id="ranking-screenshots" ref={input} type="file" accept="image/png,image/jpeg" multiple disabled={busy} className="mt-2 block w-full min-w-0 rounded-lg border border-border p-2 text-sm focus:outline-2 focus:outline-primary"
         onChange={event => { const files = Array.from(event.target.files ?? []); if (!files.length) return;
           if (files.length + items.length > 20 || files.some(f => f.size > 2 * 1024 * 1024 || !["image/png", "image/jpeg"].includes(f.type))) { setMessage("Choose up to 20 PNG or JPEG images, each no larger than 2 MB."); event.target.value = ""; return; }
-          setItems(previous => [...previous, ...files.map(file => ({ file, requestId: crypto.randomUUID(), state: "queued" as const }))]); setRetryFailed(false); invalidate(); setMessage(""); event.target.value = ""; }} />
-      {items.length > 0 && <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{items.map((item, index) => <li key={item.requestId} aria-label={`Screenshot ${index + 1}`} className="min-w-0 rounded-lg border border-border p-3 text-sm">
+          setItems(previous => [...previous, ...files.map(file => ({ file, requestId: crypto.randomUUID(), state: "queued" as const }))]); invalidate(); setMessage(""); event.target.value = ""; }} />
+      {items.length > 0 && <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{items.map((item, index) => {
+        const attempt = initial.attempts.find(a => a.ownRequestId === item.requestId) ?? initial.attempts.find(a => a.id === item.attemptId);
+        return <li key={item.requestId} aria-label={`Screenshot ${index + 1}`} className="min-w-0 rounded-lg border border-border p-3 text-sm">
         <strong>Screenshot {index + 1}</strong><p className="mt-1 text-text-secondary">{item.state === "ready" ? item.result!.batchReview.context.label : item.state === "reading" ? "Reading…" : item.state === "blocked" ? "Blocked — alliance check" : item.state === "failed" ? "Needs attention" : "Queued"}</p>
         {item.error && <p className="mt-2 break-words text-warning-light">{item.error}</p>}
+        {item.state === "failed" && attempt?.retryable && <div className="mt-3 space-y-2">
+            {item.needsOriginal && <label className="block">Original screenshot<input type="file" accept="image/png,image/jpeg" disabled={busy}
+              onChange={e => {const file=e.target.files?.[0]; if (file) setItems(old => old.map(i => i.requestId === item.requestId ? {...i,file} : i));}} /></label>}
+            <Button variant="secondary" disabled={busy || (item.needsOriginal && !item.file)} onClick={() => scan({attempt,card:item})}>Retry scan</Button>
+          </div>}
         {!busy && (item.state === "failed" || item.state === "queued" || item.state === "blocked") && <div className="mt-3"><Button variant="secondary" onClick={() => {setItems(previous => previous.filter(p => p.requestId !== item.requestId)); invalidate();}}>Remove screenshot {index + 1} from review</Button></div>}
         {item.result && <div className="mt-3"><Button variant="secondary" onClick={() => setSource({ result: item.result!, title: `Screenshot ${index + 1}` })}>View screenshot {index + 1}</Button></div>}
-      </li>)}</ol>}
-      {queued.length > 0 && (initial.attempts.some(a => a.status === "FAILED" && !isAllianceRejection(a)) || items.some(i => i.state === "failed")) && <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={retryFailed} disabled={busy || !queued.length} onChange={e => setRetryFailed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
-        <span>Retry failed scans for the selected files</span></label>}
-      <div className="mt-4 flex flex-wrap gap-3"><Button disabled={busy || !queued.length} onClick={scan}>{busy ? "Reading screenshots…" : `Read ${queued.length || "selected"} screenshots`}</Button>
+      </li>;})}</ol>}
+      <div className="mt-4 flex flex-wrap gap-3"><Button disabled={busy || !queued.length} onClick={() => scan()}>{busy ? "Reading screenshots…" : `Read ${queued.length || "selected"} screenshots`}</Button>
         {busy ? <Button variant="secondary" onClick={() => { cancel.current = true; setMessage("Stopping after the current image. A scan already sent cannot be recalled."); }}>Stop after this image</Button>
           : <Button variant="secondary" disabled={!items.length} onClick={() => { setItems([]); setSource(null); setExcludedSources([]); invalidate(); setMessage("Review cleared. Retained scans remain in upload history."); }}>Clear review</Button>}</div>
     </Card>
@@ -220,7 +235,9 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       onClose={() => setSource(null)} />}
     <p role="status" aria-live="polite" className="break-words text-sm text-text-secondary">{message}</p>
     <section><h2 className="text-lg font-semibold">Ranking upload history</h2><p className="mt-1 text-sm text-text-muted">Latest 20 captures · Times in your timezone. Reopen a scan to review it again.</p>
-      <ol className="mt-3 grid gap-3 md:grid-cols-2">{existing.map(attempt => <li key={attempt.id} className="min-w-0 rounded-lg border border-border p-3 text-sm"><p className="break-words">{attempt.actorName} · <LocalTimestamp value={attempt.createdAt} /></p>{isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}<div className="mt-2"><Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : isAllianceRejection(attempt) ? "Blocked — alliance check" : "Failed or pending — not retried"}</Button></div></li>)}</ol>
+      <ol className="mt-3 grid gap-3 md:grid-cols-2">{existing.map(attempt => <li key={attempt.id} className="min-w-0 rounded-lg border border-border p-3 text-sm"><p className="break-words">{attempt.actorName} · <LocalTimestamp value={attempt.createdAt} /></p>{isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}<div className="mt-2">{attempt.retryable
+        ? <Button variant="secondary" disabled={busy || items.length >= 20} onClick={() => scan({attempt})}>Retry scan</Button>
+        : <Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Failed" : "Pending"}</Button>}</div></li>)}</ol>
     </section>
   </div>;
 }
