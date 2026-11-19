@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requireQaAllianceEditing, validateQaAllianceName } from "./qaAlliance";
+import { parse } from "pg-connection-string";
 vi.mock("../prisma", () => ({ prisma: {} }));
 const connection = (id: string) => `postgresql://test:private-password@${id}.us-east-1.aws.neon.tech/neondb`;
 const qa = {
@@ -28,6 +29,11 @@ describe("isolated QA name editing", () => {
     vi.stubEnv("VERCEL", ""); vi.stubEnv("VERCEL_ENV", ""); vi.stubEnv("ACC_E2E_MODE", "1"); vi.stubEnv("OCR_EVAL_TEST_FIXTURE", "1");
     expect(() => requireQaAllianceEditing("qa-alliance")).toThrow("isolated test database");
     vi.stubEnv("DATABASE_URL", "postgresql://test:test@127.0.0.1/test"); expect(() => requireQaAllianceEditing("qa-alliance")).not.toThrow();
+    const routed = "postgresql://test:test@127.0.0.1/test?host=production.example";
+    expect(parse(routed).host).toBe("production.example");
+    for (const value of [routed, "postgresql://test:test@localhost/test?hostaddr=203.0.113.1", "postgresql://test:test@localhost/test?port=5432&port=5433", "https://localhost/test"]) {
+      vi.stubEnv("DATABASE_URL", value); expect(() => requireQaAllianceEditing("qa-alliance")).toThrow("isolated test database");
+    }
   });
   it("preserves the entered tag/name while rejecting blank, multiline and excessive values", () => {
     expect(validateQaAllianceName("  [QA] Test alliance  ")).toBe("[QA] Test alliance");
