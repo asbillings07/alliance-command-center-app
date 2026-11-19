@@ -9,7 +9,7 @@ import { AccountProfileForm } from "./AccountProfileForm";
 import { AccountEmailForm } from "./AccountEmailForm";
 import { AccountSecurityForm } from "./AccountSecurityForm";
 import { GoogleConnectResultBanner } from "./GoogleConnectResultBanner";
-import { ocrPreferencesAvailable } from "@/app/src/lib/ocr/config";
+import { canManageOcrPreferences } from "@/app/src/lib/ocr/consent";
 
 // The connect-result banner cookie is read per request, so this page must not
 // be statically cached.
@@ -45,7 +45,7 @@ export default async function AccountPage() {
       maxWidth="lg"
     >
       <div className="space-y-6">
-        {ocrPreferencesAvailable() && <Card><Card.Header>Screenshot preferences</Card.Header><Card.Body>
+        {await canManageOcrPreferences(id) && <Card><Card.Header>Screenshot preferences</Card.Header><Card.Body>
           <p className="mb-4 text-sm text-text-secondary">Manage OCR processing and optional human quality review for your account.</p>
           <Button variant="secondary" href="/account/ocr">OCR Settings</Button>
         </Card.Body></Card>}

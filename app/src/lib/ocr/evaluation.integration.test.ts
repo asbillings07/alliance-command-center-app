@@ -4,6 +4,7 @@ import { prisma as db } from "../prisma";
 import { loadIdentityReview, decideMemberIdentity } from "../memberIdentity";
 import { loadMemberAccessReview, decideMemberSelfAccess } from "../memberSelfAccess";
 import { evaluateScreenshot, loadEvaluationContext, ocrEvaluationAvailable, readEvaluationContent, type EvaluationTarget } from "./evaluation";
+import { reservePilotAllowance } from "./pilotAllowance";
 import { reviewOrSaveBatch } from "./confirmedBatch";
 import * as providerSelection from "./transport";
 import * as rankingContext from "./rankingContext";
@@ -35,6 +36,22 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     await decideMemberSelfAccess({ allianceId, memberId, actorId, grant: true, acknowledged: true,
       reviewKey: (await loadMemberAccessReview(allianceId, memberId, actorId)).reviewKey });
   }
+  it("shares the last cent between QA and production and refuses a replay", async () => {
+    const id = crypto.randomUUID();
+    expect(await reservePilotAllowance(id)).toBe(true);
+    expect(await reservePilotAllowance(id)).toBe(false);
+    await db.ocrEvaluationBudget.update({ where: { id: OCR_CAMPAIGN }, data: { reservedMicros: 4_990_000, attempts: 499 } });
+    const qaInput = await input();
+    await Promise.allSettled([
+      reservePilotAllowance(crypto.randomUUID()),
+      evaluateScreenshot(qaInput, transport),
+    ]);
+    const total = await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } });
+    expect([total.attempts, total.reservedMicros]).toEqual([500, 5_000_000]);
+    expect(await reservePilotAllowance(crypto.randomUUID())).toBe(false);
+    await expect(evaluateScreenshot(await input(), transport)).rejects.toThrow();
+  });
+
   beforeEach(async () => {
     vi.stubEnv("FEATURE_FLAG_TEST_OVERRIDES", '{"ocr-screenshot-evaluation":true}');
     vi.stubEnv("ACC_E2E_MODE", "1"); vi.stubEnv("OCR_EVAL_TEST_FIXTURE", "1"); vi.stubEnv("SENTRY_DSN", "");
@@ -175,8 +192,14 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     expect((await loadOcrConsent(actorId)).processing!.granted).toBe(false);
     await expect(ocrEvaluationAvailable(leader())).resolves.toBe(false);
     expect(await db.ocrEvaluationAttempt.count()).toBe(0);
+    await changeQuality(true);
     vi.stubEnv("VERCEL_ENV", "production");
-    await expect(loadOcrConsent(actorId)).rejects.toThrow("unavailable here");
+    expect((await loadOcrConsent(actorId)).quality?.granted).toBe(true);
+    await changeQuality(false);
+    expect((await loadOcrConsent(actorId)).quality?.granted).toBe(false);
+    await expect(changeQuality(true)).rejects.toThrow("unavailable here");
+    await expect(changeProcessing(true)).rejects.toThrow("unavailable here");
+    await expect(loadOcrConsent(crypto.randomUUID())).rejects.toThrow("unavailable here");
   });
 
   it("disabled rollout rejects direct load, scan, read and QA edits without budget or history changes", async () => {
@@ -299,7 +322,8 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     expect(result.filter(r => r.status === "fulfilled")).toHaveLength(1);
     expect(await db.ocrQaAllianceNameChange.count({ where: { allianceId } })).toBe(1);
   });
-  it("qualifies retained ranking sources, saves once on concurrent confirmation, and blocks remapping and revoked access", async () => {
+  it.each([false, true])("saves once under concurrent confirmation and replay (initially empty roster: %s)", async empty => {
+    if (empty) await db.allianceMember.delete({ where: {id:memberId} });
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
     await db.alliance.update({ where: { id: allianceId }, data: { name: "QA" } });
     const fixture = rankingFixture();
@@ -310,16 +334,25 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     const period = await db.metricPeriod.create({ data: { allianceId, name:"Test period", startsAt:new Date("2026-11-16"), endsAt:new Date("2026-12-16") } });
     const metric = await db.metric.create({ data: { allianceId, name:"Daily VS", type:"NUMERIC", observationGrain:"DAILY_OBSERVATION", memberPeriodRollup:"SUM" } });
     await db.metricPeriodMetric.create({ data: { periodId:period.id, metricId:metric.id, weight:1, required:false } });
-    const selection = { allianceId, periodId:period.id, dailyMetric:metric.id, weeklyMetric:"", attemptIds:[first.id], week:"2026-11-16", captureDate:"", excluded:[first.id+":1",first.id+":2"] };
+    const selection = { allianceId, periodId:period.id, dailyMetric:metric.id, weeklyMetric:"", attemptIds:[first.id], week:"2026-11-16", captureDate:"", excluded:empty ? [] : [first.id+":1",first.id+":2"] };
     try {
       const preview = await reviewOrSaveBatch(actorId,selection);
-      const decision = { comparison:preview.comparison, lowerConfirmed:false };
+      const decision = { comparison:preview.comparison, lowerConfirmed:false, createMembersConfirmed:empty };
+      if (empty) {
+        expect(preview.comparisons.every(row => row.createMember)).toBe(true);
+        await expect(reviewOrSaveBatch(actorId,selection,{...decision,createMembersConfirmed:false})).rejects.toThrow("Confirm the new roster members");
+        expect(await db.allianceMember.count({where:{allianceId}})).toBe(0);
+      }
       const parallel = await Promise.allSettled([reviewOrSaveBatch(actorId,selection,decision),reviewOrSaveBatch(actorId,selection,decision)]);
       expect(parallel.some(result => result.status === "fulfilled" && result.value.saved)).toBe(true);
       expect((await reviewOrSaveBatch(actorId,selection,decision)).saved).toBe(true);
-      expect(await db.memberMetricEntry.count({ where:{periodId:period.id} })).toBe(1);
-      expect(await db.ocrScoreSource.count({ where:{attemptId:first.id} })).toBe(1);
-      await expect(reviewOrSaveBatch(actorId,{...selection,week:"2026-11-23"})).rejects.toThrow("already saved");
+      expect(await db.memberMetricEntry.count({ where:{periodId:period.id} })).toBe(empty ? 3 : 1);
+      expect(await db.ocrScoreSource.count({ where:{attemptId:first.id} })).toBe(empty ? 3 : 1);
+      if (empty) {
+        const roster = await db.allianceMember.findMany({where:{allianceId},select:{playerName:true,userId:true},orderBy:{playerName:"asc"}});
+        expect(roster).toEqual(["Jordan Vale","Morgan Reed","Riley Chen"].map(playerName=>({playerName,userId:null})));
+      }
+      await expect(reviewOrSaveBatch(actorId,{...selection,week:"2026-11-23"})).rejects.toThrow(empty ? "roster changed" : "already saved");
       await changeProcessing(false);
       await expect(reviewOrSaveBatch(actorId,selection,decision)).rejects.toThrow("disabled");
       await changeProcessing(true);

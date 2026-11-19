@@ -32,8 +32,8 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
   const results = items.flatMap(item => item.result ? [item.result] : []);
   const grouped = reconcileOverlap(items.flatMap((item, sourceIndex) => item.result ? item.result.batchReview.rows.map(row => ({ ...row,
     attemptId: item.result!.attempt.id, source: sourceIndex + 1,
-    window: dateConfirmed && !item.result!.contextChanged ? rankingWindow(item.result!.batchReview.context, week, captureDate) : null })) : []));
-  const pending = grouped.filter(({ row, conflict }) => !excluded.includes(`${row.attemptId}:${row.key}`) && (row.status !== "exact" || conflict || !row.window));
+    window: dateConfirmed && !item.result!.contextChanged ? rankingWindow(item.result!.batchReview.context, week, captureDate) : null })) : []), !!destination);
+  const pending = grouped.filter(({ row, conflict, createMember }) => !excluded.includes(`${row.attemptId}:${row.key}`) && ((row.status !== "exact" && !createMember) || conflict || !row.window));
   const chosen = grouped.filter(({ row }) => !excluded.includes(`${row.attemptId}:${row.key}`));
   const unresolvedImages = items.filter(item => item.state !== "ready" || !item.result?.batchReview.rows.length || item.result.contextChanged).length;
   const queued = items.filter(i => i.state === "queued");
@@ -162,11 +162,11 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         {showCurrentDayProgress(r.batchReview, dateConfirmed ? rankingWindow(r.batchReview.context, week, captureDate) : null) && <p className="rounded-lg border border-border p-3 text-primary-light">Screenshot {i + 1}: the current game day is in progress · {r.batchReview.countdown} remaining. These scores can increase.</p>}
       </div>; })())}
       <p className="mb-3 text-sm text-text-muted">{grouped.length} unique rows · {grouped.reduce((n, g) => n + g.duplicates, 0)} overlapping rows · {pending.length} rows need review{unresolvedImages ? ` · ${unresolvedImages} screenshots need attention` : ""}</p>
-      {grouped.length === 0 ? <Card><p className="text-text-secondary">Recognized names and scores will appear together here.</p></Card> : <ol className="grid gap-3 lg:grid-cols-2">{grouped.map(({ row, sources, conflict }) => {
+      {grouped.length === 0 ? <Card><p className="text-text-secondary">Recognized names and scores will appear together here.</p></Card> : <ol className="grid gap-3 lg:grid-cols-2">{grouped.map(({ row, sources, conflict, createMember }) => {
         const key = `${row.attemptId}:${row.key}`; const skip = excluded.includes(key);
         return <li key={key} className="min-w-0 rounded-xl border border-border bg-surface p-4"><div className="flex flex-wrap justify-between gap-2"><strong className="break-words">{row.sourceName || "Unreadable name"}</strong><strong className="tabular-nums">{row.value?.toLocaleString("en-US") ?? row.sourceValue}</strong></div>
           <p className="mt-2 text-sm text-text-secondary">{row.window?.startsWith("week:") ? `Weekly total · week of ${row.window.slice(5)}` : row.window ? `Daily score · ${row.window}` : <>Calendar context needs review — <a href="#ranking-calendar-week" className="text-primary-light underline">choose the week and confirm the dates above</a>.</>}</p>
-          <p className="mt-2 text-sm text-text-secondary">{statusText[row.status]}{row.status !== "exact" && row.matchedName ? `: ${row.matchedName}` : ""}</p>
+          <p className="mt-2 text-sm text-text-secondary">{createMember ? "New roster member · will be created when you confirm" : statusText[row.status]}{row.status !== "exact" && row.matchedName ? `: ${row.matchedName}` : ""}</p>
           {row.allianceLabel && <p className="mt-1 break-words text-sm text-text-muted">Source alliance: {row.allianceLabel}</p>}
           {conflict && <p className="mt-2 text-sm text-warning-light">These images show different values for the same member and result window. No value has been chosen automatically.</p>}
           <p className="mt-2 text-xs text-text-muted">Source screenshots: {sources.map(s => s.source).join(", ")}{sources.length > 1 && !conflict ? " · same value shown once" : ""}</p>

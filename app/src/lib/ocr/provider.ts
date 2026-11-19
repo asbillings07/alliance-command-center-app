@@ -45,7 +45,7 @@ export function validateBucketPolicy(value: unknown) {
 
 export function googleOcrTransport(): OcrTransport {
   const config = googleOcrConfig();
-  const audience = `//iam.googleapis.com/projects/${config.projectNumber}/locations/global/workloadIdentityPools/acc-ocr-eval/providers/vercel-preview`;
+  const audience = `//iam.googleapis.com/projects/${config.projectNumber}/locations/global/workloadIdentityPools/${config.providerPath}`;
   const auth = new IdentityPoolClient({
     // Credential exchanges retain Google's bounded SDK retries. Paid Vision
     // requests use the separate single-dispatch fetch path below.

@@ -5,6 +5,7 @@ import { prisma } from "../prisma";
 import { buildPermissionSet } from "../auth/permissions";
 import { readIdentitySnapshot } from "../memberIdentity";
 import { OCR_CAMPAIGN, OCR_MAX_IMAGE_BYTES, OCR_MAX_RESULT_BYTES, OCR_RESERVATION_MICROS, OCR_RETENTION_MS, OCR_VERSION, OcrEvaluationError, requireOcrEvaluation } from "./config";
+import { reserveBeforeProductionScan } from "./pilotAllowance";
 import { requireOcrRollout } from "./rollout";
 import { readOcrConsent, requireProcessingConsent } from "./consent";
 import { qualityAllowed } from "./consentPolicy";
@@ -19,6 +20,8 @@ export type EvaluationTarget = { allianceId: string; actorId: string; memberId: 
 type Tx = Prisma.TransactionClient;
 
 async function context(tx: Tx, target: EvaluationTarget, processing = true, consentRequired = true) {
+  if (process.env.VERCEL_ENV === "production" && (target.scope !== "batch" || target.actorId !== process.env.OCR_PILOT_USER_ID
+    || target.allianceId !== process.env.OCR_PILOT_ALLIANCE_ID)) throw new OcrEvaluationError("Screenshot import is unavailable for this account and alliance.");
   await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${target.actorId} FOR SHARE`;
   const actor = await tx.user.findUnique({ where: { id: target.actorId }, select: { id: true, displayName: true } });
   if (!actor) throw new OcrEvaluationError("Sign in again before evaluating a screenshot.");
@@ -187,8 +190,10 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
   });
   if (!admitted.dispatched) return auditView(admitted.attempt);
   const attempt = admitted.attempt;
-  let failureStage = "source-storage";
+  let failureStage = "allowance";
   try {
+    await reserveBeforeProductionScan(attempt.id);
+    failureStage = "source-storage";
     await unchanged(input, attempt.contextKey, input.processingConsentId);
     await transport.put(`${attempt.id}/source.png`, image.bytes, "image/png");
     failureStage = "recognition";

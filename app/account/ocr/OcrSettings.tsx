@@ -8,7 +8,7 @@ import { OCR_PROCESSING_NOTICE, OCR_QUALITY_NOTICE, processingAllowed, qualityAl
 import { OcrProcessingNotice } from "./OcrConsentGate";
 import { updateOcrConsent } from "./actions";
 
-export function OcrSettings({ initial }: { initial: OcrConsentState }) {
+export function OcrSettings({ initial, canEnable = true }: { initial: OcrConsentState; canEnable?: boolean }) {
   const router = useRouter();
   const [state, setState] = useState(initial);
   const [dialog, setDialog] = useState<"processing-on" | "processing-off" | "quality-on" | "quality-off" | null>(null);
@@ -30,7 +30,7 @@ export function OcrSettings({ initial }: { initial: OcrConsentState }) {
       <OcrProcessingNotice />
       <p className="text-sm text-text-secondary">Turning this off cannot recall an image already sent. Retained sources keep their original expiry. Your existing alliance access and the protected trial limits still apply.</p>
       {state.processing && <p className="text-xs text-text-muted">Last choice: <LocalTimestamp value={state.processing.createdAt} /></p>}
-      <Button variant="secondary" onClick={() => setDialog(processing ? "processing-off" : "processing-on")}>{processing ? "Turn off OCR processing" : "Enable OCR processing"}</Button>
+      <Button variant="secondary" disabled={!canEnable && !processing} onClick={() => setDialog(processing ? "processing-off" : "processing-on")}>{processing ? "Turn off OCR processing" : "Enable OCR processing"}</Button>
     </div></Card.Body></Card>
     <Card><Card.Header>Human quality review</Card.Header><Card.Body><div className="space-y-4">
       <Badge variant={quality ? "info" : "neutral"}>{quality ? "Optional review enabled" : "Off"}</Badge>
@@ -38,7 +38,7 @@ export function OcrSettings({ initial }: { initial: OcrConsentState }) {
       <p className="text-sm text-text-secondary">Off by default. It does not affect your ability to use OCR. Existing screenshots are not included when you enable it. Sources keep the same 30-day expiry; choosing them for review does not extend it.</p>
       <p className="text-sm text-text-secondary">Turning this off stops further quality-review access to your sources. It cannot undo a review already completed. Turning it on again covers future uploads only.</p>
       {state.quality && <p className="text-xs text-text-muted">Last choice: <LocalTimestamp value={state.quality.createdAt} /></p>}
-      <Button variant="secondary" onClick={() => setDialog(quality ? "quality-off" : "quality-on")}>{quality ? "Turn off human quality review" : "Enable human quality review"}</Button>
+      <Button variant="secondary" disabled={!canEnable && !quality} onClick={() => setDialog(quality ? "quality-off" : "quality-on")}>{quality ? "Turn off human quality review" : "Enable human quality review"}</Button>
     </div></Card.Body></Card>
     <p role="status" className="text-sm text-text-secondary">{message}</p>
     <ConfirmDialog isOpen={dialog !== null}

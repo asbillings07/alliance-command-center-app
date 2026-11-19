@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LocalTimestamp } from "@/app/alliances/[allianceId]/screenshots/LocalTimestamp";
-import { getOcrReadiness } from "@/app/src/lib/platform/ocrReadiness";
+import { productionPilotConfigured } from "@/app/src/lib/ocr/productionPilot";
+import { getProductionPilotCounts, getOcrReadiness } from "@/app/src/lib/platform/ocrReadiness";
 
 const criteria = [
   ["Usable imports", "Count user-confirmed imports, including corrections, among settled journeys. Keep failed, abandoned and open work distinct. Protected QA confirmations are counted separately below."],
@@ -12,6 +13,19 @@ const criteria = [
 ] as const;
 
 export default async function OcrReadinessPage() {
+  if (productionPilotConfigured()) {
+    const { scans, retries, failures, saves } = await getProductionPilotCounts();
+    return <article className="mx-auto max-w-5xl space-y-5">
+      <Link href="/platform/overview" className="text-sm text-primary hover:underline">Platform overview</Link>
+      <h2 className="text-2xl font-bold">WORD OCR pilot</h2>
+      <p>All-time activity for the selected account in WORD.</p>
+      <dl className="grid gap-3 sm:grid-cols-2">
+        {([["Scan attempts", scans], ["Retries included in attempts", retries], ["Failed attempts", failures], ["Confirmed score batches", saves]] as const).map(([label, value]) =>
+          <div key={label} className="rounded-lg border border-border p-4"><dt>{label}</dt><dd className="text-xl font-semibold">{value}</dd></div>)}
+      </dl>
+      <p>Public beta and paid release: Not enough evidence. A confirmed batch can contain several screenshots. A comparable manual baseline and independent accuracy audit are still needed.</p>
+    </article>;
+  }
   const data = await getOcrReadiness();
   const counts = [
     ["Initial scans", data.firstAttempts], ["Retry scans", data.retries],
@@ -60,7 +74,7 @@ export default async function OcrReadinessPage() {
       <dl className="my-4 grid grid-cols-2 gap-4 md:grid-cols-5">
         {counts.map(([label, value]) => <div key={label}><dt className="text-sm text-text-secondary">{label}</dt><dd className="text-xl font-semibold tabular-nums">{value}</dd></div>)}
       </dl>
-      <p className="text-sm text-text-secondary">QA allowance reserved: {data.reservedMicros === null ? "Unavailable" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(data.reservedMicros / 1_000_000)}. Actual invoiced cost is unavailable.</p>
+      <p className="text-sm text-text-secondary">Shared OCR allowance reserved: {data.reservedMicros === null ? "Unavailable" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(data.reservedMicros / 1_000_000)}. Actual invoiced cost is unavailable.</p>
     </section>
   </article>;
 }

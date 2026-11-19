@@ -19,8 +19,14 @@ export function requireProcessingConsent(state: OcrConsentState) {
     "Screenshots are disabled. Review OCR processing in your account Settings before continuing.", "consent-required");
 }
 
+export async function canManageOcrPreferences(userId: string) {
+  if (ocrPreferencesAvailable(userId)) return true;
+  if (process.env.VERCEL_ENV !== "production") return false;
+  return !!await prisma.ocrConsentDecision.findFirst({ where: { userId }, select: { id: true } });
+}
+
 export async function loadOcrConsent(userId: string) {
-  if (!ocrPreferencesAvailable()) throw new OcrEvaluationError("OCR settings are unavailable here.");
+  if (!await canManageOcrPreferences(userId)) throw new OcrEvaluationError("OCR settings are unavailable here.");
   return prisma.$transaction(async tx => {
     if (!await tx.user.findUnique({ where: { id: userId }, select: { id: true } })) throw new OcrEvaluationError("Sign in again.");
     return readOcrConsent(tx, userId);
@@ -31,7 +37,7 @@ export async function loadOcrConsent(userId: string) {
 export async function decideOcrConsent(userId: string, input: {
   purpose: OcrConsentPurpose; granted: boolean; expectedId: number | null; noticeVersion: string;
 }) {
-  if (!ocrPreferencesAvailable()) throw new OcrEvaluationError("OCR settings are unavailable here.");
+  if (!ocrPreferencesAvailable(userId) && (input.granted || !await canManageOcrPreferences(userId))) throw new OcrEvaluationError("OCR settings are unavailable here.");
   if (!["PROCESSING", "QUALITY_REVIEW"].includes(input.purpose) || typeof input.granted !== "boolean"
     || (input.expectedId !== null && (!Number.isSafeInteger(input.expectedId) || input.expectedId < 1))) {
     throw new OcrEvaluationError("Reload your OCR settings before saving.");

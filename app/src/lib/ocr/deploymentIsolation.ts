@@ -72,3 +72,12 @@ export function checkOcrDeploymentIsolation(env: Record<string, string | undefin
     return ["OCR database configuration is malformed; no migration may run."];
   }
 }
+
+/** A replacement QA database must never become a second lifetime allowance. */
+export function originalOcrAllowanceDatabase(env: Record<string, string | undefined>) {
+  if (checkOcrDeploymentIsolation(env).length) return false;
+  return [env.DATABASE_URL!, env.DIRECT_URL!].every(value => {
+    const url = new URL(value);
+    return connectionIdentity(value) === "ep-bold-resonance-bbeekisz" && url.pathname === "/acc_ocr_eval";
+  });
+}

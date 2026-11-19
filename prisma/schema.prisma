@@ -784,6 +784,7 @@ enum MetricEntryMethod {
 }
 
 model MemberMetricEntry {
+  ocrCreatedRosterMember Boolean @default(false)
   ocrBatchId String?
   ocrBatch OcrScoreBatch? @relation(fields: [ocrBatchId], references: [id], onDelete: Restrict)
   ocrSources OcrScoreSource[]
@@ -1294,6 +1295,7 @@ model QaManualTiming {
 }
 
 model OcrScoreBatch {
+  confirmationDigest String? @unique
   id String @id
   allianceId String
   periodId String
@@ -1313,4 +1315,9 @@ model OcrScoreSource {
   entry MemberMetricEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
   @@id([attemptId, rowKey])
   @@index([entryId])
+}
+
+model OcrPilotReservation {
+  id         String   @id @db.Uuid
+  reservedAt DateTime @default(now())
 }

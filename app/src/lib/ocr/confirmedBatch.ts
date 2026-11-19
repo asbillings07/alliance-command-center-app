@@ -1,3 +1,4 @@
+import { productionPilotConfigured } from "./productionPilot";
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@/app/generated/prisma/client";
@@ -6,7 +7,7 @@ import { metricEntryProvenance } from "../metrics/metricEntryProvenance";
 import { OcrEvaluationError } from "./config";
 import { batchWriteContext, readEvaluationContent, type EvaluationTarget } from "./evaluation";
 import { isolatedOcrDatabaseAvailable } from "./isolatedDatabase";
-import { isRankingWeekPeriod, rankingWindow, reconcileOverlap, type BatchCandidate } from "./ranking";
+import { exactNameKey, isRankingWeekPeriod, rankingWindow, reconcileOverlap, type BatchCandidate } from "./ranking";
 import { evaluationTransport } from "./transport";
 import { touchAllianceSetupActivity } from "../touchAllianceSetupActivity";
 
@@ -15,20 +16,38 @@ export type BatchSelection = {
   week: string; captureDate: string; dailyMetric: string; weeklyMetric: string;
 };
 export type ScoreComparison = { memberId: string; member: string; metric: string; metricId: string;
-  window: string; value: number; previous: number | null; previousId: string | null };
-type Decision = { comparison: string; lowerConfirmed: boolean };
+  window: string; value: number; previous: number | null; previousId: string | null; createMember: boolean };
+type Decision = { comparison: string; lowerConfirmed: boolean; createMembersConfirmed?: boolean };
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 function fail(message: string): never { throw new OcrEvaluationError(message); }
 const validId = (id: unknown) => typeof id === "string" && id.length > 0 && id.length <= 180;
 const rowId = (row: BatchCandidate) => row.attemptId + ":" + row.key;
 
 export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, decision?: Decision) {
-  if (!isolatedOcrDatabaseAvailable()) fail("Screenshot saving is unavailable here.");
+  if (!isolatedOcrDatabaseAvailable() && !productionPilotConfigured()) fail("Screenshot saving is unavailable here.");
   if (!input || !validId(input.allianceId) || !validId(input.periodId) || !Array.isArray(input.attemptIds)
     || !input.attemptIds.length || input.attemptIds.length > 20 || !input.attemptIds.every(validId)
     || new Set(input.attemptIds).size !== input.attemptIds.length || !Array.isArray(input.excluded)
     || input.excluded.length > 3000 || !input.excluded.every(validId)) fail("Choose a valid screenshot batch.");
   const target: EvaluationTarget = { actorId, allianceId: input.allianceId, memberId: null, scope: "batch" };
+  const receiptKey = (digest: string) => hash([digest, actorId, input.allianceId, input.periodId,
+    input.attemptIds, [...input.excluded].sort(), input.week, input.captureDate, input.dailyMetric, input.weeklyMetric]);
+  // A successfully saved batch may itself change the roster. Recover its
+  // receipt after a lost response before attempting to rematch old evidence.
+  if (decision && /^[a-f0-9]{64}$/.test(decision.comparison)) {
+    const receipt = await prisma.$transaction(async tx => {
+      await batchWriteContext(tx, target);
+      return tx.ocrScoreBatch.findFirst({ where: { confirmationDigest: receiptKey(decision.comparison), actorId,
+        allianceId: input.allianceId, periodId: input.periodId }, select: { id: true, excludedRows: true,
+        entries: { select: { allianceMemberId: true, allianceMember: { select: { playerName: true } },
+          metricId: true, metric: { select: { name: true } }, value: true, ocrCreatedRosterMember: true,
+          ocrSources: { select: { window: true }, take: 1 } } } } });
+    });
+    if (receipt) return { batchId: receipt.id, comparison: decision.comparison, saved: true, excluded: receipt.excludedRows,
+      comparisons: receipt.entries.map(e => ({ memberId: e.allianceMemberId, member: e.allianceMember.playerName,
+        metricId: e.metricId, metric: e.metric.name, value: e.value!, window: e.ocrSources[0].window,
+        createMember: e.ocrCreatedRosterMember, previous: null, previousId: null })) };
+  }
   const transport = await evaluationTransport();
   const candidates: BatchCandidate[] = [];
   for (const [i, id] of input.attemptIds.entries()) {
@@ -39,13 +58,13 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
     if (!window) fail("Confirm the screenshot dates before saving.");
     candidates.push(...result.batchReview.rows.map(row => ({ ...row, attemptId: id, source: i + 1, window })));
   }
-  const groups = reconcileOverlap(candidates);
+  const groups = reconcileOverlap(candidates, true);
   const excluded = new Set(input.excluded);
   if (input.excluded.some(key => !groups.some(({row}) => rowId(row) === key))) fail("The reviewed rows changed. Review this batch again.");
   const chosen = groups.filter(({row}) => !excluded.has(rowId(row)));
   if (!chosen.length || chosen.length > 300) fail("Choose between one and 300 matched scores.");
-  for (const { row, conflict } of chosen) {
-    if (conflict || !row.memberId || row.status !== "exact" || row.value === null || row.value > 2147483647)
+  for (const { row, conflict, createMember } of chosen) {
+    if (conflict || (!createMember && (!row.memberId || row.status !== "exact")) || row.value === null || row.value > 2147483647)
       fail("Exclude unresolved rows or conflicting scores before saving.");
   }
   const metricFor = (r: BatchCandidate) => r.window!.startsWith("week:") ? input.weeklyMetric : input.dailyMetric;
@@ -60,7 +79,7 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
     if (!period) fail("Choose an active evaluation period.");
     const toDay = (d: Date | null) => d?.toISOString().slice(0, 10);
     const start = toDay(period.startsAt), end = toDay(period.endsAt);
-    const slots = chosen.map(({ row }) => {
+    const slots = chosen.map(({ row, createMember }) => {
       const weekly = row.window!.startsWith("week:");
       const day = weekly ? row.window!.slice(5) : row.window!;
       const metric = period.periodMetrics.find(m => m.metric.id === metricFor(row))?.metric;
@@ -70,8 +89,8 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
       if ((start && day < start) || (end && day > end)) fail("A screenshot date falls outside this evaluation period.");
       if (weekly && !isRankingWeekPeriod(day, start, end))
         fail("A weekly total requires an evaluation period covering that one scoring week starting on that Monday.");
-      return { memberId: row.memberId!, metricId: metric.id, day: weekly ? null : day, metric: metric.name,
-        window: row.window!, member: row.matchedName!, value: row.value! };
+      return { createMember, memberId: createMember ? "new:" + exactNameKey(row.sourceName) : row.memberId!, metricId: metric.id, day: weekly ? null : day, metric: metric.name,
+        window: row.window!, member: createMember ? exactNameKey(row.sourceName) : row.matchedName!, value: row.value! };
     });
     // Lock destination members in a consistent order. The score-entry FK also
     // locks these records for manual/spreadsheet writers.
@@ -85,7 +104,7 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
       ) e ON true`;
     const comparisons: ScoreComparison[] = slots.map(s => {
       const old = prior.find(p => p.memberId === s.memberId && p.metricId === s.metricId && p.day === s.day);
-      return { memberId: s.memberId, metricId: s.metricId, member: s.member, metric: s.metric, window: s.window, value: s.value, previous: old?.value ?? null, previousId: old?.id ?? null };
+      return { createMember: s.createMember, memberId: s.memberId, metricId: s.metricId, member: s.member, metric: s.metric, window: s.window, value: s.value, previous: old?.value ?? null, previousId: old?.id ?? null };
     });
     const comparison = hash([batchId, actorId, current.contextKey, current.consent.processing?.id, period.name, comparisons]);
     const response = { batchId, comparison, comparisons, excluded: excluded.size, saved: false };
@@ -97,16 +116,23 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
     if (!decision) return response;
     if (comparison !== decision.comparison) fail("The scores or review context changed. Close this dialog and review the current values.");
     if (comparisons.some(r => r.previous !== null && r.value < r.previous) && decision.lowerConfirmed !== true) fail("Confirm the lower scores before applying this batch.");
+    const newNames = [...new Set(slots.filter(s => s.createMember).map(s => s.member))];
+    if (newNames.length && decision.createMembersConfirmed !== true) fail("Confirm the new roster members before saving.");
     const provenance = await metricEntryProvenance(tx, input.allianceId, actorId, "OCR_SCREENSHOT");
-    await tx.ocrScoreBatch.create({ data: { id: batchId, allianceId: input.allianceId, actorId, periodId: input.periodId, excludedRows: excluded.size } });
+    await tx.ocrScoreBatch.create({ data: { id: batchId, confirmationDigest: receiptKey(comparison), allianceId: input.allianceId, actorId, periodId: input.periodId, excludedRows: excluded.size } });
+    const created = newNames.length ? await tx.allianceMember.createManyAndReturn({
+      data: newNames.map(playerName => ({ allianceId: input.allianceId, playerName })),
+      select: { id: true, playerName: true },
+    }) : [];
+    const newIds = new Map(created.map(m => [m.playerName, m.id]));
     const entries = slots.map(s => ({ ...provenance, id: randomUUID(), ocrBatchId: batchId, periodId: input.periodId, metricId: s.metricId,
-      allianceMemberId: s.memberId, value: s.value, observedOn: s.day ? new Date(s.day) : null,
+      ocrCreatedRosterMember: s.createMember, allianceMemberId: newIds.get(s.member) ?? s.memberId, value: s.value, observedOn: s.day ? new Date(s.day) : null,
       observationGrain: s.day ? "DAILY_OBSERVATION" as const : "PERIOD_VALUE" as const }));
     await tx.memberMetricEntry.createMany({ data: entries });
     await tx.ocrScoreSource.createMany({ data: chosen.flatMap((g, i) => g.sources.map(r => ({
       entryId: entries[i].id, attemptId: r.attemptId, rowKey: r.key, window: r.window!,
     }))) });
     await touchAllianceSetupActivity(tx, input.allianceId);
-    return { ...response, saved: true };
+    return { ...response, comparisons: comparisons.map(r => ({ ...r, memberId: newIds.get(r.member) ?? r.memberId })), saved: true };
   }, { isolationLevel: "Serializable", timeout: 15000 });
 }
