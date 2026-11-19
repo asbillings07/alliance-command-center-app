@@ -13,6 +13,7 @@ import { decideOcrConsent, loadOcrConsent } from "./consent";
 import { OCR_PROCESSING_NOTICE, OCR_QUALITY_NOTICE, qualitySourceEligible } from "./consentPolicy";
 import { OCR_CAMPAIGN, OCR_RETENTION_MS } from "./config";
 import type { OcrTransport } from "./provider";
+import { RecognitionFailure, recognitionFailureMessage } from "./recognitionFailure";
 import type { Recognition } from "./recognition";
 import { rankingFixture } from "./testing/rankingFixture";
 import { loadQaAllianceSettings, renameQaAlliance } from "./qaAlliance";
@@ -114,7 +115,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     transport.put = vi.fn(async (name, bytes, type) => { await put(name, bytes, type); await changeProcessing(false); });
     await expect(evaluateScreenshot(await input(), transport)).rejects.toThrow("Screenshots are disabled");
     expect(transport.recognize).not.toHaveBeenCalled();
-    expect(await db.ocrEvaluationAttempt.findFirstOrThrow()).toMatchObject({ status: "FAILED", outcome: "processing-failed:recognition" });
+    expect(await db.ocrEvaluationAttempt.findFirstOrThrow()).toMatchObject({ status: "FAILED", outcome: "processing-failed:access-check" });
     expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ reservedMicros: 10000, attempts: 1 });
   });
   it("does not publish recognition results after consent changes while Google responds", async () => {
@@ -133,7 +134,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     await expect(evaluateScreenshot(await input(), transport)).rejects.toThrow("Screenshots are disabled");
     expect(transport.put).toHaveBeenCalledTimes(1);
     expect([...objects.keys()].some(key => key.endsWith("recognition.json"))).toBe(false);
-    expect(await db.ocrEvaluationAttempt.findFirstOrThrow()).toMatchObject({ status: "FAILED", outcome: "processing-failed:result-storage" });
+    expect(await db.ocrEvaluationAttempt.findFirstOrThrow()).toMatchObject({ status: "FAILED", outcome: "processing-failed:access-check" });
   });
   it("revocation and re-enabling cannot resume an earlier in-flight review", async () => {
     const proposed = await input();
@@ -252,7 +253,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     await expect(evaluateScreenshot(scanInput, transport)).rejects.toThrow("unavailable for this account");
     expect(transport.recognize).not.toHaveBeenCalled();
     expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 1, reservedMicros: 10000 });
-    expect(await db.ocrEvaluationAttempt.findFirstOrThrow({ where: { allianceId } })).toMatchObject({ status: "FAILED", outcome: "processing-failed:recognition" });
+    expect(await db.ocrEvaluationAttempt.findFirstOrThrow({ where: { allianceId } })).toMatchObject({ status: "FAILED", outcome: "processing-failed:access-check" });
   });
 
   it("does not disclose content when rollout turns off while storage responds", async () => {
@@ -528,6 +529,17 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
       return objects.get(name)!;
     });
     await expect(readEvaluationContent(batch, first.id, "image", transport)).rejects.toThrow("permission");
+  });
+  it.each(["provider-error", "response-unreadable", "result-too-large"] as const)("retains %s on the original attempt and in history", async reason => {
+    const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
+    vi.mocked(transport.recognize).mockRejectedValue(new RecognitionFailure(reason));
+    const outcome = `processing-failed:${reason}`;
+    await expect(evaluateScreenshot(await input(batch), transport)).rejects.toMatchObject({ outcome, message: recognitionFailureMessage(outcome) });
+    const existing = await evaluateScreenshot(await input(batch), transport);
+    expect(existing).toMatchObject({ status: "FAILED", outcome });
+    expect((await loadEvaluationContext(batch)).attempts).toEqual(expect.arrayContaining([expect.objectContaining({ id: existing.id, outcome })]));
+    expect(transport.recognize).toHaveBeenCalledTimes(1);
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 1, reservedMicros: 10000 });
   });
   it("does not redispatch a failed batch image under a new client request ID", async () => {
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };

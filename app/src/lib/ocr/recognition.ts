@@ -1,3 +1,5 @@
+import { RecognitionFailure } from "./recognitionFailure";
+
 export type OcrWord = { text: string; x: number; y: number; width: number; height: number };
 export type Recognition = { text: string; words: OcrWord[] };
 export type VsReview = {
@@ -60,14 +62,20 @@ export function parseVisionResponse(value: unknown, width: number, height: numbe
   const root = value as { responses?: { error?: unknown; textAnnotations?: {
     description?: unknown; boundingPoly?: { vertices?: { x?: number; y?: number }[] }
   }[] }[] };
-  if (!root || !Array.isArray(root.responses) || root.responses.length !== 1 || root.responses[0].error) throw new Error("Invalid recognition response");
-  const annotations = root.responses[0].textAnnotations ?? [];
-  if (!Array.isArray(annotations) || annotations.length > 1001) throw new Error("Recognition response is too large");
+  if (!root || !Array.isArray(root.responses) || root.responses.length !== 1) throw new Error("Invalid recognition response");
+  const annotation = root.responses[0];
+  if (!annotation || typeof annotation !== "object" || Array.isArray(annotation)) throw new Error("Invalid recognition response");
+  if (annotation.error) throw new RecognitionFailure("provider-error");
+  const annotations = annotation.textAnnotations ?? [];
+  if (!Array.isArray(annotations)) throw new Error("Invalid recognition annotations");
+  if (annotations.length > 1001) throw new RecognitionFailure("result-too-large");
   const text = annotations[0]?.description ?? "";
-  if (typeof text !== "string" || text.length > 16000) throw new Error("Invalid recognition text");
+  if (typeof text === "string" && text.length > 16000) throw new RecognitionFailure("result-too-large");
+  if (typeof text !== "string") throw new Error("Invalid recognition text");
   const words: OcrWord[] = [];
   for (const annotation of annotations.slice(1)) {
-    if (typeof annotation.description !== "string" || annotation.description.length > 500) throw new Error("Invalid recognition word");
+    if (typeof annotation.description !== "string") throw new Error("Invalid recognition word");
+    if (annotation.description.length > 500) throw new RecognitionFailure("result-too-large");
     const vertices = annotation.boundingPoly?.vertices;
     if (!Array.isArray(vertices) || vertices.length !== 4) continue;
     if (vertices.some(v => !Number.isFinite(v.x ?? 0) || !Number.isFinite(v.y ?? 0)

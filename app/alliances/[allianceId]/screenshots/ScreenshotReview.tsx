@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, Badge } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import type { Recognition, VsReview } from "@/app/src/lib/ocr/recognition";
+import { recognitionFailureMessage } from "@/app/src/lib/ocr/recognitionFailure";
 import { allianceRejectionMessage, isAllianceRejection, allianceBatchNotice } from "@/app/src/lib/ocr/allianceEvidence";
 
 import { AllianceBatchDialog } from "./AllianceBatchDialog";
@@ -66,7 +67,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
       if (token !== operation.current) return;
       setAdditionalAttempts(previous => [attempt, ...previous.filter(a => a.id !== attempt.id)].slice(0, 20));
       if (isAllianceRejection(attempt)) { block(attempt.outcome); return; }
-      if (attempt.status !== "READY") { setMessage("This attempt has not completed. It will not be sent again automatically. Reload to check its history."); return; }
+      if (attempt.status !== "READY") { setMessage(recognitionFailureMessage(attempt.outcome) ?? "This attempt has not completed. It will not be sent again automatically. Reload to check its history."); return; }
       const next = await readResult(attempt.id);
       if (token === operation.current) { setResult(next); setFile(null); setMessage("Recognition is ready to review. No scores were changed."); }
     } catch (error) { if (token === operation.current) { setMessage(error instanceof Error ? error.message : "The scan did not complete. Reload before trying again."); if (isAllianceRejection(error)) block(error.outcome); } }
@@ -127,6 +128,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
       {attempts.length === 0 ? <Card><p className="text-sm text-text-secondary">No screenshot evaluations yet.</p></Card> : <ol className="grid gap-3 lg:grid-cols-2">{attempts.map(attempt => <li key={attempt.id} className="min-w-0 rounded-xl border border-border bg-surface p-4">
         <p className="break-words font-medium">{attempt.sourceFilename ?? "Original filename unavailable"}</p><p className="mt-1 break-words text-sm text-text-secondary">Uploaded by {attempt.actorName} · {attempt.actorRole.toLowerCase()} · <LocalTimestamp value={attempt.createdAt} /></p>
         <p className="mt-2 text-sm text-text-muted">{attempt.status === "READY" ? "Recognition complete" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Scan failed — no automatic retry" : "Processing or interrupted — no automatic retry"}</p>
+        {recognitionFailureMessage(attempt.outcome) && <p className="mt-2 text-sm text-warning-light">{recognitionFailureMessage(attempt.outcome)}</p>}
         {isAllianceRejection(attempt) && <p className="mt-2 text-sm text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}
         <div className="mt-3"><Button variant="secondary" disabled={busy || attempt.status !== "READY"} onClick={() => inspect(attempt)}>Review scan</Button></div>
       </li>)}</ol>}

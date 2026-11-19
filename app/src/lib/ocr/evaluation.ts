@@ -12,6 +12,7 @@ import { readOcrConsent, requireProcessingConsent } from "./consent";
 import { qualityAllowed } from "./consentPolicy";
 import { normalizeScreenshot } from "./image";
 import type { OcrTransport } from "./provider";
+import { RecognitionFailure, recognitionFailureMessage } from "./recognitionFailure";
 import { reviewDailyVs } from "./recognition";
 import { readRankingContext } from "./rankingContext";
 import { reviewRanking, type RankingRecognition, type RosterMember } from "./ranking";
@@ -215,18 +216,23 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
   let failureStage = "allowance";
   try {
     await reserveBeforeProductionScan(attempt.id);
+    failureStage = "access-check";
+    await unchanged(input, attempt.contextKey, input.processingConsentId);
     failureStage = "source-storage";
-    await unchanged(input, attempt.contextKey, input.processingConsentId);
     await transport.put(`${attempt.id}/source.png`, image.bytes, "image/png");
+    failureStage = "access-check";
+    await unchanged(input, attempt.contextKey, input.processingConsentId);
     failureStage = "recognition";
-    await unchanged(input, attempt.contextKey, input.processingConsentId);
     const recognition = await transport.recognize(image);
+    failureStage = "access-check";
     await unchanged(input, attempt.contextKey, input.processingConsentId);
+    failureStage = "ranking-analysis";
     const rankingContext = await readRankingContext(image.bytes, recognition);
     const content = Buffer.from(JSON.stringify({ ...recognition, rankingContext }));
-    if (content.length > OCR_MAX_RESULT_BYTES) throw new Error("Recognition too large");
-    failureStage = "result-storage";
+    if (content.length > OCR_MAX_RESULT_BYTES) throw new RecognitionFailure("result-too-large");
+    failureStage = "access-check";
     await unchanged(input, attempt.contextKey, input.processingConsentId);
+    failureStage = "result-storage";
     await transport.put(`${attempt.id}/recognition.json`, content, "application/json");
     failureStage = "finalization";
     const complete = await transaction(async tx => {
@@ -241,8 +247,11 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     return auditView(complete);
   } catch (error) {
     // Never log provider errors: they may contain image bytes or recognized text.
-    await prisma.ocrEvaluationAttempt.updateMany({ where: { id: attempt.id, status: "PROCESSING" }, data: { status: "FAILED", outcome: `processing-failed:${failureStage}` } });
+    const outcome = `processing-failed:${error instanceof RecognitionFailure ? error.reason : failureStage}`;
+    await prisma.ocrEvaluationAttempt.updateMany({ where: { id: attempt.id, status: "PROCESSING" }, data: { status: "FAILED", outcome } });
     if (error instanceof OcrEvaluationError) throw error;
+    const detail = recognitionFailureMessage(outcome);
+    if (detail) throw new OcrEvaluationError(detail, outcome);
     throw new OcrEvaluationError("The scan did not complete. No scores changed. It will not be retried automatically; reload to check its history before choosing another scan.");
   }
 }

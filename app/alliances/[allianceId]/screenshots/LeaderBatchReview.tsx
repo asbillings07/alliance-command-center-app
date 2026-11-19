@@ -11,6 +11,7 @@ import { RankingScreenshotDialog } from "./RankingScreenshotDialog";
 import { AllianceBatchDialog } from "./AllianceBatchDialog";
 import { QaAllianceSettings, type QaAllianceSettingsData } from "./QaAllianceSettings";
 import { rankingWindow, reconcileOverlap, resolveRankingChoices, showCurrentDayProgress, type RankingReview, type RosterMember } from "@/app/src/lib/ocr/ranking";
+import { recognitionFailureMessage } from "@/app/src/lib/ocr/recognitionFailure";
 import { allianceRejectionMessage, isAllianceRejection, allianceBatchNotice } from "@/app/src/lib/ocr/allianceEvidence";
 
 type Attempt = { sourceFilename: string | null; ownRequestId?: string | null; retryable?: boolean; id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
@@ -99,7 +100,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
           update(item.requestId, { file: null, state: "blocked", outcome: attempt.outcome, error: allianceRejectionMessage(attempt.outcome) });
           continue;
         }
-        if (attempt.status === "FAILED") throw new Error("This scan failed. You can retry this screenshot.");
+        if (attempt.status === "FAILED") throw new Error(recognitionFailureMessage(attempt.outcome) ?? "This scan failed. You can retry this screenshot.");
         if (attempt.status !== "READY") throw new Error("This scan is still pending. Check upload history before trying again.");
         const result = await read(attempt.id);
         if (nextItems.some(p => p.requestId !== item.requestId && p.result?.attempt.id === result.attempt.id)) {
@@ -290,6 +291,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
               <div className="min-w-0 flex-1 basis-52">
                 <p className="font-semibold [overflow-wrap:anywhere]">{attempt.sourceFilename ?? "Original filename unavailable"}</p>
                 <p className="mt-1 break-words text-text-muted">Uploaded by {attempt.actorName} · <LocalTimestamp value={attempt.createdAt} /></p>
+                {recognitionFailureMessage(attempt.outcome) && <p className="mt-2 text-sm text-warning-light">{recognitionFailureMessage(attempt.outcome)}</p>}
                 {isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}
               </div>
               {attempt.retryable
