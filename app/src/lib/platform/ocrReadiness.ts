@@ -2,6 +2,7 @@ import "server-only";
 import { notFound } from "next/navigation";
 import { requirePlatformAdmin } from "../auth/requirePlatformAdmin";
 import { OCR_CAMPAIGN, localOcrFixtureEnabled, ocrPreferencesAvailable } from "../ocr/config";
+import { productionPilotConfigured } from "../ocr/productionPilot";
 import { checkOcrDeploymentIsolation, isLocalOcrDatabase } from "../ocr/deploymentIsolation";
 import { qaManualTimingSummary } from "./qaManualTimingSummary";
 import { prisma } from "../prisma";
@@ -31,4 +32,21 @@ export async function getOcrReadiness() {
     firstAt: attempts._min.createdAt, lastAt: attempts._max.createdAt,
     reservedMicros: budget?.reservedMicros ?? null,
   };
+}
+
+
+// Production counters come only from the nominated real account and alliance.
+// Expose aggregate workflow counts to Platform, never recognized content.
+export async function getProductionPilotCounts() {
+  await requirePlatformAdmin();
+  if (!productionPilotConfigured()) notFound();
+  const allianceId = process.env.OCR_PILOT_ALLIANCE_ID!;
+  const actorId = process.env.OCR_PILOT_USER_ID!;
+  const [scans, retries, failures, saves] = await prisma.$transaction([
+    prisma.ocrEvaluationAttempt.count({ where: { allianceId, actorUserId: actorId } }),
+    prisma.ocrEvaluationAttempt.count({ where: { allianceId, actorUserId: actorId, retryOf: { not: null } } }),
+    prisma.ocrEvaluationAttempt.count({ where: { allianceId, actorUserId: actorId, status: "FAILED" } }),
+    prisma.ocrScoreBatch.count({ where: { allianceId, actorId } }),
+  ], { isolationLevel: "RepeatableRead" });
+  return { scans, retries, failures, saves };
 }

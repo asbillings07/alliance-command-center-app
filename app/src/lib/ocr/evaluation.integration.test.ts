@@ -4,6 +4,7 @@ import { prisma as db } from "../prisma";
 import { loadIdentityReview, decideMemberIdentity } from "../memberIdentity";
 import { loadMemberAccessReview, decideMemberSelfAccess } from "../memberSelfAccess";
 import { evaluateScreenshot, loadEvaluationContext, ocrEvaluationAvailable, readEvaluationContent, type EvaluationTarget } from "./evaluation";
+import { reservePilotAllowance } from "./pilotAllowance";
 import { reviewOrSaveBatch } from "./confirmedBatch";
 import * as providerSelection from "./transport";
 import * as rankingContext from "./rankingContext";
@@ -35,6 +36,22 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     await decideMemberSelfAccess({ allianceId, memberId, actorId, grant: true, acknowledged: true,
       reviewKey: (await loadMemberAccessReview(allianceId, memberId, actorId)).reviewKey });
   }
+  it("shares the last cent between QA and production and refuses a replay", async () => {
+    const id = crypto.randomUUID();
+    expect(await reservePilotAllowance(id)).toBe(true);
+    expect(await reservePilotAllowance(id)).toBe(false);
+    await db.ocrEvaluationBudget.update({ where: { id: OCR_CAMPAIGN }, data: { reservedMicros: 4_990_000, attempts: 499 } });
+    const qaInput = await input();
+    await Promise.allSettled([
+      reservePilotAllowance(crypto.randomUUID()),
+      evaluateScreenshot(qaInput, transport),
+    ]);
+    const total = await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } });
+    expect([total.attempts, total.reservedMicros]).toEqual([500, 5_000_000]);
+    expect(await reservePilotAllowance(crypto.randomUUID())).toBe(false);
+    await expect(evaluateScreenshot(await input(), transport)).rejects.toThrow();
+  });
+
   beforeEach(async () => {
     vi.stubEnv("FEATURE_FLAG_TEST_OVERRIDES", '{"ocr-screenshot-evaluation":true}');
     vi.stubEnv("ACC_E2E_MODE", "1"); vi.stubEnv("OCR_EVAL_TEST_FIXTURE", "1"); vi.stubEnv("SENTRY_DSN", "");

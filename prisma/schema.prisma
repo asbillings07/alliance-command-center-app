@@ -1314,3 +1314,8 @@ model OcrScoreSource {
   @@id([attemptId, rowKey])
   @@index([entryId])
 }
+
+model OcrPilotReservation {
+  id         String   @id @db.Uuid
+  reservedAt DateTime @default(now())
+}

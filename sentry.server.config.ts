@@ -4,12 +4,16 @@
 
 import * as Sentry from "@sentry/nextjs";
 
+import { allowPilotServerEvent } from "./app/src/lib/ocr/pilotTelemetry";
+
 const dsn = process.env.SENTRY_DSN;
 
 // Only initialize Sentry if a DSN is configured
 if (dsn) {
   Sentry.init({
     dsn,
+    beforeSend: event => allowPilotServerEvent(event) ? event : null,
+    beforeSendTransaction: event => allowPilotServerEvent(event) ? event : null,
 
     // Conservative sampling in production to avoid excessive telemetry
     // Development uses 100% for debugging, production uses 10%

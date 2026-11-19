@@ -1,3 +1,4 @@
+import { productionPilotConfigured } from "@/app/src/lib/ocr/productionPilot";
 import Link from "next/link";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
@@ -7,7 +8,7 @@ import { LocalTimestamp } from "./LocalTimestamp";
 
 export async function SavedScoreBatches({ allianceId, periodId }: { allianceId: string; periodId: string }) {
   await requireAllianceAccess({ allianceId, requiredPermission: Permissions.IMPORT_METRICS });
-  if (!isolatedOcrDatabaseAvailable()) return null;
+  if (!isolatedOcrDatabaseAvailable() && !productionPilotConfigured()) return null;
   const batches = await prisma.ocrScoreBatch.findMany({ where: { allianceId, periodId }, orderBy: [{ savedAt: "desc" }, { id: "desc" }], take: 10,
     select: { id: true, savedAt: true, excludedRows: true, entries: { where: { periodId, allianceMember: { allianceId } },
       orderBy: { allianceMember: { playerName: "asc" } }, select: { id: true, allianceMemberId: true, allianceMember: { select: { playerName: true } },

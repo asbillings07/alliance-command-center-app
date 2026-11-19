@@ -45,7 +45,7 @@ export default async function AccountPage() {
       maxWidth="lg"
     >
       <div className="space-y-6">
-        {ocrPreferencesAvailable() && <Card><Card.Header>Screenshot preferences</Card.Header><Card.Body>
+        {ocrPreferencesAvailable(id) && <Card><Card.Header>Screenshot preferences</Card.Header><Card.Body>
           <p className="mb-4 text-sm text-text-secondary">Manage OCR processing and optional human quality review for your account.</p>
           <Button variant="secondary" href="/account/ocr">OCR Settings</Button>
         </Card.Body></Card>}

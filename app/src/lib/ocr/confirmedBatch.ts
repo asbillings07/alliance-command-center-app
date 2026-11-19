@@ -1,3 +1,4 @@
+import { productionPilotConfigured } from "./productionPilot";
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@/app/generated/prisma/client";
@@ -23,7 +24,7 @@ const validId = (id: unknown) => typeof id === "string" && id.length > 0 && id.l
 const rowId = (row: BatchCandidate) => row.attemptId + ":" + row.key;
 
 export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, decision?: Decision) {
-  if (!isolatedOcrDatabaseAvailable()) fail("Screenshot saving is unavailable here.");
+  if (!isolatedOcrDatabaseAvailable() && !productionPilotConfigured()) fail("Screenshot saving is unavailable here.");
   if (!input || !validId(input.allianceId) || !validId(input.periodId) || !Array.isArray(input.attemptIds)
     || !input.attemptIds.length || input.attemptIds.length > 20 || !input.attemptIds.every(validId)
     || new Set(input.attemptIds).size !== input.attemptIds.length || !Array.isArray(input.excluded)
