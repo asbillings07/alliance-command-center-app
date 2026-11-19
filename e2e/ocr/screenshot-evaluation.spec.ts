@@ -526,6 +526,29 @@ test("stopping a batch after a mismatch leaves the unstarted screenshot unclassi
   expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(1);
 });
 
+test("a temporary outage retries once on the same card and reload shows one upload", async ({ page, login, ownerScenario }) => {
+  test.setTimeout(120000);
+  const { allianceId, email, password } = ownerScenario;
+  await prisma.alliance.update({ where: { id: allianceId }, data: { name: "QA", server: allianceId } });
+  await login({ email, password, displayName: "Owner" });
+  await page.goto(`/alliances/${allianceId}/screenshots?scope=batch`);
+  const svg = rankingFixture().svg.replace("</svg>", `<text x="10" y="850">${crypto.randomUUID()}</text></svg>`);
+  await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles({
+    name: "temporary-service-outage.png", mimeType: "image/png", buffer: await sharp(Buffer.from(svg)).resize(603, 900).png().toBuffer(),
+  });
+  await page.getByRole("button", { name: "Read 1 screenshots", exact: true }).click();
+  const card = page.getByRole("listitem", { name: "Screenshot 1", exact: true });
+  await expect(card).toContainText("Retrying scan…");
+  await expect(card.getByRole("button", { name: "View screenshot 1" })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: /Show history/ }).click();
+  const history = page.getByRole("list", { name: "Ranking upload history" });
+  await expect(history.getByRole("listitem")).toHaveCount(1);
+  await expect(history).toContainText("Google temporarily unavailable");
+  await expect(history.getByRole("button", { name: "Add scan to review" })).toBeVisible();
+  expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(2);
+});
+
 for (const origin of ["card", "history"] as const) {
   test(`retrying from the ${origin} scans only the failed screenshot`, async ({ page, login, ownerScenario }) => {
   test.setTimeout(120000);

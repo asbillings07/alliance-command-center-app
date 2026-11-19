@@ -1,4 +1,7 @@
+export const temporaryServiceOutcome = "processing-failed:provider-temporary";
+
 const reasons = {
+  "provider-temporary": "Google’s text recognition service is temporarily unavailable.",
   "provider-unavailable": "The app couldn’t get a response from Google’s text recognition service.",
   "provider-error": "Google’s text recognition service returned an error for this scan.",
   "response-unreadable": "The app couldn’t read the result returned by Google.",

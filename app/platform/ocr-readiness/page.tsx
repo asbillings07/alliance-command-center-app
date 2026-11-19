@@ -20,7 +20,7 @@ export default async function OcrReadinessPage() {
       <h2 className="text-2xl font-bold">WORD OCR pilot</h2>
       <p>All-time activity for the selected account in WORD.</p>
       <dl className="grid gap-3 sm:grid-cols-2">
-        {([["Scan attempts", scans], ["Retries included in attempts", retries], ["Failed attempts", failures], ["Confirmed score batches", saves]] as const).map(([label, value]) =>
+        {([["Uploads", scans - retries], ["Scan attempts", scans], ["Retries included in attempts", retries], ["Failed attempts", failures], ["Confirmed score batches", saves]] as const).map(([label, value]) =>
           <div key={label} className="rounded-lg border border-border p-4"><dt>{label}</dt><dd className="text-xl font-semibold">{value}</dd></div>)}
       </dl>
       <p>Public beta and paid release: Not enough evidence. A confirmed batch can contain several screenshots. A comparable manual baseline and independent accuracy audit are still needed.</p>

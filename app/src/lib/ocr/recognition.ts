@@ -65,7 +65,10 @@ export function parseVisionResponse(value: unknown, width: number, height: numbe
   if (!root || !Array.isArray(root.responses) || root.responses.length !== 1) throw new Error("Invalid recognition response");
   const annotation = root.responses[0];
   if (!annotation || typeof annotation !== "object" || Array.isArray(annotation)) throw new Error("Invalid recognition response");
-  if (annotation.error) throw new RecognitionFailure("provider-error");
+  if (annotation.error) {
+    const unavailable = typeof annotation.error === "object" && "code" in annotation.error && annotation.error.code === 14;
+    throw new RecognitionFailure(unavailable ? "provider-temporary" : "provider-error");
+  }
   const annotations = annotation.textAnnotations ?? [];
   if (!Array.isArray(annotations)) throw new Error("Invalid recognition annotations");
   if (annotations.length > 1001) throw new RecognitionFailure("result-too-large");

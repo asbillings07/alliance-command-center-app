@@ -98,7 +98,10 @@ export function googleOcrTransport(): OcrTransport {
       }
       if (!response.ok) {
         await response.body?.cancel().catch(() => {});
-        throw new RecognitionFailure("provider-error");
+        const retryAfter = response.headers.get("Retry-After");
+        // Defer to manual recovery if Google asks for a longer/unknown delay.
+        const shortDelayAllowed = retryAfter === null || /^[012]$/.test(retryAfter);
+        throw new RecognitionFailure(response.status === 503 && shortDelayAllowed ? "provider-temporary" : "provider-error");
       }
       try {
         const data = await boundedBody(response, 512 * 1024);

@@ -57,13 +57,16 @@ describe("bounded provider execution", () => {
   });
   it("sends one image and one text feature to the US endpoint with no retry", async () => {
     config(); const send = vi.fn().mockResolvedValue(new Response("provider error including private content", { status: 503 })); vi.stubGlobal("fetch", send);
-    await expect(googleOcrTransport().recognize({ bytes: new Uint8Array([1, 2]), width: 200, height: 200 })).rejects.toMatchObject({ reason: "provider-error", message: "Google’s text recognition service returned an error for this scan." });
+    await expect(googleOcrTransport().recognize({ bytes: new Uint8Array([1, 2]), width: 200, height: 200 })).rejects.toMatchObject({ reason: "provider-temporary", message: "Google’s text recognition service is temporarily unavailable." });
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0][0]).toBe("https://us-vision.googleapis.com/v1/projects/project-106f8c4e-a31b-4e3c-bc5/locations/us/images:annotate");
     expect(JSON.parse(send.mock.calls[0][1].body).requests).toEqual([{ image: { content: "AQI=" }, features: [{ type: "TEXT_DETECTION" }] }]);
   });
   it.each([
     ["error inside a successful HTTP response", () => Response.json({ responses: [{ error: { message: "private-sentinel" } }] }), "provider-error"],
+    ["per-image UNAVAILABLE", () => Response.json({ responses: [{ error: { code: 14 } }] }), "provider-temporary"],
+    ["long backoff requested", () => new Response(null, { status: 503, headers: { "Retry-After": "60" } }), "provider-error"],
+    ["quota refusal", () => new Response(null, { status: 429 }), "provider-error"],
     ["network interruption", () => { throw new Error("private-sentinel"); }, "provider-unavailable"],
     ["invalid JSON", () => new Response("private-sentinel"), "response-unreadable"],
     ["invalid structure", () => Response.json({ private: "private-sentinel" }), "response-unreadable"],

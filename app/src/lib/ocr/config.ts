@@ -3,6 +3,7 @@ import { productionPilotConfigured, productionPilotPairs } from "./productionPil
 import { OCR_EVALUATION_BRANCHES } from "./evaluationBranches";
 
 export const OCR_CAMPAIGN = "acc-managed-ocr-v1";
+export const OCR_CUSTOMER_RESOURCES = "acc-customer-ocr-resources-v1";
 export const OCR_VERSION = "daily-vs-evaluation-v1";
 export const OCR_RESERVATION_MICROS = 10_000;
 export const OCR_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;

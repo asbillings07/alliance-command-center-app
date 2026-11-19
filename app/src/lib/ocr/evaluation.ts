@@ -4,15 +4,15 @@ import { Prisma, type AllianceRole, type OcrEvaluationAttempt } from "@/app/gene
 import { prisma } from "../prisma";
 import { buildPermissionSet } from "../auth/permissions";
 import { readIdentitySnapshot } from "../memberIdentity";
-import { OCR_CAMPAIGN, OCR_MAX_IMAGE_BYTES, OCR_MAX_RESULT_BYTES, OCR_RESERVATION_MICROS, OCR_RETENTION_MS, OCR_VERSION, OcrEvaluationError, requireOcrEvaluation } from "./config";
+import { OCR_CAMPAIGN, OCR_CUSTOMER_RESOURCES, OCR_MAX_IMAGE_BYTES, OCR_MAX_RESULT_BYTES, OCR_RESERVATION_MICROS, OCR_RETENTION_MS, OCR_VERSION, OcrEvaluationError, requireOcrEvaluation } from "./config";
 import { reserveBeforeProductionScan } from "./pilotAllowance";
-import { productionPilotPairAllowed } from "./productionPilot";
+import { productionPilotPairAllowed, usesOcrTestAllowance } from "./productionPilot";
 import { requireOcrRollout } from "./rollout";
 import { readOcrConsent, requireProcessingConsent } from "./consent";
 import { qualityAllowed } from "./consentPolicy";
 import { normalizeScreenshot } from "./image";
 import type { OcrTransport } from "./provider";
-import { RecognitionFailure, recognitionFailureMessage } from "./recognitionFailure";
+import { RecognitionFailure, recognitionFailureMessage, temporaryServiceOutcome } from "./recognitionFailure";
 import { reviewDailyVs } from "./recognition";
 import { readRankingContext } from "./rankingContext";
 import { reviewRanking, type RankingRecognition, type RosterMember } from "./ranking";
@@ -100,10 +100,18 @@ export async function loadEvaluationContext(target: EvaluationTarget) {
     const attempts = await tx.ocrEvaluationAttempt.findMany({ where: {
       allianceId: target.allianceId, memberId: current.memberId,
       ...(current.actorRole === "MEMBER" ? { actorUserId: target.actorId } : {}),
-    }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 20 });
+    }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 40 });
+    const retryParents = await tx.ocrEvaluationAttempt.findMany({ where: {
+      id: { in: attempts.flatMap(a => a.automaticRetry && a.retryOf ? [a.retryOf] : []) }, allianceId: target.allianceId, memberId: current.memberId,
+      outcome: temporaryServiceOutcome, retryOf: null,
+      ...(current.actorRole === "MEMBER" ? { actorUserId: target.actorId } : {}),
+    }, select: { id: true, requestId: true, createdAt: true, actorUserId: true } });
+    const grouped = new Map(retryParents.map(a => [a.id, a]));
     return { consent: current.consent, processingConsentId: current.consent.processing?.id ?? null, playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       leader: current.actorRole !== "MEMBER", members: current.members, contextKey: current.contextKey,
-      attempts: attempts.map(a => ({
+      attempts: attempts.filter(a => !grouped.has(a.id)).slice(0, 20).map(a => ({
+        firstAttemptAt: grouped.get(a.retryOf ?? "")?.createdAt.toISOString(),
+        firstRequestId: a.actorUserId === target.actorId ? grouped.get(a.retryOf ?? "")?.requestId : undefined,
         ...auditView(a),
         ownRequestId: a.actorUserId === target.actorId ? a.requestId : null,
         retryable: target.scope === "batch" && a.status === "FAILED" && !isAllianceRejection(a)
@@ -148,15 +156,17 @@ function uploadBasename(value?: string): string | null {
 }
 
 export async function evaluateScreenshot(input: EvaluationTarget & {
-  requestId: string; contextKey: string; bytes: Uint8Array; processingConsentId: number; retryOf?: string; sourceFilename?: string;
+  requestId: string; contextKey: string; bytes: Uint8Array; processingConsentId: number; retryOf?: string; automaticRetry?: boolean; sourceFilename?: string;
 }, transport: OcrTransport) {
   requireOcrEvaluation(input.allianceId);
   if (!Number.isSafeInteger(input.processingConsentId) || input.processingConsentId < 1) throw new OcrEvaluationError("Reload to review your OCR processing preference.");
   if (!/^[a-f0-9-]{36}$/i.test(input.requestId) || input.contextKey.length > 1500) throw new OcrEvaluationError("Reload this review before uploading.");
-  if (input.retryOf && (input.scope !== "batch" || !/^[a-f0-9-]{36}$/i.test(input.retryOf))) throw new OcrEvaluationError("Choose a failed ranking screenshot.");
+  if (input.automaticRetry && !input.retryOf) throw new OcrEvaluationError("Choose the original scan to retry.");
+  if (input.retryOf && ((input.scope !== "batch" && !input.automaticRetry) || !/^[a-f0-9-]{36}$/i.test(input.retryOf))) throw new OcrEvaluationError("Choose a failed ranking screenshot.");
   await unchanged(input, input.contextKey, input.processingConsentId);
   const parent = input.retryOf ? await transaction(async tx => {
     const { attempt } = await authorizedAttempt(tx, input, input.retryOf!);
+    if (input.automaticRetry && (attempt.retryOf || attempt.outcome !== temporaryServiceOutcome)) throw new OcrEvaluationError("This scan is unavailable for automatic retry.");
     if (attempt.actorUserId !== input.actorId || attempt.status !== "FAILED" || isAllianceRejection(attempt)
       || attempt.contextKey !== input.contextKey || attempt.processingConsentId !== input.processingConsentId
       || attempt.processingVersion !== OCR_VERSION) throw new OcrEvaluationError("This scan is unavailable for retry in the current review.");
@@ -166,18 +176,23 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
   if (parent && image.digest !== parent.sourceDigest) throw new OcrEvaluationError("Choose the same screenshot as the failed scan.", "retry-needs-file");
   // Preflight cannot process or store the screenshot, and precedes spending.
   await transport.preflight();
+  const testAllowance = usesOcrTestAllowance(input.actorId, input.allianceId);
+  const resourceId = testAllowance ? OCR_CAMPAIGN : OCR_CUSTOMER_RESOURCES;
   const admitted = await transaction(async tx => {
     const current = await context(tx, input);
     if (current.consent.processing?.id !== input.processingConsentId) throw new OcrEvaluationError("Your OCR preference changed. Reload before continuing.");
     if (current.contextKey !== input.contextKey) throw new OcrEvaluationError("The member's identity or access changed. Reload this review.");
     // One shared ledger lock serializes reservations across every instance.
-    await tx.$queryRaw`SELECT "id" FROM "OcrEvaluationBudget" WHERE "id" = ${OCR_CAMPAIGN} FOR UPDATE`;
+    await tx.$queryRaw`SELECT "id" FROM "OcrEvaluationBudget" WHERE "id" = ${resourceId} FOR UPDATE`;
     const existing = await tx.ocrEvaluationAttempt.findUnique({ where: { actorUserId_requestId: { actorUserId: input.actorId, requestId: input.requestId } } });
     if (existing) {
       if (existing.allianceId !== input.allianceId || existing.memberId !== current.memberId
         || existing.sourceDigest !== image.digest || existing.processingVersion !== OCR_VERSION
         || (parent && existing.retryOf !== parent.id) || existing.contextKey !== current.contextKey || existing.processingConsentId !== input.processingConsentId) throw new OcrEvaluationError("This upload reference belongs to a different review. Choose the screenshot again.");
-      return { attempt: existing, dispatched: false };
+      const child = existing.outcome === temporaryServiceOutcome ? await tx.ocrEvaluationAttempt.findFirst({
+        where: { retryOf: existing.id, automaticRetry: true, allianceId: input.allianceId, actorUserId: input.actorId, memberId: current.memberId },
+      }) : null;
+      return { attempt: child ?? existing, dispatched: false };
     }
     if (parent) {
       if (parent.expiresAt <= new Date()) throw new OcrEvaluationError("This screenshot has expired.");
@@ -195,13 +210,13 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     if (await tx.ocrEvaluationAttempt.count({ where: { actorUserId: input.actorId, createdAt: { gte: since } } }) >= 20) {
       throw new OcrEvaluationError("Your 20-scan daily evaluation limit has been reached. You can still review earlier scans.");
     }
-    const reserved = await tx.ocrEvaluationBudget.updateMany({ where: { id: OCR_CAMPAIGN,
-      reservedMicros: { lte: 5_000_000 - OCR_RESERVATION_MICROS }, attempts: { lt: 500 },
+    const reserved = await tx.ocrEvaluationBudget.updateMany({ where: { id: resourceId,
+      ...(testAllowance && { reservedMicros: { lte: 5_000_000 - OCR_RESERVATION_MICROS }, attempts: { lt: 500 } }),
       storedBytes: { lte: 500 * 1024 * 1024 - image.bytes.length } },
-      data: { reservedMicros: { increment: OCR_RESERVATION_MICROS }, attempts: { increment: 1 }, storedBytes: { increment: image.bytes.length } } });
+      data: { ...(testAllowance && { reservedMicros: { increment: OCR_RESERVATION_MICROS }, attempts: { increment: 1 } }), storedBytes: { increment: image.bytes.length } } });
     if (reserved.count !== 1) throw new OcrEvaluationError("Screenshot scanning is paused. You can still use manual entry or spreadsheets where you have access.");
     const attempt = await tx.ocrEvaluationAttempt.create({ data: {
-      id: randomUUID(), requestId: input.requestId, retryOf, allianceId: input.allianceId, memberId: current.memberId,
+      id: randomUUID(), requestId: input.requestId, retryOf, automaticRetry: input.automaticRetry === true, allianceId: input.allianceId, memberId: current.memberId,
       actorUserId: input.actorId, actorName: current.actorName, actorRole: current.actorRole,
       playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       contextKey: current.contextKey, sourceDigest: image.digest, processingVersion: OCR_VERSION,
@@ -215,7 +230,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
   const attempt = admitted.attempt;
   let failureStage = "allowance";
   try {
-    await reserveBeforeProductionScan(attempt.id);
+    if (testAllowance) await reserveBeforeProductionScan(attempt.id);
     failureStage = "access-check";
     await unchanged(input, attempt.contextKey, input.processingConsentId);
     failureStage = "source-storage";
@@ -248,7 +263,13 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
   } catch (error) {
     // Never log provider errors: they may contain image bytes or recognized text.
     const outcome = `processing-failed:${error instanceof RecognitionFailure ? error.reason : failureStage}`;
-    await prisma.ocrEvaluationAttempt.updateMany({ where: { id: attempt.id, status: "PROCESSING" }, data: { status: "FAILED", outcome } });
+    const failed = await prisma.ocrEvaluationAttempt.updateMany({ where: { id: attempt.id, status: "PROCESSING" }, data: { status: "FAILED", outcome } });
+    if (failed.count === 1 && outcome === temporaryServiceOutcome && !attempt.retryOf) {
+      // This response alone schedules the retry. History and duplicate requests
+      // return the plain audit record and can never schedule a second dispatch.
+      return { ...auditView({ ...attempt, status: "FAILED", outcome }), retryOnce: true };
+    }
+    if (input.automaticRetry && error instanceof RecognitionFailure) return auditView({ ...attempt, status: "FAILED", outcome });
     if (error instanceof OcrEvaluationError) throw error;
     const detail = recognitionFailureMessage(outcome);
     if (detail) throw new OcrEvaluationError(detail, outcome);
@@ -271,7 +292,8 @@ export async function readEvaluationContent(target: EvaluationTarget, id: string
     const { attempt } = await authorizedAttempt(tx, target, id);
     if (isAllianceRejection(attempt)) throw new OcrEvaluationError(allianceRejectionMessage(attempt.outcome), attempt.outcome);
     if (attempt.status !== "READY") throw new OcrEvaluationError("Recognition is not ready. Interrupted scans are never automatically retried.");
-    const reserved = await tx.ocrEvaluationBudget.updateMany({ where: { id: OCR_CAMPAIGN, reads: { lt: 5000 } }, data: { reads: { increment: 1 } } });
+    const resourceId = usesOcrTestAllowance(target.actorId, target.allianceId) ? OCR_CAMPAIGN : OCR_CUSTOMER_RESOURCES;
+    const reserved = await tx.ocrEvaluationBudget.updateMany({ where: { id: resourceId, reads: { lt: 5000 } }, data: { reads: { increment: 1 } } });
     if (!reserved.count) throw new OcrEvaluationError("The evaluation viewing limit has been reached.");
     return attempt;
   });

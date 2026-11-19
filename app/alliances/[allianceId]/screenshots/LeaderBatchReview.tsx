@@ -11,12 +11,13 @@ import { RankingScreenshotDialog } from "./RankingScreenshotDialog";
 import { AllianceBatchDialog } from "./AllianceBatchDialog";
 import { QaAllianceSettings, type QaAllianceSettingsData } from "./QaAllianceSettings";
 import { rankingWindow, reconcileOverlap, resolveRankingChoices, showCurrentDayProgress, type RankingReview, type RosterMember } from "@/app/src/lib/ocr/ranking";
+import { uploadWithRetry } from "@/app/src/lib/ocr/uploadWithRetry";
 import { recognitionFailureMessage } from "@/app/src/lib/ocr/recognitionFailure";
 import { allianceRejectionMessage, isAllianceRejection, allianceBatchNotice } from "@/app/src/lib/ocr/allianceEvidence";
 
-type Attempt = { sourceFilename: string | null; ownRequestId?: string | null; retryable?: boolean; id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
+type Attempt = { firstAttemptAt?: string; firstRequestId?: string; sourceFilename: string | null; ownRequestId?: string | null; retryable?: boolean; id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
 type Result = { attempt: Attempt; batchReview: RankingReview; contextChanged: boolean };
-type Item = { needsOriginal?: boolean; requestId: string; file: File | null; state: "queued" | "reading" | "ready" | "failed" | "blocked"; error?: string; outcome?: string; attemptId?: string; result?: Result };
+type Item = { needsOriginal?: boolean; requestId: string; file: File | null; state: "queued" | "reading" | "retrying" | "ready" | "failed" | "blocked"; error?: string; outcome?: string; attemptId?: string; result?: Result };
 type Props = { destination?: BatchDestination; allianceId: string; initial: { contextKey: string; processingConsentId: number | null; allianceName: string; server: string; members: RosterMember[]; attempts: Attempt[] }; synthetic: boolean; qaSettings?: QaAllianceSettingsData | null };
 const statusText = { exact: "Exact name candidate", suggested: "Suggested match — confirm the name", ambiguous: "Ambiguous roster name", unmatched: "No roster match", invalid: "Unreadable name or score", archived: "Archived member — review required" };
 
@@ -53,7 +54,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
   const missingDates = results.some(r => !rankingWindow(r.batchReview.context, week, captureDate));
   const unresolvedImages = items.filter(item => item.state !== "ready" || !item.result?.batchReview.rows.length || item.result.contextChanged).length;
   const queued = items.filter(i => i.state === "queued");
-  const existing = initial.attempts.filter(a => !items.some(item => item.requestId === a.ownRequestId || item.attemptId === a.id || item.result?.attempt.id === a.id));
+  const existing = initial.attempts.filter(a => !items.some(item => item.requestId === a.ownRequestId || item.requestId === a.firstRequestId || item.attemptId === a.id || item.result?.attempt.id === a.id));
   const weekInvalid = !!week && !rankingWindow({ kind: "weekly", label: "Weekly Rank" }, week);
 
   function invalidate() { setNeedsReviewOnly(false); setPicks([]); setNotice(null); setReviewed(false); }
@@ -93,8 +94,9 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         if (retry) form.set("retryOf", retry.attempt.id);
         form.set("requestId", item.requestId);
         form.set("contextKey", initial.contextKey); form.set("processingConsentId", String(initial.processingConsentId));
-        const response = await fetch(endpoint, { method: "POST", body: form }); const attempt = await response.json();
-        if (!response.ok) throw Object.assign(new Error(attempt.error || "This screenshot did not complete."), { outcome: attempt.outcome });
+        const attempt = await uploadWithRetry(endpoint, form, {
+          onRetry: () => update(item.requestId, { state: "retrying" }), cancelled: () => cancel.current || !active.current,
+        });
         update(item.requestId, { attemptId: attempt.id });
         if (isAllianceRejection(attempt)) {
           update(item.requestId, { file: null, state: "blocked", outcome: attempt.outcome, error: allianceRejectionMessage(attempt.outcome) });
@@ -122,7 +124,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
     if (active.current) {
       router.refresh(); setBusy(false);
       setNotice(allianceBatchNotice(nextItems));
-      setMessage(retry ? (cancel.current ? "Check the message on the screenshot you retried." : "Screenshot retry complete. Review the result on its card.") : cancel.current ? "Stopped. Completed scans remain below; unstarted images are still queued. No scan is retried automatically."
+      setMessage(retry ? (cancel.current ? "Check the message on the screenshot you retried." : "Screenshot retry complete. Review the result on its card.") : cancel.current ? "Stopped. Completed scans remain below; unstarted images are still queued."
         : nextItems.some(item => item.state === "blocked") ? "Batch checked. Each blocked screenshot has its own warning. Matching screenshots remain available for review. No scores were saved."
         : nextItems.some(item => item.state === "failed") ? "Remaining scans completed. Earlier failed images still need attention. No scores were saved."
         : "Batch recognition is ready. Review the names, scores and source periods together. No scores were saved.");
@@ -158,7 +160,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       <details className="rounded-xl border border-border bg-surface p-4 text-sm">
         <summary className="w-fit cursor-pointer rounded font-semibold text-text-primary focus-visible:outline-2 focus-visible:outline-primary">Expected ranking screenshot format</summary>
         <p className="mt-3 text-text-secondary">Show the selected weekday or Weekly Rank, plus each player’s name, alliance and points. In the game, select Your Alliance to filter the rankings.</p>
-        <p className="mt-2 text-text-secondary">Mixed, unreadable or different alliances are blocked. A processing failure or pressing Stop pauses the rest of the batch. Each account can start up to 20 scans per day.</p>
+        <p className="mt-2 text-text-secondary">Mixed, unreadable or different alliances are blocked. A processing failure or pressing Stop pauses the rest of the batch. A temporary Google outage triggers one retry after two seconds. Each account can start up to 20 scans per day, including retries.</p>
       </details>
       <ImportFileUpload id="ranking-screenshots" ariaLabel="Ranking screenshots" multiple accept="image/png,image/jpeg"
         dropSubject="your ranking screenshots" buttonLabel="Select screenshots"
@@ -183,9 +185,9 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         void scan({...target, file, fromPicker:true});
       }} />
       {items.length > 0 && <ol className="divide-y divide-border rounded-lg border border-border">{items.map((item, index) => {
-        const attempt = initial.attempts.find(a => a.ownRequestId === item.requestId) ?? initial.attempts.find(a => a.id === item.attemptId);
+        const attempt = initial.attempts.find(a => a.ownRequestId === item.requestId || a.firstRequestId === item.requestId) ?? initial.attempts.find(a => a.id === item.attemptId);
         return <li key={item.requestId} aria-label={`Screenshot ${index + 1}`} className="min-w-0 px-3 py-2 text-sm">
-        <strong>Screenshot {index + 1}</strong><p className="mt-1 text-text-secondary">{item.state === "ready" ? item.result!.batchReview.context.label : item.state === "reading" ? "Reading…" : item.state === "blocked" ? "Blocked — alliance check" : item.state === "failed" ? "Needs attention" : "Queued"}</p>
+        <strong>Screenshot {index + 1}</strong><p className="mt-1 text-text-secondary">{item.state === "ready" ? item.result!.batchReview.context.label : item.state === "retrying" ? "Retrying scan…" : item.state === "reading" ? "Reading…" : item.state === "blocked" ? "Blocked — alliance check" : item.state === "failed" ? "Needs attention" : "Queued"}</p>
         {item.error && <p className="mt-2 break-words text-warning-light">{item.error}</p>}
         {item.state === "failed" && attempt?.retryable && <div className="mt-3 space-y-2">
             <Button variant="secondary" disabled={busy} onClick={() => retryScan(attempt,item)}>Retry scan</Button>
@@ -291,6 +293,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
               <div className="min-w-0 flex-1 basis-52">
                 <p className="font-semibold [overflow-wrap:anywhere]">{attempt.sourceFilename ?? "Original filename unavailable"}</p>
                 <p className="mt-1 break-words text-text-muted">Uploaded by {attempt.actorName} · <LocalTimestamp value={attempt.createdAt} /></p>
+                {attempt.firstAttemptAt && <p className="mt-1 text-sm text-text-muted">First scan · <LocalTimestamp value={attempt.firstAttemptAt} /> · Google temporarily unavailable</p>}
                 {recognitionFailureMessage(attempt.outcome) && <p className="mt-2 text-sm text-warning-light">{recognitionFailureMessage(attempt.outcome)}</p>}
                 {isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}
               </div>
