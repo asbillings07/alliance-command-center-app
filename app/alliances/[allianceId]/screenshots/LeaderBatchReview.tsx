@@ -158,7 +158,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         <p className="mt-2 text-text-secondary">Mixed, unreadable or different alliances are blocked. A processing failure or pressing Stop pauses the rest of the batch. Each account can start up to 20 scans per day.</p>
       </details>
       <ImportFileUpload id="ranking-screenshots" ariaLabel="Ranking screenshots" multiple accept="image/png,image/jpeg"
-        dropSubject="your ranking screenshots" buttonLabel="Select ranking screenshots"
+        dropSubject="your ranking screenshots" buttonLabel="Select screenshots"
         fileDescription="Up to 20 PNG or JPEG images, 2 MB each." loadingText="Reading screenshots…" disabled={busy}
         onFilesSelected={files => {
           if (files.length + items.length > 20 || files.some(f => !validRankingFile(f))) {
@@ -273,10 +273,12 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       uploadedBy={source.result.attempt.actorName} uploadedAt={source.result.attempt.createdAt}
       onClose={() => setSource(null)} />}
     <p role="status" aria-live="polite" className="break-words text-sm text-text-secondary">{message}</p>
-    <section><h2 className="text-lg font-semibold">Ranking upload history</h2><p className="mt-1 text-sm text-text-muted">Latest 20 captures · Times in your timezone. Reopen a scan to review it again.</p>
-      <ol aria-label="Ranking upload history" className="mt-3 divide-y divide-border rounded-lg border border-border">{existing.map(attempt => <li key={attempt.id} className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 px-3 py-2 text-sm"><p className="break-words">{attempt.actorName} · <LocalTimestamp value={attempt.createdAt} /></p>{isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}<div className="mt-2">{attempt.retryable
+    <details className="rounded-xl border border-border bg-surface p-4">
+      <summary className="cursor-pointer rounded text-lg font-semibold focus-visible:outline-2 focus-visible:outline-primary">Ranking upload history</summary>
+      <p className="mt-1 text-sm text-text-muted">Latest 20 captures · Times in your timezone. Reopen a scan to review it again.</p>
+      <ol aria-label="Ranking upload history" className="mt-3 divide-y divide-border rounded-lg border border-border">{existing.map(attempt => <li key={attempt.id} className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 px-3 py-2 text-sm"><p className="break-words">Uploaded by {attempt.actorName} · <LocalTimestamp value={attempt.createdAt} /></p>{isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}<div className="mt-2">{attempt.retryable
         ? <Button variant="secondary" disabled={busy || items.length >= 20} title="Select the original screenshot to retry this scan" onClick={() => retryScan(attempt)}>Retry scan</Button>
         : <Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Failed" : "Pending"}</Button>}</div></li>)}</ol>
-    </section>
+    </details>
   </div>;
 }

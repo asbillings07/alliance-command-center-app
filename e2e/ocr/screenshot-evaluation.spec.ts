@@ -261,7 +261,7 @@ for (const width of [320, 820, 1280]) {
         }
         return data;
       }, files.map(file => ({ name: file.name, bytes: [...file.buffer] })));
-      await page.getByRole("button", { name: "Select ranking screenshots" }).dispatchEvent("drop", { dataTransfer: transfer });
+      await page.getByRole("button", { name: "Select screenshots" }).dispatchEvent("drop", { dataTransfer: transfer });
       await transfer.dispose();
     } else {
       await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles(files);
@@ -373,7 +373,13 @@ for (const width of [320, 820, 1280]) {
     expect(await prisma.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })).toBe(0);
     await page.reload();
     const retained = page.getByRole("button", { name: "Add scan to review" });
+    const history = page.getByText("Ranking upload history", { exact: true });
+    await expect(retained).toHaveCount(0);
+    await history.press("Enter");
     await expect(retained).toHaveCount(2);
+    await history.press("Space");
+    await expect(retained).toHaveCount(0);
+    await history.click();
     await retained.first().click();
     await page.getByLabel("Week beginning (Monday)").fill("2026-11-16");
     await expect(finish).toBeEnabled();
@@ -387,6 +393,7 @@ for (const width of [320, 820, 1280]) {
     await prisma.alliance.update({ where: { id: allianceId }, data: { name: "Different Alliance" } });
     expect((await page.request.get(imageUrl)).status()).toBe(400);
     await page.reload();
+    await history.click();
     await page.getByRole("button", { name: "Add scan to review" }).first().click();
     await expect(page.getByRole("dialog", { name: "No screenshots match your alliance" })).toBeVisible();
     await page.getByRole("button", { name: "Back to screenshots", exact: true }).click();
@@ -422,7 +429,7 @@ for (const [width, role] of [[320, "OWNER"], [820, "ADMIN"], [1280, "LEADER"]] a
     await checkA11y(page);
     const bounds = await dialog.boundingBox(); expect(bounds).not.toBeNull();
     expect(bounds!.x).toBeGreaterThanOrEqual(0); expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
-    await close.press("Escape"); await expect(dialog).toHaveCount(0); await expect(page.getByRole("button",{name:"Select ranking screenshots",exact:true})).toBeFocused();
+    await close.press("Escape"); await expect(dialog).toHaveCount(0); await expect(page.getByRole("button",{name:"Select screenshots",exact:true})).toBeFocused();
     for (const index of [1, 2]) await expect(page.getByRole("listitem", { name: `Screenshot ${index}`, exact: true })).toContainText("This screenshot does not match the alliance");
     await expect(page.getByText("Queued", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /View screenshot/ })).toHaveCount(0);
@@ -542,6 +549,7 @@ for (const origin of ["card", "history"] as const) {
   await expect(queuedCard).toContainText("Queued");
   const retry = page.getByRole("button",{name:"Retry scan",exact:true});
   if (origin === "history") {
+    await page.getByText("Ranking upload history", { exact: true }).click();
     const invalid = page.waitForEvent("filechooser");
     await retry.click();
     await (await invalid).setFiles({name:"wrong.txt",mimeType:"text/plain",buffer:Buffer.from("invalid")});
@@ -590,6 +598,8 @@ for (const timezoneId of ["America/New_York", "Asia/Tokyo"]) {
       page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
       await login({ email, password, displayName: "Owner" });
       await page.goto(`/alliances/${allianceId}/screenshots?scope=batch`);
+      await page.getByText("Ranking upload history", { exact: true }).click();
+      await expect(page.getByText("Uploaded by Synthetic uploader", { exact: false }).first()).toBeVisible();
       for (const value of instants) {
         const time = page.locator(`time[datetime="${value}"]`);
         const expected = new Intl.DateTimeFormat("en-US", {
