@@ -1,6 +1,15 @@
 import { checkDbIdentity, connectionIdentity, productionIdentities } from "../productionDb";
 import { OCR_EVALUATION_BRANCHES } from "./evaluationBranches";
 
+/** Local fixtures use loopback with no driver routing overrides. */
+export function isLocalOcrDatabase(connection: string | undefined) {
+  try {
+    const url = new URL(connection ?? "");
+    return ["postgres:", "postgresql:"].includes(url.protocol) && !url.search
+      && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch { return false; }
+}
+
 /** Read-only configuration preflight. Call before Prisma can open a connection. */
 export function checkOcrDeploymentIsolation(env: Record<string, string | undefined>): string[] {
   if (env.VERCEL_ENV !== "preview" || env.VERCEL_TARGET_ENV !== "acc-ocr-eval"

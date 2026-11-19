@@ -1,11 +1,12 @@
 import "server-only";
 import { prisma } from "../prisma";
 import { localOcrFixtureEnabled, ocrPreferencesAvailable, OcrEvaluationError } from "./config";
-import { checkOcrDeploymentIsolation } from "./deploymentIsolation";
+import { checkOcrDeploymentIsolation, isLocalOcrDatabase } from "./deploymentIsolation";
 import { requireOcrRollout } from "./rollout";
 
 export function manualTimingIsolated() {
-  return ocrPreferencesAvailable() && (localOcrFixtureEnabled() || checkOcrDeploymentIsolation(process.env).length === 0);
+  return ocrPreferencesAvailable() && (localOcrFixtureEnabled()
+    ? isLocalOcrDatabase(process.env.DATABASE_URL) : checkOcrDeploymentIsolation(process.env).length === 0);
 }
 
 export async function manualTimingAvailable(userId: string, allianceId: string) {

@@ -2,7 +2,7 @@ import "server-only";
 import { notFound } from "next/navigation";
 import { requirePlatformAdmin } from "../auth/requirePlatformAdmin";
 import { OCR_CAMPAIGN, localOcrFixtureEnabled, ocrPreferencesAvailable } from "../ocr/config";
-import { checkOcrDeploymentIsolation } from "../ocr/deploymentIsolation";
+import { checkOcrDeploymentIsolation, isLocalOcrDatabase } from "../ocr/deploymentIsolation";
 import { qaManualTimingSummary } from "./qaManualTimingSummary";
 import { prisma } from "../prisma";
 
@@ -10,7 +10,7 @@ import { prisma } from "../prisma";
 export async function getOcrReadiness() {
   await requirePlatformAdmin();
   if (!ocrPreferencesAvailable()) notFound();
-  if (!localOcrFixtureEnabled() && checkOcrDeploymentIsolation(process.env).length) notFound();
+  if (localOcrFixtureEnabled() ? !isLocalOcrDatabase(process.env.DATABASE_URL) : checkOcrDeploymentIsolation(process.env).length > 0) notFound();
 
   const countsByStatus = prisma.ocrEvaluationAttempt.groupBy({ by: ["status"], _count: { _all: true } });
   const [attempts, retries, statuses, budget, timings] = await prisma.$transaction([
