@@ -17,6 +17,10 @@ type Item = { needsOriginal?: boolean; requestId: string; file: File | null; sta
 type Props = { destination?: BatchDestination; allianceId: string; initial: { contextKey: string; processingConsentId: number | null; allianceName: string; server: string; members: RosterMember[]; attempts: Attempt[] }; synthetic: boolean; qaSettings?: QaAllianceSettingsData | null };
 const statusText = { exact: "Exact name candidate", suggested: "Suggested match — confirm the name", ambiguous: "Ambiguous roster name", unmatched: "No roster match", invalid: "Unreadable name or score", archived: "Archived member — review required" };
 
+function validRankingFile(file: File) {
+  return file.size > 0 && file.size <= 2 * 1024 * 1024 && ["image/png", "image/jpeg"].includes(file.type);
+}
+
 export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, destination }: Props) {
   const router = useRouter();
   const [items, setItems] = useState<Item[]>([]); const [week, setWeek] = useState(""); const [captureDate, setCaptureDate] = useState("");
@@ -59,7 +63,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
     retryTarget.current = {attempt, card};
     retryPicker.current?.click();
   }
-  async function scan(retry?: {attempt: Attempt; card?: Item; file: File}) {
+  async function scan(retry?: {attempt: Attempt; card?: Item; file: File; fromPicker?: boolean}) {
     if (busy || (retry ? !retry.attempt.retryable : !queued.length)) return;
     if (retry && !retry.card && items.length >= 20) { setMessage("Remove a screenshot or clear this review before retrying."); return; }
     const retryItem: Item | undefined = retry && {requestId:crypto.randomUUID(), file:retry.file, state:"reading", attemptId:retry.attempt.id};
@@ -102,7 +106,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
           update(item.requestId, { file: null, state: "blocked", outcome: error.outcome, error: allianceRejectionMessage(error.outcome) });
         } else {
           const description = error instanceof Error ? error.message : "Scan failed.";
-          update(item.requestId, { state: "failed", error: description, needsOriginal: (error instanceof Error && "outcome" in error && error.outcome === "retry-needs-file") });
+          update(item.requestId, { state: "failed", error: description, needsOriginal: retry?.fromPicker || (error instanceof Error && "outcome" in error && error.outcome === "retry-needs-file") });
           // Uncertain processing or changed access stops dispatch. A confirmed
           // source rejection only excludes that image; other consented files continue.
           cancel.current = true;
@@ -153,14 +157,19 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       <p id="ranking-file-limits" className="text-sm text-text-muted">Up to 20 PNG or JPEG images, 2 MB each.</p>
       <input aria-describedby="ranking-file-limits" id="ranking-screenshots" ref={input} type="file" accept="image/png,image/jpeg" multiple disabled={busy} className="mt-2 block w-full min-w-0 rounded-lg border border-border p-2 text-sm focus:outline-2 focus:outline-primary"
         onChange={event => { const files = Array.from(event.target.files ?? []); if (!files.length) return;
-          if (files.length + items.length > 20 || files.some(f => f.size > 2 * 1024 * 1024 || !["image/png", "image/jpeg"].includes(f.type))) { setMessage("Choose up to 20 PNG or JPEG images, each no larger than 2 MB."); event.target.value = ""; return; }
+          if (files.length + items.length > 20 || files.some(f => !validRankingFile(f))) { setMessage("Choose up to 20 PNG or JPEG images, each no larger than 2 MB."); event.target.value = ""; return; }
           setItems(previous => [...previous, ...files.map(file => ({ file, requestId: crypto.randomUUID(), state: "queued" as const }))]); invalidate(); setMessage(""); event.target.value = ""; }} />
       <input hidden type="file" accept="image/png,image/jpeg" ref={retryPicker} aria-label="Original screenshot for retry" onChange={event => {
         const file = event.target.files?.[0];
         const target = retryTarget.current;
         event.target.value = "";
         retryTarget.current = null;
-        if (file && target) void scan({...target, file});
+        if (!file || !target) return;
+        if (!validRankingFile(file)) {
+          setMessage("Choose the original PNG or JPEG screenshot, no larger than 2 MB, then retry.");
+          return;
+        }
+        void scan({...target, file, fromPicker:true});
       }} />
       {items.length > 0 && <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{items.map((item, index) => {
         const attempt = initial.attempts.find(a => a.ownRequestId === item.requestId) ?? initial.attempts.find(a => a.id === item.attemptId);

@@ -522,6 +522,11 @@ for (const origin of ["card", "history"] as const) {
   await expect(queuedCard).toContainText("Queued");
   const retry = page.getByRole("button",{name:"Retry scan",exact:true});
   if (origin === "history") {
+    const invalid = page.waitForEvent("filechooser");
+    await retry.click();
+    await (await invalid).setFiles({name:"wrong.txt",mimeType:"text/plain",buffer:Buffer.from("invalid")});
+    await expect(page.getByRole("status")).toContainText("Choose the original PNG or JPEG");
+    expect(await prisma.ocrEvaluationAttempt.count({where:{allianceId}})).toBe(1);
     const picker = page.waitForEvent("filechooser");
     await retry.click();
     await (await picker).setFiles(file);
