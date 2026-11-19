@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # Qualify the consent slice while its rollout dependency remains unmerged.
+    branches: [main, codex/ocr-recognition-trial]
 
 # Deny all permissions by default (principle of least privilege)
 # Each job explicitly declares what it needs
