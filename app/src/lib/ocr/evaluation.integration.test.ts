@@ -8,6 +8,7 @@ import { OCR_CAMPAIGN, OCR_RETENTION_MS } from "./config";
 import type { OcrTransport } from "./provider";
 import type { Recognition } from "./recognition";
 import { rankingFixture } from "./testing/rankingFixture";
+import { loadQaAllianceSettings, renameQaAlliance } from "./qaAlliance";
 
 const localDb = (() => { try { return ["localhost", "127.0.0.1"].includes(new URL(process.env.DATABASE_URL ?? "").hostname); } catch { return false; } })();
 const enabled = process.env.INTEGRATION_DB === "true" && !process.env.VERCEL_ENV && localDb;
@@ -52,6 +53,53 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     await db.allianceMembership.deleteMany({ where: { allianceId } });
     await db.alliance.deleteMany({ where: { id: allianceId } });
     await db.user.deleteMany({ where: { id: { in: [actorId, accountId] } } });
+  });
+  it("QA rename preserves prior source history/budget, invalidates identity and permits a fresh review of the same file", async () => {
+    await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role: "OWNER" } });
+    await approve();
+    const oldInput = await input(); const original = await evaluateScreenshot(oldInput, transport);
+    const before = await db.ocrEvaluationAttempt.findUniqueOrThrow({ where: { id: original.id } });
+    const settings = await loadQaAllianceSettings(allianceId, actorId);
+    await renameQaAlliance({ allianceId, actorId, name: "[TEST] Testing", identityVersion: settings.identityVersion, acknowledged: true });
+    expect(await db.ocrEvaluationAttempt.findUniqueOrThrow({ where: { id: original.id } })).toEqual(before);
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 1, reservedMicros: 10000 });
+    await expect(loadEvaluationContext(member())).rejects.toThrow("identity and access");
+    await expect(evaluateScreenshot(oldInput, transport)).rejects.toThrow("identity or access changed");
+    await expect(readEvaluationContent(leader(), original.id, "result", transport)).rejects.toThrow("alliance identity changed");
+    const current = await loadQaAllianceSettings(allianceId, actorId);
+    expect(current.identityVersion).toBe(settings.identityVersion + 1);
+    expect(current.history[0]).toMatchObject({ previousName: "TEST", name: "[TEST] Testing", actorName: "Morgan Owner" });
+    const fresh = await evaluateScreenshot(await input(), transport);
+    expect(fresh).toMatchObject({ status: "READY" }); expect(fresh.id).not.toBe(original.id);
+    expect(transport.recognize).toHaveBeenCalledTimes(2);
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 2, reservedMicros: 20000 });
+    expect(await db.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })).toBe(0);
+    await expect(db.ocrQaAllianceNameChange.update({ where: { id: current.history[0].id }, data: { name: "Rewrite" } })).rejects.toThrow("immutable");
+    await expect(db.ocrQaAllianceNameChange.delete({ where: { id: current.history[0].id } })).rejects.toThrow("immutable");
+  });
+  it.each(["VIEWER", "LEADER", "ADMIN"] as const)("QA name editing rejects %s and cross-alliance actors", async role => {
+    await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role } });
+    for (const id of [actorId, accountId]) {
+      await expect(loadQaAllianceSettings(allianceId, id)).rejects.toThrow("owner");
+      await expect(renameQaAlliance({ allianceId, actorId: id, name: "Changed", identityVersion: 0, acknowledged: true })).rejects.toThrow("owner");
+    }
+    expect(await db.ocrQaAllianceNameChange.count({ where: { allianceId } })).toBe(0);
+    expect((await db.alliance.findUniqueOrThrow({ where: { id: allianceId } })).name).toBe("TEST");
+  });
+  it("QA name editing rejects stale, unconfirmed and colliding changes atomically", async () => {
+    await db.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId: actorId } }, data: { role: "OWNER" } });
+    const rename = { allianceId, actorId, name: "Changed", identityVersion: 0, acknowledged: true };
+    await expect(renameQaAlliance({ ...rename, acknowledged: false })).rejects.toThrow("confirm");
+    await expect(renameQaAlliance({ ...rename, identityVersion: 5 })).rejects.toThrow("changed");
+    const alliance = await db.alliance.findUniqueOrThrow({ where: { id: allianceId } });
+    const other = await db.alliance.create({ data: { name: "Duplicate", server: alliance.server } });
+    try { await expect(renameQaAlliance({ ...rename, name: "Duplicate" })).rejects.toThrow("already uses"); }
+    finally { await db.alliance.delete({ where: { id: other.id } }); }
+    expect(await db.ocrQaAllianceNameChange.count({ where: { allianceId } })).toBe(0);
+    expect(await db.alliance.findUniqueOrThrow({ where: { id: allianceId } })).toMatchObject({ name: "TEST", identityVersion: 0 });
+    const result = await Promise.allSettled([renameQaAlliance(rename), renameQaAlliance({ ...rename, name: "Other change" })]);
+    expect(result.filter(r => r.status === "fulfilled")).toHaveLength(1);
+    expect(await db.ocrQaAllianceNameChange.count({ where: { allianceId } })).toBe(1);
   });
   it("reads a whole ranking capture once without member links or accepted metric writes", async () => {
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };

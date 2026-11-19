@@ -9,6 +9,7 @@ import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvision
 
 import { ocrEvaluationVisible, localOcrFixtureEnabled } from "@/app/src/lib/ocr/config";
 import { loadEvaluationContext } from "@/app/src/lib/ocr/evaluation";
+import { loadQaAllianceSettings } from "@/app/src/lib/ocr/qaAlliance";
 import { LeaderBatchReview } from "../../../screenshots/LeaderBatchReview";
 
 type Params = {
@@ -131,9 +132,10 @@ export default async function ImportPage({ params, searchParams }: Params) {
   </nav> : null;
   if (screenshots) {
     const review = await loadEvaluationContext({ allianceId, actorId: auth.user.id, memberId: null, scope: "batch" }).catch(() => null);
+    const qaSettings = review && auth.permissions.canManageAlliance ? await loadQaAllianceSettings(allianceId, auth.user.id).catch(() => null) : null;
     return <main className="sentry-block" data-sentry-block><PageLayout breadcrumb={breadcrumb} title="Capture Evaluation Results" description={`Review ranking screenshots for ${period.name}.`} maxWidth="6xl">
       {methodLinks}
-      {review ? <LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} synthetic={localOcrFixtureEnabled()} />
+      {review ? <LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} />
         : <Card><h2 className="text-lg font-semibold">Screenshot evaluation is unavailable</h2><p className="mt-2 text-text-secondary">This trial requires an enabled preview and current import access.</p></Card>}
     </PageLayout></main>;
   }

@@ -8,6 +8,52 @@ import { checkA11y } from "../shared/accessibility";
 // Google recognition accuracy, and never enabled in a hosted environment.
 test.skip(process.env.OCR_EVAL_TEST_FIXTURE !== "1", "Requires the isolated OCR fixture job");
 
+for (const width of [320, 820, 1280]) {
+  test(`Owner edits only the QA alliance name with confirmation and history at ${width}px`, async ({ page, login, ownerScenario }, testInfo) => {
+    test.setTimeout(120000);
+    const { allianceId, userId, email, password } = ownerScenario;
+    await prisma.alliance.update({ where: { id: allianceId }, data: { name: "QA", server: allianceId } });
+    await page.setViewportSize({ width, height: 900 });
+    await login({ email, password, displayName: "Owner" });
+    await page.goto(`/alliances/${allianceId}/screenshots?scope=batch`);
+    await page.getByText("Edit QA alliance name", { exact: true }).click();
+    await page.getByLabel("QA alliance name", { exact: true }).fill("[QA] Synthetic");
+    await page.getByRole("button", { name: "Review QA name change", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Change this QA alliance name?", exact: true });
+    await expect(dialog).toContainText("Historical scans and their original names remain unchanged");
+    await checkA11y(page);
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect((await prisma.alliance.findUniqueOrThrow({ where: { id: allianceId } })).name).toBe("QA");
+    expect(await prisma.ocrQaAllianceNameChange.count({ where: { allianceId } })).toBe(0);
+    await page.getByRole("button", { name: "Review QA name change", exact: true }).click();
+    await dialog.getByRole("button", { name: "Save QA name", exact: true }).click();
+    await expect(page.getByText(`Capturing for [QA] Synthetic · Server ${allianceId}`, { exact: true })).toBeVisible();
+    await page.getByText("Edit QA alliance name", { exact: true }).click();
+    await expect(page.getByText("QA → [QA] Synthetic", { exact: true })).toBeVisible();
+    expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(0);
+    await checkA11y(page);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`ocr-qa-alliance-${width}.png`), fullPage: true });
+    await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles({ name: "same-test-capture.png", mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture().svg)).png().toBuffer() });
+    await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
+    await page.getByRole("button", { name: "Read 1 screenshots", exact: true }).click();
+    await expect(page.getByText(/3 unique rows/)).toBeVisible();
+    const saved = await prisma.ocrEvaluationAttempt.findFirstOrThrow({ where: { allianceId } });
+    expect(saved).toMatchObject({ allianceName: "[QA] Synthetic", status: "READY" });
+    await page.getByLabel("QA alliance name", { exact: true }).fill("Different test alliance");
+    await page.getByRole("button", { name: "Review QA name change", exact: true }).click();
+    await dialog.getByRole("button", { name: "Save QA name", exact: true }).click();
+    await expect(page.getByText(/0 unique rows/)).toBeVisible();
+    expect(await prisma.ocrEvaluationAttempt.findUniqueOrThrow({ where: { id: saved.id } })).toEqual(saved);
+    expect(await prisma.ocrQaAllianceNameChange.count({ where: { allianceId } })).toBe(2);
+    expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(1);
+    expect(await prisma.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })).toBe(0);
+    await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "LEADER" } });
+    await page.reload();
+    await expect(page.getByText("Edit QA alliance name", { exact: true })).toHaveCount(0);
+  });
+}
+
 async function screenshot() {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="588" height="780">
     <rect width="588" height="780" fill="#122039"/>

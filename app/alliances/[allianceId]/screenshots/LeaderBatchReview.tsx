@@ -5,16 +5,17 @@ import { Badge, Card } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { RankingScreenshotDialog } from "./RankingScreenshotDialog";
 import { AllianceBatchDialog } from "./AllianceBatchDialog";
+import { QaAllianceSettings, type QaAllianceSettingsData } from "./QaAllianceSettings";
 import { rankingWindow, reconcileOverlap, showCurrentDayProgress, type RankingReview, type RosterMember } from "@/app/src/lib/ocr/ranking";
 import { allianceRejectionMessage, isAllianceRejection, allianceBatchNotice } from "@/app/src/lib/ocr/allianceEvidence";
 
 type Attempt = { id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
 type Result = { attempt: Attempt; batchReview: RankingReview; contextChanged: boolean };
 type Item = { requestId: string; file: File | null; state: "queued" | "reading" | "ready" | "failed" | "blocked"; error?: string; outcome?: string; attemptId?: string; result?: Result };
-type Props = { allianceId: string; initial: { contextKey: string; allianceName: string; server: string; members: RosterMember[]; attempts: Attempt[] }; synthetic: boolean };
+type Props = { allianceId: string; initial: { contextKey: string; allianceName: string; server: string; members: RosterMember[]; attempts: Attempt[] }; synthetic: boolean; qaSettings?: QaAllianceSettingsData | null };
 const statusText = { exact: "Exact name candidate", suggested: "Suggested match — confirm the name", ambiguous: "Ambiguous roster name", unmatched: "No roster match", invalid: "Unreadable name or score", archived: "Archived member — review required" };
 
-export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
+export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }: Props) {
   const router = useRouter();
   const [items, setItems] = useState<Item[]>([]); const [week, setWeek] = useState(""); const [captureDate, setCaptureDate] = useState("");
   const [retryFailed, setRetryFailed] = useState(false);
@@ -113,6 +114,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
   return <div className="space-y-6 sentry-block" data-sentry-block>
     <div className="rounded-xl border border-border bg-surface p-4"><div className="flex flex-wrap items-center gap-3"><Badge variant="info">{synthetic ? "Synthetic test fixture" : "Recognition trial"}</Badge><strong>Review only · Scores are not saved</strong></div>
       <p className="mt-2 text-sm text-text-secondary">Upload the ranking capture once. Review every recognized member here, without opening individual member pages.</p></div>
+    {qaSettings && <QaAllianceSettings key={qaSettings.identityVersion} allianceId={allianceId} initial={qaSettings} disabled={busy} />}
     <Card><h2 className="text-lg font-semibold">1. Add your ranking screenshots</h2>
       <p className="mt-2 text-sm font-medium">Capturing for {initial.allianceName} · Server {initial.server}</p>
       <p className="mt-2 text-sm text-text-secondary">Only this alliance&apos;s screenshots are accepted. Keep the alliance tag or name visible for every row; use Your Alliance in the game to filter rankings. Different, mixed or unreadable alliances are blocked, with no leader override. Reading an image to check its alliance still uses one scan reservation.</p>

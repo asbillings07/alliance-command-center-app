@@ -31,7 +31,13 @@ When every image in the current review is rejected for an alliance mismatch, sho
 
 Older `READY` scans are requalified on every result/image read without rewriting history or calling Google again. Reopening a rejected retained scan creates the same per-image warning and, where applicable, whole-review notice. Individual leader and own-record uploads use the same source check, so a Leader with an approved own-record link cannot bypass it by switching routes. Ordinary-member identity/grant eligibility remains unchanged.
 
-The private trial alliance is synthetic. Earlier real samples from a different alliance remain historical provider/parser evidence; they must now be blocked when reopened in that synthetic alliance. Do not rename the QA alliance to turn those samples into an apparent successful qualification.
+The private trial alliance began synthetic. Earlier real samples from a different alliance remain historical provider/parser evidence and are blocked when reopened against that original synthetic target. The owner subsequently approved editing the isolated QA alliance name to test the same source file against a matching target. Use the explicit QA setup workflow below; never relabel old attempts or describe those previous rejections as successful qualification.
+
+### QA alliance-name setup — owner-approved testing
+
+The owner may edit only the allowlisted QA alliance's name from **Edit QA alliance name** in the batch capture screen (#404). Reuse the existing `canManageAlliance` permission, currently Owner-only. The server checks the dedicated environment/branch, disabled telemetry, allowlist and verified database isolation before any query, and reauthorizes the owner in the name-change transaction. The server number, roles, membership, spending ledger and runtime grants cannot be edited here. This editor does not exist in production or ordinary previews.
+
+Show current and proposed names and require explicit confirmation; cancellation writes nothing. Validate one-line names up to 200 characters, reject stale or conflicting changes, and save immutable before/after/actor/time history atomically with the rename. Existing database identity-version rules invalidate current screenshot reviews and member identity confirmations. Earlier attempts retain their source name, context, outcome, charge and retention unchanged. The same file may be selected for a fresh review under the new name; it never triggers an automatic scan or budget reset. This is QA setup, not a production source-alliance override or a completed production alliance-settings feature.
 
 This slice stops at recognition review. It does not insert accepted metric entries or change reports. Member identity blockers, leader mismatch resolution, lower-score confirmation, authoritative provenance and final-score acceptance must be connected through the shared score-acceptance contract (#400 / PR #401), not bypassed via the existing weekly import writer.
 

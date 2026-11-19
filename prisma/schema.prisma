@@ -132,6 +132,21 @@ model OcrEvaluationAttempt {
   @@index([actorUserId, createdAt])
 }
 
+// QA setup history. No cascading relation can erase the recorded change.
+model OcrQaAllianceNameChange {
+  id Int @id @default(autoincrement())
+  allianceId String
+  previousName String
+  name String
+  server String
+  allianceVersion Int
+  actorUserId String
+  actorName String
+  createdAt DateTime @default(now())
+
+  @@index([allianceId, id])
+}
+
 model Alliance {
   id                                String                     @id @default(cuid())
   name                              String
