@@ -322,7 +322,8 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     expect(result.filter(r => r.status === "fulfilled")).toHaveLength(1);
     expect(await db.ocrQaAllianceNameChange.count({ where: { allianceId } })).toBe(1);
   });
-  it("qualifies retained ranking sources, saves once on concurrent confirmation, and blocks remapping and revoked access", async () => {
+  it.each([false, true])("saves once under concurrent confirmation and replay (initially empty roster: %s)", async empty => {
+    if (empty) await db.allianceMember.delete({ where: {id:memberId} });
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
     await db.alliance.update({ where: { id: allianceId }, data: { name: "QA" } });
     const fixture = rankingFixture();
@@ -333,16 +334,25 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     const period = await db.metricPeriod.create({ data: { allianceId, name:"Test period", startsAt:new Date("2026-11-16"), endsAt:new Date("2026-12-16") } });
     const metric = await db.metric.create({ data: { allianceId, name:"Daily VS", type:"NUMERIC", observationGrain:"DAILY_OBSERVATION", memberPeriodRollup:"SUM" } });
     await db.metricPeriodMetric.create({ data: { periodId:period.id, metricId:metric.id, weight:1, required:false } });
-    const selection = { allianceId, periodId:period.id, dailyMetric:metric.id, weeklyMetric:"", attemptIds:[first.id], week:"2026-11-16", captureDate:"", excluded:[first.id+":1",first.id+":2"] };
+    const selection = { allianceId, periodId:period.id, dailyMetric:metric.id, weeklyMetric:"", attemptIds:[first.id], week:"2026-11-16", captureDate:"", excluded:empty ? [] : [first.id+":1",first.id+":2"] };
     try {
       const preview = await reviewOrSaveBatch(actorId,selection);
-      const decision = { comparison:preview.comparison, lowerConfirmed:false };
+      const decision = { comparison:preview.comparison, lowerConfirmed:false, createMembersConfirmed:empty };
+      if (empty) {
+        expect(preview.comparisons.every(row => row.createMember)).toBe(true);
+        await expect(reviewOrSaveBatch(actorId,selection,{...decision,createMembersConfirmed:false})).rejects.toThrow("Confirm the new roster members");
+        expect(await db.allianceMember.count({where:{allianceId}})).toBe(0);
+      }
       const parallel = await Promise.allSettled([reviewOrSaveBatch(actorId,selection,decision),reviewOrSaveBatch(actorId,selection,decision)]);
       expect(parallel.some(result => result.status === "fulfilled" && result.value.saved)).toBe(true);
       expect((await reviewOrSaveBatch(actorId,selection,decision)).saved).toBe(true);
-      expect(await db.memberMetricEntry.count({ where:{periodId:period.id} })).toBe(1);
-      expect(await db.ocrScoreSource.count({ where:{attemptId:first.id} })).toBe(1);
-      await expect(reviewOrSaveBatch(actorId,{...selection,week:"2026-11-23"})).rejects.toThrow("already saved");
+      expect(await db.memberMetricEntry.count({ where:{periodId:period.id} })).toBe(empty ? 3 : 1);
+      expect(await db.ocrScoreSource.count({ where:{attemptId:first.id} })).toBe(empty ? 3 : 1);
+      if (empty) {
+        const roster = await db.allianceMember.findMany({where:{allianceId},select:{playerName:true,userId:true},orderBy:{playerName:"asc"}});
+        expect(roster).toEqual(["Jordan Vale","Morgan Reed","Riley Chen"].map(playerName=>({playerName,userId:null})));
+      }
+      await expect(reviewOrSaveBatch(actorId,{...selection,week:"2026-11-23"})).rejects.toThrow(empty ? "roster changed" : "already saved");
       await changeProcessing(false);
       await expect(reviewOrSaveBatch(actorId,selection,decision)).rejects.toThrow("disabled");
       await changeProcessing(true);
