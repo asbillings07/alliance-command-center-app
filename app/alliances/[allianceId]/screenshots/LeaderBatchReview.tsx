@@ -25,6 +25,8 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
   const [sourcePicks, setPicks] = useState<string[]>([]);
   const [excludedSources, setExcludedSources] = useState<string[]>([]); const [reviewed, setReviewed] = useState(false);
   const cancel = useRef(false); const active = useRef(true); const input = useRef<HTMLInputElement>(null);
+  const retryPicker = useRef<HTMLInputElement>(null);
+  const retryTarget = useRef<{attempt: Attempt; card?: Item} | null>(null);
   useEffect(() => { active.current = true; return () => { active.current = false; cancel.current = true; }; }, []);
   const endpoint = `/api/ocr-evaluation?${new URLSearchParams({ allianceId, scope: "batch" })}`;
   const results = items.flatMap(item => item.result ? [item.result] : []);
@@ -52,10 +54,15 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
     if (!result.batchReview) throw new Error("This is not an alliance ranking capture.");
     return result;
   }
-  async function scan(retry?: {attempt: Attempt; card?: Item}) {
+  function retryScan(attempt: Attempt, card?: Item) {
+    if (card?.file && !card.needsOriginal) { void scan({attempt, card, file:card.file}); return; }
+    retryTarget.current = {attempt, card};
+    retryPicker.current?.click();
+  }
+  async function scan(retry?: {attempt: Attempt; card?: Item; file: File}) {
     if (busy || (retry ? !retry.attempt.retryable : !queued.length)) return;
     if (retry && !retry.card && items.length >= 20) { setMessage("Remove a screenshot or clear this review before retrying."); return; }
-    const retryItem: Item | undefined = retry && {requestId:crypto.randomUUID(), file:retry.card?.file ?? null, needsOriginal:retry.card?.needsOriginal, state:"reading", attemptId:retry.attempt.id};
+    const retryItem: Item | undefined = retry && {requestId:crypto.randomUUID(), file:retry.file, state:"reading", attemptId:retry.attempt.id};
     const selected = retryItem ? [retryItem] : queued;
     let nextItems = items;
     if (retryItem) {
@@ -72,7 +79,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       update(item.requestId, { state: "reading" });
       try {
         const form = new FormData();
-        if (item.file) form.set("screenshot", item.file, "screenshot");
+        form.set("screenshot", item.file!, "screenshot");
         if (retry) form.set("retryOf", retry.attempt.id);
         form.set("requestId", item.requestId);
         form.set("contextKey", initial.contextKey); form.set("processingConsentId", String(initial.processingConsentId));
@@ -95,7 +102,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
           update(item.requestId, { file: null, state: "blocked", outcome: error.outcome, error: allianceRejectionMessage(error.outcome) });
         } else {
           const description = error instanceof Error ? error.message : "Scan failed.";
-          update(item.requestId, { state: "failed", error: description, needsOriginal: item.needsOriginal || (error instanceof Error && "outcome" in error && error.outcome === "retry-needs-file") });
+          update(item.requestId, { state: "failed", error: description, needsOriginal: (error instanceof Error && "outcome" in error && error.outcome === "retry-needs-file") });
           // Uncertain processing or changed access stops dispatch. A confirmed
           // source rejection only excludes that image; other consented files continue.
           cancel.current = true;
@@ -140,7 +147,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       <details className="mt-2 text-sm text-text-secondary">
         <summary className="w-fit cursor-pointer rounded py-2 font-medium text-primary-light focus-visible:outline-2 focus-visible:outline-primary">Learn more about screenshot requirements</summary>
         <p className="mt-1">In the game, select Your Alliance to filter the rankings. Each row must show this alliance’s tag or name. Mixed, unreadable or different alliances are blocked.</p>
-        <p className="mt-2">An alliance mismatch skips that image. A processing failure or pressing Stop pauses the rest of the batch. Each account can start up to 20 scans per day. Retrying starts a new scan and keeps the earlier failure in history.</p>
+        <p className="mt-2">An alliance mismatch skips that image. A processing failure or pressing Stop pauses the rest of the batch. Each account can start up to 20 scans per day. Retry scan rereads only that screenshot. From upload history, select the original file again.</p>
       </details>
       <label htmlFor="ranking-screenshots" className="mt-4 block font-medium">Ranking screenshots</label>
       <p id="ranking-file-limits" className="text-sm text-text-muted">Up to 20 PNG or JPEG images, 2 MB each.</p>
@@ -148,15 +155,20 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         onChange={event => { const files = Array.from(event.target.files ?? []); if (!files.length) return;
           if (files.length + items.length > 20 || files.some(f => f.size > 2 * 1024 * 1024 || !["image/png", "image/jpeg"].includes(f.type))) { setMessage("Choose up to 20 PNG or JPEG images, each no larger than 2 MB."); event.target.value = ""; return; }
           setItems(previous => [...previous, ...files.map(file => ({ file, requestId: crypto.randomUUID(), state: "queued" as const }))]); invalidate(); setMessage(""); event.target.value = ""; }} />
+      <input hidden type="file" accept="image/png,image/jpeg" ref={retryPicker} aria-label="Original screenshot for retry" onChange={event => {
+        const file = event.target.files?.[0];
+        const target = retryTarget.current;
+        event.target.value = "";
+        retryTarget.current = null;
+        if (file && target) void scan({...target, file});
+      }} />
       {items.length > 0 && <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{items.map((item, index) => {
         const attempt = initial.attempts.find(a => a.ownRequestId === item.requestId) ?? initial.attempts.find(a => a.id === item.attemptId);
         return <li key={item.requestId} aria-label={`Screenshot ${index + 1}`} className="min-w-0 rounded-lg border border-border p-3 text-sm">
         <strong>Screenshot {index + 1}</strong><p className="mt-1 text-text-secondary">{item.state === "ready" ? item.result!.batchReview.context.label : item.state === "reading" ? "Reading…" : item.state === "blocked" ? "Blocked — alliance check" : item.state === "failed" ? "Needs attention" : "Queued"}</p>
         {item.error && <p className="mt-2 break-words text-warning-light">{item.error}</p>}
         {item.state === "failed" && attempt?.retryable && <div className="mt-3 space-y-2">
-            {item.needsOriginal && <label className="block">Original screenshot<input type="file" accept="image/png,image/jpeg" disabled={busy}
-              onChange={e => {const file=e.target.files?.[0]; if (file) setItems(old => old.map(i => i.requestId === item.requestId ? {...i,file} : i));}} /></label>}
-            <Button variant="secondary" disabled={busy || (item.needsOriginal && !item.file)} onClick={() => scan({attempt,card:item})}>Retry scan</Button>
+            <Button variant="secondary" disabled={busy} onClick={() => retryScan(attempt,item)}>Retry scan</Button>
           </div>}
         {!busy && (item.state === "failed" || item.state === "queued" || item.state === "blocked") && <div className="mt-3"><Button variant="secondary" onClick={() => {setItems(previous => previous.filter(p => p.requestId !== item.requestId)); invalidate();}}>Remove screenshot {index + 1} from review</Button></div>}
         {item.result && <div className="mt-3"><Button variant="secondary" onClick={() => setSource({ result: item.result!, title: `Screenshot ${index + 1}` })}>View screenshot {index + 1}</Button></div>}
@@ -236,7 +248,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
     <p role="status" aria-live="polite" className="break-words text-sm text-text-secondary">{message}</p>
     <section><h2 className="text-lg font-semibold">Ranking upload history</h2><p className="mt-1 text-sm text-text-muted">Latest 20 captures · Times in your timezone. Reopen a scan to review it again.</p>
       <ol className="mt-3 grid gap-3 md:grid-cols-2">{existing.map(attempt => <li key={attempt.id} className="min-w-0 rounded-lg border border-border p-3 text-sm"><p className="break-words">{attempt.actorName} · <LocalTimestamp value={attempt.createdAt} /></p>{isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}<div className="mt-2">{attempt.retryable
-        ? <Button variant="secondary" disabled={busy || items.length >= 20} onClick={() => scan({attempt})}>Retry scan</Button>
+        ? <Button variant="secondary" disabled={busy || items.length >= 20} title="Select the original screenshot to retry this scan" onClick={() => retryScan(attempt)}>Retry scan</Button>
         : <Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Failed" : "Pending"}</Button>}</div></li>)}</ol>
     </section>
   </div>;

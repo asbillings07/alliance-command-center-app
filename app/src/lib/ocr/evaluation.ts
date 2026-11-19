@@ -141,7 +141,7 @@ export async function authorizeScreenshotUpload(target: EvaluationTarget) {
 }
 
 export async function evaluateScreenshot(input: EvaluationTarget & {
-  requestId: string; contextKey: string; bytes?: Uint8Array; processingConsentId: number; retryOf?: string;
+  requestId: string; contextKey: string; bytes: Uint8Array; processingConsentId: number; retryOf?: string;
 }, transport: OcrTransport) {
   requireOcrEvaluation(input.allianceId);
   if (!Number.isSafeInteger(input.processingConsentId) || input.processingConsentId < 1) throw new OcrEvaluationError("Reload to review your OCR processing preference.");
@@ -153,21 +153,10 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     if (attempt.actorUserId !== input.actorId || attempt.status !== "FAILED" || isAllianceRejection(attempt)
       || attempt.contextKey !== input.contextKey || attempt.processingConsentId !== input.processingConsentId
       || attempt.processingVersion !== OCR_VERSION) throw new OcrEvaluationError("This scan is unavailable for retry in the current review.");
-    if (!input.bytes) {
-      const read = await tx.ocrEvaluationBudget.updateMany({where:{id:OCR_CAMPAIGN, reads:{lt:5000}},data:{reads:{increment:1}}});
-      if (!read.count) throw new OcrEvaluationError("The screenshot viewing limit has been reached.");
-    }
     return attempt;
   }) : null;
-  let bytes = input.bytes;
-  if (!bytes && parent) {
-    try { bytes = await transport.read(parent.id + "/source.png", OCR_MAX_IMAGE_BYTES); }
-    catch { throw new OcrEvaluationError("The saved image is unavailable. Select the original file to retry this scan.", "retry-needs-file"); }
-    if (createHash("sha256").update(bytes).digest("hex") !== parent.sourceDigest) throw new OcrEvaluationError("The saved image could not be verified.");
-  }
-  if (!bytes) throw new OcrEvaluationError("Choose a screenshot first.");
-  const image = await normalizeScreenshot(bytes);
-  if (parent && image.digest !== parent.sourceDigest) throw new OcrEvaluationError("Choose the same screenshot as the failed scan.");
+  const image = await normalizeScreenshot(input.bytes);
+  if (parent && image.digest !== parent.sourceDigest) throw new OcrEvaluationError("Choose the same screenshot as the failed scan.", "retry-needs-file");
   // Preflight cannot process or store the screenshot, and precedes spending.
   await transport.preflight();
   const admitted = await transaction(async tx => {
@@ -210,7 +199,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
       playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       contextKey: current.contextKey, sourceDigest: image.digest, processingVersion: OCR_VERSION,
       processingConsentId: current.consent.processing!.id, qualityConsentId: qualityAllowed(current.consent) ? current.consent.quality!.id : null,
-      imageBytes: image.bytes.length, createdAt: now, expiresAt: parent?.expiresAt ?? new Date(now.getTime() + OCR_RETENTION_MS),
+      imageBytes: image.bytes.length, createdAt: now, expiresAt: new Date(now.getTime() + OCR_RETENTION_MS),
     } });
     return { attempt, dispatched: true };
   });

@@ -517,7 +517,9 @@ test("failed batch scans require deliberate new-charge consent and preserve earl
   // Add another file to the queue. Retrying from history must leave it queued.
   await upload.setInputFiles({name:"weekly.png",mimeType:"image/png",buffer:await sharp(Buffer.from(rankingFixture("weekly").svg)).png().toBuffer()});
   await expect(card).toContainText("Queued");
+  const picker = page.waitForEvent("filechooser");
   await page.getByRole("button",{name:"Retry scan",exact:true}).click();
+  await (await picker).setFiles(file);
   await expect.poll(()=>prisma.ocrEvaluationAttempt.count({where:{allianceId}})).toBe(2);
   await expect(page.getByText(/Screenshot retry complete/)).toBeVisible();
   expect(await prisma.ocrEvaluationAttempt.findUniqueOrThrow({where:{retryOf:failed.id}})).toMatchObject({status:"READY",retryOf:failed.id});

@@ -544,9 +544,9 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     const failed = await db.ocrEvaluationAttempt.findFirstOrThrow();
     const wrong = await sharp({create:{width:300,height:300,channels:3,background:"#ab1234"}}).png().toBuffer();
     await expect(evaluateScreenshot({...await input(batch), retryOf:failed.id, bytes:wrong}, transport)).rejects.toThrow("same screenshot");
-    const request = { ...await input(batch), retryOf: failed.id, bytes:undefined };
+    const request = { ...await input(batch), retryOf: failed.id };
     const retried = await evaluateScreenshot(request, transport);
-    expect(retried).toMatchObject({status:"READY",retryOf:failed.id,expiresAt:failed.expiresAt.toISOString()});
+    expect(retried).toMatchObject({status:"READY",retryOf:failed.id});
     expect(await db.ocrEvaluationAttempt.findUniqueOrThrow({where:{id:failed.id}})).toMatchObject({status:"FAILED"});
     expect((await evaluateScreenshot(request, transport)).id).toBe(retried.id);
     expect((await evaluateScreenshot({...await input(batch),retryOf:failed.id}, transport)).id).toBe(retried.id);
