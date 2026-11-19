@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll, afterEach, beforeEach, vi } from "vite
 import type { PrismaClient } from "@/app/generated/prisma/client";
 import type * as RecordAction from "./action";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
+import { manualTimingAvailable } from "@/app/src/lib/ocr/manualTiming";
+vi.mock("@/app/src/lib/ocr/manualTiming", () => ({ manualTimingAvailable: vi.fn() }));
 import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceData";
 
 vi.mock("next/cache", () => ({
@@ -50,6 +52,7 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
 
   afterEach(async () => {
     if (createdAllianceIds.length > 0) {
+      await prisma.qaManualTiming.deleteMany({ where: { allianceId: { in: createdAllianceIds } } });
       await prisma.memberMetricEntry.deleteMany({
         where: { allianceMember: { allianceId: { in: createdAllianceIds } } },
       });
@@ -103,6 +106,25 @@ describe.skipIf(!runDb)("recordMemberMetrics [integration]", () => {
 
     return { alliance, member, period, metric };
   }
+
+  it("binds a timed save to its exact context and commits at most once", async () => {
+    const { alliance, member, period, metric } = await makeSetup("NUMERIC");
+    const target = { allianceId: alliance.id, periodId: period.id, metricId: metric.id };
+    const entryFilter = { periodId: period.id, metricId: metric.id };
+    const open = await prisma.qaManualTiming.create({ data: { ...target, userId: actorId } });
+    const other = await prisma.qaManualTiming.create({ data: { ...target, userId: "synthetic-other" } });
+    const input = { ...target, timingId: open.id, entries: [{ memberId: member.id, value: 9 }] };
+    vi.mocked(manualTimingAvailable).mockResolvedValue(false);
+    await expect(recordMemberMetrics(input)).rejects.toThrow("unavailable");
+    vi.mocked(manualTimingAvailable).mockResolvedValue(true);
+    await expect(recordMemberMetrics({ ...input, timingId: other.id })).rejects.toThrow("no longer open");
+    expect(await prisma.memberMetricEntry.count({ where: entryFilter })).toBe(0);
+    await recordMemberMetrics(input);
+    await expect(recordMemberMetrics(input)).rejects.toThrow("no longer open");
+    expect(await prisma.memberMetricEntry.count({ where: entryFilter })).toBe(1);
+    expect(await prisma.qaManualTiming.findUniqueOrThrow({ where: { id: open.id } })).toMatchObject({ savedRows: 1, endedAt: expect.any(Date) });
+    expect(await prisma.qaManualTiming.findUniqueOrThrow({ where: { id: other.id } })).toMatchObject({ savedRows: null, endedAt: null });
+  });
 
   it("accepts 0 and 1 for a BOOLEAN metric", async () => {
     const { alliance, member, period, metric } = await makeSetup("BOOLEAN");

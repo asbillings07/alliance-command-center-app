@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ApplyMetricDataDialog, type MetricApplicationSummary } from "@/app/src/components/ApplyMetricDataDialog";
+import { startManualTiming, stopManualTiming } from "./timingActions";
 import { recordMemberMetrics } from "./action";
 
 type MemberOption = {
@@ -12,11 +13,14 @@ type MemberOption = {
 type MetricOption = {
   id: string;
   name: string;
+  periodValue: boolean;
 };
 
 type RecordMetricsFormProps = {
   periodId: string;
   periodName: string;
+  timingEnabled: boolean;
+  openTimer: { id: string; metricId: string } | null;
   allianceId: string;
   members: MemberOption[];
   metrics: MetricOption[];
@@ -30,13 +34,16 @@ function isValidInteger(value: string): boolean {
 export function RecordMetricsForm({
   periodId,
   periodName,
+  timingEnabled,
+  openTimer,
   allianceId,
   members,
   metrics,
 }: RecordMetricsFormProps) {
   const [selectedMetricId, setSelectedMetricId] = useState(
-    metrics[0]?.id || ""
+    openTimer?.metricId ?? metrics[0]?.id ?? ""
   );
+  const [timer, setTimer] = useState(openTimer);
   const [isPending, setIsPending] = useState(false);
   const [pendingApplication, setPendingApplication] = useState<{
     payload: Parameters<typeof recordMemberMetrics>[0];
@@ -87,7 +94,7 @@ export function RecordMetricsForm({
     }
 
     setPendingApplication({
-      payload: { periodId, metricId: selectedMetricId, allianceId, entries },
+      payload: { periodId, metricId: selectedMetricId, allianceId, entries, timingId: timer?.id },
       summary: [{
         periodName,
         metricName: metrics.find((m) => m.id === selectedMetricId)?.name ?? "Metric",
@@ -102,6 +109,7 @@ export function RecordMetricsForm({
     try {
       await recordMemberMetrics(pendingApplication.payload);
       setSuccess({ count: pendingApplication.payload.entries.length });
+      setTimer(null);
       setValues({});
       setError(null);
     } catch {
@@ -131,7 +139,7 @@ export function RecordMetricsForm({
             setValues({});
             setSuccess(null);
           }}
-          disabled={isPending}
+          disabled={isPending || !!timer}
           className="w-full rounded-md border border-border bg-surface-secondary text-text-primary p-2 focus:outline-none focus:ring-2 focus:ring-primary disabled:text-text-disabled"
         >
           {metrics.map((metric) => (
@@ -141,6 +149,30 @@ export function RecordMetricsForm({
           ))}
         </select>
       </div>
+
+      {timingEnabled && (timer || selectedMetric?.periodValue) && (
+        <div className="rounded-md border border-border p-3">
+          <p className="text-sm text-text-secondary">{timer
+            ? "QA timing is active until you apply the data or stop timing. Leaving this page keeps the timer running."
+            : "Optional QA timing measures how long it takes to enter and apply this metric. Begin before entering values."}</p>
+          <button type="button" disabled={isPending || (!timer && Object.values(values).some(Boolean))}
+            className="mt-2 text-sm font-medium text-primary disabled:opacity-50"
+            onClick={async () => {
+              setIsPending(true);
+              setError(null);
+              try {
+                if (timer) {
+                  await stopManualTiming(allianceId, periodId, timer.id);
+                  setTimer(null);
+                } else {
+                  setTimer(await startManualTiming(allianceId, periodId, selectedMetricId));
+                }
+              } catch {
+                setError("Could not confirm the timer change. Refresh to see its current status.");
+              } finally { setIsPending(false); }
+            }}>{timer ? "Stop timing" : "Start timed entry"}</button>
+        </div>
+      )}
 
       <hr className="border-border" />
 

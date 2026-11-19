@@ -5,7 +5,7 @@ import { getOcrReadiness } from "@/app/src/lib/platform/ocrReadiness";
 const criteria = [
   ["Usable imports", "Count user-confirmed imports, including corrections, among settled journeys. Keep failed, abandoned and open work distinct. Final confirmations are not yet recorded."],
   ["Silent critical errors", "Check player identity, alliance, reporting period and score against a consented human-reviewed sample. Audited counts and unresolved findings are unavailable."],
-  ["Time saved", "Compare median and 90th-percentile start-to-confirm times for comparable OCR and manual tasks. Neither timing sample is available."],
+  ["Time saved", "Compare median and 90th-percentile start-to-confirm times for comparable OCR and manual tasks. Real cohort timings are unavailable. The separate QA baseline below groups manual tasks by the number of rows saved."],
   ["Coverage and repeat use", "Track supported screenshot types, distinct alliances and later-week returns. Daily sign-ins, useful task returns and preference over spreadsheets still need separate evidence."],
   ["Review and manual fallback", "Verify a person can correct and confirm a saved result or finish by hand. The protected screenshot flow currently ends at recognition review."],
   ["Economics and demand", "Calculate cost per confirmed import including retries, failures and support. Invoice costs, confirmed imports and commitments at a specific price are unavailable."],
@@ -41,6 +41,16 @@ export default async function OcrReadinessPage() {
         <summary className="cursor-pointer py-3 font-medium">{name}</summary>
         <p className="pb-4 text-sm text-text-secondary">{detail}</p>
       </details>)}
+    </section>
+    <section aria-labelledby="manual-timing" className="space-y-3 rounded-lg border border-border bg-surface p-4">
+      <h3 id="manual-timing" className="text-lg font-semibold">QA manual-entry baseline</h3>
+      <p className="text-sm text-text-secondary">Elapsed time from choosing Start timed entry to applying a period metric, including edits. Each saved task counts once. Comparing daily VS imports still requires a matching manual task.</p>
+      <p className="text-sm">All-time timed tasks · {data.timings.reduce((sum, row) => sum + row.samples, 0)} started · {data.timings.find(row => row.state === "open")?.samples ?? 0} open · {data.timings.find(row => row.state === "stopped")?.samples ?? 0} stopped before save</p>
+      {data.timings.some(row => row.state === "saved") ? <ul className="space-y-2">
+        {data.timings.filter(row => row.state === "saved").map(row => <li key={row.rows} className="rounded bg-surface-secondary p-3 text-sm">
+          <strong>{row.rows} {row.rows === 1 ? "row" : "rows"} per task</strong> · {row.samples} saved · Median {Math.round(row.median ?? 0)}s · 90th percentile {Math.round(row.p90 ?? 0)}s
+        </li>)}
+      </ul> : <p className="text-sm text-text-secondary">No timed manual entries have been saved.</p>}
     </section>
     <section aria-labelledby="diagnostics" className="rounded-lg border border-border bg-surface p-4">
       <h3 id="diagnostics" className="text-lg font-semibold">QA scan activity</h3>
