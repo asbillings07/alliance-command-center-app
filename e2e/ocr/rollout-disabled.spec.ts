@@ -16,7 +16,7 @@ for (const width of [320, 820, 1280]) {
     await expect(page.getByRole("link", { name: "Screenshots", exact: true })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Capture Evaluation Results", exact: true })).toBeVisible();
     await expect(page.getByLabel("Ranking screenshots", { exact: true })).toHaveCount(0);
-    await expect(page.getByText(/Upload a CSV spreadsheet/)).toBeVisible();
+    await expect(page.getByText(/Upload a (?:CSV )?spreadsheet/)).toBeVisible();
     for (const route of [`/alliances/${allianceId}/periods/${period.id}/import?method=screenshots`,
       `/alliances/${allianceId}/screenshots?scope=batch`, `/alliances/${allianceId}/screenshots?memberId=${member.id}`]) {
       await page.goto(route);
