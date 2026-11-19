@@ -20,7 +20,7 @@ export function QaAllianceSettings({ allianceId, initial, disabled }: { alliance
     {disabled && <p className="mt-2 text-sm text-warning-light">Wait for the current screenshot check to finish before editing the name.</p>}
     <div className="mt-4"><Button variant="secondary" disabled={disabled || !name.trim() || name.trim() === initial.name}
       onClick={() => setConfirm(true)}>Review QA name change</Button></div>
-    {initial.history.length > 0 && <div className="mt-5"><h3 className="font-medium">QA name history</h3>
+    {initial.history.length > 0 && <div className="mt-5"><h2 className="font-medium">QA name history</h2>
       <ol className="mt-2 space-y-2 text-sm text-text-secondary">{initial.history.map(change => <li key={change.id} className="break-words">
         <span>{change.previousName} → {change.name}</span><br /><span>{change.actorName} · {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(change.createdAt))} UTC</span>
       </li>)}</ol></div>}
