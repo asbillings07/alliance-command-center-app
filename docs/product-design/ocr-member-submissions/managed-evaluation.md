@@ -60,7 +60,7 @@ recognition JSON in a dedicated private GCS bucket. Do not call this image an
 untouched original. Raw OCR text and candidates expire with the screenshot;
 they are not permanent audit metadata. Durable audit retains the uploader and
 role at action, tenant/target snapshots, digest, time, processing version and
-outcome. No screenshot, original filename or OCR text goes into logs or replay.
+outcome. Scoped upload history also stores the original filename (basename only) for new uploads. Earlier entries have no filename. Filenames do not enter the OCR provider payload, analytics, logs or replay. No screenshot or OCR text goes into logs or replay.
 
 Access ends 30 days after upload. Bucket lifecycle deletion runs asynchronously
 after age 30; exact physical erasure at that instant is not promised. Require

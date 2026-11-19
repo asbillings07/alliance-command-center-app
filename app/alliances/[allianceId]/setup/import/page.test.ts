@@ -16,6 +16,7 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
+vi.mock("@/app/src/lib/ocr/evaluation", () => ({ ocrEvaluationAvailable: vi.fn().mockResolvedValue(false) }));
 vi.mock("@/app/src/lib/auth", () => ({}));
 
 vi.mock("@/app/src/lib/auth/requireAllianceAccess", () => ({
@@ -63,6 +64,7 @@ describe("SetupImportPage", () => {
 
   it("blocks upload UI until members exist and links import-capable viewers to member import with returnTo", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "leader" },
       permissions: {
         canImportMetrics: true,
         canImportMembers: true,
@@ -98,6 +100,7 @@ describe("SetupImportPage", () => {
 
   it("shows blocked explanation without import link when viewer lacks IMPORT_MEMBERS", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "leader" },
       permissions: {
         canImportMetrics: true,
         canImportMembers: false,
@@ -129,6 +132,7 @@ describe("SetupImportPage", () => {
 
   it("passes archived-only guidance to the guided import form when only archived periods exist", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "leader" },
       permissions: {
         canImportMetrics: true,
         canImportMembers: true,

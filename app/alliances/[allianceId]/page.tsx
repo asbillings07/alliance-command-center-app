@@ -1,3 +1,5 @@
+import { ocrEvaluationAvailable } from "@/app/src/lib/ocr/evaluation";
+import { Button } from "@/app/src/components/client";
 import { redirect } from "next/navigation";
 import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/app/src/lib/prisma";
@@ -119,6 +121,10 @@ export default async function AlliancePage({ params }: Params) {
     toFeatureContext({ environment: resolveEnvironment(), authorization: auth }),
   );
 
+  const canStartCapture = permissions.canImportMetrics && (!activePeriod || !hasActiveMembers || (!hasPeriodMetrics && !canProvision)) &&
+    await ocrEvaluationAvailable({allianceId,actorId:auth.user.id,memberId:null,scope:"batch"});
+  const captureAction = canStartCapture && <Button href={`/alliances/${allianceId}/screenshots?scope=batch`}>Capture Evaluation Results</Button>;
+
   const setupProgressCard = (
     <SetupProgressCard
       allianceId={allianceId}
@@ -131,6 +137,7 @@ export default async function AlliancePage({ params }: Params) {
   if (!workflowGroupsEnabled) {
     return (
       <PageLayout title={alliance.name} description={`Server: ${alliance.server}`}>
+        {captureAction}
         <LegacyDashboard
           allianceId={allianceId}
           role={auth.membership.role}
@@ -176,6 +183,7 @@ export default async function AlliancePage({ params }: Params) {
       description={`Server: ${alliance.server}`}
       action={<Badge variant="info">Role: {auth.membership.role}</Badge>}
     >
+      {captureAction}
       <WorkflowDashboard allianceId={allianceId} viewModel={viewModel} setupProgressCard={setupProgressCard} />
     </PageLayout>
   );

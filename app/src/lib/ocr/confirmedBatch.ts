@@ -1,3 +1,4 @@
+import { planBatchDestination, applyBatchDestination } from "./batchDestination";
 import { productionPilotConfigured } from "./productionPilot";
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
@@ -7,12 +8,12 @@ import { metricEntryProvenance } from "../metrics/metricEntryProvenance";
 import { OcrEvaluationError } from "./config";
 import { batchWriteContext, readEvaluationContent, type EvaluationTarget } from "./evaluation";
 import { isolatedOcrDatabaseAvailable } from "./isolatedDatabase";
-import { exactNameKey, isRankingWeekPeriod, rankingWindow, reconcileOverlap, type BatchCandidate } from "./ranking";
+import { exactNameKey, rankingWindow, reconcileOverlap, resolveRankingChoices, type BatchCandidate } from "./ranking";
 import { evaluationTransport } from "./transport";
 import { touchAllianceSetupActivity } from "../touchAllianceSetupActivity";
 
 export type BatchSelection = {
-  allianceId: string; periodId: string; attemptIds: string[]; excluded: string[];
+  allianceId: string; periodId: string; attemptIds: string[]; excluded: string[]; sourcePicks?: string[];
   week: string; captureDate: string; dailyMetric: string; weeklyMetric: string;
 };
 export type ScoreComparison = { memberId: string; member: string; metric: string; metricId: string;
@@ -29,21 +30,23 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
     || !input.attemptIds.length || input.attemptIds.length > 20 || !input.attemptIds.every(validId)
     || new Set(input.attemptIds).size !== input.attemptIds.length || !Array.isArray(input.excluded)
     || input.excluded.length > 3000 || !input.excluded.every(validId)) fail("Choose a valid screenshot batch.");
+  const picks = input.sourcePicks ?? [];
+  if (!Array.isArray(picks) || picks.length > 300 || !picks.every(validId) || new Set(picks).size !== picks.length) fail("Choose one source per conflicting score.");
   const target: EvaluationTarget = { actorId, allianceId: input.allianceId, memberId: null, scope: "batch" };
   const receiptKey = (digest: string) => hash([digest, actorId, input.allianceId, input.periodId,
-    input.attemptIds, [...input.excluded].sort(), input.week, input.captureDate, input.dailyMetric, input.weeklyMetric]);
+    input.attemptIds, [...input.excluded].sort(), input.week, input.captureDate, input.dailyMetric, input.weeklyMetric, ...(picks.length ? [[...picks].sort()] : [])]);
   // A successfully saved batch may itself change the roster. Recover its
   // receipt after a lost response before attempting to rematch old evidence.
   if (decision && /^[a-f0-9]{64}$/.test(decision.comparison)) {
     const receipt = await prisma.$transaction(async tx => {
       await batchWriteContext(tx, target);
       return tx.ocrScoreBatch.findFirst({ where: { confirmationDigest: receiptKey(decision.comparison), actorId,
-        allianceId: input.allianceId, periodId: input.periodId }, select: { id: true, excludedRows: true,
+        allianceId: input.allianceId }, select: { id: true, periodId: true, excludedRows: true,
         entries: { select: { allianceMemberId: true, allianceMember: { select: { playerName: true } },
           metricId: true, metric: { select: { name: true } }, value: true, ocrCreatedRosterMember: true,
           ocrSources: { select: { window: true }, take: 1 } } } } });
     });
-    if (receipt) return { batchId: receipt.id, comparison: decision.comparison, saved: true, excluded: receipt.excludedRows,
+    if (receipt) return { changes: [] as string[], periodName: "", periodId: receipt.periodId, batchId: receipt.id, comparison: decision.comparison, saved: true, excluded: receipt.excludedRows,
       comparisons: receipt.entries.map(e => ({ memberId: e.allianceMemberId, member: e.allianceMember.playerName,
         metricId: e.metricId, metric: e.metric.name, value: e.value!, window: e.ocrSources[0].window,
         createMember: e.ocrCreatedRosterMember, previous: null, previousId: null })) };
@@ -58,7 +61,8 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
     if (!window) fail("Confirm the screenshot dates before saving.");
     candidates.push(...result.batchReview.rows.map(row => ({ ...row, attemptId: id, source: i + 1, window })));
   }
-  const groups = reconcileOverlap(candidates, true);
+  const groups = resolveRankingChoices(reconcileOverlap(candidates, true), picks);
+  if (picks.some(id => !groups.some(g => !g.conflict && g.choices.some(r => rowId(r) === id)))) fail("Review the conflicting readings and choose one source per score.");
   const excluded = new Set(input.excluded);
   if (input.excluded.some(key => !groups.some(({row}) => rowId(row) === key))) fail("The reviewed rows changed. Review this batch again.");
   const chosen = groups.filter(({row}) => !excluded.has(rowId(row)));
@@ -67,28 +71,21 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
     if (conflict || (!createMember && (!row.memberId || row.status !== "exact")) || row.value === null || row.value > 2147483647)
       fail("Exclude unresolved rows or conflicting scores before saving.");
   }
+  const excludedCount = excluded.size + chosen.reduce((total, group) => total + group.ignored, 0);
   const metricFor = (r: BatchCandidate) => r.window!.startsWith("week:") ? input.weeklyMetric : input.dailyMetric;
-  const batchId = hash([input.allianceId, input.periodId, chosen.flatMap(g => g.sources.map(r => JSON.stringify([rowId(r), r.memberId, r.window, r.value, metricFor(r)]))).sort()]);
+  const sourceKey = [input.allianceId, input.periodId, chosen.flatMap(g => g.sources.map(r => JSON.stringify([rowId(r), r.memberId, r.window, r.value, metricFor(r)]))).sort()];
   return prisma.$transaction(async tx => {
     const current = await batchWriteContext(tx, target);
     const attempts = await tx.ocrEvaluationAttempt.findMany({ where: { id: { in: input.attemptIds }, allianceId: input.allianceId, memberId: null, status: "READY", expiresAt: { gt: new Date() } },
       select: { contextKey: true } });
     if (attempts.length !== input.attemptIds.length || attempts.some(a => a.contextKey !== current.contextKey)) fail("The roster, permission or source changed. Review the batch again.");
-    const period = await tx.metricPeriod.findFirst({ where: { id: input.periodId, allianceId: input.allianceId, active: true },
-      select: { name: true, startsAt: true, endsAt: true, periodMetrics: { where: { active: true, metric: { active: true, type: "NUMERIC", allianceId: input.allianceId } }, select: { metric: { select: { id: true, name: true, observationGrain: true } } } } } });
-    if (!period) fail("Choose an active evaluation period.");
-    const toDay = (d: Date | null) => d?.toISOString().slice(0, 10);
-    const start = toDay(period.startsAt), end = toDay(period.endsAt);
+    if (current.actorRole === "MEMBER") fail("Import access is required.");
+    const plan = await planBatchDestination(tx,input,chosen.map(g=>g.row.window!),current.actorRole);
+    const batchId = hash(sourceKey);
     const slots = chosen.map(({ row, createMember }) => {
       const weekly = row.window!.startsWith("week:");
       const day = weekly ? row.window!.slice(5) : row.window!;
-      const metric = period.periodMetrics.find(m => m.metric.id === metricFor(row))?.metric;
-      if (!metric || metric.observationGrain !== (weekly ? "PERIOD_VALUE" : "DAILY_OBSERVATION"))
-        fail("Choose an active numeric metric for each screenshot type.");
-      if (!weekly && (!start || !end)) fail("Daily scores require a period with a start and end date.");
-      if ((start && day < start) || (end && day > end)) fail("A screenshot date falls outside this evaluation period.");
-      if (weekly && !isRankingWeekPeriod(day, start, end))
-        fail("A weekly total requires an evaluation period covering that one scoring week starting on that Monday.");
+      const metric = plan.metrics.find(m => m.daily !== weekly)!;
       return { createMember, memberId: createMember ? "new:" + exactNameKey(row.sourceName) : row.memberId!, metricId: metric.id, day: weekly ? null : day, metric: metric.name,
         window: row.window!, member: createMember ? exactNameKey(row.sourceName) : row.matchedName!, value: row.value! };
     });
@@ -99,15 +96,15 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
     const prior = await tx.$queryRaw<Array<{ memberId: string; metricId: string; day: string | null; id: string; value: number | null }>>`
       SELECT s."memberId", s."metricId", s.day, e.id, e.value FROM jsonb_to_recordset(${JSON.stringify(slots)}::jsonb)
         AS s("memberId" text,"metricId" text,day text) JOIN LATERAL (
-        SELECT id,value FROM "MemberMetricEntry" WHERE "periodId"=${input.periodId} AND "metricId"=s."metricId" AND "allianceMemberId"=s."memberId"
+        SELECT id,value FROM "MemberMetricEntry" WHERE "periodId"=${plan.periodId ?? null} AND "metricId"=s."metricId" AND "allianceMemberId"=s."memberId"
         AND "observedOn" IS NOT DISTINCT FROM s.day::date ORDER BY "recordedAt" DESC,"createdAt" DESC,id DESC LIMIT 1
       ) e ON true`;
     const comparisons: ScoreComparison[] = slots.map(s => {
       const old = prior.find(p => p.memberId === s.memberId && p.metricId === s.metricId && p.day === s.day);
       return { createMember: s.createMember, memberId: s.memberId, metricId: s.metricId, member: s.member, metric: s.metric, window: s.window, value: s.value, previous: old?.value ?? null, previousId: old?.id ?? null };
     });
-    const comparison = hash([batchId, actorId, current.contextKey, current.consent.processing?.id, period.name, comparisons]);
-    const response = { batchId, comparison, comparisons, excluded: excluded.size, saved: false };
+    const comparison = hash([batchId, actorId, current.contextKey, current.consent.processing?.id, plan, comparisons]);
+    const response = { periodName: plan.name, periodId: plan.periodId, changes: plan.changes, batchId, comparison, comparisons, excluded: excludedCount, saved: false };
     const existing = await tx.ocrScoreBatch.findUnique({ where: { id: batchId } });
     if (existing) return { ...response, excluded: existing.excludedRows, saved: true };
     const used = await tx.ocrScoreSource.findMany({ where: { attemptId: { in: input.attemptIds } }, select: { attemptId: true, rowKey: true } });
@@ -119,13 +116,14 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
     const newNames = [...new Set(slots.filter(s => s.createMember).map(s => s.member))];
     if (newNames.length && decision.createMembersConfirmed !== true) fail("Confirm the new roster members before saving.");
     const provenance = await metricEntryProvenance(tx, input.allianceId, actorId, "OCR_SCREENSHOT");
-    await tx.ocrScoreBatch.create({ data: { id: batchId, confirmationDigest: receiptKey(comparison), allianceId: input.allianceId, actorId, periodId: input.periodId, excludedRows: excluded.size } });
+    const destination = await applyBatchDestination(tx,input.allianceId,plan);
+    await tx.ocrScoreBatch.create({ data: { id: batchId, confirmationDigest: receiptKey(comparison), allianceId: input.allianceId, actorId, periodId: destination.periodId, excludedRows: excludedCount } });
     const created = newNames.length ? await tx.allianceMember.createManyAndReturn({
       data: newNames.map(playerName => ({ allianceId: input.allianceId, playerName })),
       select: { id: true, playerName: true },
     }) : [];
     const newIds = new Map(created.map(m => [m.playerName, m.id]));
-    const entries = slots.map(s => ({ ...provenance, id: randomUUID(), ocrBatchId: batchId, periodId: input.periodId, metricId: s.metricId,
+    const entries = slots.map(s => ({ ...provenance, id: randomUUID(), ocrBatchId: batchId, periodId: destination.periodId, metricId: destination.ids.get(s.metricId)!,
       ocrCreatedRosterMember: s.createMember, allianceMemberId: newIds.get(s.member) ?? s.memberId, value: s.value, observedOn: s.day ? new Date(s.day) : null,
       observationGrain: s.day ? "DAILY_OBSERVATION" as const : "PERIOD_VALUE" as const }));
     await tx.memberMetricEntry.createMany({ data: entries });
@@ -133,6 +131,6 @@ export async function reviewOrSaveBatch(actorId: string, input: BatchSelection, 
       entryId: entries[i].id, attemptId: r.attemptId, rowKey: r.key, window: r.window!,
     }))) });
     await touchAllianceSetupActivity(tx, input.allianceId);
-    return { ...response, comparisons: comparisons.map(r => ({ ...r, memberId: newIds.get(r.member) ?? r.memberId })), saved: true };
+    return { ...response, periodId: destination.periodId, comparisons: comparisons.map(r => ({ ...r, metricId: destination.ids.get(r.metricId)!, memberId: newIds.get(r.member) ?? r.memberId })), saved: true };
   }, { isolationLevel: "Serializable", timeout: 15000 });
 }

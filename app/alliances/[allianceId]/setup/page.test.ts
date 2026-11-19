@@ -66,6 +66,7 @@ describe("AllianceSetupPage", () => {
 
   it("renders spreadsheet-first entry choice and manual-setup anchor", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       permissions: {
         canImportMetrics: true,
         canImportMembers: true,
@@ -97,6 +98,7 @@ describe("AllianceSetupPage", () => {
 
   it("renders required tasks in period-first order with team last", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       permissions: {
         canImportMetrics: true,
         canImportMembers: true,
@@ -133,6 +135,7 @@ describe("AllianceSetupPage", () => {
 
   it("renders blockedReason for data task when members are missing", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       permissions: {
         canImportMetrics: true,
         canImportMembers: false,
@@ -168,6 +171,7 @@ describe("AllianceSetupPage", () => {
 
   it("renders blockedFix link for admin when data task is blocked by missing members", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       permissions: {
         canImportMetrics: true,
         canImportMembers: true,
@@ -195,6 +199,7 @@ describe("AllianceSetupPage", () => {
 
   it("renders archived-only hint on period task while keeping it actionable", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       permissions: {
         canImportMetrics: true,
         canImportMembers: true,
@@ -227,6 +232,7 @@ describe("AllianceSetupPage", () => {
 
   it("does not offer spreadsheet import CTA to viewers without IMPORT_METRICS", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       permissions: {
         canViewAlliance: true,
         canViewMembers: true,

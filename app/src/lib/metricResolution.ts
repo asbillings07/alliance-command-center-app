@@ -36,6 +36,7 @@ export type ClassifiedTarget = {
     metricId: string | null;
     // Present for create (the new metric's name); null otherwise.
     createName: string | null;
+    createGrain?: MetricObservationGrain;
 };
 
 // The identity the server commits to after resolution.
@@ -190,21 +191,15 @@ export async function resolveMetricTargets(
             // match an *archived* metric of the same name. Reactivate it on
             // conflict; otherwise we would attach/import into a hidden metric.
             //
-            // observationGrain/memberPeriodRollup are set explicitly (ADR-018
-            // §3, mirroring createMetric in metrics/action.ts) rather than left
-            // to the schema's temporary Phase 1 default: neither import flow has
-            // a way for the caller to request DAILY_OBSERVATION, so every metric
-            // this path can create is a PERIOD_VALUE/LATEST metric today. A
-            // grain-selector UI that lets import *create* a DAILY_OBSERVATION
-            // metric is separate, later work (#287 database design §8, Slice 4).
+            // Spreadsheet metrics default to period values. Ranking captures also support daily observations.
             const metric = await tx.metric.upsert({
                 where: { allianceId_name: { allianceId, name } },
                 create: {
                     allianceId,
                     name,
                     type: Metric_Type.NUMERIC,
-                    observationGrain: MetricObservationGrain.PERIOD_VALUE,
-                    memberPeriodRollup: MemberPeriodRollupKind.LATEST,
+                    observationGrain: item.createGrain ?? MetricObservationGrain.PERIOD_VALUE,
+                    memberPeriodRollup: item.createGrain === MetricObservationGrain.DAILY_OBSERVATION ? MemberPeriodRollupKind.SUM : MemberPeriodRollupKind.LATEST,
                 },
                 update: { active: true },
                 select: { id: true },

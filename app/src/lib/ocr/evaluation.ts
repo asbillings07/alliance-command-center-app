@@ -102,7 +102,14 @@ export async function loadEvaluationContext(target: EvaluationTarget) {
     }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 20 });
     return { consent: current.consent, processingConsentId: current.consent.processing?.id ?? null, playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       leader: current.actorRole !== "MEMBER", members: current.members, contextKey: current.contextKey,
-      attempts: attempts.map(auditView) };
+      attempts: attempts.map(a => ({
+        ...auditView(a),
+        ownRequestId: a.actorUserId === target.actorId ? a.requestId : null,
+        retryable: target.scope === "batch" && a.status === "FAILED" && !isAllianceRejection(a)
+          && a.actorUserId === target.actorId && a.expiresAt > new Date() && a.contextKey === current.contextKey
+          && a.processingConsentId === current.consent.processing?.id && a.processingVersion === OCR_VERSION
+          && !attempts.some(child => child.retryOf === a.id),
+      })) };
   });
 }
 
@@ -115,7 +122,7 @@ export function batchWriteContext(tx: Tx, target: EvaluationTarget) {
 
 function auditView(attempt: OcrEvaluationAttempt) {
   return { id: attempt.id, createdAt: attempt.createdAt.toISOString(), expiresAt: attempt.expiresAt.toISOString(),
-    actorName: attempt.actorName, actorRole: attempt.actorRole, playerName: attempt.playerName,
+    sourceFilename: attempt.sourceFilename, actorName: attempt.actorName, actorRole: attempt.actorRole, playerName: attempt.playerName,
     status: attempt.status, outcome: attempt.outcome, retryOf: attempt.retryOf };
 }
 
@@ -133,15 +140,29 @@ export async function authorizeScreenshotUpload(target: EvaluationTarget) {
   await transaction(tx => context(tx, target));
 }
 
+function uploadBasename(value?: string): string | null {
+  const basename = value?.split(/[\\/]/u).pop()?.replace(/[\p{Cc}\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu, "").trim();
+  if (!basename || basename === "." || basename === "..") return null;
+  return Array.from(basename).slice(0, 255).join("");
+}
+
 export async function evaluateScreenshot(input: EvaluationTarget & {
-  requestId: string; contextKey: string; bytes: Uint8Array; processingConsentId: number; retryFailed?: boolean;
+  requestId: string; contextKey: string; bytes: Uint8Array; processingConsentId: number; retryOf?: string; sourceFilename?: string;
 }, transport: OcrTransport) {
   requireOcrEvaluation(input.allianceId);
   if (!Number.isSafeInteger(input.processingConsentId) || input.processingConsentId < 1) throw new OcrEvaluationError("Reload to review your OCR processing preference.");
   if (!/^[a-f0-9-]{36}$/i.test(input.requestId) || input.contextKey.length > 1500) throw new OcrEvaluationError("Reload this review before uploading.");
-  if (input.retryFailed && input.scope !== "batch") throw new OcrEvaluationError("Explicit retries are available only in the leader ranking trial.");
+  if (input.retryOf && (input.scope !== "batch" || !/^[a-f0-9-]{36}$/i.test(input.retryOf))) throw new OcrEvaluationError("Choose a failed ranking screenshot.");
   await unchanged(input, input.contextKey, input.processingConsentId);
+  const parent = input.retryOf ? await transaction(async tx => {
+    const { attempt } = await authorizedAttempt(tx, input, input.retryOf!);
+    if (attempt.actorUserId !== input.actorId || attempt.status !== "FAILED" || isAllianceRejection(attempt)
+      || attempt.contextKey !== input.contextKey || attempt.processingConsentId !== input.processingConsentId
+      || attempt.processingVersion !== OCR_VERSION) throw new OcrEvaluationError("This scan is unavailable for retry in the current review.");
+    return attempt;
+  }) : null;
   const image = await normalizeScreenshot(input.bytes);
+  if (parent && image.digest !== parent.sourceDigest) throw new OcrEvaluationError("Choose the same screenshot as the failed scan.", "retry-needs-file");
   // Preflight cannot process or store the screenshot, and precedes spending.
   await transport.preflight();
   const admitted = await transaction(async tx => {
@@ -154,20 +175,20 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     if (existing) {
       if (existing.allianceId !== input.allianceId || existing.memberId !== current.memberId
         || existing.sourceDigest !== image.digest || existing.processingVersion !== OCR_VERSION
-        || existing.contextKey !== current.contextKey || existing.processingConsentId !== input.processingConsentId) throw new OcrEvaluationError("This upload reference belongs to a different review. Choose the screenshot again.");
+        || (parent && existing.retryOf !== parent.id) || existing.contextKey !== current.contextKey || existing.processingConsentId !== input.processingConsentId) throw new OcrEvaluationError("This upload reference belongs to a different review. Choose the screenshot again.");
       return { attempt: existing, dispatched: false };
     }
-    // Reuse identical batch captures in this unchanged review context. A failed
-    // attempt is not automatically sent again under a fresh client request ID.
-    let retryOf: string | null = null;
+    if (parent) {
+      if (parent.expiresAt <= new Date()) throw new OcrEvaluationError("This screenshot has expired.");
+      const child = await tx.ocrEvaluationAttempt.findUnique({ where: { retryOf: parent.id } });
+      if (child) return {attempt: child, dispatched: false};
+    }
+    const retryOf = parent?.id ?? null;
     if (input.scope === "batch") {
       const duplicate = await tx.ocrEvaluationAttempt.findFirst({ where: { allianceId: input.allianceId, memberId: null,
         actorUserId: input.actorId, sourceDigest: image.digest, contextKey: current.contextKey, processingConsentId: input.processingConsentId,
         processingVersion: OCR_VERSION, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
-      if (duplicate) {
-        if (duplicate.status !== "FAILED" || isAllianceRejection(duplicate) || input.retryFailed !== true) return { attempt: duplicate, dispatched: false };
-        retryOf = duplicate.id;
-      }
+      if (duplicate && duplicate.id !== retryOf) return { attempt: duplicate, dispatched: false };
     }
     const now = new Date(); const since = new Date(now); since.setUTCHours(0, 0, 0, 0);
     if (await tx.ocrEvaluationAttempt.count({ where: { actorUserId: input.actorId, createdAt: { gte: since } } }) >= 20) {
@@ -183,6 +204,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
       actorUserId: input.actorId, actorName: current.actorName, actorRole: current.actorRole,
       playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       contextKey: current.contextKey, sourceDigest: image.digest, processingVersion: OCR_VERSION,
+      sourceFilename: parent?.sourceFilename ?? uploadBasename(input.sourceFilename),
       processingConsentId: current.consent.processing!.id, qualityConsentId: qualityAllowed(current.consent) ? current.consent.quality!.id : null,
       imageBytes: image.bytes.length, createdAt: now, expiresAt: new Date(now.getTime() + OCR_RETENTION_MS),
     } });

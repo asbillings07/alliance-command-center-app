@@ -369,6 +369,44 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
       await db.metric.delete({where:{id:metric.id}});
     }
   });
+  it("bootstraps a blank alliance on confirmation, then safely replays the receipt", async () => {
+    await db.allianceMember.delete({where:{id:memberId}});
+    await db.alliance.update({where:{id:allianceId},data:{name:"QA"}});
+    const batch: EvaluationTarget = {allianceId,actorId,memberId:null,scope:"batch"};
+    vi.spyOn(providerSelection,"evaluationTransport").mockResolvedValue(transport);
+    const attemptIds = [];
+    for (const kind of ["monday","weekly"] as const) {
+      const fixture = rankingFixture(kind);
+      bytes = await sharp(Buffer.from(fixture.svg)).png().toBuffer();
+      vi.mocked(transport.recognize).mockResolvedValue(fixture.recognition);
+      attemptIds.push((await evaluateScreenshot(await input(batch),transport)).id);
+    }
+    const selection = {allianceId,periodId:"auto",dailyMetric:"auto",weeklyMetric:"auto",attemptIds,week:"2026-11-16",captureDate:"",excluded:[]};
+    try {
+      const preview = await reviewOrSaveBatch(actorId,selection);
+      expect(preview.changes).toHaveLength(3);
+      expect(await db.metricPeriod.count({where:{allianceId}})).toBe(0);
+      expect(await db.metric.count({where:{allianceId}})).toBe(0);
+      const decision = {comparison:preview.comparison,lowerConfirmed:false,createMembersConfirmed:true};
+      const saves = await Promise.allSettled([reviewOrSaveBatch(actorId,selection,decision),reviewOrSaveBatch(actorId,selection,decision)]);
+      expect(saves.some(s=>s.status==="fulfilled" && s.value.saved)).toBe(true);
+      const receipt = await reviewOrSaveBatch(actorId,selection,decision);
+      expect(receipt.comparisons).toHaveLength(6);
+      expect(await db.metricPeriod.count({where:{allianceId}})).toBe(1);
+      expect(await db.metricPeriodMetric.count({where:{period:{allianceId},weight:0,required:false}})).toBe(2);
+      expect(await db.memberMetricEntry.count({where:{periodId:receipt.periodId}})).toBe(6);
+      expect(await db.metric.findMany({where:{allianceId},select:{observationGrain:true,memberPeriodRollup:true}})).toEqual(expect.arrayContaining([
+        {observationGrain:"DAILY_OBSERVATION",memberPeriodRollup:"SUM"}, {observationGrain:"PERIOD_VALUE",memberPeriodRollup:"LATEST"}
+      ]));
+    } finally {
+      await db.ocrScoreSource.deleteMany({where:{attemptId:{in:attemptIds}}});
+      await db.memberMetricEntry.deleteMany({where:{allianceMember:{allianceId}}});
+      await db.ocrScoreBatch.deleteMany({where:{allianceId}});
+      await db.metricPeriodMetric.deleteMany({where:{period:{allianceId}}});
+      await db.metric.deleteMany({where:{allianceId}});
+      await db.metricPeriod.deleteMany({where:{allianceId}});
+    }
+  });
   it("reads a whole ranking capture once without member links or accepted metric writes", async () => {
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
     await db.alliance.update({ where: { id: allianceId }, data: { name: "QA" } });
@@ -406,7 +444,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     vi.mocked(transport.recognize).mockResolvedValue({ ...fixture.recognition, words });
     const first = await evaluateScreenshot(await input(batch), transport);
     expect(first).toMatchObject({ status: "FAILED", outcome: `alliance-${outcome}` });
-    expect((await evaluateScreenshot({ ...await input(batch), retryFailed: true }, transport)).id).toBe(first.id);
+    await expect(evaluateScreenshot({ ...await input(batch), retryOf: first.id }, transport)).rejects.toThrow(/unavailable for retry/);
     for (const kind of ["result", "image"] as const) {
       await expect(readEvaluationContent(batch, first.id, kind, transport)).rejects.toThrow("No results were added");
     }
@@ -502,14 +540,16 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
   it("requires explicit consent for a new charged retry and preserves its failed parent", async () => {
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
     vi.mocked(transport.recognize).mockRejectedValueOnce(new Error("private provider failure"));
-    await expect(evaluateScreenshot(await input(batch), transport)).rejects.toThrow("did not complete");
+    await expect(evaluateScreenshot({ ...await input(batch), sourceFilename: "C:\\private\\Lundi-\u202eé.png" }, transport)).rejects.toThrow("did not complete");
     const failed = await db.ocrEvaluationAttempt.findFirstOrThrow();
-    const request = { ...await input(batch), retryFailed: true };
+    const wrong = await sharp({create:{width:300,height:300,channels:3,background:"#ab1234"}}).png().toBuffer();
+    await expect(evaluateScreenshot({...await input(batch), retryOf:failed.id, bytes:wrong}, transport)).rejects.toThrow("same screenshot");
+    const request = { ...await input(batch), retryOf: failed.id, sourceFilename: "copy.png" };
     const retried = await evaluateScreenshot(request, transport);
-    expect(retried).toMatchObject({status:"READY",retryOf:failed.id});
+    expect(retried).toMatchObject({status:"READY",retryOf:failed.id,sourceFilename:"Lundi-é.png"});
     expect(await db.ocrEvaluationAttempt.findUniqueOrThrow({where:{id:failed.id}})).toMatchObject({status:"FAILED"});
     expect((await evaluateScreenshot(request, transport)).id).toBe(retried.id);
-    expect((await evaluateScreenshot({...await input(batch),retryFailed:true}, transport)).id).toBe(retried.id);
+    expect((await evaluateScreenshot({...await input(batch),retryOf:failed.id}, transport)).id).toBe(retried.id);
     expect(transport.recognize).toHaveBeenCalledTimes(2);
     expect(await db.ocrEvaluationBudget.findUniqueOrThrow({where:{id:OCR_CAMPAIGN}})).toMatchObject({attempts:2,reservedMicros:20000});
   });

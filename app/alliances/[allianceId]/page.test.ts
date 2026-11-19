@@ -90,6 +90,7 @@ describe("AllianceDashboardPage", () => {
 
   it("renders Record Now and Capture Evaluation Results when prerequisites are met", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       membership: { role: "ADMIN" },
       permissions: adminPermissions,
     } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
@@ -115,6 +116,7 @@ describe("AllianceDashboardPage", () => {
 
   it("shows no-period guidance instead of omitting Evaluation Results", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       membership: { role: "ADMIN" },
       permissions: adminPermissions,
     } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
@@ -134,6 +136,7 @@ describe("AllianceDashboardPage", () => {
 
   it("distinguishes archived-only periods in the no-period card", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       membership: { role: "ADMIN" },
       permissions: adminPermissions,
     } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
@@ -151,6 +154,7 @@ describe("AllianceDashboardPage", () => {
 
   it("hides Record and Import when there are no active members", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       membership: { role: "ADMIN" },
       permissions: adminPermissions,
     } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);
@@ -175,6 +179,7 @@ describe("AllianceDashboardPage", () => {
 
   it("shows import-only guidance when metrics can be provisioned during import", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       membership: { role: "LEADER" },
       permissions: {
         canViewAlliance: true,
@@ -206,6 +211,7 @@ describe("AllianceDashboardPage", () => {
 
   it("shows manage-period guidance when import cannot provision metrics", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       membership: { role: "LEADER" },
       permissions: {
         canViewAlliance: true,
@@ -236,6 +242,7 @@ describe("AllianceDashboardPage", () => {
 
   it("uses deterministic ordering when querying active period", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
       membership: { role: "ADMIN" },
       permissions: {
         canViewAlliance: true,
@@ -272,6 +279,7 @@ describe("AllianceDashboardPage", () => {
   describe("Reports module card — reports flag gate (#190)", () => {
     async function renderWithViewMembers() {
       vi.mocked(requireAllianceAccess).mockResolvedValue({
+      user: { id: "qa-importer" },
         membership: { role: "ADMIN" },
         permissions: { ...adminPermissions, canViewMembers: true },
       } as unknown as Awaited<ReturnType<typeof requireAllianceAccess>>);

@@ -14,7 +14,7 @@ for (const width of [320, 820, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await login({ email, password, displayName: "Owner" });
     await page.goto(`/alliances/${allianceId}/members/${member.id}`);
-    await expect(page.getByRole("link", { name: "Try daily VS screenshot review" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Upload ranking screenshots" })).toHaveCount(0);
     await page.goto(`/alliances/${allianceId}/periods/${period.id}/import`);
     await expect(page.getByRole("link", { name: "Screenshots", exact: true })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Capture Evaluation Results", exact: true })).toBeVisible();
