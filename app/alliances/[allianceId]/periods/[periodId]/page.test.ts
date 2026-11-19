@@ -84,7 +84,7 @@ describe("Period detail page", () => {
     const html = renderToStaticMarkup(page);
 
     expect(html).toContain("Record Results");
-    expect(html).toContain("Import Evaluation Results");
+    expect(html).toContain("Capture Evaluation Results");
   });
 
   it("replaces zero-member coverage stats with import guidance", async () => {
@@ -103,7 +103,7 @@ describe("Period detail page", () => {
     expect(html).toContain("No active members yet");
     expect(html).toContain("Import Members");
     expect(html).not.toContain("Record Results");
-    expect(html).not.toContain("Import Evaluation Results");
+    expect(html).not.toContain("Capture Evaluation Results");
   });
 
   it("shows import-only actions when metrics can be provisioned", async () => {
@@ -122,7 +122,7 @@ describe("Period detail page", () => {
     const html = renderToStaticMarkup(page);
 
     expect(html).not.toContain("Record Results");
-    expect(html).toContain("Import Evaluation Results");
+    expect(html).toContain("Capture Evaluation Results");
   });
 
   describe("metric coverage 'View Report' link — reports flag gate (#190)", () => {

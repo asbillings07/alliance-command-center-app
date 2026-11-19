@@ -2,6 +2,10 @@
 
 PR #403 extends the managed recognition trial to the existing evaluation-results import page. Leaders, Admins and Owners choose Screenshots beside Spreadsheet and Manual entry, upload up to 20 images, and review all recognized roster candidates together. Ordinary members retain the separate own-record permission boundary.
 
+The workflow is named **Capture Evaluation Results** across navigation, setup and page headings to cover manual entry, spreadsheets and screenshots. Existing routes and permission boundaries are unchanged. Both image and member-source controls open a read-only native modal above the current review, with focus containment/return, Escape and a visible close control. Fit/enlarge controls and an independently scrolling image region support phone, tablet and desktop inspection. Loading and unavailable-image messages appear inside the modal; closing it preserves the review and never sends another OCR request.
+
+Use the permanent [OCR QA origin](https://alliance-command-center-env-acc-ocr-eval-aptelum-labs.vercel.app) for all user-facing previews. Subsequent reviewed `acc-ocr-eval` deployments update this same alias; record immutable deployment IDs and commit hashes separately. The stable origin retains the isolated QA account/database and does not authorize production or broaden access.
+
 ## Source context
 
 - A ranking image must visibly establish the highlighted Daily Rank tab plus one selected weekday, or the highlighted Weekly Rank tab. Merely reading both labels is insufficient. Missing or ambiguous selection leaves the image unresolved.
@@ -27,6 +31,6 @@ Tests use invented names and screenshots. Real owner-supplied images and recogni
 
 The owner authorized three private ranking screenshots. Monday and Weekly Rank were recognized by Google and their highlighted source contexts were identified correctly. Real column geometry exposed an association bug not represented by the original synthetic fixture; parser regressions now cover centered headers, large rank glyphs, full long names and missing adjacent text. Re-parsing the two retained responses yields all eight visible rows per image without further OCR calls. Recognized name spelling/case can still differ from the source; exact identity is never inferred from a fuzzy match.
 
-The Tuesday attempt failed after its private source image was stored; no recognition object was retained. Neither the generic historical failure nor available logs identify its exact failure stage. That failure is preserved, not reset or relabeled successful. Future failures record a safe processing-stage label without logging provider bodies or recognized text. An explicitly approved retry remains pending; this record does not claim that all three real samples passed.
+The Tuesday attempt failed after its private source image was stored; no recognition object was retained. Neither the generic historical failure nor available logs identify its exact failure stage. That failure is preserved, not reset or relabeled successful. The one separately approved retry also failed, recording `processing-failed:recognition`. That stage includes recognition and local validation, so it does not establish a specific provider fault. The retry links to its immutable failed parent. No further retry is authorized or scheduled; this record does not claim that all three real samples passed.
 
-The same lifetime ledger reached six attempts / $0.06 reserved, including three earlier attempts and the three owner-approved tests. No accepted member scores were inserted. Original images, recognized player data and private diagnostic responses remain outside GitHub.
+The same lifetime ledger reached seven attempts / $0.07 reserved, including three earlier attempts, the three owner-approved tests and one approved retry. No accepted member scores were inserted. Original images, recognized player data and private diagnostic responses remain outside GitHub.

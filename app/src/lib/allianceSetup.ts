@@ -198,7 +198,7 @@ export const SETUP_TASKS: SetupTaskDefinition[] = [
   },
   {
     id: "data",
-    label: "Import Evaluation Results",
+    label: "Capture Evaluation Results",
     description: "Add member values for metrics in a specific evaluation period",
     typicallyCompletedBy: "Leader",
     href: (id) => `/alliances/${id}/periods`,
@@ -264,7 +264,7 @@ export async function getAllianceSetupStatus(
       // #287 Slice 3: sources this from the canonical member-period rollup
       // (ADR-018 §6) rather than a raw MemberMetricEntry row count, so a
       // period whose only rows have since been voided doesn't falsely mark
-      // "Import Evaluation Results" complete - onlyParticipating narrows to
+      // "Capture Evaluation Results" complete - onlyParticipating narrows to
       // members with at least one active winning slot, exactly the
       // "has anyone's data actually landed here" question this task asks.
       const participatingValues = await memberPeriodMetricValues(

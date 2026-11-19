@@ -163,20 +163,20 @@ test.describe("Spreadsheet-first setup (#185 PR 3)", () => {
         "Create Evaluation Period",
         "Configure Metrics",
         "Import Members",
-        "Import Evaluation Results",
+        "Capture Evaluation Results",
       ].includes(label),
     );
     expect(orderedRequired).toEqual([
       "Create Evaluation Period",
       "Configure Metrics",
       "Import Members",
-      "Import Evaluation Results",
+      "Capture Evaluation Results",
     ]);
 
     await expect(page.getByText("Invite Leadership Team")).toBeVisible();
     await expect(page.getByText(DATA_BLOCKED_BY_MEMBERS)).toBeVisible();
     await expect(
-      page.getByRole("link", { name: /Import Evaluation Results/i }),
+      page.getByRole("link", { name: /Capture Evaluation Results/i }),
     ).toHaveCount(0);
 
     await page

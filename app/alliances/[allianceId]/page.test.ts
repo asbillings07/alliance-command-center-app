@@ -88,7 +88,7 @@ describe("AllianceDashboardPage", () => {
     vi.mocked(evaluateFeature).mockResolvedValue(false);
   });
 
-  it("renders Record Now and Import Evaluation Results when prerequisites are met", async () => {
+  it("renders Record Now and Capture Evaluation Results when prerequisites are met", async () => {
     vi.mocked(requireAllianceAccess).mockResolvedValue({
       membership: { role: "ADMIN" },
       permissions: adminPermissions,
@@ -108,7 +108,7 @@ describe("AllianceDashboardPage", () => {
     const html = renderToStaticMarkup(page);
 
     expect(html).toContain("Record Now");
-    expect(html).toContain("Import Evaluation Results");
+    expect(html).toContain("Capture Evaluation Results");
     expect(html).toContain("/alliances/all_1/periods/per_1/record");
     expect(html).toContain("/alliances/all_1/periods/per_1/import");
   });
@@ -169,7 +169,7 @@ describe("AllianceDashboardPage", () => {
     const html = renderToStaticMarkup(page);
 
     expect(html).not.toContain("Record Now");
-    expect(html).not.toContain("Import Evaluation Results");
+    expect(html).not.toContain("Capture Evaluation Results");
     expect(html).toContain("Import Members");
   });
 
@@ -199,7 +199,7 @@ describe("AllianceDashboardPage", () => {
     const html = renderToStaticMarkup(page);
 
     expect(html).not.toContain("Record Now");
-    expect(html).toContain("Import Evaluation Results");
+    expect(html).toContain("Capture Evaluation Results");
     expect(html).toContain("/alliances/all_1/periods/per_empty/import");
     expect(html).not.toContain("Manage Period Metrics");
   });

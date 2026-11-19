@@ -164,6 +164,7 @@ for (const width of [320, 820, 1280]) {
     await login({ email, password, displayName: "Leader" });
     await page.goto(`/alliances/${allianceId}/periods/${period.id}/import`);
     await page.getByRole("link", { name: "Screenshots", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Capture Evaluation Results", exact: true })).toBeVisible();
     const files = await Promise.all((["monday", "weekly"] as const).map(async kind => ({
       name: `${kind}.png`, mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture(kind).svg)).png().toBuffer(),
     })));
@@ -183,14 +184,51 @@ for (const width of [320, 820, 1280]) {
     await expect(page.getByText("Weekly total · week of 2026-11-16", { exact: true })).toHaveCount(3);
     await finish.click();
     await expect(page.getByText("Recognition reviewed · No scores saved")).toBeVisible();
-    await page.getByRole("button", { name: "View screenshot 1", exact: true }).click();
+    const previewTrigger = page.getByRole("button", { name: "View screenshot 1", exact: true });
+    await previewTrigger.click();
+    const preview = page.getByRole("dialog", { name: "Screenshot 1", exact: true });
+    await expect(preview).toBeVisible();
+    const closePreview = preview.getByRole("button", { name: "Close preview", exact: true });
+    await expect(closePreview).toBeFocused();
     const image = page.getByRole("img", { name: "Original ranking screenshot for batch review" });
     await expect.poll(() => image.evaluate(el => (el as HTMLImageElement).naturalWidth)).toBe(600);
     const imageUrl = (await image.getAttribute("src"))!;
     expect((await page.request.get(imageUrl)).headers()["cache-control"]).toBe("private, no-store");
     await checkA11y(page);
+    const box = (await preview.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    expect(box.y + box.height).toBeLessThanOrEqual(900);
+    await preview.getByRole("button", { name: "Enlarge image", exact: true }).click();
+    const imageRegion = preview.getByRole("region", { name: "Screenshot image", exact: true });
+    expect(await imageRegion.evaluate(el => el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth)).toBe(true);
+    await preview.getByRole("button", { name: "Fit image", exact: true }).click();
+    await closePreview.focus();
+    await page.keyboard.press("Shift+Tab");
+    expect(await preview.evaluate(el => el.contains(document.activeElement))).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`leader-batch-${width}.png`), fullPage: true });
+    await page.keyboard.press("Escape");
+    await expect(preview).toHaveCount(0);
+    await expect(previewTrigger).toBeFocused();
+    await expect(page.getByRole("checkbox", { name: "I have checked the calendar context for these screenshots." })).toBeChecked();
+    await expect(page.getByText("Recognition reviewed · No scores saved")).toBeVisible();
+    const memberSource = page.getByRole("button", { name: "View source for Jordan Vale", exact: true }).first();
+    await memberSource.click();
+    const memberPreview = page.getByRole("dialog", { name: "Source for Jordan Vale", exact: true });
+    await expect(memberPreview).toBeVisible();
+    await expect(memberPreview.getByRole("img")).toHaveAttribute("src", imageUrl);
+    await memberPreview.getByRole("button", { name: "Close preview", exact: true }).click();
+    await expect(memberPreview).toHaveCount(0);
+    await expect(memberSource).toBeFocused();
+    // An expired/private source error belongs inside the dialog; closing keeps the review.
+    await page.route("**/api/ocr-evaluation?**kind=image", route => route.fulfill({ status: 400, body: "Unavailable" }));
+    await previewTrigger.click();
+    await expect(preview.getByRole("alert")).toContainText("This screenshot is unavailable");
+    await preview.getByRole("button", { name: "Close preview", exact: true }).click();
+    await page.unroute("**/api/ocr-evaluation?**kind=image");
+    await expect(previewTrigger).toBeFocused();
     // Re-selecting a completed image reuses its scan instead of paying again.
     await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles(files[0]);
     await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();

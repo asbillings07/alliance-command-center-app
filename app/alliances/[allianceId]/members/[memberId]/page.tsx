@@ -292,7 +292,7 @@ export default async function MemberPage({ params, searchParams }: Params) {
                     variant="secondary"
                     href={`/alliances/${allianceId}/periods/${selectedPeriod.id}/import`}
                 >
-                    Import Evaluation Results
+                    Capture Evaluation Results
                 </Button>
             </div>
         ) : null;

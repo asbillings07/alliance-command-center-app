@@ -115,11 +115,11 @@ export default async function ImportPage({ params, searchParams }: Params) {
         { label: "Dashboard", href: `/alliances/${allianceId}` },
         { label: "Periods", href: `/alliances/${allianceId}/periods` },
         { label: period.name, href: `/alliances/${allianceId}/periods/${periodId}` },
-        { label: "Import Evaluation Results" },
+        { label: "Capture Evaluation Results" },
       ]
     : [
         { label: "Dashboard", href: `/alliances/${allianceId}` },
-        { label: "Import Evaluation Results" },
+        { label: "Capture Evaluation Results" },
       ];
 
   const screenshotTrial = ocrEvaluationVisible();
@@ -131,7 +131,7 @@ export default async function ImportPage({ params, searchParams }: Params) {
   </nav> : null;
   if (screenshots) {
     const review = await loadEvaluationContext({ allianceId, actorId: auth.user.id, memberId: null, scope: "batch" }).catch(() => null);
-    return <main className="sentry-block" data-sentry-block><PageLayout breadcrumb={breadcrumb} title="Import Evaluation Results" description={`Review ranking screenshots for ${period.name}.`} maxWidth="6xl">
+    return <main className="sentry-block" data-sentry-block><PageLayout breadcrumb={breadcrumb} title="Capture Evaluation Results" description={`Review ranking screenshots for ${period.name}.`} maxWidth="6xl">
       {methodLinks}
       {review ? <LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} synthetic={localOcrFixtureEnabled()} />
         : <Card><h2 className="text-lg font-semibold">Screenshot evaluation is unavailable</h2><p className="mt-2 text-text-secondary">This trial requires an enabled preview and current import access.</p></Card>}
@@ -147,7 +147,7 @@ export default async function ImportPage({ params, searchParams }: Params) {
     return (
       <PageLayout
         breadcrumb={breadcrumb}
-        title="Import Evaluation Results"
+        title="Capture Evaluation Results"
         description={`Upload a CSV spreadsheet (.csv) to record metric evaluation results for ${period.name}.`}
         maxWidth="md"
       >
@@ -183,7 +183,7 @@ export default async function ImportPage({ params, searchParams }: Params) {
   return (
     <PageLayout
       breadcrumb={breadcrumb}
-      title="Import Evaluation Results"
+      title="Capture Evaluation Results"
       description={`Upload a spreadsheet (.xlsx, .xls, .csv, .numbers) to record metric evaluation results for ${period.name}.`}
       action={
         <Button

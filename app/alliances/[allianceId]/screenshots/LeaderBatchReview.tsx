@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Card } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
+import { RankingScreenshotDialog } from "./RankingScreenshotDialog";
 import { rankingWindow, reconcileOverlap, showCurrentDayProgress, type RankingReview, type RosterMember } from "@/app/src/lib/ocr/ranking";
 
 type Attempt = { id: string; status: string; createdAt: string; actorName: string; actorRole: string };
@@ -16,7 +17,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
   const [items, setItems] = useState<Item[]>([]); const [week, setWeek] = useState(""); const [captureDate, setCaptureDate] = useState("");
   const [retryFailed, setRetryFailed] = useState(false);
   const [dateConfirmed, setDateConfirmed] = useState(false); const [consent, setConsent] = useState(false);
-  const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [source, setSource] = useState<Result | null>(null);
+  const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [source, setSource] = useState<{ result: Result; title: string } | null>(null);
   const [excluded, setExcluded] = useState<string[]>([]); const [reviewed, setReviewed] = useState(false);
   const cancel = useRef(false); const active = useRef(true); const input = useRef<HTMLInputElement>(null);
   useEffect(() => { active.current = true; return () => { active.current = false; cancel.current = true; }; }, []);
@@ -83,7 +84,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
         <strong>Screenshot {index + 1}</strong><p className="mt-1 text-text-secondary">{item.state === "ready" ? item.result!.batchReview.context.label : item.state === "reading" ? "Reading…" : item.state === "failed" ? "Needs attention" : "Queued"}</p>
         {item.error && <p className="mt-2 break-words text-warning-light">{item.error}</p>}
         {!busy && (item.state === "failed" || item.state === "queued") && <div className="mt-3"><Button variant="secondary" onClick={() => {setItems(previous => previous.filter(p => p.requestId !== item.requestId)); invalidate();}}>Remove screenshot {index + 1} from review</Button></div>}
-        {item.result && <div className="mt-3"><Button variant="secondary" onClick={() => setSource(item.result!)}>View screenshot {index + 1}</Button></div>}
+        {item.result && <div className="mt-3"><Button variant="secondary" onClick={() => setSource({ result: item.result!, title: `Screenshot ${index + 1}` })}>View screenshot {index + 1}</Button></div>}
       </li>)}</ol>}
       {(initial.attempts.some(a => a.status === "FAILED") || items.some(i => i.state === "failed")) && <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={retryFailed} disabled={busy || !queued.length} onChange={e => setRetryFailed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
         <span>Start a new attempt for failed images I selected again. Each reserves another $0.01 from the $5 trial cap. Earlier failures stay in history. Completed scans are reused.</span></label>}
@@ -112,7 +113,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
           {row.allianceLabel && <p className="mt-1 break-words text-sm text-text-muted">Source alliance: {row.allianceLabel}</p>}
           {conflict && <p className="mt-2 text-sm text-warning-light">These images show different values for the same member and result window. No value has been chosen automatically.</p>}
           <p className="mt-2 text-xs text-text-muted">Source screenshots: {sources.map(s => s.source).join(", ")}{sources.length > 1 && !conflict ? " · same value shown once" : ""}</p>
-          <div className="mt-3 flex flex-wrap gap-3"><Button variant="secondary" onClick={() => setSource(results.find(r => r.attempt.id === row.attemptId)!)}>View source for {row.sourceName || "row"}</Button>
+          <div className="mt-3 flex flex-wrap gap-3"><Button variant="secondary" onClick={() => setSource({ result: results.find(r => r.attempt.id === row.attemptId)!, title: `Source for ${row.sourceName || "row"}` })}>View source for {row.sourceName || "row"}</Button>
             <Button variant="secondary" onClick={() => { setExcluded(previous => skip ? previous.filter(k => k !== key) : [...previous, key]); setReviewed(false); }}>{skip ? "Include in review" : "Exclude from review"}</Button></div>
           {skip && <p className="mt-2 text-sm text-text-muted">Excluded from this review</p>}
         </li>;
@@ -122,11 +123,11 @@ export function LeaderBatchReview({ allianceId, initial, synthetic }: Props) {
         <div className="mt-4"><Button disabled={busy || pending.length > 0 || unresolvedImages > 0 || !chosen.length} onClick={() => { setReviewed(true); setMessage("Recognition review complete. No member scores or reports were changed."); }}>Finish recognition review</Button></div>
         {reviewed && <p className="mt-3 text-primary-light">Recognition reviewed · No scores saved</p>}</div>}
     </section>
-    {source && <Card><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Source screenshot · {source.batchReview.context.label}</h2><Button variant="secondary" onClick={() => setSource(null)}>Close source</Button></div>
-      {/* Authenticated evidence must bypass the public image optimizer. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={`${endpoint}&id=${encodeURIComponent(source.attempt.id)}&kind=image`} alt="Original ranking screenshot for batch review" className="mt-4 h-auto max-h-[80vh] w-full object-contain" referrerPolicy="no-referrer" onError={() => setMessage("This screenshot is unavailable. It may have expired or your access changed.")} />
-      <p className="mt-3 text-sm text-text-muted">Uploaded by {source.attempt.actorName} · {new Date(source.attempt.createdAt).toISOString()} · Recognition does not establish image authenticity.</p></Card>}
+    {source && <RankingScreenshotDialog key={source.result.attempt.id}
+      imageUrl={`${endpoint}&id=${encodeURIComponent(source.result.attempt.id)}&kind=image`}
+      title={source.title} periodLabel={source.result.batchReview.context.label}
+      uploadedBy={source.result.attempt.actorName} uploadedAt={source.result.attempt.createdAt}
+      onClose={() => setSource(null)} />}
     <p role="status" aria-live="polite" className="break-words text-sm text-text-secondary">{message}</p>
     <section><h2 className="text-lg font-semibold">Ranking upload history</h2><p className="mt-1 text-sm text-text-muted">Latest 20 captures · Reopening a scan does not send it to Google again. To retry a failed image, select it again and explicitly confirm a new paid attempt above.</p>
       <ol className="mt-3 grid gap-3 md:grid-cols-2">{existing.map(attempt => <li key={attempt.id} className="min-w-0 rounded-lg border border-border p-3 text-sm"><p className="break-words">{attempt.actorName} · {new Date(attempt.createdAt).toISOString()}</p><div className="mt-2"><Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : "Failed or pending — not retried"}</Button></div></li>)}</ol>

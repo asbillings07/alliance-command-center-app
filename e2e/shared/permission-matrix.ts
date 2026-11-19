@@ -176,7 +176,7 @@ export const PERMISSION_MATRIX: FeaturePermission[] = [
   },
 
   // ============================================================
-  // Record Results (Import Evaluation Results)
+  // Record Results (Capture Evaluation Results)
   // ============================================================
   {
     feature: "record.access",

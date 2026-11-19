@@ -121,7 +121,7 @@ describe("AllianceSetupPage", () => {
     const periodIndex = html.indexOf("Create Evaluation Period");
     const metricsIndex = html.indexOf("Configure Metrics");
     const membersIndex = html.indexOf("Import Members");
-    const dataIndex = html.indexOf("Import Evaluation Results");
+    const dataIndex = html.indexOf("Capture Evaluation Results");
     const teamIndex = html.indexOf("Invite Leadership Team");
 
     expect(periodIndex).toBeGreaterThan(-1);
@@ -159,10 +159,10 @@ describe("AllianceSetupPage", () => {
     );
     expect(html).not.toContain('href="/alliances/all_1/members/import"');
     expect(html).toContain(
-      '<div class="font-medium text-text-primary">Import Evaluation Results</div>',
+      '<div class="font-medium text-text-primary">Capture Evaluation Results</div>',
     );
     expect(html).not.toContain(
-      '<a href="/alliances/all_1/periods" class="block p-4"><div class="flex items-start gap-3"><div class="mt-0.5"><div class="w-5 h-5 rounded-full border-2 border-border-hover"></div></div><div class="flex-1"><div class="font-medium text-text-primary">Import Evaluation Results</div>',
+      '<a href="/alliances/all_1/periods" class="block p-4"><div class="flex items-start gap-3"><div class="mt-0.5"><div class="w-5 h-5 rounded-full border-2 border-border-hover"></div></div><div class="flex-1"><div class="font-medium text-text-primary">Capture Evaluation Results</div>',
     );
   });
 
