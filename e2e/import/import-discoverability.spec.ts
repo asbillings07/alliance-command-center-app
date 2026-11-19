@@ -109,8 +109,8 @@ test.describe("Import Discoverability & Navigation Bridge", () => {
     await page.goto(`/alliances/${allianceId}/periods/${period.id}`);
     await expect(page.getByRole("heading", { name: period.name })).toBeVisible();
 
-    // Step 2: In-app navigate to Import Evaluation Results page via Client Link
-    await page.getByRole("link", { name: "Import Evaluation Results" }).click();
+    // Step 2: In-app navigate to Capture Evaluation Results page via Client Link
+    await page.getByRole("link", { name: "Capture Evaluation Results" }).click();
     await expect(page.getByText(`Destination Period: ${period.name}`)).toBeVisible();
 
     // Step 3: Upload CSV with metric data

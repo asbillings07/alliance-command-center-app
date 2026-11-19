@@ -142,7 +142,7 @@ function ParticipationEvaluationGroup({
                     variant="primary"
                     size="sm"
                   >
-                    Import Evaluation Results
+                    Capture Evaluation Results
                   </Button>
                 </>
               )}
@@ -165,7 +165,7 @@ function ParticipationEvaluationGroup({
                       variant="secondary"
                       size="sm"
                     >
-                      Import Evaluation Results
+                      Capture Evaluation Results
                     </Button>
                   </div>
 

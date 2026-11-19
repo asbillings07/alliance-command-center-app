@@ -262,7 +262,7 @@ export default async function PeriodPage({ params }: Params) {
                                         href={`/alliances/${allianceId}/periods/${periodId}/import`}
                                         variant="primary"
                                     >
-                                        Import Evaluation Results
+                                        Capture Evaluation Results
                                     </Button>
                                 </>
                             ) : (
@@ -277,7 +277,7 @@ export default async function PeriodPage({ params }: Params) {
                                         href={`/alliances/${allianceId}/periods/${periodId}/import`}
                                         variant="secondary"
                                     >
-                                        Import Evaluation Results
+                                        Capture Evaluation Results
                                     </Button>
                                 </div>
                             )}

@@ -33,7 +33,8 @@ vi.mock("@/app/src/lib/prisma", () => ({
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
-import MemberImportHistoryPage, { resolveImportHistoryPage, PAGE_SIZE } from "./page";
+import MemberImportHistoryPage from "./page";
+import { resolveImportHistoryPage, PAGE_SIZE } from "./pagination";
 
 describe("resolveImportHistoryPage", () => {
     it("defaults to page 1 when the raw param is missing", () => {

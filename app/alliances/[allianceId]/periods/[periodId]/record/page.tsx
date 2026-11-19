@@ -110,7 +110,7 @@ export default async function PeriodRecordPage({
           variant="secondary"
           size="sm"
         >
-          Import Evaluation Results
+          Capture Evaluation Results
         </Button>
       }
       maxWidth="2xl"

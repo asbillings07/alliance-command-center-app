@@ -24,7 +24,7 @@ test.describe("Dashboard prerequisite gating (#200 PR 3)", () => {
     await expect(page.getByText("No evaluation periods yet")).toBeVisible();
     await expect(page.getByRole("link", { name: "Record Now" })).toHaveCount(0);
     await expect(
-      page.getByRole("link", { name: "Import Evaluation Results" }),
+      page.getByRole("link", { name: "Capture Evaluation Results" }),
     ).toHaveCount(0);
   });
 });

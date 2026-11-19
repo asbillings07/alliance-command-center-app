@@ -124,7 +124,7 @@ test.describe("Leader Journey", () => {
 
     // Should see import page
     await expect(
-      page.getByRole("heading", { name: "Import Evaluation Results" })
+      page.getByRole("heading", { name: "Capture Evaluation Results" })
     ).toBeVisible();
 
     // Back link should go to dashboard

@@ -85,7 +85,7 @@ export default async function SetupImportPage({ params }: Params) {
           { label: "Setup", href: `/alliances/${allianceId}/setup` },
           { label: "Import Spreadsheet" },
         ]}
-        title="Import Evaluation Results"
+        title="Capture Evaluation Results"
         description="Upload your existing spreadsheet to populate evaluation periods, metrics, and member results."
         maxWidth="md"
       >
@@ -123,7 +123,7 @@ export default async function SetupImportPage({ params }: Params) {
         { label: "Setup", href: `/alliances/${allianceId}/setup` },
         { label: "Import Spreadsheet" },
       ]}
-      title="Import Evaluation Results"
+      title="Capture Evaluation Results"
       description="Upload your existing spreadsheet to detect evaluation periods and import member results."
       maxWidth="2xl"
     >

@@ -166,7 +166,7 @@ export function LegacyDashboard({
                       variant="primary"
                       size="sm"
                     >
-                      Import Evaluation Results
+                      Capture Evaluation Results
                     </Button>
                   </>
                 ) : (
@@ -187,7 +187,7 @@ export function LegacyDashboard({
                         variant="secondary"
                         size="sm"
                       >
-                        Import Evaluation Results
+                        Capture Evaluation Results
                       </Button>
                     </div>
                   </>

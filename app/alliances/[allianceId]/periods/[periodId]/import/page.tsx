@@ -7,14 +7,20 @@ import { PageLayout, Card, EmptyState } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvisionMetricsForPeriod";
 
+import { ocrEvaluationVisible, localOcrFixtureEnabled } from "@/app/src/lib/ocr/config";
+import { loadEvaluationContext } from "@/app/src/lib/ocr/evaluation";
+import { loadQaAllianceSettings } from "@/app/src/lib/ocr/qaAlliance";
+import { LeaderBatchReview } from "../../../screenshots/LeaderBatchReview";
+
 type Params = {
+  searchParams: Promise<{ method?: string }>;
   params: Promise<{
     allianceId: string;
     periodId: string;
   }>;
 };
 
-export default async function ImportPage({ params }: Params) {
+export default async function ImportPage({ params, searchParams }: Params) {
   const { allianceId, periodId } = await params;
 
   const auth = await requireAllianceAccess({
@@ -110,12 +116,29 @@ export default async function ImportPage({ params }: Params) {
         { label: "Dashboard", href: `/alliances/${allianceId}` },
         { label: "Periods", href: `/alliances/${allianceId}/periods` },
         { label: period.name, href: `/alliances/${allianceId}/periods/${periodId}` },
-        { label: "Import Evaluation Results" },
+        { label: "Capture Evaluation Results" },
       ]
     : [
         { label: "Dashboard", href: `/alliances/${allianceId}` },
-        { label: "Import Evaluation Results" },
+        { label: "Capture Evaluation Results" },
       ];
+
+  const screenshotTrial = ocrEvaluationVisible();
+  const screenshots = screenshotTrial && (await searchParams).method === "screenshots";
+  const methodLinks = screenshotTrial ? <nav aria-label="Add results" className="mb-6 flex flex-wrap gap-3">
+    <Button variant={screenshots ? "primary" : "secondary"} href={`/alliances/${allianceId}/periods/${periodId}/import?method=screenshots`}>Screenshots</Button>
+    <Button variant={screenshots ? "secondary" : "primary"} href={`/alliances/${allianceId}/periods/${periodId}/import`}>Spreadsheet</Button>
+    <Button variant="secondary" href={`/alliances/${allianceId}/periods/${periodId}/record`}>Manual entry</Button>
+  </nav> : null;
+  if (screenshots) {
+    const review = await loadEvaluationContext({ allianceId, actorId: auth.user.id, memberId: null, scope: "batch" }).catch(() => null);
+    const qaSettings = review && auth.permissions.canImportMetrics ? await loadQaAllianceSettings(allianceId, auth.user.id).catch(() => null) : null;
+    return <main className="sentry-block" data-sentry-block><PageLayout breadcrumb={breadcrumb} title="Capture Evaluation Results" description={`Review ranking screenshots for ${period.name}.`} maxWidth="6xl">
+      {methodLinks}
+      {review ? <LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} />
+        : <Card><h2 className="text-lg font-semibold">Screenshot evaluation is unavailable</h2><p className="mt-2 text-text-secondary">This trial requires an enabled preview and current import access.</p></Card>}
+    </PageLayout></main>;
+  }
 
   const hasNoMembers = !alliance || alliance.allianceMembers.length === 0;
   // Only a dead-end when the period has no metrics AND the user can neither
@@ -126,10 +149,11 @@ export default async function ImportPage({ params }: Params) {
     return (
       <PageLayout
         breadcrumb={breadcrumb}
-        title="Import Evaluation Results"
+        title="Capture Evaluation Results"
         description={`Upload a CSV spreadsheet (.csv) to record metric evaluation results for ${period.name}.`}
         maxWidth="md"
       >
+        {methodLinks}
         <div className="p-4 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary mb-6 font-medium">
           Destination Period: {period.name}
         </div>
@@ -161,7 +185,7 @@ export default async function ImportPage({ params }: Params) {
   return (
     <PageLayout
       breadcrumb={breadcrumb}
-      title="Import Evaluation Results"
+      title="Capture Evaluation Results"
       description={`Upload a spreadsheet (.xlsx, .xls, .csv, .numbers) to record metric evaluation results for ${period.name}.`}
       action={
         <Button
@@ -174,6 +198,7 @@ export default async function ImportPage({ params }: Params) {
       }
       maxWidth="2xl"
     >
+      {methodLinks}
       <Card>
         <Card.Body>
           <ImportForm

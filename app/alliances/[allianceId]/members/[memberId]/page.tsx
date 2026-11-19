@@ -26,6 +26,7 @@ import { MemberPeriodSelector } from "./MemberPeriodSelector";
 import { MemberComparePeriodSelector } from "./MemberComparePeriodSelector";
 import { PageLayout, Card, Badge } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
+import { ocrEvaluationVisible } from "@/app/src/lib/ocr/config";
 
 type Params = {
     params: Promise<{
@@ -291,7 +292,7 @@ export default async function MemberPage({ params, searchParams }: Params) {
                     variant="secondary"
                     href={`/alliances/${allianceId}/periods/${selectedPeriod.id}/import`}
                 >
-                    Import Evaluation Results
+                    Capture Evaluation Results
                 </Button>
             </div>
         ) : null;
@@ -455,6 +456,9 @@ export default async function MemberPage({ params, searchParams }: Params) {
                 )}
 
                 <div className="flex flex-wrap justify-end gap-3">
+                    {permissions.canImportMetrics && ocrEvaluationVisible() && (
+                        <Button variant="secondary" href={`/alliances/${allianceId}/screenshots?memberId=${memberId}`}>Try daily VS screenshot review</Button>
+                    )}
                     {permissions.canManageMemberAccess && (
                         <Button variant="secondary" href={`/alliances/${allianceId}/members/${memberId}/access`}>Manage member access</Button>
                     )}
