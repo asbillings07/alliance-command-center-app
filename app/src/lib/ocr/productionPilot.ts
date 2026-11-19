@@ -11,6 +11,14 @@ export function productionPilotPairs(env: Env = process.env) {
     !!pair.userId?.trim() && !!pair.allianceId?.trim());
 }
 
+// Every environment and account defaults to the test allowance. Only the exact
+// enrolled customer pair may bypass it, after normal production authorization.
+export function usesOcrTestAllowance(userId: string, allianceId: string, env: Env = process.env) {
+  const isOperator = userId === env.OCR_PILOT_TEST_USER_ID && allianceId === env.OCR_PILOT_TEST_ALLIANCE_ID;
+  return isOperator || !productionPilotConfigured(env)
+    || userId !== env.OCR_PILOT_USER_ID || allianceId !== env.OCR_PILOT_ALLIANCE_ID;
+}
+
 export function productionPilotPairAllowed(userId: string, allianceId: string, env: Env = process.env) {
   return productionPilotPairs(env).some(pair => pair.userId === userId && pair.allianceId === allianceId);
 }

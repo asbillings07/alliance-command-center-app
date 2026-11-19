@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { Card, Badge } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import type { Recognition, VsReview } from "@/app/src/lib/ocr/recognition";
+import { uploadWithRetry } from "@/app/src/lib/ocr/uploadWithRetry";
+import { recognitionFailureMessage } from "@/app/src/lib/ocr/recognitionFailure";
 import { allianceRejectionMessage, isAllianceRejection, allianceBatchNotice } from "@/app/src/lib/ocr/allianceEvidence";
 
 import { AllianceBatchDialog } from "./AllianceBatchDialog";
 
-type Attempt = { sourceFilename: string | null; id: string; createdAt: string; expiresAt: string; actorName: string; actorRole: string; playerName: string; status: string; outcome: string | null };
+type Attempt = { firstAttemptAt?: string; firstRequestId?: string; sourceFilename: string | null; id: string; createdAt: string; expiresAt: string; actorName: string; actorRole: string; playerName: string; status: string; outcome: string | null };
 type Result = { recognition: Recognition; review: VsReview; attempt: Attempt;
   capturedTarget: { playerName: string; allianceName: string; server: string }; contextChanged: boolean };
 type Props = { allianceId: string; memberId: string | null; synthetic: boolean; initial: {
@@ -60,13 +62,14 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
     const form = new FormData(); form.set("screenshot", file, "screenshot"); form.set("sourceFilename", file.name); form.set("requestId", requestId);
     form.set("contextKey", initial.contextKey); form.set("processingConsentId", String(initial.processingConsentId));
     try {
-      const response = await fetch(endpoint, { method: "POST", body: form, signal: controller.current.signal });
-      const body = await response.json(); if (!response.ok) throw Object.assign(new Error(body.error || "The scan did not complete."), { outcome: body.outcome });
-      const attempt = body as Attempt;
+      const attempt: Attempt = await uploadWithRetry(endpoint, form, {
+        onRetry: () => setMessage("Retrying scan…"), cancelled: () => token !== operation.current,
+        signal: controller.current.signal,
+      });
       if (token !== operation.current) return;
       setAdditionalAttempts(previous => [attempt, ...previous.filter(a => a.id !== attempt.id)].slice(0, 20));
       if (isAllianceRejection(attempt)) { block(attempt.outcome); return; }
-      if (attempt.status !== "READY") { setMessage("This attempt has not completed. It will not be sent again automatically. Reload to check its history."); return; }
+      if (attempt.status !== "READY") { setMessage(recognitionFailureMessage(attempt.outcome) ?? "This attempt has not completed. It will not be sent again automatically. Reload to check its history."); return; }
       const next = await readResult(attempt.id);
       if (token === operation.current) { setResult(next); setFile(null); setMessage("Recognition is ready to review. No scores were changed."); }
     } catch (error) { if (token === operation.current) { setMessage(error instanceof Error ? error.message : "The scan did not complete. Reload before trying again."); if (isAllianceRejection(error)) block(error.outcome); } }
@@ -90,7 +93,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
               setFile(selected); setRequestId(crypto.randomUUID()); }} />
           <div className="mt-4 flex flex-wrap gap-3"><Button onClick={scan} disabled={!file || busy}>{busy ? "Reading screenshot…" : "Read screenshot"}</Button>
             <Button onClick={clear} variant="secondary">{busy ? "Cancel waiting" : "Clear selection"}</Button></div>
-          <p className="mt-3 text-xs text-text-muted">Cancelling waiting cannot recall an image already sent. Scans are limited and never retried automatically.</p>
+          <p className="mt-3 text-xs text-text-muted">Cancelling waiting cannot recall an image already sent. A temporary Google outage triggers one retry after two seconds.</p>
         </Card>
         {blockedOutcome && <Card><h3 className="font-semibold">Screenshot blocked</h3><p className="mt-2 text-sm text-warning-light">{allianceRejectionMessage(blockedOutcome)}</p></Card>}
         {(file || result) && <Card><h3 className="mb-3 font-semibold">{result ? "Retained screenshot" : "Selected screenshot"}</h3>
@@ -126,7 +129,9 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
       <p className="mb-4 mt-1 text-sm text-text-muted">Latest 20 attempts · This is upload history, not accepted score history.</p>
       {attempts.length === 0 ? <Card><p className="text-sm text-text-secondary">No screenshot evaluations yet.</p></Card> : <ol className="grid gap-3 lg:grid-cols-2">{attempts.map(attempt => <li key={attempt.id} className="min-w-0 rounded-xl border border-border bg-surface p-4">
         <p className="break-words font-medium">{attempt.sourceFilename ?? "Original filename unavailable"}</p><p className="mt-1 break-words text-sm text-text-secondary">Uploaded by {attempt.actorName} · {attempt.actorRole.toLowerCase()} · <LocalTimestamp value={attempt.createdAt} /></p>
-        <p className="mt-2 text-sm text-text-muted">{attempt.status === "READY" ? "Recognition complete" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Scan failed — no automatic retry" : "Processing or interrupted — no automatic retry"}</p>
+        <p className="mt-2 text-sm text-text-muted">{attempt.status === "READY" ? "Recognition complete" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Scan failed" : "Processing or interrupted — no automatic retry"}</p>
+        {attempt.firstAttemptAt && <p className="mt-1 text-sm text-text-muted">First scan · <LocalTimestamp value={attempt.firstAttemptAt} /> · Google temporarily unavailable</p>}
+        {recognitionFailureMessage(attempt.outcome) && <p className="mt-2 text-sm text-warning-light">{recognitionFailureMessage(attempt.outcome)}</p>}
         {isAllianceRejection(attempt) && <p className="mt-2 text-sm text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}
         <div className="mt-3"><Button variant="secondary" disabled={busy || attempt.status !== "READY"} onClick={() => inspect(attempt)}>Review scan</Button></div>
       </li>)}</ol>}

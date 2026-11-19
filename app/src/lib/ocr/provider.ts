@@ -2,7 +2,10 @@ import "server-only";
 import { IdentityPoolClient } from "google-auth-library";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { googleOcrConfig, OCR_MAX_IMAGE_BYTES, OCR_MAX_RESULT_BYTES, OcrEvaluationError } from "./config";
-import { parseVisionResponse, type Recognition } from "./recognition";
+import { RecognitionFailure } from "./recognitionFailure";
+import { allowsTwoSecondRetry, parseVisionResponse, type Recognition } from "./recognition";
+
+class ResponseTooLarge extends Error {}
 
 export interface OcrTransport {
   preflight(): Promise<void>;
@@ -18,7 +21,7 @@ export async function boundedBody(response: Response, limit: number) {
     while (true) {
       const { done, value } = await reader.read(); if (done) break;
       length += value.length;
-      if (length > limit) throw new Error("Response too large");
+      if (length > limit) throw new ResponseTooLarge("Response too large");
       chunks.push(value);
     }
     return Buffer.concat(chunks, length);
@@ -84,14 +87,43 @@ export function googleOcrTransport(): OcrTransport {
       return boundedBody(response, limit);
     },
     async recognize(image) {
-      const response = await request(`https://us-vision.googleapis.com/v1/projects/${config.project}/locations/us/images:annotate`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requests: [{ image: { content: Buffer.from(image.bytes).toString("base64") }, features: [{ type: "TEXT_DETECTION" }] }] }),
-      });
-      if (!response.ok) throw new Error("Recognition unavailable");
-      const recognition = parseVisionResponse(JSON.parse((await boundedBody(response, 512 * 1024)).toString()), image.width, image.height);
-      if (Buffer.byteLength(JSON.stringify(recognition)) > OCR_MAX_RESULT_BYTES) throw new Error("Recognition too large");
-      return recognition;
+      let response: Response;
+      try {
+        // The full document tree repeats text and geometry for every symbol.
+        // Capture uses only word annotations and the per-image service status.
+        const endpoint = new URL(`https://us-vision.googleapis.com/v1/projects/${config.project}/locations/us/images:annotate`);
+        endpoint.searchParams.set("fields", "responses(textAnnotations(description,boundingPoly/vertices),error(code,details))");
+        endpoint.searchParams.set("prettyPrint", "false");
+        response = await request(endpoint.toString(), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ requests: [{ image: { content: Buffer.from(image.bytes).toString("base64") }, features: [{ type: "TEXT_DETECTION" }] }] }),
+        });
+      } catch {
+        throw new RecognitionFailure("provider-unavailable");
+      }
+      const retryAfter = response.headers.get("Retry-After");
+      const shortDelayAllowed = retryAfter === null || /^[012]$/.test(retryAfter);
+      if (!response.ok) {
+        let temporary = response.status === 503 && shortDelayAllowed;
+        if (temporary && response.headers.get("Content-Type")?.includes("application/json")) {
+          try {
+            const body = JSON.parse((await boundedBody(response, 32 * 1024)).toString());
+            temporary = !!body?.error && allowsTwoSecondRetry(body.error.details);
+          } catch { temporary = false; }
+        } else {
+          await response.body?.cancel().catch(() => {});
+        }
+        throw new RecognitionFailure(temporary ? "provider-temporary" : "provider-error");
+      }
+      try {
+        const data = await boundedBody(response, 512 * 1024);
+        const recognition = parseVisionResponse(JSON.parse(data.toString()), image.width, image.height, shortDelayAllowed);
+        if (Buffer.byteLength(JSON.stringify(recognition)) > OCR_MAX_RESULT_BYTES) throw new RecognitionFailure("retained-result-too-large");
+        return recognition;
+      } catch (error) {
+        if (error instanceof RecognitionFailure) throw error;
+        throw new RecognitionFailure(error instanceof ResponseTooLarge ? "provider-response-too-large" : "response-unreadable");
+      }
     },
   };
 }

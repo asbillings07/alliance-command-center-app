@@ -51,15 +51,47 @@ describe("storage retention preflight", () => {
     { lifecycle: { rule: [{ action: { type: "Delete" }, condition: { age: 31 } }] } },
   ])("rejects a storage policy that cannot meet the privacy agreement", change => expect(() => validateBucketPolicy({ ...bucket(), ...change })).toThrow());
 });
+const retryInfo = (retryDelay: string) => ({ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay });
+const perImageDelay = (delay: string) => Response.json({ responses: [{ error: { code: 14, details: [retryInfo(delay)] } }] });
+
 describe("bounded provider execution", () => {
   it("stops reading an oversized streamed body", async () => {
     await expect(boundedBody(new Response("a".repeat(40)), 20)).rejects.toThrow("too large");
   });
   it("sends one image and one text feature to the US endpoint with no retry", async () => {
     config(); const send = vi.fn().mockResolvedValue(new Response("provider error including private content", { status: 503 })); vi.stubGlobal("fetch", send);
-    await expect(googleOcrTransport().recognize({ bytes: new Uint8Array([1, 2]), width: 200, height: 200 })).rejects.toThrow("Recognition unavailable");
+    await expect(googleOcrTransport().recognize({ bytes: new Uint8Array([1, 2]), width: 200, height: 200 })).rejects.toMatchObject({ reason: "provider-temporary", message: "Google’s text recognition service is temporarily unavailable." });
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0][0]).toBe("https://us-vision.googleapis.com/v1/projects/project-106f8c4e-a31b-4e3c-bc5/locations/us/images:annotate");
+    const endpoint = new URL(send.mock.calls[0][0]);
+    expect(endpoint.origin + endpoint.pathname).toBe("https://us-vision.googleapis.com/v1/projects/project-106f8c4e-a31b-4e3c-bc5/locations/us/images:annotate");
+    expect(endpoint.searchParams.get("fields")).toBe("responses(textAnnotations(description,boundingPoly/vertices),error(code,details))");
+    expect(endpoint.searchParams.get("prettyPrint")).toBe("false");
     expect(JSON.parse(send.mock.calls[0][1].body).requests).toEqual([{ image: { content: "AQI=" }, features: [{ type: "TEXT_DETECTION" }] }]);
+  });
+  it.each([
+    ["error inside a successful HTTP response", () => Response.json({ responses: [{ error: { message: "private-sentinel" } }] }), "provider-error"],
+    ["per-image UNAVAILABLE", () => Response.json({ responses: [{ error: { code: 14 } }] }), "provider-temporary"],
+    ["HTTP backoff with per-image UNAVAILABLE", () => Response.json({ responses: [{ error: { code: 14 } }] }, { headers: { "Retry-After": "60" } }), "provider-error"],
+    ["short per-image backoff", () => perImageDelay("1.500s"), "provider-temporary"],
+    ["long per-image backoff", () => perImageDelay("2.001s"), "provider-error"],
+    ["malformed per-image backoff", () => perImageDelay("later"), "provider-error"],
+    ["structured HTTP 503 backoff", () => Response.json({ error: { details: [retryInfo("12s")] } }, { status: 503 }), "provider-error"],
+    ["long backoff requested", () => new Response(null, { status: 503, headers: { "Retry-After": "60" } }), "provider-error"],
+    ["quota refusal", () => new Response(null, { status: 429 }), "provider-error"],
+    ["network interruption", () => { throw new Error("private-sentinel"); }, "provider-unavailable"],
+    ["invalid JSON", () => new Response("private-sentinel"), "response-unreadable"],
+    ["invalid structure", () => Response.json({ private: "private-sentinel" }), "response-unreadable"],
+    ["oversized response", () => new Response("x".repeat(512 * 1024 + 1)), "provider-response-too-large"],
+    ["too many annotations", () => Response.json({responses: [{textAnnotations: Array(1002).fill({description:"x"})}]}), "too-many-annotations"],
+    ["too much text", () => Response.json({responses: [{textAnnotations: [{description:"x".repeat(16001)}]}]}), "recognized-text-too-long"],
+    ["oversized word", () => Response.json({responses: [{textAnnotations: [{description:"x"},{description:"x".repeat(501)}]}]}), "recognized-word-too-long"],
+  ] as const)("classifies %s without exposing raw details or retrying", async (_example, makeResponse, reason) => {
+    config();
+    const send = vi.fn(makeResponse);
+    vi.stubGlobal("fetch", send);
+    const result = googleOcrTransport().recognize({ bytes: new Uint8Array([1]), width: 200, height: 200 });
+    await expect(result).rejects.toMatchObject({ reason });
+    await expect(result).rejects.not.toThrow("private-sentinel");
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });

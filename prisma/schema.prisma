@@ -94,7 +94,7 @@ enum FeedbackCategory {
   CONFUSING
 }
 
-// A non-renewing, shared evaluation allowance. Production OCR is not enabled.
+// Testing shares a non-renewing allowance. Customer storage/read counters are separate.
 model OcrEvaluationBudget {
   id String @id
   reservedMicros Int @default(0)
@@ -108,8 +108,9 @@ model OcrEvaluationAttempt {
   acceptedSources OcrScoreSource[]
   id String @id
   requestId String
-  // Explicit, separately charged retry; the prior failed audit is preserved.
+  // Each retry links to its prior failed attempt.
   retryOf String? @unique
+  automaticRetry Boolean @default(false)
   allianceId String
   // Null only for an authorized leader's alliance ranking capture.
   memberId String?

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getVercelOidcToken, verifyVercelOidcToken } from "@vercel/oidc";
 import { pilotReservationId, reserveBeforeProductionScan } from "./pilotAllowance";
 import { allowPilotServerEvent } from "./pilotTelemetry";
-import { productionPilotConfigured, productionPilotPairAllowed, productionPilotPairs } from "./productionPilot";
+import { productionPilotConfigured, productionPilotPairAllowed, productionPilotPairs, usesOcrTestAllowance } from "./productionPilot";
 
 vi.mock("@vercel/oidc", () => ({ getVercelOidcToken: vi.fn(), verifyVercelOidcToken: vi.fn() }));
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetAllMocks(); });
@@ -26,6 +26,10 @@ describe("one-user production pilot", () => {
     expect(productionPilotPairs({ ...env, OCR_PILOT_TEST_USER_ID: operator.userId })).toEqual([measured]);
     expect(productionPilotPairs({ ...env, OCR_PILOT_TEST_ALLIANCE_ID: operator.allianceId })).toEqual([measured]);
     const both = { ...env, OCR_PILOT_TEST_USER_ID: operator.userId, OCR_PILOT_TEST_ALLIANCE_ID: operator.allianceId };
+    expect(usesOcrTestAllowance(measured.userId, measured.allianceId, both)).toBe(false);
+    expect(usesOcrTestAllowance(operator.userId, operator.allianceId, both)).toBe(true);
+    expect(usesOcrTestAllowance(measured.userId, operator.allianceId, both)).toBe(true);
+    expect(usesOcrTestAllowance(measured.userId, measured.allianceId, { ...both, VERCEL_ENV: "preview" })).toBe(true);
     expect(productionPilotPairAllowed(measured.userId, measured.allianceId, both)).toBe(true);
     expect(productionPilotPairAllowed(operator.userId, operator.allianceId, both)).toBe(true);
     expect(productionPilotPairAllowed(operator.userId, measured.allianceId, both)).toBe(false);
