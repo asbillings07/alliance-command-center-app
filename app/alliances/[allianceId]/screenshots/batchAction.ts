@@ -4,7 +4,7 @@ import { revalidateAllianceData } from "@/app/src/lib/cache/revalidateAllianceDa
 import { OcrEvaluationError } from "@/app/src/lib/ocr/config";
 import { reviewOrSaveBatch, type BatchSelection } from "@/app/src/lib/ocr/confirmedBatch";
 
-export async function checkBatch(input: BatchSelection, decision?: { comparison: string; lowerConfirmed: boolean }) {
+export async function checkBatch(input: BatchSelection, decision?: { comparison: string; lowerConfirmed: boolean; createMembersConfirmed?: boolean }) {
   const user = await requireAuth();
   try {
     const review = await reviewOrSaveBatch(user.id, input, decision);
