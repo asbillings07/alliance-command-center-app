@@ -33,7 +33,10 @@ export function RankingScreenshotDialog({ imageUrl, title, periodLabel, uploaded
     };
   }, []);
 
-  return <dialog ref={dialogRef} onClose={onClose} aria-labelledby={titleId} aria-describedby={descriptionId}
+  return <dialog ref={dialogRef} onClose={event => {
+    // Strict Mode can reopen after cleanup before the native queued close event arrives.
+    if (!event.currentTarget.open) onClose();
+  }} aria-labelledby={titleId} aria-describedby={descriptionId}
     className="fixed inset-0 m-auto w-[calc(100vw-1rem)] max-w-5xl max-h-[calc(100dvh-1rem)] overflow-hidden rounded-xl border border-border bg-surface p-0 text-text-primary shadow-2xl backdrop:bg-black/70">
     <div className="flex max-h-[calc(100dvh-1rem)] flex-col">
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border p-4">
