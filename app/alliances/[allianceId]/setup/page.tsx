@@ -1,3 +1,4 @@
+import { ocrEvaluationAvailable } from "@/app/src/lib/ocr/evaluation";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
@@ -192,6 +193,7 @@ export default async function AllianceSetupPage({ params }: Params) {
   // can't see any required tasks from incorrectly seeing "complete".
   const allRequiredComplete = status.isComplete;
   const canStartSpreadsheetImport = auth.permissions.canImportMetrics;
+  const screenshots = canStartSpreadsheetImport && await ocrEvaluationAvailable({allianceId,actorId:auth.user.id,memberId:null,scope:"batch"});
 
   return (
     <PageLayout
@@ -210,7 +212,7 @@ export default async function AllianceSetupPage({ params }: Params) {
           How would you like to get started?
         </h2>
         <p className="text-sm text-text-muted mt-1">
-          Upload your existing spreadsheet to populate evaluation periods, metrics,
+          {screenshots ? "Upload ranking screenshots or a spreadsheet" : "Upload your existing spreadsheet"} to populate evaluation periods, metrics,
           and results in one guided flow. Or walk through each step manually below.
         </p>
         <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -220,7 +222,7 @@ export default async function AllianceSetupPage({ params }: Params) {
               size="lg"
               href={`/alliances/${allianceId}/setup/import`}
             >
-              Start with a spreadsheet
+              {screenshots ? "Capture Evaluation Results" : "Start with a spreadsheet"}
             </Button>
           ) : (
             <p className="text-sm text-text-secondary">

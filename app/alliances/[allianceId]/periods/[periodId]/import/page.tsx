@@ -1,3 +1,4 @@
+import { captureDestinations } from "@/app/src/lib/ocr/captureDestinations";
 import { OcrConsentGate } from "@/app/account/ocr/OcrConsentGate";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
@@ -138,7 +139,7 @@ export default async function ImportPage({ params, searchParams }: Params) {
     const qaSettings = review && auth.permissions.canImportMetrics ? await loadQaAllianceSettings(allianceId, auth.user.id).catch(() => null) : null;
     return <main className="sentry-block" data-sentry-block><PageLayout breadcrumb={breadcrumb} title="Capture Evaluation Results" description={`Review ranking screenshots for ${period.name}.`} maxWidth="6xl">
       {methodLinks}
-      {review ? <OcrConsentGate key={review.consent.processing?.id ?? "first-use"} initial={review.consent}><LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} destination={{ periodId, name: period.name, metrics: period.periodMetrics.filter(pm => pm.metric.active && pm.metric.type === "NUMERIC").map(pm => ({ id: pm.metricId, name: pm.metric.name, daily: pm.metric.observationGrain === "DAILY_OBSERVATION" })) }} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} /></OcrConsentGate>
+      {review ? <OcrConsentGate key={review.consent.processing?.id ?? "first-use"} initial={review.consent}><LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} destination={await captureDestinations(allianceId,period)} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} /></OcrConsentGate>
         : <Card><h2 className="text-lg font-semibold">Screenshot evaluation is unavailable</h2><p className="mt-2 text-text-secondary">This trial requires an enabled preview and current import access.</p></Card>}
       {review && <SavedScoreBatches allianceId={allianceId} periodId={periodId} />}
     </PageLayout></main>;

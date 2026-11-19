@@ -1,4 +1,5 @@
-import { notFound } from "next/navigation";
+import { ocrEvaluationAvailable } from "@/app/src/lib/ocr/evaluation";
+import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/app/src/lib/prisma";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
@@ -7,18 +8,23 @@ import { Button } from "@/app/src/components/client";
 import { SetupImportForm } from "./SetupImportForm";
 
 type Params = {
+  searchParams?: Promise<{ method?: string }>;
   params: Promise<{
     allianceId: string;
   }>;
 };
 
-export default async function SetupImportPage({ params }: Params) {
+export default async function SetupImportPage({ params, searchParams }: Params) {
   const { allianceId } = await params;
 
   const auth = await requireAllianceAccess({
     allianceId,
     requiredPermission: Permissions.IMPORT_METRICS,
   });
+
+  if ((await searchParams)?.method !== "spreadsheet" && await ocrEvaluationAvailable({allianceId,actorId:auth.user.id,memberId:null,scope:"batch"})) {
+    redirect(`/alliances/${allianceId}/screenshots?scope=batch`);
+  }
 
   const [alliance, activePeriodCount, archivedPeriodCount, members, alliancePeriodsRaw, libraryMetrics] =
     await Promise.all([

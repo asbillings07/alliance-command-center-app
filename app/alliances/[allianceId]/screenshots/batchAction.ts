@@ -8,7 +8,7 @@ export async function checkBatch(input: BatchSelection, decision?: { comparison:
   const user = await requireAuth();
   try {
     const review = await reviewOrSaveBatch(user.id, input, decision);
-    if (review.saved) revalidateAllianceData({ allianceId: input.allianceId, periodId: input.periodId, domains: ["members","dashboard","evaluation-results","reports","setup"] });
+    if (review.saved && review.periodId) revalidateAllianceData({ allianceId: input.allianceId, periodId: review.periodId, domains: ["members","dashboard","evaluation-results","reports","setup"] });
     return { review };
   } catch (error) {
     return { error: error instanceof OcrEvaluationError ? error.message : "Could not confirm the batch. Check saved batches and review the latest scores before trying again." };

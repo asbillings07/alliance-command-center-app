@@ -8,7 +8,7 @@ import { LocalTimestamp } from "./LocalTimestamp";
 import { RankingScreenshotDialog } from "./RankingScreenshotDialog";
 import { AllianceBatchDialog } from "./AllianceBatchDialog";
 import { QaAllianceSettings, type QaAllianceSettingsData } from "./QaAllianceSettings";
-import { rankingWindow, reconcileOverlap, showCurrentDayProgress, type RankingReview, type RosterMember } from "@/app/src/lib/ocr/ranking";
+import { rankingWindow, reconcileOverlap, resolveRankingChoices, showCurrentDayProgress, type RankingReview, type RosterMember } from "@/app/src/lib/ocr/ranking";
 import { allianceRejectionMessage, isAllianceRejection, allianceBatchNotice } from "@/app/src/lib/ocr/allianceEvidence";
 
 type Attempt = { id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
@@ -25,14 +25,15 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
   const [dateConfirmed, setDateConfirmed] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [source, setSource] = useState<{ result: Result; title: string } | null>(null);
+  const [sourcePicks, setPicks] = useState<string[]>([]);
   const [excluded, setExcluded] = useState<string[]>([]); const [reviewed, setReviewed] = useState(false);
   const cancel = useRef(false); const active = useRef(true); const input = useRef<HTMLInputElement>(null);
   useEffect(() => { active.current = true; return () => { active.current = false; cancel.current = true; }; }, []);
   const endpoint = `/api/ocr-evaluation?${new URLSearchParams({ allianceId, scope: "batch" })}`;
   const results = items.flatMap(item => item.result ? [item.result] : []);
-  const grouped = reconcileOverlap(items.flatMap((item, sourceIndex) => item.result ? item.result.batchReview.rows.map(row => ({ ...row,
+  const grouped = resolveRankingChoices(reconcileOverlap(items.flatMap((item, sourceIndex) => item.result ? item.result.batchReview.rows.map(row => ({ ...row,
     attemptId: item.result!.attempt.id, source: sourceIndex + 1,
-    window: dateConfirmed && !item.result!.contextChanged ? rankingWindow(item.result!.batchReview.context, week, captureDate) : null })) : []), !!destination);
+    window: dateConfirmed && !item.result!.contextChanged ? rankingWindow(item.result!.batchReview.context, week, captureDate) : null })) : []), !!destination), sourcePicks);
   const pending = grouped.filter(({ row, conflict, createMember }) => !excluded.includes(`${row.attemptId}:${row.key}`) && ((row.status !== "exact" && !createMember) || conflict || !row.window));
   const chosen = grouped.filter(({ row }) => !excluded.includes(`${row.attemptId}:${row.key}`));
   const unresolvedImages = items.filter(item => item.state !== "ready" || !item.result?.batchReview.rows.length || item.result.contextChanged).length;
@@ -41,7 +42,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
   const weekInvalid = !!week && !rankingWindow({ kind: "weekly", label: "Weekly Rank" }, week);
   const calendarReady = !busy && !weekInvalid && results.length > 0 && results.every(r => !r.contextChanged && rankingWindow(r.batchReview.context, week, captureDate));
 
-  function invalidate() { setNotice(null); setReviewed(false); setDateConfirmed(false); setCalendarOpen(false); setExcluded([]); }
+  function invalidate() { setPicks([]); setNotice(null); setReviewed(false); setDateConfirmed(false); setCalendarOpen(false); setExcluded([]); }
   async function read(id: string): Promise<Result> {
     const response = await fetch(`${endpoint}&id=${encodeURIComponent(id)}&kind=result`, { cache: "no-store" });
     const result = await response.json(); if (!response.ok) throw Object.assign(new Error(result.error || "This scan is unavailable."), { outcome: result.outcome });
@@ -162,12 +163,24 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         {showCurrentDayProgress(r.batchReview, dateConfirmed ? rankingWindow(r.batchReview.context, week, captureDate) : null) && <p className="rounded-lg border border-border p-3 text-primary-light">Screenshot {i + 1}: the current game day is in progress · {r.batchReview.countdown} remaining. These scores can increase.</p>}
       </div>; })())}
       <p className="mb-3 text-sm text-text-muted">{grouped.length} unique rows · {grouped.reduce((n, g) => n + g.duplicates, 0)} overlapping rows · {pending.length} rows need review{unresolvedImages ? ` · ${unresolvedImages} screenshots need attention` : ""}</p>
-      {grouped.length === 0 ? <Card><p className="text-text-secondary">Recognized names and scores will appear together here.</p></Card> : <ol className="grid gap-3 lg:grid-cols-2">{grouped.map(({ row, sources, conflict, createMember }) => {
+      {grouped.length === 0 ? <Card><p className="text-text-secondary">Recognized names and scores will appear together here.</p></Card> : <ol className="grid gap-3 lg:grid-cols-2">{grouped.map(({ row, sources, conflict, createMember, choices }) => {
         const key = `${row.attemptId}:${row.key}`; const skip = excluded.includes(key);
         return <li key={key} className="min-w-0 rounded-xl border border-border bg-surface p-4"><div className="flex flex-wrap justify-between gap-2"><strong className="break-words">{row.sourceName || "Unreadable name"}</strong><strong className="tabular-nums">{row.value?.toLocaleString("en-US") ?? row.sourceValue}</strong></div>
           <p className="mt-2 text-sm text-text-secondary">{row.window?.startsWith("week:") ? `Weekly total · week of ${row.window.slice(5)}` : row.window ? `Daily score · ${row.window}` : <>Calendar context needs review — <a href="#ranking-calendar-week" className="text-primary-light underline">choose the week and confirm the dates above</a>.</>}</p>
           <p className="mt-2 text-sm text-text-secondary">{createMember ? "New roster member · will be created when you confirm" : statusText[row.status]}{row.status !== "exact" && row.matchedName ? `: ${row.matchedName}` : ""}</p>
           {row.allianceLabel && <p className="mt-1 break-words text-sm text-text-muted">Source alliance: {row.allianceLabel}</p>}
+          {choices.length > 0 && <label className="mt-2 block">Conflicting scores for {row.sourceName}
+            <select className="block w-full rounded border border-border bg-surface p-2" value={conflict ? "" : key}
+              onChange={e => {
+                const keys = choices.map(r=>r.attemptId+":"+r.key);
+                const selected = e.target.value;
+                setPicks(old=>[...old.filter(id=>!keys.includes(id)),...(selected ? [selected] : [])]);
+                setExcluded(old=>old.filter(id=>!keys.includes(id)));
+                setReviewed(false);
+              }}>
+              <option value="">Choose a source or exclude this row</option>
+              {choices.map(r=><option key={r.attemptId+":"+r.key} value={r.attemptId+":"+r.key}>Screenshot {r.source} · {r.value?.toLocaleString()}</option>)}
+            </select></label>}
           {conflict && <p className="mt-2 text-sm text-warning-light">These images show different values for the same member and result window. No value has been chosen automatically.</p>}
           <p className="mt-2 text-xs text-text-muted">Source screenshots: {sources.map(s => s.source).join(", ")}{sources.length > 1 && !conflict ? " · same value shown once" : ""}</p>
           <div className="mt-3 flex flex-wrap gap-3"><Button variant="secondary" onClick={() => setSource({ result: results.find(r => r.attempt.id === row.attemptId)!, title: `Source for ${row.sourceName || "row"}` })}>View source for {row.sourceName || "row"}</Button>
@@ -182,7 +195,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         {reviewed && <><p className="mt-3 text-primary-light">{destination ? "Recognition reviewed" : "Recognition reviewed · No scores saved"}</p>
           {destination && results.some(r => r.batchReview.context.kind === "today") && <p className="mt-2">Today’s Duel is available for progress review. Use the selected Daily Rank or Weekly Rank screen to save scores.</p>}
           {destination && !results.some(r => r.batchReview.context.kind === "today") && <BatchConfirmation destination={destination} daily={chosen.some(g => !g.row.window?.startsWith("week:"))} weekly={chosen.some(g => g.row.window?.startsWith("week:"))}
-            selection={{ allianceId, periodId: destination.periodId, week, captureDate, attemptIds: results.map(r => r.attempt.id), excluded }} />}</>}</div>}
+            selection={{ allianceId, periodId: destination.periodId, week, captureDate, attemptIds: results.map(r => r.attempt.id), excluded, sourcePicks }} />}</>}</div>}
     </section>
     {notice && <AllianceBatchDialog {...notice} allianceName={initial.allianceName} server={initial.server} onClose={() => { setNotice(null); input.current?.focus(); }} />}
     {source && <RankingScreenshotDialog key={source.result.attempt.id}

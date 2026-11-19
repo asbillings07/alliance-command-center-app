@@ -6,7 +6,7 @@ import { Permissions } from "@/app/src/lib/auth/permissions";
 import { isolatedOcrDatabaseAvailable } from "@/app/src/lib/ocr/isolatedDatabase";
 import { LocalTimestamp } from "./LocalTimestamp";
 
-export async function SavedScoreBatches({ allianceId, periodId }: { allianceId: string; periodId: string }) {
+export async function SavedScoreBatches({ allianceId, periodId }: { allianceId: string; periodId?: string }) {
   await requireAllianceAccess({ allianceId, requiredPermission: Permissions.IMPORT_METRICS });
   if (!isolatedOcrDatabaseAvailable() && !productionPilotConfigured()) return null;
   const batches = await prisma.ocrScoreBatch.findMany({ where: { allianceId, periodId }, orderBy: [{ savedAt: "desc" }, { id: "desc" }], take: 10,

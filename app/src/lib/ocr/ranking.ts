@@ -140,3 +140,15 @@ export function reconcileOverlap(rows: BatchCandidate[], allowNewMembers = false
   return [...groups.values()].map(group => ({ row: group[0], sources: group, createMember: possible(group[0]) && safeNames.has(exactNameKey(group[0].sourceName)),
     conflict: group.some(r => r.value !== group[0].value), duplicates: group.length - 1 }));
 }
+
+/** A leader may choose one of the actual readings for a conflicting slot. */
+export function resolveRankingChoices(groups: ReturnType<typeof reconcileOverlap>, picks: string[]) {
+  return groups.map(group => {
+    const choices = group.conflict ? group.sources : [];
+    const selected = choices.filter(r => picks.includes(r.attemptId + ":" + r.key));
+    if (selected.length !== 1) return { ...group, choices, ignored: 0 };
+    const row = selected[0];
+    const sources = group.sources.filter(r => r.value === row.value);
+    return { ...group, row, sources, choices, conflict:false, ignored:group.sources.length - sources.length };
+  });
+}
