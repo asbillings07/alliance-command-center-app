@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { formatPower } from "@/app/src/lib/formatPower";
 import { OCR_PROCESSING_NOTICE } from "@/app/src/lib/ocr/consentPolicy";
 import { rankingFixture } from "@/app/src/lib/ocr/testing/rankingFixture";
 import { test, expect } from "../shared/fixtures";
@@ -265,7 +266,7 @@ for (const width of [320, 820, 1280]) {
     await expect(page.getByText("Daily score · 2026-11-16", { exact: true })).toHaveCount(3);
     await expect(page.getByText("Weekly total · week of 2026-11-16", { exact: true })).toHaveCount(3);
     await finish.click();
-    await expect(page.getByText("Recognition reviewed · No scores saved")).toBeVisible();
+    await expect(page.getByText(/^Recognition reviewed(?: · No scores saved)?$/)).toBeVisible();
     const previewTrigger = page.getByRole("button", { name: "View screenshot 1", exact: true });
     await previewTrigger.click();
     const preview = page.getByRole("dialog", { name: "Screenshot 1", exact: true });
@@ -313,7 +314,7 @@ for (const width of [320, 820, 1280]) {
     await expect(preview).toHaveCount(0);
     await expect(previewTrigger).toBeFocused();
     await expect(page.getByText(/Screenshot dates confirmed/)).toBeVisible();
-    await expect(page.getByText("Recognition reviewed · No scores saved")).toBeVisible();
+    await expect(page.getByText(/^Recognition reviewed(?: · No scores saved)?$/)).toBeVisible();
     const memberSource = page.getByRole("button", { name: "View source for Jordan Vale", exact: true }).first();
     await memberSource.click();
     const memberPreview = page.getByRole("dialog", { name: "Source for Jordan Vale", exact: true });
@@ -516,7 +517,7 @@ test("failed batch scans require deliberate new-charge consent and preserve earl
   await page.getByRole("button",{name:"Review screenshot dates",exact:true}).click();
   await page.getByRole("dialog",{name:"Use these screenshot dates?",exact:true}).getByRole("button",{name:"Confirm dates",exact:true}).click();
   await page.getByRole("button",{name:"Finish recognition review"}).click();
-  await expect(page.getByText("Recognition reviewed · No scores saved")).toBeVisible();
+  await expect(page.getByText(/^Recognition reviewed(?: · No scores saved)?$/)).toBeVisible();
   expect(await prisma.ocrEvaluationAttempt.findUniqueOrThrow({where:{id:failed.id}})).toMatchObject({status:"FAILED",retryOf:null});
 });
 
@@ -557,3 +558,72 @@ for (const timezoneId of ["America/New_York", "Asia/Tokyo"]) {
     });
   });
 }
+
+test("a confirmed ranking batch persists under the correct members for a second leader", async ({ page, login, ownerScenario, leaderScenario }) => {
+  test.setTimeout(120000);
+  const { allianceId } = ownerScenario;
+  await prisma.alliance.update({ where: { id: allianceId }, data: { name: "QA", server: allianceId } });
+  await prisma.allianceMembership.create({ data: { allianceId, userId: leaderScenario.userId, role: "LEADER" } });
+  const period = await prisma.metricPeriod.create({ data: { allianceId, name: "Batch QA", startsAt: new Date("2026-11-16"), endsAt: new Date("2026-11-22") } });
+  const metric = await prisma.metric.create({ data: { allianceId, name: "Daily VS", type: "NUMERIC", observationGrain: "DAILY_OBSERVATION", memberPeriodRollup: "SUM" } });
+  await prisma.metricPeriodMetric.create({ data: { periodId: period.id, metricId: metric.id, weight: 1, required: false } });
+  const members = await Promise.all(["Jordan Vale", "Morgan Reed"].map(playerName => prisma.allianceMember.create({ data: { allianceId, playerName } })));
+  await prisma.memberMetricEntry.create({ data: { allianceMemberId: members[0].id, metricId: metric.id, periodId: period.id, observationGrain: "DAILY_OBSERVATION", observedOn: new Date("2026-11-16"), value: 25000000 } });
+  const path = `/alliances/${allianceId}/periods/${period.id}/import?method=screenshots`;
+  try {
+    await login({ ...ownerScenario, displayName: "Importer" });
+    await page.goto(path);
+    const file = { name: "monday.png", mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture("monday").svg)).png().toBuffer() };
+    await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles(file);
+    await page.getByRole("button",{ name: "Read 1 screenshots", exact: true }).click();
+    await expect(page.getByText(/Batch recognition is ready/)).toBeVisible();
+    await page.getByLabel("Week beginning (Monday)").fill("2026-11-16");
+    await page.getByRole("button",{name:"Review screenshot dates"}).click();
+    await page.getByRole("button",{name:"Confirm dates"}).click();
+    await page.locator("li").filter({has:page.getByRole("button",{name:"View source for Riley Chen"})}).getByRole("button",{name:"Exclude from review"}).click();
+    await page.getByRole("button",{name:"Finish recognition review"}).click();
+    await page.getByLabel("Daily score metric").selectOption(metric.id);
+    await page.getByRole("button",{name:"Review score changes"}).click();
+    const dialog = page.getByRole("dialog",{name:"Apply these scores?"});
+    await expect(dialog).toContainText("25,000,000 → 23,340,000");
+    const confirm = dialog.getByRole("button",{name:"Confirm and save scores"});
+    await expect(confirm).toBeDisabled();
+    await dialog.getByRole("button",{name:"Cancel"}).click();
+    expect(await prisma.ocrScoreBatch.count({where:{allianceId}})).toBe(0);
+    await page.getByRole("button",{name:"Review score changes"}).click();
+    await dialog.getByRole("checkbox").check();
+    await prisma.memberMetricEntry.create({ data: { allianceMemberId: members[0].id, metricId: metric.id, periodId: period.id, observationGrain: "DAILY_OBSERVATION", observedOn: new Date("2026-11-16"), value: 26000000 } });
+    await confirm.click();
+    await expect(dialog.getByRole("alert")).toContainText("changed");
+    expect(await prisma.ocrScoreBatch.count({where:{allianceId}})).toBe(0);
+    await dialog.getByRole("button",{name:"Cancel"}).click();
+    await page.getByRole("button",{name:"Review score changes"}).click();
+    await expect(dialog).toContainText("26,000,000");
+    await dialog.getByRole("checkbox").check();
+    await confirm.click();
+    await expect(page.getByRole("heading",{name:"Saved score batches"})).toBeVisible();
+    const entries = await prisma.memberMetricEntry.findMany({where:{ periodId:period.id, entryMethod:"OCR_SCREENSHOT" },orderBy:{value:"desc"}});
+    expect(entries.map(e=>[e.allianceMemberId,e.value])).toEqual([[members[0].id,23340000],[members[1].id,19317601]]);
+    await page.reload();
+    await expect(page.getByRole("heading",{name:"Saved score batches"})).toBeVisible();
+    await page.context().clearCookies();
+    await login({ ...leaderScenario, displayName:"Second leader" });
+    for (const [i, entry] of entries.entries()) {
+      await page.goto(`/alliances/${allianceId}/members/${members[i].id}?periodId=${period.id}`);
+      await page.reload();
+      await expect(page.getByText(formatPower(entry.value!), {exact:true}).first()).toBeVisible();
+      await page.goto(`/alliances/${allianceId}/members/${members[i].id}/history?entryId=${entry.id}`);
+      await page.reload();
+      const details = page.getByRole("region",{name:"Entry details"});
+      await expect(details).toContainText(entry.value!.toLocaleString("en-US"));
+      await expect(details).toContainText("Ranking screenshot");
+      await expect(details).toContainText("Source screenshot uploaded by");
+    }
+    expect(await prisma.ocrScoreBatch.count({where:{allianceId}})).toBe(1);
+  } finally {
+    await prisma.ocrScoreSource.deleteMany({ where: { entry: { periodId: period.id } } });
+    await prisma.memberMetricEntry.deleteMany({ where: { periodId: period.id } });
+    await prisma.ocrScoreBatch.deleteMany({ where: { allianceId } });
+    await prisma.allianceMembership.deleteMany({ where: { allianceId, userId:leaderScenario.userId } });
+  }
+});

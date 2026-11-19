@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Card } from "@/app/src/components";
 import { Button, ConfirmDialog } from "@/app/src/components/client";
+import { BatchConfirmation, type BatchDestination } from "./BatchConfirmation";
 import { LocalTimestamp } from "./LocalTimestamp";
 import { RankingScreenshotDialog } from "./RankingScreenshotDialog";
 import { AllianceBatchDialog } from "./AllianceBatchDialog";
@@ -13,10 +14,10 @@ import { allianceRejectionMessage, isAllianceRejection, allianceBatchNotice } fr
 type Attempt = { id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
 type Result = { attempt: Attempt; batchReview: RankingReview; contextChanged: boolean };
 type Item = { requestId: string; file: File | null; state: "queued" | "reading" | "ready" | "failed" | "blocked"; error?: string; outcome?: string; attemptId?: string; result?: Result };
-type Props = { allianceId: string; initial: { contextKey: string; processingConsentId: number | null; allianceName: string; server: string; members: RosterMember[]; attempts: Attempt[] }; synthetic: boolean; qaSettings?: QaAllianceSettingsData | null };
+type Props = { destination?: BatchDestination; allianceId: string; initial: { contextKey: string; processingConsentId: number | null; allianceName: string; server: string; members: RosterMember[]; attempts: Attempt[] }; synthetic: boolean; qaSettings?: QaAllianceSettingsData | null };
 const statusText = { exact: "Exact name candidate", suggested: "Suggested match — confirm the name", ambiguous: "Ambiguous roster name", unmatched: "No roster match", invalid: "Unreadable name or score", archived: "Archived member — review required" };
 
-export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }: Props) {
+export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, destination }: Props) {
   const router = useRouter();
   const [items, setItems] = useState<Item[]>([]); const [week, setWeek] = useState(""); const [captureDate, setCaptureDate] = useState("");
   const [retryFailed, setRetryFailed] = useState(false);
@@ -115,7 +116,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
     } finally { if (active.current) setBusy(false); }
   }
   return <div className="space-y-6 sentry-block" data-sentry-block>
-    <div className="rounded-xl border border-border bg-surface p-4"><div className="flex flex-wrap items-center gap-3"><Badge variant="info">{synthetic ? "Synthetic test fixture" : "Recognition trial"}</Badge><strong>Review only · Scores are not saved</strong></div>
+    <div className="rounded-xl border border-border bg-surface p-4"><div className="flex flex-wrap items-center gap-3"><Badge variant="info">{synthetic ? "Synthetic test fixture" : "Recognition trial"}</Badge><strong>{destination ? "Review and confirm scores" : "Recognition review"}</strong></div>
       <p className="mt-2 text-sm text-text-secondary">Upload the ranking capture once. Review every recognized member here, without opening individual member pages.</p></div>
     {qaSettings && <QaAllianceSettings key={qaSettings.identityVersion} allianceId={allianceId} initial={qaSettings} disabled={busy} />}
     <Card><h2 className="text-lg font-semibold">1. Add your ranking screenshots</h2>
@@ -176,9 +177,11 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings }
       })}</ol>}
       {grouped.length > 0 && <div className="mt-4 rounded-lg border border-border p-4 text-sm"><p>Ranking tabs identify the score&apos;s period. No timer does not prove completion. Weekly totals stay separate from daily scores and are never added to them.</p>
         <p className="mt-2 text-text-secondary">Monday and Weekly Rank can be reviewed together for the same week. A weekly total includes daily scores; it does not replace them or tell us the missing days. This trial flags conflicting values for the same day or week, but does not yet compare weekly totals against the daily scores. Upload order does not establish when a screenshot was taken.</p>
-        <p className="mt-2 text-text-secondary">This trial stops at recognition review. Name exceptions, lower-score confirmation and saving through the shared score-history rules will be available in the next submission step.</p>
+        <p className="mt-2 text-text-secondary">Exclude uncertain matches and conflicting values. A score can be saved only after you review its destination and confirm the changes.</p>
         <div className="mt-4"><Button disabled={busy || pending.length > 0 || unresolvedImages > 0 || !chosen.length} onClick={() => { setReviewed(true); setMessage("Recognition review complete. No member scores or reports were changed."); }}>Finish recognition review</Button></div>
-        {reviewed && <p className="mt-3 text-primary-light">Recognition reviewed · No scores saved</p>}</div>}
+        {reviewed && <><p className="mt-3 text-primary-light">{destination ? "Recognition reviewed" : "Recognition reviewed · No scores saved"}</p>
+          {destination && <BatchConfirmation destination={destination} daily={chosen.some(g => !g.row.window?.startsWith("week:"))} weekly={chosen.some(g => g.row.window?.startsWith("week:"))}
+            selection={{ allianceId, periodId: destination.periodId, week, captureDate, attemptIds: results.map(r => r.attempt.id), excluded }} />}</>}</div>}
     </section>
     {notice && <AllianceBatchDialog {...notice} allianceName={initial.allianceName} server={initial.server} onClose={() => { setNotice(null); input.current?.focus(); }} />}
     {source && <RankingScreenshotDialog key={source.result.attempt.id}

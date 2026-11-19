@@ -5,6 +5,7 @@ import { Button } from "@/app/src/components/client";
 import { loadMemberMetricHistory, type MetricHistoryEntry } from "@/app/src/lib/metrics/memberMetricHistory";
 
 const methods = {
+  OCR_SCREENSHOT: "Ranking screenshot",
   MANUAL: "Manual entry",
   SPREADSHEET_SINGLE_PERIOD: "Spreadsheet import",
   SPREADSHEET_MULTI_PERIOD: "Multi-period spreadsheet import",
@@ -121,6 +122,7 @@ export default async function MemberMetricHistoryPage({ params, searchParams }: 
                         <dt className="text-text-muted">{label}</dt><dd className="font-medium text-text-primary">{text}</dd>
                       </div>)}
                     </dl>
+                    {selected.ocrSources?.map((source,i) => <p className="mt-2 text-sm" key={i}>Source screenshot uploaded by {source.attempt.actorName} · {source.window.replace("week:", "Week of ")} · {timestamp.format(source.attempt.createdAt)}</p>)}
                     {!selected.entryMethod && <p className="mt-4 rounded-lg bg-surface-secondary p-3 text-sm text-text-secondary">This entry predates attribution or came from a source that did not record it. Its uploader and method cannot be reconstructed.</p>}
                     <details className="mt-5 text-sm text-text-muted">
                       <summary className="cursor-pointer rounded py-2 focus:outline-none focus:ring-2 focus:ring-primary">About this record</summary>
