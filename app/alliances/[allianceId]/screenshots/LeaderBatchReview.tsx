@@ -248,7 +248,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
             </select></label>}
           {conflict && <p className="mt-2 text-sm text-warning-light">These images show different values for the same member and result window. No value has been chosen automatically.</p>}
           <p className="mt-2 text-xs text-text-muted">Source screenshots: {sources.map(s => s.source).join(", ")}{sources.length > 1 && !conflict ? " · same value shown once" : ""}</p>
-          <button type="button" className="block min-h-10 text-left text-sm font-medium text-primary-light underline focus-visible:outline-2" onClick={() => setSource({result:results.find(r => r.attempt.id === row.attemptId)!, title:`Source for ${name}`})}>View source for {name}</button>
+          <button type="button" className="block min-h-10 max-w-full text-left text-sm font-medium text-primary-light underline [overflow-wrap:anywhere] focus-visible:outline-2" onClick={() => setSource({result:results.find(r => r.attempt.id === row.attemptId)!, title:`Source for ${name}`})}>View source for {name}</button>
           </>}
             <Button variant="secondary" size="sm" onClick={() => {
               const keys = sourceKeys(group);
@@ -274,7 +274,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       onClose={() => setSource(null)} />}
     <p role="status" aria-live="polite" className="break-words text-sm text-text-secondary">{message}</p>
     <section><h2 className="text-lg font-semibold">Ranking upload history</h2><p className="mt-1 text-sm text-text-muted">Latest 20 captures · Times in your timezone. Reopen a scan to review it again.</p>
-      <ol className="mt-3 max-h-72 divide-y divide-border overflow-y-auto rounded-lg border border-border">{existing.map(attempt => <li key={attempt.id} className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 px-3 py-2 text-sm"><p className="break-words">{attempt.actorName} · <LocalTimestamp value={attempt.createdAt} /></p>{isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}<div className="mt-2">{attempt.retryable
+      <ol aria-label="Ranking upload history" className="mt-3 divide-y divide-border rounded-lg border border-border">{existing.map(attempt => <li key={attempt.id} className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 px-3 py-2 text-sm"><p className="break-words">{attempt.actorName} · <LocalTimestamp value={attempt.createdAt} /></p>{isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}<div className="mt-2">{attempt.retryable
         ? <Button variant="secondary" disabled={busy || items.length >= 20} title="Select the original screenshot to retry this scan" onClick={() => retryScan(attempt)}>Retry scan</Button>
         : <Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Failed" : "Pending"}</Button>}</div></li>)}</ol>
     </section>
