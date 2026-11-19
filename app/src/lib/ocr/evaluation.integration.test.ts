@@ -160,8 +160,11 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     await expect(readEvaluationContent(batch, saved.id, "result", transport)).resolves.toHaveProperty("contextChanged", false);
     // Legacy captures have no permission metadata, but normal authorized source
     // review still works. They are never retroactively eligible for quality audit.
-    await db.ocrEvaluationAttempt.update({ where: { id: saved.id }, data: { processingConsentId: null, qualityConsentId: null } });
-    await expect(readEvaluationContent(colleague, saved.id, "result", transport)).resolves.toHaveProperty("contextChanged", false);
+    const captured = await db.ocrEvaluationAttempt.findUniqueOrThrow({ where: { id: saved.id } });
+    const legacy = await db.ocrEvaluationAttempt.create({ data: { ...captured, id: crypto.randomUUID(), requestId: crypto.randomUUID(), processingConsentId: null, qualityConsentId: null } });
+    objects.set(`${legacy.id}/recognition.json`, objects.get(`${saved.id}/recognition.json`)!);
+    await expect(readEvaluationContent(colleague, legacy.id, "result", transport)).resolves.toHaveProperty("contextChanged", false);
+    expect(qualitySourceEligible(await loadOcrConsent(actorId), legacy)).toBe(false);
   });
   it("keeps personal withdrawal available when global scans are switched off", async () => {
     vi.stubEnv("VERCEL", "1"); vi.stubEnv("VERCEL_ENV", "preview"); vi.stubEnv("VERCEL_TARGET_ENV", "acc-ocr-eval");
