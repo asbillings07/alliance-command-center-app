@@ -89,7 +89,12 @@ export function googleOcrTransport(): OcrTransport {
     async recognize(image) {
       let response: Response;
       try {
-        response = await request(`https://us-vision.googleapis.com/v1/projects/${config.project}/locations/us/images:annotate`, {
+        // The full document tree repeats text and geometry for every symbol.
+        // Capture uses only word annotations and the per-image service status.
+        const endpoint = new URL(`https://us-vision.googleapis.com/v1/projects/${config.project}/locations/us/images:annotate`);
+        endpoint.searchParams.set("fields", "responses(textAnnotations(description,boundingPoly/vertices),error(code,details))");
+        endpoint.searchParams.set("prettyPrint", "false");
+        response = await request(endpoint.toString(), {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ requests: [{ image: { content: Buffer.from(image.bytes).toString("base64") }, features: [{ type: "TEXT_DETECTION" }] }] }),
         });
