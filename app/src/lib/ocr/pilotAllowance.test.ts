@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getVercelOidcToken, verifyVercelOidcToken } from "@vercel/oidc";
 import { pilotReservationId, reserveBeforeProductionScan } from "./pilotAllowance";
 import { allowPilotServerEvent } from "./pilotTelemetry";
-import { productionPilotConfigured } from "./productionPilot";
+import { productionPilotConfigured, productionPilotPairAllowed, productionPilotPairs } from "./productionPilot";
 
 vi.mock("@vercel/oidc", () => ({ getVercelOidcToken: vi.fn(), verifyVercelOidcToken: vi.fn() }));
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetAllMocks(); });
@@ -18,6 +18,19 @@ describe("one-user production pilot", () => {
       { OCR_PILOT_ALLIANCE_ID: "" }, { VERCEL_GIT_COMMIT_REF: "other" }, { DATABASE_URL: conn + "&host=elsewhere" }]) {
       expect(productionPilotConfigured({ ...env, ...change })).toBe(false);
     }
+  });
+  it("retains exact pairs and ignores an incomplete test enrollment", () => {
+    const measured = { userId: "one-user", allianceId: "one-alliance" };
+    const operator = { userId: "test-user", allianceId: "test-alliance" };
+    expect(productionPilotPairs(env)).toEqual([measured]);
+    expect(productionPilotPairs({ ...env, OCR_PILOT_TEST_USER_ID: operator.userId })).toEqual([measured]);
+    expect(productionPilotPairs({ ...env, OCR_PILOT_TEST_ALLIANCE_ID: operator.allianceId })).toEqual([measured]);
+    const both = { ...env, OCR_PILOT_TEST_USER_ID: operator.userId, OCR_PILOT_TEST_ALLIANCE_ID: operator.allianceId };
+    expect(productionPilotPairAllowed(measured.userId, measured.allianceId, both)).toBe(true);
+    expect(productionPilotPairAllowed(operator.userId, operator.allianceId, both)).toBe(true);
+    expect(productionPilotPairAllowed(operator.userId, measured.allianceId, both)).toBe(false);
+    expect(productionPilotPairAllowed(measured.userId, operator.allianceId, both)).toBe(false);
+    expect(productionPilotPairAllowed("someone-else", operator.allianceId, both)).toBe(false);
   });
   it("drops sensitive routes, mutations and unknown server events while allowing ordinary page diagnostics", () => {
     vi.stubEnv("VERCEL_ENV", "production"); vi.stubEnv("OCR_PILOT_ENABLED", "true");

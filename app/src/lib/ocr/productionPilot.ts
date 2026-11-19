@@ -2,6 +2,19 @@ import { checkDbIdentity, connectionIdentity } from "../productionDb";
 
 type Env = Record<string, string | undefined>;
 
+// Keep the measured cohort and the optional operator account as distinct pairs.
+export function productionPilotPairs(env: Env = process.env) {
+  return [
+    { userId: env.OCR_PILOT_USER_ID, allianceId: env.OCR_PILOT_ALLIANCE_ID },
+    { userId: env.OCR_PILOT_TEST_USER_ID, allianceId: env.OCR_PILOT_TEST_ALLIANCE_ID },
+  ].filter((pair): pair is { userId: string; allianceId: string } =>
+    !!pair.userId?.trim() && !!pair.allianceId?.trim());
+}
+
+export function productionPilotPairAllowed(userId: string, allianceId: string, env: Env = process.env) {
+  return productionPilotPairs(env).some(pair => pair.userId === userId && pair.allianceId === allianceId);
+}
+
 export function productionPilotConfigured(env: Env = process.env) {
   if (env.VERCEL_ENV !== "production" || env.VERCEL_TARGET_ENV !== "production"
     || env.VERCEL_GIT_COMMIT_REF !== "main" || env.OCR_PILOT_ENABLED !== "true"
