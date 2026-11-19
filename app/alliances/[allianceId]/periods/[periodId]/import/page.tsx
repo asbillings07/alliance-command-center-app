@@ -125,8 +125,8 @@ export default async function ImportPage({ params, searchParams }: Params) {
   const screenshotTrial = ocrEvaluationVisible();
   const screenshots = screenshotTrial && (await searchParams).method === "screenshots";
   const methodLinks = screenshotTrial ? <nav aria-label="Add results" className="mb-6 flex flex-wrap gap-3">
-    <Button variant={screenshots ? "secondary" : "primary"} href={`/alliances/${allianceId}/periods/${periodId}/import`}>Spreadsheet</Button>
     <Button variant={screenshots ? "primary" : "secondary"} href={`/alliances/${allianceId}/periods/${periodId}/import?method=screenshots`}>Screenshots</Button>
+    <Button variant={screenshots ? "secondary" : "primary"} href={`/alliances/${allianceId}/periods/${periodId}/import`}>Spreadsheet</Button>
     <Button variant="secondary" href={`/alliances/${allianceId}/periods/${periodId}/record`}>Manual entry</Button>
   </nav> : null;
   if (screenshots) {
