@@ -1,6 +1,7 @@
 "use client";
 import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
+import { LocalTimestamp } from "./LocalTimestamp";
 import { Button, ConfirmDialog } from "@/app/src/components/client";
 import type { loadQaAllianceSettings } from "@/app/src/lib/ocr/qaAlliance";
 import { saveQaAllianceName } from "./qa-actions";
@@ -22,7 +23,7 @@ export function QaAllianceSettings({ allianceId, initial, disabled }: { alliance
       onClick={() => setConfirm(true)}>Review QA name change</Button></div>
     {initial.history.length > 0 && <div className="mt-5"><h2 className="font-medium">QA name history</h2>
       <ol className="mt-2 space-y-2 text-sm text-text-secondary">{initial.history.map(change => <li key={change.id} className="break-words">
-        <span>{change.previousName} → {change.name}</span><br /><span>{change.actorName} · {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(change.createdAt))} UTC</span>
+        <span>{change.previousName} → {change.name}</span><br /><span>{change.actorName} · <LocalTimestamp value={change.createdAt} /></span>
       </li>)}</ol></div>}
     <ConfirmDialog isOpen={confirm} onClose={() => setConfirm(false)} title="Change this QA alliance name?" confirmLabel="Save QA name" pendingLabel="Saving QA name…"
       description={<div className="space-y-3 break-words"><p><strong>Current:</strong> {initial.name}<br /><strong>New:</strong> {name.trim()}</p>

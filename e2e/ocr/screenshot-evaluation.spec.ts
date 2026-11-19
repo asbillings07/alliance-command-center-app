@@ -490,3 +490,42 @@ test("failed batch scans require deliberate new-charge consent and preserve earl
   await expect(page.getByText("Recognition reviewed · No scores saved")).toBeVisible();
   expect(await prisma.ocrEvaluationAttempt.findUniqueOrThrow({where:{id:failed.id}})).toMatchObject({status:"FAILED",retryOf:null});
 });
+
+// Browser timezone differs from the CI server's UTC timezone. Historical
+// instants stay identical; each viewer gets the appropriate calendar date/DST.
+for (const timezoneId of ["America/New_York", "Asia/Tokyo"]) {
+  test.describe(`upload history in ${timezoneId}`, () => {
+    test.use({ timezoneId, locale: "en-US" });
+    test("formats retained timestamps locally without changing their stored instants", async ({ page, login, ownerScenario }) => {
+      const { allianceId, userId, email, password } = ownerScenario;
+      const instants = ["2026-11-19T02:30:00.000Z", "2026-07-01T02:30:00.000Z"];
+      const ids: string[] = [];
+      try {
+        for (const value of instants) {
+          const id = crypto.randomUUID(); ids.push(id);
+          await prisma.ocrEvaluationAttempt.create({ data: {
+            id, requestId: id, allianceId, actorUserId: userId, actorName: "Synthetic uploader", actorRole: "OWNER",
+            playerName: "Alliance ranking capture", allianceName: "Synthetic", server: "956", contextKey: "synthetic-history",
+            sourceDigest: id, processingVersion: "synthetic-history", imageBytes: 0, status: "FAILED", outcome: "synthetic-history",
+            createdAt: new Date(value), expiresAt: new Date("2027-01-01T00:00:00Z"),
+          } });
+        }
+        const errors: string[] = [];
+        page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+        await login({ email, password, displayName: "Owner" });
+        await page.goto(`/alliances/${allianceId}/screenshots?scope=batch`);
+        for (const value of instants) {
+          const time = page.locator(`time[datetime="${value}"]`);
+          const expected = new Intl.DateTimeFormat("en-US", {
+            timeZone: timezoneId, year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short",
+          }).format(new Date(value));
+          await expect(time).toHaveText(expected);
+          await expect(time).toHaveAttribute("title", timezoneId);
+        }
+        expect(errors.filter(message => /hydration|didn't match|did not match/i.test(message))).toEqual([]);
+        const saved = await prisma.ocrEvaluationAttempt.findMany({ where: { id: { in: ids } }, orderBy: { createdAt: "desc" } });
+        expect(saved.map(attempt => attempt.createdAt.toISOString())).toEqual(instants);
+      } finally { await prisma.ocrEvaluationAttempt.deleteMany({ where: { id: { in: ids } } }); }
+    });
+  });
+}
