@@ -192,8 +192,14 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     expect((await loadOcrConsent(actorId)).processing!.granted).toBe(false);
     await expect(ocrEvaluationAvailable(leader())).resolves.toBe(false);
     expect(await db.ocrEvaluationAttempt.count()).toBe(0);
+    await changeQuality(true);
     vi.stubEnv("VERCEL_ENV", "production");
-    await expect(loadOcrConsent(actorId)).rejects.toThrow("unavailable here");
+    expect((await loadOcrConsent(actorId)).quality?.granted).toBe(true);
+    await changeQuality(false);
+    expect((await loadOcrConsent(actorId)).quality?.granted).toBe(false);
+    await expect(changeQuality(true)).rejects.toThrow("unavailable here");
+    await expect(changeProcessing(true)).rejects.toThrow("unavailable here");
+    await expect(loadOcrConsent(crypto.randomUUID())).rejects.toThrow("unavailable here");
   });
 
   it("disabled rollout rejects direct load, scan, read and QA edits without budget or history changes", async () => {
