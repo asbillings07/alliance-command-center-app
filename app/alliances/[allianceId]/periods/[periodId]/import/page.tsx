@@ -1,3 +1,4 @@
+import { OcrConsentGate } from "@/app/account/ocr/OcrConsentGate";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
@@ -136,7 +137,7 @@ export default async function ImportPage({ params, searchParams }: Params) {
     const qaSettings = review && auth.permissions.canImportMetrics ? await loadQaAllianceSettings(allianceId, auth.user.id).catch(() => null) : null;
     return <main className="sentry-block" data-sentry-block><PageLayout breadcrumb={breadcrumb} title="Capture Evaluation Results" description={`Review ranking screenshots for ${period.name}.`} maxWidth="6xl">
       {methodLinks}
-      {review ? <LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} />
+      {review ? <OcrConsentGate key={review.consent.processing?.id ?? "first-use"} initial={review.consent}><LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} /></OcrConsentGate>
         : <Card><h2 className="text-lg font-semibold">Screenshot evaluation is unavailable</h2><p className="mt-2 text-text-secondary">This trial requires an enabled preview and current import access.</p></Card>}
     </PageLayout></main>;
   }

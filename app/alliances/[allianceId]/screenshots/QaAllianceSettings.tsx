@@ -17,7 +17,8 @@ export function QaAllianceSettings({ allianceId, initial, disabled }: { alliance
     <label htmlFor={inputId} className="mt-4 block text-sm font-medium">QA alliance name</label>
     <input id={inputId} value={name} maxLength={200} disabled={disabled || confirm} onChange={event => setName(event.target.value)}
       className="mt-2 w-full rounded-lg border border-border bg-background p-3 text-text-primary focus:outline-2 focus:outline-primary" />
-    <p className="mt-2 text-sm text-text-secondary">Earlier scans keep their original names. After saving, select your screenshot again for a fresh review. New scans still reserve $0.01 each within the same $5 cap.</p>
+    <p className="mt-2 text-sm text-text-secondary">Earlier scans keep their original names. After saving, select your screenshot again for a fresh review.</p>
+    <p className="mt-2 text-sm text-text-secondary">QA only: each new scan or retry reserves $0.01 from the existing $5 trial cap, including failed attempts and alliance mismatches. Reopening completed scans does not make a new OCR request. These are internal evaluation costs, not user charges.</p>
     {disabled && <p className="mt-2 text-sm text-warning-light">Wait for the current screenshot check to finish before editing the name.</p>}
     <div className="mt-4"><Button variant="secondary" disabled={disabled || !name.trim() || name.trim() === initial.name}
       onClick={() => setConfirm(true)}>Review QA name change</Button></div>

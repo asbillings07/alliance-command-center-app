@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { OCR_PROCESSING_NOTICE } from "@/app/src/lib/ocr/consentPolicy";
 import { rankingFixture } from "@/app/src/lib/ocr/testing/rankingFixture";
 import { test, expect } from "../shared/fixtures";
 import { prisma } from "@/app/src/lib/prisma";
@@ -7,6 +8,12 @@ import { checkA11y } from "../shared/accessibility";
 // A separate CI job opts into a localhost-only fake provider. Never a claim of
 // Google recognition accuracy, and never enabled in a hosted environment.
 test.skip(process.env.OCR_EVAL_TEST_FIXTURE !== "1", "Requires the isolated OCR fixture job");
+
+// Recognition regressions start with explicit synthetic account consent. The
+// separate consent suite covers first-use UI, withdrawal and account isolation.
+test.beforeEach(async ({ ownerScenario }) => {
+  await prisma.ocrConsentDecision.create({ data: { userId: ownerScenario.userId, purpose: "PROCESSING", granted: true, noticeVersion: OCR_PROCESSING_NOTICE } });
+});
 
 for (const [width, role] of [[320, "LEADER"], [820, "ADMIN"], [1280, "OWNER"]] as const) {
   test(`${role} edits only the QA alliance name with confirmation and history at ${width}px`, async ({ page, login, ownerScenario }, testInfo) => {
@@ -36,7 +43,6 @@ for (const [width, role] of [[320, "LEADER"], [820, "ADMIN"], [1280, "OWNER"]] a
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`ocr-qa-alliance-${width}.png`), fullPage: true });
     await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles({ name: "same-test-capture.png", mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture().svg)).png().toBuffer() });
-    await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
     await page.getByRole("button", { name: "Read 1 screenshots", exact: true }).click();
     await expect(page.getByText(/3 unique rows/)).toBeVisible();
     const saved = await prisma.ocrEvaluationAttempt.findFirstOrThrow({ where: { allianceId } });
@@ -82,11 +88,10 @@ for (const width of [320, 820, 1280]) {
     const scan = page.getByRole("button", { name: "Read screenshot", exact: true });
     await upload.setInputFiles(await screenshot());
     await expect.poll(() => page.getByRole("img", { name: "Selected daily VS screenshot" }).evaluate(el => (el as HTMLCanvasElement).width)).toBe(588);
-    await expect(scan).toBeDisabled();
+    await expect(scan).toBeEnabled();
     await page.getByRole("button", { name: "Clear selection" }).click();
     expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(0);
     await upload.setInputFiles(await screenshot());
-    await page.getByRole("checkbox").check();
     await scan.click();
     await expect(page.getByText("Recognition is ready to review. No scores were changed.")).toBeVisible();
     await expect(page.getByText("23,340,000", { exact: true })).toBeVisible();
@@ -120,7 +125,6 @@ for (const width of [320, 820, 1280]) {
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: testInfo.outputPath(`ocr-historical-identity-${width}.png`), fullPage: true });
     await upload.setInputFiles(await screenshot());
-    await page.getByRole("checkbox").check();
     await scan.click();
     await expect(page.getByText("Matching name not found — blocked", { exact: true })).toBeVisible();
     await expect(page.getByText(/future leadership submission would require an explicit resolution/)).toBeVisible();
@@ -147,6 +151,7 @@ test("member uses only an approved own record; revocation blocks retained conten
     await login({ email, password, displayName: "Owner" });
     const memberPage = await context.newPage();
     await memberPage.goto("/login");
+    await prisma.ocrConsentDecision.create({ data: { userId: account.id, purpose: "PROCESSING", granted: true, noticeVersion: OCR_PROCESSING_NOTICE } });
     await memberPage.locator('input[name="email"]').fill(account.email);
     await memberPage.locator('input[name="password"]').fill(password);
     await memberPage.getByRole("button", { name: "Sign In", exact: true }).click();
@@ -163,7 +168,6 @@ test("member uses only an approved own record; revocation blocks retained conten
     await prisma.memberSelfAccessDecision.create({ data: { ...grant, granted: true } });
     await memberPage.reload();
     await memberPage.getByLabel("Screenshot", { exact: true }).setInputFiles(await screenshot());
-    await memberPage.getByRole("checkbox").check();
     await memberPage.getByRole("button", { name: "Read screenshot", exact: true }).click();
     await expect(memberPage.getByText("23,340,000", { exact: true })).toBeVisible();
     const imageUrl = await memberPage.getByRole("img", { name: "Daily VS screenshot being reviewed" }).getAttribute("src");
@@ -195,7 +199,6 @@ test("rejects a disguised markup file without dispatching OCR", async ({ page, l
   await expect(page.getByRole("img", { name: "Selected daily VS screenshot" })).toBeVisible();
   expect(await page.locator('img[src^="blob:"]').count()).toBe(0);
   await expect.poll(() => page.getByRole("img", { name: "Selected daily VS screenshot" }).evaluate(el => (el as HTMLCanvasElement).width)).toBe(1);
-  await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Read screenshot", exact: true }).click();
   await expect(page.getByText("We could not read this image. Choose a complete PNG or JPEG screenshot up to 12 megapixels.")).toBeVisible();
   expect(dialogs).toEqual([]);
@@ -228,8 +231,7 @@ for (const width of [320, 820, 1280]) {
     })));
     await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles(files);
     const scan = page.getByRole("button", { name: "Read 2 screenshots", exact: true });
-    await expect(scan).toBeDisabled();
-    await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
+    await expect(scan).toBeEnabled();
     await scan.click();
     await expect(page.getByText(/Batch recognition is ready/)).toBeVisible();
     await expect(page.getByText("6 unique rows", { exact: false })).toBeVisible();
@@ -329,7 +331,6 @@ for (const width of [320, 820, 1280]) {
     await expect(previewTrigger).toBeFocused();
     // Re-selecting a completed image reuses its scan instead of paying again.
     await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles(files[0]);
-    await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
     await page.getByRole("button", { name: "Read 1 screenshots", exact: true }).click();
     await expect(page.getByText(/Batch recognition is ready/)).toBeVisible();
     expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(2);
@@ -379,7 +380,6 @@ for (const [width, role] of [[320, "OWNER"], [820, "ADMIN"], [1280, "LEADER"]] a
     })));
     const upload = page.getByLabel("Ranking screenshots", { exact: true });
     await upload.setInputFiles(files);
-    await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
     await page.getByRole("button", { name: "Read 2 screenshots", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "No screenshots match your alliance", exact: true });
     await expect(dialog).toBeVisible();
@@ -404,7 +404,6 @@ for (const [width, role] of [[320, "OWNER"], [820, "ADMIN"], [1280, "LEADER"]] a
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByRole("button", { name: "Clear review", exact: true }).click();
     await upload.setInputFiles(files[0]);
-    await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
     await page.getByRole("button", { name: "Read 1 screenshots", exact: true }).click();
     await expect(dialog).toBeVisible(); await close.click(); await expect(dialog).toHaveCount(0);
     expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(2);
@@ -425,7 +424,6 @@ for (const [width, role] of [[320, "LEADER"], [820, "OWNER"], [1280, "ADMIN"]] a
     await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles([
       await foreign("monday"), { name: "matching.png", mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture().svg)).png().toBuffer() }, await foreign("weekly"),
     ]);
-    await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
     await page.getByRole("button", { name: "Read 3 screenshots", exact: true }).click();
     await expect(page.getByRole("status")).toContainText("Batch checked");
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -451,7 +449,6 @@ test("a processing failure after a mismatch stops dispatch without claiming the 
     { name: "interruption.png", mimeType: "image/png", buffer: await sharp(Buffer.from(unique)).resize(601,900).png().toBuffer() },
     { name: "unstarted.png", mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture().svg)).png().toBuffer() },
   ]);
-  await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
   await page.getByRole("button", { name: "Read 3 screenshots", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Stopped. Completed scans remain");
   await expect(page.getByRole("listitem", { name: "Screenshot 1", exact: true })).toContainText("Blocked — alliance check");
@@ -477,7 +474,6 @@ test("stopping a batch after a mismatch leaves the unstarted screenshot unclassi
   await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles(await Promise.all((["monday", "weekly"] as const).map(async kind => ({
     name: `${kind}.png`, mimeType: "image/png", buffer: await sharp(Buffer.from(rankingFixture(kind).svg)).png().toBuffer(),
   }))));
-  await page.getByRole("checkbox", { name: /I can share these screenshots/ }).check();
   await page.getByRole("button", { name: "Read 2 screenshots", exact: true }).click();
   try { await responseReady; await page.getByRole("button", { name: "Stop after this image", exact: true }).click(); }
   finally { release(); }
@@ -498,19 +494,18 @@ test("failed batch scans require deliberate new-charge consent and preserve earl
   const uniqueSvg = rankingFixture().svg.replace('</svg>', `<text x="10" y="850">${crypto.randomUUID()}</text></svg>`);
   const file = {name:"synthetic-interruption.png",mimeType:"image/png",buffer:await sharp(Buffer.from(uniqueSvg)).resize(601,900).png().toBuffer()};
   const upload = page.getByLabel("Ranking screenshots",{exact:true});
-  const consent = page.getByRole("checkbox",{name:/I can share these screenshots/});
   const scan = page.getByRole("button",{name:"Read 1 screenshots",exact:true});
-  await upload.setInputFiles(file); await consent.check(); await scan.click();
+  await upload.setInputFiles(file); await scan.click();
   await expect(page.getByText(/Stopped. Completed scans remain/)).toBeVisible();
   const failed = await prisma.ocrEvaluationAttempt.findFirstOrThrow({where:{allianceId}});
   expect(failed.status).toBe("FAILED");
   await page.reload();
-  await upload.setInputFiles(file); await consent.check();
+  await upload.setInputFiles(file);
   const retry = page.getByRole("checkbox",{name:/Start a new attempt for failed images/});
   await expect(retry).not.toBeChecked();
   await scan.click(); await expect(page.getByText(/Stopped. Completed scans remain/)).toBeVisible();
   expect(await prisma.ocrEvaluationAttempt.count({where:{allianceId}})).toBe(1);
-  await upload.setInputFiles(file); await retry.check(); await consent.check(); await scan.click();
+  await upload.setInputFiles(file); await retry.check(); await scan.click();
   await expect.poll(()=>prisma.ocrEvaluationAttempt.count({where:{allianceId}})).toBe(2);
   await expect(page.getByText(/Remaining scans completed/)).toBeVisible();
   expect(await prisma.ocrEvaluationAttempt.findUniqueOrThrow({where:{retryOf:failed.id}})).toMatchObject({status:"READY",retryOf:failed.id});

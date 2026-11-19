@@ -1,11 +1,14 @@
 import { test, expect } from "../shared/fixtures";
 import { prisma } from "@/app/src/lib/prisma";
 import { checkA11y } from "../shared/accessibility";
+import { OCR_PROCESSING_NOTICE } from "@/app/src/lib/ocr/consentPolicy";
 
 test.skip(process.env.OCR_ROLLOUT_OFF_TEST !== "1", "Separate local-only flag-off run");
 for (const width of [320, 820, 1280]) {
   test(`OCR disabled hides entry points and rejects direct routes and API at ${width}px`, async ({ page, login, ownerScenario }) => {
-    const { allianceId, email, password } = ownerScenario;
+    const { allianceId, email, password, userId } = ownerScenario;
+    // An otherwise consented account must still be denied by the rollout flag.
+    const consent = await prisma.ocrConsentDecision.create({ data: { userId, purpose: "PROCESSING", granted: true, noticeVersion: OCR_PROCESSING_NOTICE } });
     const member = await prisma.allianceMember.create({ data: { allianceId, playerName: "Synthetic Member" } });
     const period = await prisma.metricPeriod.create({ data: { allianceId, name: "Synthetic OCR week" } });
     await page.setViewportSize({ width, height: 900 });
@@ -30,7 +33,7 @@ for (const width of [320, 820, 1280]) {
     expect(read.status()).toBe(400); expect((await read.json()).error).toContain("unavailable for this account");
     const upload = await page.request.post(api, { headers: { origin: new URL(page.url()).origin }, multipart: {
       screenshot: { name: "synthetic.png", mimeType: "image/png", buffer: Buffer.from("not dispatched") },
-      requestId: crypto.randomUUID(), contextKey: "stale-context", consent: "true",
+      requestId: crypto.randomUUID(), contextKey: "stale-context", processingConsentId: String(consent.id),
     } });
     expect(upload.status()).toBe(400); expect((await upload.json()).error).toContain("unavailable for this account");
     expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(0);

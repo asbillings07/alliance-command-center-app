@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # Qualify the consent slice while its rollout dependency remains unmerged.
+    branches: [main, codex/ocr-recognition-trial]
 
 # Deny all permissions by default (principle of least privilege)
 # Each job explicitly declares what it needs
@@ -462,7 +463,7 @@ jobs:
         run: npm run build
 
       - name: Run Playwright tests
-        run: npx tsx ./node_modules/@playwright/test/cli.js test e2e/ocr/screenshot-evaluation.spec.ts --project=application
+        run: npx tsx ./node_modules/@playwright/test/cli.js test e2e/ocr/screenshot-evaluation.spec.ts e2e/ocr/account-consent.spec.ts --project=application
         env:
           CI: true
           FEEDBACK_INBOX_TEST_HOOKS: "true"
