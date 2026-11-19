@@ -104,6 +104,26 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     vi.mocked(transport.recognize).mockResolvedValue({ ...recognition, words: recognition.words.map(w => ({ ...w, text: w.text.replace("[TEST]", "[OTHER]") })) });
     expect(await evaluateScreenshot(await input(), transport)).toMatchObject({ status: "FAILED", outcome: "alliance-mismatch" });
   });
+  it("a Leader cannot bypass source checks through an approved own-record route", async () => {
+    await db.allianceMembership.create({ data: { allianceId, userId: accountId, role: "LEADER" } });
+    await approve();
+    const wrong = { ...recognition, words: recognition.words.map(w => ({ ...w, text: w.text.replace("[TEST]", "[OTHER]") })) };
+    vi.mocked(transport.recognize).mockResolvedValueOnce(wrong);
+    const rejected = await evaluateScreenshot(await input(member()), transport);
+    expect(rejected).toMatchObject({ actorRole: "MEMBER", status: "FAILED", outcome: "alliance-mismatch" });
+    await expect(readEvaluationContent(member(), rejected.id, "image", transport)).rejects.toThrow("does not match the alliance");
+    const saved = await evaluateScreenshot(await input(member()), transport);
+    expect(saved.status).toBe("READY");
+    const path = `${saved.id}/recognition.json`;
+    const legacy = JSON.parse(Buffer.from(objects.get(path)!).toString());
+    legacy.words = wrong.words;
+    objects.set(path, Buffer.from(JSON.stringify(legacy)));
+    for (const kind of ["result", "image"] as const) {
+      await expect(readEvaluationContent(member(), saved.id, kind, transport)).rejects.toThrow("does not match the alliance");
+    }
+    expect(transport.read).not.toHaveBeenCalledWith(`${saved.id}/source.png`, expect.anything());
+    expect(await db.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })).toBe(0);
+  });
   it("reauthorizes older READY source evidence for both results and direct image requests", async () => {
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
     const saved = await evaluateScreenshot(await input(batch), transport);

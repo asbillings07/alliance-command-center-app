@@ -91,6 +91,7 @@ for (const width of [320, 820, 1280]) {
 test("member uses only an approved own record; revocation blocks retained content", async ({ page, browser, login, ownerScenario }, testInfo) => {
   test.setTimeout(120000);
   const { allianceId, userId, email, password } = ownerScenario;
+  await prisma.alliance.update({ where: { id: allianceId }, data: { name: "TEST", server: allianceId } });
   const owner = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
   const account = await prisma.user.create({ data: { email: `ocr-${crypto.randomUUID()}@example.test`, displayName: "Jordan Account", passwordHash: owner.passwordHash } });
   const member = await prisma.allianceMember.create({ data: { allianceId, playerName: "Jordan Vale", userId: account.id }, include: { alliance: true } });

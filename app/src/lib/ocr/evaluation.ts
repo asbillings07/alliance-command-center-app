@@ -168,7 +168,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     failureStage = "finalization";
     const complete = await transaction(async tx => {
       if ((await context(tx, input)).contextKey !== attempt.contextKey) throw new OcrEvaluationError("The member's identity or access changed. Reload this review.");
-      const allianceEvidence = attempt.actorRole === "MEMBER" ? "matched" : checkScreenshotAlliance({ ...recognition, rankingContext }, { name: attempt.allianceName, server: attempt.server });
+      const allianceEvidence = checkScreenshotAlliance({ ...recognition, rankingContext }, { name: attempt.allianceName, server: attempt.server });
       return tx.ocrEvaluationAttempt.update({ where: { id: attempt.id }, data: allianceEvidence === "matched"
         ? { status: "READY", outcome: "recognition-ready" }
         : { status: "FAILED", outcome: `alliance-${allianceEvidence}` } });
@@ -194,23 +194,23 @@ async function authorizedAttempt(tx: Tx, target: EvaluationTarget, id: string) {
 export async function readEvaluationContent(target: EvaluationTarget, id: string, kind: "image" | "result", transport: OcrTransport) {
   requireOcrEvaluation(target.allianceId);
   const attempt = await transaction(async tx => {
-    const { attempt, current } = await authorizedAttempt(tx, target, id);
+    const { attempt } = await authorizedAttempt(tx, target, id);
     if (isAllianceRejection(attempt)) throw new OcrEvaluationError(allianceRejectionMessage(attempt.outcome));
-    if ((kind === "result" || current.actorRole !== "MEMBER") && attempt.status !== "READY") throw new OcrEvaluationError("Recognition is not ready. Interrupted scans are never automatically retried.");
+    if (attempt.status !== "READY") throw new OcrEvaluationError("Recognition is not ready. Interrupted scans are never automatically retried.");
     const reserved = await tx.ocrEvaluationBudget.updateMany({ where: { id: OCR_CAMPAIGN, reads: { lt: 5000 } }, data: { reads: { increment: 1 } } });
     if (!reserved.count) throw new OcrEvaluationError("The evaluation viewing limit has been reached.");
     return attempt;
   });
   // A source-image URL must not bypass the same alliance check as its result.
   // Requalify older READY scans against the current alliance, without rescanning.
-  if (kind === "image" && (target.scope === "batch" || target.memberId)) {
+  if (kind === "image") {
     await readEvaluationContent(target, id, "result", transport);
   }
   const bytes = await transport.read(`${attempt.id}/${kind === "image" ? "source.png" : "recognition.json"}`, kind === "image" ? OCR_MAX_IMAGE_BYTES : OCR_MAX_RESULT_BYTES);
   // Revocation/expiry while storage is responding must not disclose content.
   const { current } = await transaction(tx => authorizedAttempt(tx, target, id));
   if (kind === "image") {
-    if (current.actorRole !== "MEMBER" && (current.allianceName !== attempt.allianceName || current.server !== attempt.server)) {
+    if (current.allianceName !== attempt.allianceName || current.server !== attempt.server) {
       throw new OcrEvaluationError("The alliance identity changed since this scan. Start a new review with the current alliance details. No results were added.");
     }
     if (createHash("sha256").update(bytes).digest("hex") !== attempt.sourceDigest) {
@@ -219,12 +219,10 @@ export async function readEvaluationContent(target: EvaluationTarget, id: string
     return bytes;
   }
   const recognition = JSON.parse(Buffer.from(bytes).toString()) as RankingRecognition;
-  if (current.actorRole !== "MEMBER") {
-    const evidence = checkScreenshotAlliance(recognition, { name: current.allianceName, server: current.server });
-    if (evidence !== "matched") throw new OcrEvaluationError(allianceRejectionMessage(`alliance-${evidence}`));
-    if (current.allianceName !== attempt.allianceName || current.server !== attempt.server) {
-      throw new OcrEvaluationError("The alliance identity changed since this scan. Start a new review with the current alliance details. No results were added.");
-    }
+  const evidence = checkScreenshotAlliance(recognition, { name: current.allianceName, server: current.server });
+  if (evidence !== "matched") throw new OcrEvaluationError(allianceRejectionMessage(`alliance-${evidence}`));
+  if (current.allianceName !== attempt.allianceName || current.server !== attempt.server) {
+    throw new OcrEvaluationError("The alliance identity changed since this scan. Start a new review with the current alliance details. No results were added.");
   }
   return { recognition, batchReview: target.scope === "batch" ? reviewRanking(recognition, current.members) : null, review: reviewDailyVs(recognition, attempt.playerName), attempt: auditView(attempt),
     capturedTarget: { playerName: attempt.playerName, allianceName: attempt.allianceName, server: attempt.server },

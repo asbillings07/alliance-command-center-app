@@ -56,6 +56,8 @@ describe("source alliance evidence", () => {
         { text: "19,317,601", x: 130, y: 440, width: 150, height: 20 },
       ] };
     expect(checkScreenshotAlliance(source, expected)).toBe("matched");
+    source.words[2].text = "Morgan Reed";
+    expect(checkScreenshotAlliance(source, expected)).toBe("missing");
     source.words[2].text = "[ELSE]Morgan Reed";
     expect(checkScreenshotAlliance(source, expected)).toBe("mixed");
   });

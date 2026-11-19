@@ -1,4 +1,5 @@
 import { reviewRanking, wordLines, type RankingRecognition } from "./ranking";
+import { reviewDailyVs } from "./recognition";
 
 export type AllianceEvidence = "matched" | "missing" | "mismatch" | "mixed" | "server-mismatch";
 type AllianceLabel = { tag: string; name: string; server: string | null };
@@ -18,6 +19,10 @@ export function checkScreenshotAlliance(recognition: RankingRecognition, expecte
   if (!today && (!points || !recognition.words.some(w => /^commander$/iu.test(w.text)))) return "missing";
   const rows = reviewRanking(recognition, []).rows;
   if (rows.some(row => !row.allianceLabel)) return "missing";
+  // The tagged-row parser must not silently hide a player whose tag was cropped
+  // out or missed by OCR. Check recognizable untagged name/score pairs too.
+  if (today && lines.some(line => !/^\[/u.test(line.text)
+    && reviewDailyVs(recognition, line.text.replace(/\s+You$/u, "")).score !== null)) return "missing";
   // Inspect every visible ranking alliance line, including rows whose score was
   // unreadable. A correct name elsewhere cannot launder another alliance's data.
   const values = today ? rows.map(row => row.allianceLabel!) : lines.filter(line => line.y > points!.y && /^(?:#\d+\s*)?\[/u.test(line.text)).map(line => line.text);
