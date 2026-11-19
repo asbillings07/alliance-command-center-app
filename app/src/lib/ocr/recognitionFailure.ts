@@ -16,6 +16,16 @@ const reasons = {
 
 export type RecognitionFailureReason = keyof typeof reasons;
 
+const densityLimits: RecognitionFailureReason[] = [
+  "result-too-large", "provider-response-too-large", "recognized-text-too-long",
+  "too-many-annotations", "recognized-word-too-long", "retained-result-too-large",
+];
+const denseOutcomes = new Set(densityLimits.map(reason => `processing-failed:${reason}`));
+
+export function isDenseRecognition(outcome?: string | null): boolean {
+  return !!outcome && denseOutcomes.has(outcome);
+}
+
 export class RecognitionFailure extends Error {
   constructor(readonly reason: RecognitionFailureReason) {
     super(reasons[reason]);

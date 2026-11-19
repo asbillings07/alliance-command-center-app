@@ -12,7 +12,7 @@ import { AllianceBatchDialog } from "./AllianceBatchDialog";
 import { QaAllianceSettings, type QaAllianceSettingsData } from "./QaAllianceSettings";
 import { rankingWindow, reconcileOverlap, resolveRankingChoices, showCurrentDayProgress, type RankingReview, type RosterMember } from "@/app/src/lib/ocr/ranking";
 import { uploadWithRetry } from "@/app/src/lib/ocr/uploadWithRetry";
-import { recognitionFailureMessage } from "@/app/src/lib/ocr/recognitionFailure";
+import { isDenseRecognition, recognitionFailureMessage } from "@/app/src/lib/ocr/recognitionFailure";
 import { allianceRejectionMessage, isAllianceRejection, allianceBatchNotice } from "@/app/src/lib/ocr/allianceEvidence";
 
 type Attempt = { firstAttemptAt?: string; firstRequestId?: string; sourceFilename: string | null; ownRequestId?: string | null; retryable?: boolean; id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
@@ -25,6 +25,13 @@ function validRankingFile(file: File) {
   return file.size > 0 && file.size <= 2 * 1024 * 1024 && ["image/png", "image/jpeg"].includes(file.type);
 }
 
+function ReplacementAction({ disabled, onSelect }: { disabled: boolean; onSelect: () => void }) {
+  return <div className="mt-2 space-y-2">
+    <p className="text-sm text-text-secondary">Capture fewer rows in each screenshot. Keep the selected weekday or Weekly Rank, the column headings, and each player’s name, alliance and points visible.</p>
+    <Button variant="secondary" disabled={disabled} onClick={onSelect}>Select replacement screenshots</Button>
+  </div>;
+}
+
 export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, destination }: Props) {
   const router = useRouter();
   const [items, setItems] = useState<Item[]>([]); const [week, setWeek] = useState(""); const [captureDate, setCaptureDate] = useState("");
@@ -35,6 +42,8 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
   const [sourcePicks, setPicks] = useState<string[]>([]);
   const [excludedSources, setExcludedSources] = useState<string[]>([]); const [reviewed, setReviewed] = useState(false);
   const cancel = useRef(false); const active = useRef(true);
+  const replacementPicker = useRef<HTMLInputElement>(null);
+  const replacementTarget = useRef<string | undefined>(undefined);
   const retryPicker = useRef<HTMLInputElement>(null);
   const retryTarget = useRef<{attempt: Attempt; card?: Item} | null>(null);
   useEffect(() => { active.current = true; return () => { active.current = false; cancel.current = true; }; }, []);
@@ -52,12 +61,28 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
   const chosen = grouped.filter(({ row }) => !excluded.includes(`${row.attemptId}:${row.key}`));
   const pending = chosen.filter(({ row, conflict, createMember }) => (row.status !== "exact" && !createMember) || conflict || !row.window);
   const missingDates = results.some(r => !rankingWindow(r.batchReview.context, week, captureDate));
-  const unresolvedImages = items.filter(item => item.state !== "ready" || !item.result?.batchReview.rows.length || item.result.contextChanged).length;
+  const unresolvedImages = items.filter(item => !isDenseRecognition(item.outcome) && (item.state !== "ready" || !item.result?.batchReview.rows.length || item.result.contextChanged)).length;
   const queued = items.filter(i => i.state === "queued");
   const existing = initial.attempts.filter(a => !items.some(item => item.requestId === a.ownRequestId || item.requestId === a.firstRequestId || item.attemptId === a.id || item.result?.attempt.id === a.id));
   const weekInvalid = !!week && !rankingWindow({ kind: "weekly", label: "Weekly Rank" }, week);
 
   function invalidate() { setNeedsReviewOnly(false); setPicks([]); setNotice(null); setReviewed(false); }
+  function queueScreenshots(files: File[], replaceId?: string) {
+    if (!files.length || busy) return;
+    const index = replaceId ? items.findIndex(item => item.requestId === replaceId) : -1;
+    const remove = index < 0 ? 0 : 1;
+    if (items.length - remove + files.length > 20 || files.some(file => !validRankingFile(file))) {
+      setMessage("Choose up to 20 PNG or JPEG images, each no larger than 2 MB."); return;
+    }
+    const next = [...items];
+    next.splice(index < 0 ? next.length : index, remove, ...files.map(file => ({ file, requestId: crypto.randomUUID(), state: "queued" as const })));
+    setItems(next);
+    invalidate(); setMessage("");
+  }
+  function selectReplacements(requestId?: string) {
+    replacementTarget.current = requestId;
+    replacementPicker.current?.click();
+  }
   async function read(id: string): Promise<Result> {
     const response = await fetch(`${endpoint}&id=${encodeURIComponent(id)}&kind=result`, { cache: "no-store" });
     const result = await response.json(); if (!response.ok) throw Object.assign(new Error(result.error || "This scan is unavailable."), { outcome: result.outcome });
@@ -102,6 +127,10 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
           update(item.requestId, { file: null, state: "blocked", outcome: attempt.outcome, error: allianceRejectionMessage(attempt.outcome) });
           continue;
         }
+        if (attempt.status === "FAILED" && isDenseRecognition(attempt.outcome)) {
+          update(item.requestId, { file: null, state: "failed", outcome: attempt.outcome, error: recognitionFailureMessage(attempt.outcome) });
+          continue;
+        }
         if (attempt.status === "FAILED") throw new Error(recognitionFailureMessage(attempt.outcome) ?? "This scan failed. You can retry this screenshot.");
         if (attempt.status !== "READY") throw new Error("This scan is still pending. Check upload history before trying again.");
         const result = await read(attempt.id);
@@ -126,6 +155,8 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       setNotice(allianceBatchNotice(nextItems));
       setMessage(retry ? (cancel.current ? "Check the message on the screenshot you retried." : "Screenshot retry complete. Review the result on its card.") : cancel.current ? "Stopped. Completed scans remain below; unstarted images are still queued."
         : nextItems.some(item => item.state === "blocked") ? "Batch checked. Each blocked screenshot has its own warning. Matching screenshots remain available for review. No scores were saved."
+        : nextItems.length > 0 && nextItems.every(item => isDenseRecognition(item.outcome)) ? "Each screenshot has too much text for one scan. Select replacement screenshots to continue."
+        : nextItems.some(item => isDenseRecognition(item.outcome)) ? "Batch checked. Dense screenshots were skipped. You can review the readable scores."
         : nextItems.some(item => item.state === "failed") ? "Remaining scans completed. Earlier failed images still need attention. No scores were saved."
         : "Batch recognition is ready. Review the names, scores and source periods together. No scores were saved.");
     }
@@ -160,18 +191,18 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       <details className="rounded-xl border border-border bg-surface p-4 text-sm">
         <summary className="w-fit cursor-pointer rounded font-semibold text-text-primary focus-visible:outline-2 focus-visible:outline-primary">Expected ranking screenshot format</summary>
         <p className="mt-3 text-text-secondary">Show the selected weekday or Weekly Rank, plus each player’s name, alliance and points. In the game, select Your Alliance to filter the rankings.</p>
-        <p className="mt-2 text-text-secondary">Mixed, unreadable or different alliances are blocked. A processing failure or pressing Stop pauses the rest of the batch. A temporary Google outage triggers one retry after two seconds. Each account can start up to 20 scans per day, including retries.</p>
+        <p className="mt-2 text-text-secondary">Mixed, unreadable or different alliances are blocked. Dense screenshots are skipped so the rest can continue. Other processing failures or pressing Stop pause the batch. A temporary Google outage triggers one retry after two seconds. Each account can start up to 20 scans per day, including retries.</p>
       </details>
       <ImportFileUpload id="ranking-screenshots" ariaLabel="Ranking screenshots" multiple accept="image/png,image/jpeg"
         dropSubject="your ranking screenshots" buttonLabel="Select screenshots"
         fileDescription="Up to 20 PNG or JPEG images, 2 MB each." loadingText="Reading screenshots…" disabled={busy}
-        onFilesSelected={files => {
-          if (files.length + items.length > 20 || files.some(f => !validRankingFile(f))) {
-            setMessage("Choose up to 20 PNG or JPEG images, each no larger than 2 MB."); return;
-          }
-          setItems(previous => [...previous, ...files.map(file => ({file, requestId:crypto.randomUUID(), state:"queued" as const}))]);
-          invalidate(); setMessage("");
-        }} />
+        onFilesSelected={files => queueScreenshots(files)} />
+      <input hidden multiple type="file" accept="image/png,image/jpeg" ref={replacementPicker} aria-label="Replacement ranking screenshots" onChange={event => {
+        const files = Array.from(event.target.files ?? []);
+        event.target.value = "";
+        queueScreenshots(files, replacementTarget.current);
+        replacementTarget.current = undefined;
+      }} />
       <input hidden type="file" accept="image/png,image/jpeg" ref={retryPicker} aria-label="Original screenshot for retry" onChange={event => {
         const file = event.target.files?.[0];
         const target = retryTarget.current;
@@ -189,7 +220,8 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         return <li key={item.requestId} aria-label={`Screenshot ${index + 1}`} className="min-w-0 px-3 py-2 text-sm">
         <strong>Screenshot {index + 1}</strong><p className="mt-1 text-text-secondary">{item.state === "ready" ? item.result!.batchReview.context.label : item.state === "retrying" ? "Retrying scan…" : item.state === "reading" ? "Reading…" : item.state === "blocked" ? "Blocked — alliance check" : item.state === "failed" ? "Needs attention" : "Queued"}</p>
         {item.error && <p className="mt-2 break-words text-warning-light">{item.error}</p>}
-        {item.state === "failed" && attempt?.retryable && <div className="mt-3 space-y-2">
+        {item.state === "failed" && isDenseRecognition(item.outcome) && <ReplacementAction disabled={busy} onSelect={() => selectReplacements(item.requestId)} />}
+        {item.state === "failed" && !isDenseRecognition(item.outcome) && attempt?.retryable && <div className="mt-3 space-y-2">
             <Button variant="secondary" disabled={busy} onClick={() => retryScan(attempt,item)}>Retry scan</Button>
           </div>}
         {!busy && (item.state === "failed" || item.state === "queued" || item.state === "blocked") && <div className="mt-3"><Button variant="secondary" onClick={() => {setItems(previous => previous.filter(p => p.requestId !== item.requestId)); invalidate();}}>Remove screenshot {index + 1} from review</Button></div>}
@@ -297,7 +329,9 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
                 {recognitionFailureMessage(attempt.outcome) && <p className="mt-2 text-sm text-warning-light">{recognitionFailureMessage(attempt.outcome)}</p>}
                 {isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}
               </div>
-              {attempt.retryable
+              {isDenseRecognition(attempt.outcome)
+                ? <ReplacementAction disabled={busy || items.length >= 20} onSelect={() => selectReplacements()} />
+                : attempt.retryable
                 ? <Button variant="secondary" disabled={busy || items.length >= 20} title="Select the original screenshot to retry this scan" onClick={() => retryScan(attempt)}>Retry scan</Button>
                 : <Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Failed" : "Pending"}</Button>}
             </li>)}

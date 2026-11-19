@@ -12,7 +12,7 @@ import { readOcrConsent, requireProcessingConsent } from "./consent";
 import { qualityAllowed } from "./consentPolicy";
 import { normalizeScreenshot } from "./image";
 import type { OcrTransport } from "./provider";
-import { RecognitionFailure, recognitionFailureMessage, temporaryServiceOutcome } from "./recognitionFailure";
+import { RecognitionFailure, isDenseRecognition, recognitionFailureMessage, temporaryServiceOutcome } from "./recognitionFailure";
 import { reviewDailyVs } from "./recognition";
 import { readRankingContext } from "./rankingContext";
 import { reviewRanking, type RankingRecognition, type RosterMember } from "./ranking";
@@ -114,7 +114,7 @@ export async function loadEvaluationContext(target: EvaluationTarget) {
         firstRequestId: a.actorUserId === target.actorId ? grouped.get(a.retryOf ?? "")?.requestId : undefined,
         ...auditView(a),
         ownRequestId: a.actorUserId === target.actorId ? a.requestId : null,
-        retryable: target.scope === "batch" && a.status === "FAILED" && !isAllianceRejection(a)
+        retryable: target.scope === "batch" && a.status === "FAILED" && !isAllianceRejection(a) && !isDenseRecognition(a.outcome)
           && a.actorUserId === target.actorId && a.expiresAt > new Date() && a.contextKey === current.contextKey
           && a.processingConsentId === current.consent.processing?.id && a.processingVersion === OCR_VERSION
           && !attempts.some(child => child.retryOf === a.id),
@@ -167,7 +167,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
   const parent = input.retryOf ? await transaction(async tx => {
     const { attempt } = await authorizedAttempt(tx, input, input.retryOf!);
     if (input.automaticRetry && (attempt.retryOf || attempt.outcome !== temporaryServiceOutcome)) throw new OcrEvaluationError("This scan is unavailable for automatic retry.");
-    if (attempt.actorUserId !== input.actorId || attempt.status !== "FAILED" || isAllianceRejection(attempt)
+    if (attempt.actorUserId !== input.actorId || attempt.status !== "FAILED" || isAllianceRejection(attempt) || isDenseRecognition(attempt.outcome)
       || attempt.contextKey !== input.contextKey || attempt.processingConsentId !== input.processingConsentId
       || attempt.processingVersion !== OCR_VERSION) throw new OcrEvaluationError("This scan is unavailable for retry in the current review.");
     return attempt;
@@ -269,6 +269,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
       // return the plain audit record and can never schedule a second dispatch.
       return { ...auditView({ ...attempt, status: "FAILED", outcome }), retryOnce: true };
     }
+    if (failed.count === 1 && input.scope === "batch" && isDenseRecognition(outcome)) return auditView({ ...attempt, status: "FAILED", outcome });
     if (input.automaticRetry && error instanceof RecognitionFailure) return auditView({ ...attempt, status: "FAILED", outcome });
     if (error instanceof OcrEvaluationError) throw error;
     const detail = recognitionFailureMessage(outcome);

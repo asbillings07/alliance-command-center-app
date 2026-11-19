@@ -526,6 +526,51 @@ test("stopping a batch after a mismatch leaves the unstarted screenshot unclassi
   expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(1);
 });
 
+test("a dense screenshot can be replaced while readable scores continue to review", async ({ page, login, ownerScenario }) => {
+  test.setTimeout(120000);
+  const { allianceId, email, password } = ownerScenario;
+  await prisma.alliance.update({ where: { id: allianceId }, data: { name: "QA", server: allianceId } });
+  await prisma.allianceMember.createMany({ data: ["Jordan Vale", "Morgan Reed", "Riley Chen"].map(playerName => ({ allianceId, playerName })) });
+  await login({ email, password, displayName: "Owner" });
+  await page.goto(`/alliances/${allianceId}/screenshots?scope=batch`);
+  async function fixture(name: string, width: number) {
+    const svg = rankingFixture().svg.replace("</svg>", `<text x="10" y="850">${crypto.randomUUID()}</text></svg>`);
+    return { name, mimeType: "image/png", buffer: await sharp(Buffer.from(svg)).resize(width, 900).png().toBuffer() };
+  }
+  await page.getByLabel("Ranking screenshots", { exact: true }).setInputFiles([
+    await fixture("dense.png", 604), await fixture("readable.png", 600),
+  ]);
+  await page.getByRole("button", { name: "Read 2 screenshots", exact: true }).click();
+  const first = page.getByRole("listitem", { name: "Screenshot 1", exact: true });
+  const replace = first.getByRole("button", { name: "Select replacement screenshots" });
+  await expect(replace).toBeEnabled();
+  await expect(first).toContainText("selected weekday or Weekly Rank");
+  await expect(first.getByRole("button", { name: "Retry scan" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "View screenshot 2" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Review & confirm import" })).toBeVisible();
+  await page.getByLabel("Week beginning (Monday)").fill("2026-11-16");
+  await expect(page.getByRole("button", { name: "Finish recognition review" })).toBeEnabled();
+  const chooser = page.waitForEvent("filechooser");
+  await replace.click();
+  await (await chooser).setFiles([await fixture("page-one.png", 600), await fixture("page-two.png", 600)]);
+  await expect(first).toContainText("Queued");
+  await expect(page.getByRole("button", { name: "View screenshot 3" })).toBeVisible();
+  const count = () => prisma.ocrEvaluationAttempt.count({ where: { allianceId } });
+  expect(await count()).toBe(2);
+  await page.getByRole("button", { name: "Read 2 screenshots", exact: true }).click();
+  await expect(page.getByRole("button", { name: "View screenshot 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View screenshot 2" })).toBeVisible();
+  expect(await count()).toBe(4);
+  await page.reload();
+  await page.getByRole("button", { name: /Show history/ }).click();
+  const denseHistory = page.getByRole("list", { name: "Ranking upload history" }).getByRole("listitem").filter({ hasText: "dense.png" });
+  const historicalChooser = page.waitForEvent("filechooser");
+  await denseHistory.getByRole("button", { name: "Select replacement screenshots" }).click();
+  await (await historicalChooser).setFiles(await fixture("new-capture.png", 600));
+  await expect(first).toContainText("Queued");
+  expect(await count()).toBe(4);
+});
+
 test("a temporary outage retries once on the same card and reload shows one upload", async ({ page, login, ownerScenario }) => {
   test.setTimeout(120000);
   const { allianceId, email, password } = ownerScenario;

@@ -580,7 +580,13 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
     vi.mocked(transport.recognize).mockRejectedValue(new RecognitionFailure(reason));
     const outcome = `processing-failed:${reason}`;
-    await expect(evaluateScreenshot(await input(batch), transport)).rejects.toMatchObject({ outcome, message: recognitionFailureMessage(outcome) });
+    const first = evaluateScreenshot(await input(batch), transport);
+    if (reason === "result-too-large") {
+      const attempt = await first;
+      expect(attempt).toMatchObject({ status: "FAILED", outcome });
+      expect((await loadEvaluationContext(batch)).attempts[0].retryable).toBe(false);
+      await expect(evaluateScreenshot({ ...await input(batch), retryOf: attempt.id }, transport)).rejects.toThrow("unavailable for retry");
+    } else await expect(first).rejects.toMatchObject({ outcome, message: recognitionFailureMessage(outcome) });
     const existing = await evaluateScreenshot(await input(batch), transport);
     expect(existing).toMatchObject({ status: "FAILED", outcome });
     expect((await loadEvaluationContext(batch)).attempts).toEqual(expect.arrayContaining([expect.objectContaining({ id: existing.id, outcome })]));

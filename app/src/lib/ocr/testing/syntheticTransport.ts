@@ -15,7 +15,9 @@ export function syntheticOcrTransport(): OcrTransport {
     async preflight() {},
     async put(name, bytes) { if (objects.has(name)) throw new Error("Duplicate object"); objects.set(name, Uint8Array.from(bytes)); },
     async read(name, limit) { const bytes = objects.get(name); if (!bytes || bytes.length > limit) throw new Error("Missing fixture"); return bytes; },
-    async recognize(image) { if ((image.width === 601 || image.width === 603) && image.height === 900) {
+    async recognize(image) {
+      if (image.width === 604 && image.height === 900) throw new RecognitionFailure("provider-response-too-large");
+      if ((image.width === 601 || image.width === 603) && image.height === 900) {
       const digest = createHash("sha256").update(image.bytes).digest("hex");
       const failures = state.ocrFixtureFailures ??= new Set();
       if (!failures.has(digest)) {
