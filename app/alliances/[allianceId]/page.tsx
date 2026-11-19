@@ -121,7 +121,7 @@ export default async function AlliancePage({ params }: Params) {
     toFeatureContext({ environment: resolveEnvironment(), authorization: auth }),
   );
 
-  const canStartCapture = permissions.canImportMetrics && (!activePeriod || !hasActiveMembers || !hasPeriodMetrics) &&
+  const canStartCapture = permissions.canImportMetrics && (!activePeriod || !hasActiveMembers || (!hasPeriodMetrics && !canProvision)) &&
     await ocrEvaluationAvailable({allianceId,actorId:auth.user.id,memberId:null,scope:"batch"});
   const captureAction = canStartCapture && <Button href={`/alliances/${allianceId}/screenshots?scope=batch`}>Capture Evaluation Results</Button>;
 

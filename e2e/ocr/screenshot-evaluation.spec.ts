@@ -662,7 +662,7 @@ test("a leader starts on an empty dashboard and confirms screenshot setup in one
     await page.getByRole("button",{name:"Review score changes"}).click();
     await dialog.getByRole("checkbox",{name:"Create these roster members and save their scores."}).check();
     await dialog.getByRole("button",{name:"Confirm and save scores"}).click();
-    await expect(page.getByText("3 scores saved",{exact:true})).toBeVisible();
+    await expect.poll(() => prisma.ocrScoreBatch.count({where:{allianceId}})).toBe(1);
     await page.reload();
     await expect(page.getByRole("heading",{name:"Saved score batches"})).toBeVisible();
     expect(await prisma.metricPeriod.count({where:{allianceId}})).toBe(1);

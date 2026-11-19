@@ -12,7 +12,7 @@ export function BatchConfirmation({ destination, daily, weekly, selection }: {
   destination: BatchDestination; daily: boolean; weekly: boolean; selection: Omit<BatchSelection, "dailyMetric" | "weeklyMetric">;
 }) {
   const [dailyMetric, setDaily] = useState("auto"), [weeklyMetric, setWeekly] = useState("auto");
-  const [periodId,setPeriod] = useState(selection.periodId);
+  const [periodId,setPeriod] = useState(destination.periods ? "auto" : selection.periodId);
   const [dailyName,setDailyName] = useState("Daily VS points"), [weeklyName,setWeeklyName] = useState("Weekly VS points");
   const [review, setReview] = useState<Review | null>(null);
   const [busy, setBusy] = useState(false), [lower, setLower] = useState(false), [error, setError] = useState("");
@@ -30,7 +30,7 @@ export function BatchConfirmation({ destination, daily, weekly, selection }: {
     finally { setBusy(false); }
   };
   return <section className="mt-4 space-y-3 border-t border-border pt-4">
-    <h3 className="font-semibold">Save scores to {destination.name}</h3>
+    <h3 className="font-semibold">Save reviewed scores</h3>
     {review?.saved ? <div role="status"><strong>{review.comparisons.length} scores saved</strong> {review.periodId && <Link className="text-primary underline" href={`/alliances/${selection.allianceId}/periods/${review.periodId}/import?method=screenshots`}>View saved batch</Link>} · {review.excluded} excluded
       <ul>{review.comparisons.map(r => <li key={r.memberId + r.window}><Link className="text-primary underline" href={`/alliances/${selection.allianceId}/members/${r.memberId}/history?metricId=${r.metricId}`}>{r.member}</Link> · {r.value.toLocaleString()} · {r.window.replace("week:", "Week of ")}</li>)}</ul></div> : <>
       <label className="block">Evaluation period

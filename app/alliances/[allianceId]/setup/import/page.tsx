@@ -22,7 +22,20 @@ export default async function SetupImportPage({ params, searchParams }: Params) 
     requiredPermission: Permissions.IMPORT_METRICS,
   });
 
-  if ((await searchParams)?.method !== "spreadsheet" && await ocrEvaluationAvailable({allianceId,actorId:auth.user.id,memberId:null,scope:"batch"})) {
+  const method = (await searchParams)?.method;
+  if (method === "manual") {
+    const periods = await prisma.metricPeriod.findMany({
+      where: { allianceId, active: true },
+      select: { id: true, name: true },
+      orderBy: [{ startsAt: "desc" }, { name: "asc" }],
+    });
+    return <PageLayout title="Manual entry" maxWidth="md">
+      {periods.length ? <section><h2 className="mb-3 font-semibold">Choose an evaluation period</h2><ul className="space-y-2">{periods.map(period => <li key={period.id}><Button href={`/alliances/${allianceId}/periods/${period.id}/record`}>{period.name}</Button></li>)}</ul></section>
+        : <EmptyState title="Manual entry needs an evaluation period" description={auth.permissions.canConfigurePeriods ? "Create a period to start recording results." : "Ask your alliance leadership to set up an evaluation period."} action={auth.permissions.canConfigurePeriods ? <Button href={`/alliances/${allianceId}/periods`}>Manage evaluation periods</Button> : undefined} />}
+      <div className="mt-4"><Button variant="secondary" href={`/alliances/${allianceId}/setup/import`}>Back to capture</Button></div>
+    </PageLayout>;
+  }
+  if (method !== "spreadsheet" && await ocrEvaluationAvailable({allianceId,actorId:auth.user.id,memberId:null,scope:"batch"})) {
     redirect(`/alliances/${allianceId}/screenshots?scope=batch`);
   }
 
@@ -81,7 +94,7 @@ export default async function SetupImportPage({ params, searchParams }: Params) 
     })),
   }));
 
-  const setupImportReturnTo = `/alliances/${allianceId}/setup/import`;
+  const setupImportReturnTo = `/alliances/${allianceId}/setup/import${method === "spreadsheet" ? "?method=spreadsheet" : ""}`;
 
   if (members.length === 0) {
     return (
