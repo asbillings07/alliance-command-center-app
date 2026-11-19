@@ -1,5 +1,5 @@
 import "server-only";
-import { productionPilotConfigured } from "./productionPilot";
+import { productionPilotConfigured, productionPilotPairs } from "./productionPilot";
 import { OCR_EVALUATION_BRANCHES } from "./evaluationBranches";
 
 export const OCR_CAMPAIGN = "acc-managed-ocr-v1";
@@ -20,7 +20,7 @@ export function localOcrFixtureEnabled() {
 }
 
 export function ocrPreferencesAvailable(userId?: string) {
-  if (process.env.VERCEL_ENV === "production") return productionPilotConfigured() && (!userId || userId === process.env.OCR_PILOT_USER_ID);
+  if (process.env.VERCEL_ENV === "production") return productionPilotConfigured() && (userId === undefined || productionPilotPairs().some(pair => pair.userId === userId));
   if (localOcrFixtureEnabled()) return true;
   return process.env.VERCEL_ENV === "preview"
     && process.env.VERCEL_TARGET_ENV === "acc-ocr-eval"
@@ -39,7 +39,7 @@ export function requireOcrEvaluation(allianceId: string) {
     throw new OcrEvaluationError("Screenshot evaluation is awaiting its privacy configuration.");
   }
   if (process.env.VERCEL_ENV === "production") {
-    if (allianceId !== process.env.OCR_PILOT_ALLIANCE_ID) throw new OcrEvaluationError("Screenshot evaluation is unavailable for this alliance.");
+    if (!productionPilotPairs().some(pair => pair.allianceId === allianceId)) throw new OcrEvaluationError("Screenshot evaluation is unavailable for this alliance.");
     return;
   }
   if (!localOcrFixtureEnabled() && !(process.env.OCR_EVAL_ALLIANCE_IDS ?? "").split(",").includes(allianceId)) {
