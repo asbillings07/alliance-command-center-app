@@ -192,6 +192,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     const content = Buffer.from(JSON.stringify({ ...recognition, rankingContext }));
     if (content.length > OCR_MAX_RESULT_BYTES) throw new Error("Recognition too large");
     failureStage = "result-storage";
+    await unchanged(input, attempt.contextKey, input.processingConsentId);
     await transport.put(`${attempt.id}/recognition.json`, content, "application/json");
     failureStage = "finalization";
     const complete = await transaction(async tx => {

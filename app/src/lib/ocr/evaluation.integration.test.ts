@@ -4,6 +4,7 @@ import { prisma as db } from "../prisma";
 import { loadIdentityReview, decideMemberIdentity } from "../memberIdentity";
 import { loadMemberAccessReview, decideMemberSelfAccess } from "../memberSelfAccess";
 import { evaluateScreenshot, loadEvaluationContext, ocrEvaluationAvailable, readEvaluationContent, type EvaluationTarget } from "./evaluation";
+import * as rankingContext from "./rankingContext";
 import * as flags from "../featureFlags/evaluateFeature";
 import { decideOcrConsent, loadOcrConsent } from "./consent";
 import { OCR_PROCESSING_NOTICE, OCR_QUALITY_NOTICE, qualitySourceEligible } from "./consentPolicy";
@@ -102,6 +103,18 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     await expect(evaluateScreenshot(await input(), transport)).rejects.toThrow("Screenshots are disabled");
     expect(transport.put).toHaveBeenCalledTimes(1);
     expect(await db.memberMetricEntry.count({ where: { allianceMemberId: memberId } })).toBe(0);
+  });
+  it("rechecks permission after local ranking analysis before writing recognition output", async () => {
+    const analyze = rankingContext.readRankingContext;
+    vi.spyOn(rankingContext, "readRankingContext").mockImplementation(async (bytes, recognition) => {
+      const result = await analyze(bytes, recognition);
+      await changeProcessing(false);
+      return result;
+    });
+    await expect(evaluateScreenshot(await input(), transport)).rejects.toThrow("Screenshots are disabled");
+    expect(transport.put).toHaveBeenCalledTimes(1);
+    expect([...objects.keys()].some(key => key.endsWith("recognition.json"))).toBe(false);
+    expect(await db.ocrEvaluationAttempt.findFirstOrThrow()).toMatchObject({ status: "FAILED", outcome: "processing-failed:result-storage" });
   });
   it("revocation and re-enabling cannot resume an earlier in-flight review", async () => {
     const proposed = await input();
