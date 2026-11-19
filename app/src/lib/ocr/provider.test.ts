@@ -51,6 +51,9 @@ describe("storage retention preflight", () => {
     { lifecycle: { rule: [{ action: { type: "Delete" }, condition: { age: 31 } }] } },
   ])("rejects a storage policy that cannot meet the privacy agreement", change => expect(() => validateBucketPolicy({ ...bucket(), ...change })).toThrow());
 });
+const retryInfo = (retryDelay: string) => ({ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay });
+const perImageDelay = (delay: string) => Response.json({ responses: [{ error: { code: 14, details: [retryInfo(delay)] } }] });
+
 describe("bounded provider execution", () => {
   it("stops reading an oversized streamed body", async () => {
     await expect(boundedBody(new Response("a".repeat(40)), 20)).rejects.toThrow("too large");
@@ -65,6 +68,11 @@ describe("bounded provider execution", () => {
   it.each([
     ["error inside a successful HTTP response", () => Response.json({ responses: [{ error: { message: "private-sentinel" } }] }), "provider-error"],
     ["per-image UNAVAILABLE", () => Response.json({ responses: [{ error: { code: 14 } }] }), "provider-temporary"],
+    ["HTTP backoff with per-image UNAVAILABLE", () => Response.json({ responses: [{ error: { code: 14 } }] }, { headers: { "Retry-After": "60" } }), "provider-error"],
+    ["short per-image backoff", () => perImageDelay("1.500s"), "provider-temporary"],
+    ["long per-image backoff", () => perImageDelay("2.001s"), "provider-error"],
+    ["malformed per-image backoff", () => perImageDelay("later"), "provider-error"],
+    ["structured HTTP 503 backoff", () => Response.json({ error: { details: [retryInfo("12s")] } }, { status: 503 }), "provider-error"],
     ["long backoff requested", () => new Response(null, { status: 503, headers: { "Retry-After": "60" } }), "provider-error"],
     ["quota refusal", () => new Response(null, { status: 429 }), "provider-error"],
     ["network interruption", () => { throw new Error("private-sentinel"); }, "provider-unavailable"],

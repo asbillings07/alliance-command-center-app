@@ -3,7 +3,7 @@ import { IdentityPoolClient } from "google-auth-library";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { googleOcrConfig, OCR_MAX_IMAGE_BYTES, OCR_MAX_RESULT_BYTES, OcrEvaluationError } from "./config";
 import { RecognitionFailure } from "./recognitionFailure";
-import { parseVisionResponse, type Recognition } from "./recognition";
+import { allowsTwoSecondRetry, parseVisionResponse, type Recognition } from "./recognition";
 
 class ResponseTooLarge extends Error {}
 
@@ -96,16 +96,23 @@ export function googleOcrTransport(): OcrTransport {
       } catch {
         throw new RecognitionFailure("provider-unavailable");
       }
+      const retryAfter = response.headers.get("Retry-After");
+      const shortDelayAllowed = retryAfter === null || /^[012]$/.test(retryAfter);
       if (!response.ok) {
-        await response.body?.cancel().catch(() => {});
-        const retryAfter = response.headers.get("Retry-After");
-        // Defer to manual recovery if Google asks for a longer/unknown delay.
-        const shortDelayAllowed = retryAfter === null || /^[012]$/.test(retryAfter);
-        throw new RecognitionFailure(response.status === 503 && shortDelayAllowed ? "provider-temporary" : "provider-error");
+        let temporary = response.status === 503 && shortDelayAllowed;
+        if (temporary && response.headers.get("Content-Type")?.includes("application/json")) {
+          try {
+            const body = JSON.parse((await boundedBody(response, 32 * 1024)).toString());
+            temporary = !!body?.error && allowsTwoSecondRetry(body.error.details);
+          } catch { temporary = false; }
+        } else {
+          await response.body?.cancel().catch(() => {});
+        }
+        throw new RecognitionFailure(temporary ? "provider-temporary" : "provider-error");
       }
       try {
         const data = await boundedBody(response, 512 * 1024);
-        const recognition = parseVisionResponse(JSON.parse(data.toString()), image.width, image.height);
+        const recognition = parseVisionResponse(JSON.parse(data.toString()), image.width, image.height, shortDelayAllowed);
         if (Buffer.byteLength(JSON.stringify(recognition)) > OCR_MAX_RESULT_BYTES) throw new RecognitionFailure("result-too-large");
         return recognition;
       } catch (error) {

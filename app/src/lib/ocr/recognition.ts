@@ -58,7 +58,15 @@ export function reviewDailyVs(recognition: Recognition, expectedName: string): V
   return result;
 }
 
-export function parseVisionResponse(value: unknown, width: number, height: number): Recognition {
+// Vision encodes google.rpc.RetryInfo.retryDelay as a protobuf duration.
+export function allowsTwoSecondRetry(details: unknown) {
+  if (details === undefined) return true;
+  return Array.isArray(details) && details.every(detail =>
+    detail?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo" &&
+    typeof detail.retryDelay === "string" && /^(?:[01](?:\.\d{1,9})?|2(?:\.0{1,9})?)s$/u.test(detail.retryDelay));
+}
+
+export function parseVisionResponse(value: unknown, width: number, height: number, shortDelayAllowed = true): Recognition {
   const root = value as { responses?: { error?: unknown; textAnnotations?: {
     description?: unknown; boundingPoly?: { vertices?: { x?: number; y?: number }[] }
   }[] }[] };
@@ -66,7 +74,8 @@ export function parseVisionResponse(value: unknown, width: number, height: numbe
   const annotation = root.responses[0];
   if (!annotation || typeof annotation !== "object" || Array.isArray(annotation)) throw new Error("Invalid recognition response");
   if (annotation.error) {
-    const unavailable = typeof annotation.error === "object" && "code" in annotation.error && annotation.error.code === 14;
+    const unavailable = shortDelayAllowed && typeof annotation.error === "object" && "code" in annotation.error && annotation.error.code === 14
+      && allowsTwoSecondRetry("details" in annotation.error ? annotation.error.details : undefined);
     throw new RecognitionFailure(unavailable ? "provider-temporary" : "provider-error");
   }
   const annotations = annotation.textAnnotations ?? [];
