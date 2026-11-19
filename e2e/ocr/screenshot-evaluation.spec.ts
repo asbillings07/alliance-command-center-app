@@ -73,8 +73,22 @@ async function screenshot() {
   return { name: "synthetic-vs.png", mimeType: "image/png", buffer: await sharp(Buffer.from(svg)).png().toBuffer() };
 }
 
+// The personal screenshot experience requires an approved, linked member record.
+async function grantOwnRecord(allianceId: string, memberId: string, userId: string) {
+  const member = await prisma.allianceMember.update({ where: { id: memberId }, data: { userId }, include: { alliance: true } });
+  const identity = await prisma.memberIdentityDecision.create({ data: {
+    allianceId, memberId, confirmed: true, accountUserId: userId, playerName: member.playerName,
+    allianceName: member.alliance.name, server: member.alliance.server, memberVersion: member.identityVersion,
+    allianceVersion: member.alliance.identityVersion, actorUserId: userId, actorName: "QA reviewer", actorRole: "LEADER",
+  } });
+  const grant = { allianceId, memberId, accountUserId: userId, accountName: "QA account", playerName: member.playerName,
+    identityDecisionId: identity.id, actorUserId: userId, actorName: "QA reviewer", actorRole: "LEADER" as const };
+  await prisma.memberSelfAccessDecision.create({ data: { ...grant, granted: true } });
+  return grant;
+}
+
 for (const width of [320, 820, 1280]) {
-  test(`Leader screenshot review, private history and mismatch at ${width}px`, async ({ page, login, ownerScenario }, testInfo) => {
+  test(`Member page opens alliance capture, personal record keeps private history at ${width}px`, async ({ page, login, ownerScenario }, testInfo) => {
     test.setTimeout(120000);
     const { allianceId, userId, email, password } = ownerScenario;
     await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "LEADER" } });
@@ -83,7 +97,14 @@ for (const width of [320, 820, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await login({ email, password, displayName: "Leader" });
     await page.goto(`/alliances/${allianceId}/members/${member.id}`);
-    await page.getByRole("link", { name: "Try daily VS screenshot review" }).click();
+    const capture = `/alliances/${allianceId}/screenshots?scope=batch`;
+    await page.getByRole("link", { name: "Upload ranking screenshots" }).click();
+    await expect(page).toHaveURL(url => url.pathname + url.search === capture);
+    await expect(page.getByLabel("Ranking screenshots", { exact: true })).toBeVisible();
+    await page.goto(`/alliances/${allianceId}/screenshots?memberId=${member.id}`);
+    await expect(page).toHaveURL(url => url.pathname + url.search === capture);
+    await grantOwnRecord(allianceId, member.id, userId);
+    await page.goto(`/alliances/${allianceId}/screenshots`);
     await expect(page.getByText("Synthetic test fixture", { exact: true })).toBeVisible();
     const upload = page.getByLabel("Screenshot", { exact: true });
     const scan = page.getByRole("button", { name: "Read screenshot", exact: true });
@@ -106,7 +127,7 @@ for (const width of [320, 820, 1280]) {
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: testInfo.outputPath(`ocr-review-${width}.png`), fullPage: true });
     const saved = await prisma.ocrEvaluationAttempt.findFirstOrThrow({ where: { allianceId } });
-    expect(saved.actorRole).toBe("LEADER");
+    expect(saved.actorRole).toBe("MEMBER");
     expect(await prisma.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })).toBe(0);
     const imageUrl = await image.getAttribute("src");
     const response = await page.request.get(imageUrl!);
@@ -117,8 +138,9 @@ for (const width of [320, 820, 1280]) {
     await expect(page.getByText("23,340,000", { exact: true })).toBeVisible();
     expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(1);
 
-    // A fresh wrong-name capture remains review-only, with an explicit warning.
+    // Changing the verified identity requires a fresh grant before personal review.
     await prisma.allianceMember.update({ where: { id: member.id }, data: { playerName: "Different Player" } });
+    const updatedGrant = await grantOwnRecord(allianceId, member.id, userId);
     await page.reload();
     await page.getByRole("button", { name: "Review scan", exact: true }).click();
     await expect(page.getByText("Name candidate in original review", { exact: true })).toBeVisible();
@@ -128,12 +150,12 @@ for (const width of [320, 820, 1280]) {
     await upload.setInputFiles(await screenshot());
     await scan.click();
     await expect(page.getByText("Matching name not found — blocked", { exact: true })).toBeVisible();
-    await expect(page.getByText(/future leadership submission would require an explicit resolution/)).toBeVisible();
+    await expect(page.getByText(/Use a screenshot that clearly shows your current in-game name/)).toBeVisible();
     await checkA11y(page);
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: testInfo.outputPath(`ocr-mismatch-${width}.png`), fullPage: true });
 
-    await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "VIEWER" } });
+    await prisma.memberSelfAccessDecision.create({ data: { ...updatedGrant, granted: false } });
     expect((await page.request.get(imageUrl!)).status()).toBe(400);
     await page.reload();
     await expect(page.getByRole("heading", { name: "Screenshot evaluation is unavailable" })).toBeVisible();
@@ -190,7 +212,8 @@ test("rejects a disguised markup file without dispatching OCR", async ({ page, l
   const { allianceId, email, password } = ownerScenario;
   const member = await prisma.allianceMember.create({ data: { allianceId, playerName: "Jordan Vale" } });
   await login({ email, password, displayName: "Owner" });
-  await page.goto(`/alliances/${allianceId}/screenshots?memberId=${member.id}`);
+  await grantOwnRecord(allianceId, member.id, ownerScenario.userId);
+  await page.goto(`/alliances/${allianceId}/screenshots`);
   const dialogs: string[] = [];
   page.on("dialog", async dialog => { dialogs.push(dialog.message()); await dialog.dismiss(); });
   await page.getByLabel("Screenshot", { exact: true }).setInputFiles(await screenshot());

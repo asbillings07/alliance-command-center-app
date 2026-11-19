@@ -456,8 +456,8 @@ export default async function MemberPage({ params, searchParams }: Params) {
                 )}
 
                 <div className="flex flex-wrap justify-end gap-3">
-                    {permissions.canImportMetrics && await ocrEvaluationAvailable({ allianceId, actorId: user.id, memberId }) && (
-                        <Button variant="secondary" href={`/alliances/${allianceId}/screenshots?memberId=${memberId}`}>Try daily VS screenshot review</Button>
+                    {permissions.canImportMetrics && await ocrEvaluationAvailable({ allianceId, actorId: user.id, memberId: null, scope: "batch" }) && (
+                        <Button variant="secondary" href={`/alliances/${allianceId}/screenshots?scope=batch`}>Upload ranking screenshots</Button>
                     )}
                     {permissions.canManageMemberAccess && (
                         <Button variant="secondary" href={`/alliances/${allianceId}/members/${memberId}/access`}>Manage member access</Button>
