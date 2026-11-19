@@ -132,7 +132,7 @@ export default async function ImportPage({ params, searchParams }: Params) {
   </nav> : null;
   if (screenshots) {
     const review = await loadEvaluationContext({ allianceId, actorId: auth.user.id, memberId: null, scope: "batch" }).catch(() => null);
-    const qaSettings = review && auth.permissions.canManageAlliance ? await loadQaAllianceSettings(allianceId, auth.user.id).catch(() => null) : null;
+    const qaSettings = review && auth.permissions.canImportMetrics ? await loadQaAllianceSettings(allianceId, auth.user.id).catch(() => null) : null;
     return <main className="sentry-block" data-sentry-block><PageLayout breadcrumb={breadcrumb} title="Capture Evaluation Results" description={`Review ranking screenshots for ${period.name}.`} maxWidth="6xl">
       {methodLinks}
       {review ? <LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} />

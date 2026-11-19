@@ -8,10 +8,11 @@ import { checkA11y } from "../shared/accessibility";
 // Google recognition accuracy, and never enabled in a hosted environment.
 test.skip(process.env.OCR_EVAL_TEST_FIXTURE !== "1", "Requires the isolated OCR fixture job");
 
-for (const width of [320, 820, 1280]) {
-  test(`Owner edits only the QA alliance name with confirmation and history at ${width}px`, async ({ page, login, ownerScenario }, testInfo) => {
+for (const [width, role] of [[320, "LEADER"], [820, "ADMIN"], [1280, "OWNER"]] as const) {
+  test(`${role} edits only the QA alliance name with confirmation and history at ${width}px`, async ({ page, login, ownerScenario }, testInfo) => {
     test.setTimeout(120000);
     const { allianceId, userId, email, password } = ownerScenario;
+    await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role } });
     await prisma.alliance.update({ where: { id: allianceId }, data: { name: "QA", server: allianceId } });
     await page.setViewportSize({ width, height: 900 });
     await login({ email, password, displayName: "Owner" });
@@ -48,7 +49,7 @@ for (const width of [320, 820, 1280]) {
     expect(await prisma.ocrQaAllianceNameChange.count({ where: { allianceId } })).toBe(2);
     expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(1);
     expect(await prisma.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })).toBe(0);
-    await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "LEADER" } });
+    await prisma.allianceMembership.update({ where: { allianceId_userId: { allianceId, userId } }, data: { role: "VIEWER" } });
     await page.reload();
     await expect(page.getByText("Edit QA alliance name", { exact: true })).toHaveCount(0);
   });

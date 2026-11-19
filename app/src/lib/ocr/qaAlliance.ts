@@ -34,8 +34,9 @@ async function authorize(tx: Prisma.TransactionClient, allianceId: string, actor
     SELECT u."id", u."displayName", m."role" FROM "AllianceMembership" m
     JOIN "User" u ON u."id" = m."userId"
     WHERE m."allianceId" = ${allianceId} AND m."userId" = ${actorId} FOR SHARE OF m, u`;
-  if (!actor || !buildPermissionSet(actor.role).canManageAlliance) {
-    throw new OcrEvaluationError("Only this test alliance's owner can change its QA name.");
+  // This is isolated trial setup, not the production alliance-management grant.
+  if (!actor || !buildPermissionSet(actor.role).canImportMetrics) {
+    throw new OcrEvaluationError("Only this test alliance's authorized importers can change its QA name.");
   }
   return actor;
 }
