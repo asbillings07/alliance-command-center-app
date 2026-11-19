@@ -74,7 +74,8 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
           update(item.requestId, { file: null, state: "blocked", outcome: attempt.outcome, error: allianceRejectionMessage(attempt.outcome) });
           continue;
         }
-        if (attempt.status !== "READY") throw new Error("This attempt failed or is still pending. It was not sent again. Check upload history before starting another scan.");
+        if (attempt.status === "FAILED") throw new Error("Scan failed. To try again, select the file, check “Retry failed scans for the selected files,” then choose Read screenshots.");
+        if (attempt.status !== "READY") throw new Error("This scan is still pending. Check upload history before trying again.");
         const result = await read(attempt.id);
         if (nextItems.some(p => p.requestId !== item.requestId && p.result?.attempt.id === result.attempt.id)) {
           nextItems = nextItems.filter(p => p.requestId !== item.requestId);
@@ -129,7 +130,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       <details className="mt-2 text-sm text-text-secondary">
         <summary className="w-fit cursor-pointer rounded py-2 font-medium text-primary-light focus-visible:outline-2 focus-visible:outline-primary">Learn more about screenshot requirements</summary>
         <p className="mt-1">In the game, select Your Alliance to filter the rankings. Each row must show this alliance’s tag or name. Mixed, unreadable or different alliances are blocked.</p>
-        <p className="mt-2">An alliance mismatch skips that image. A processing failure or pressing Stop pauses the rest of the batch. Each account can start up to 20 scans per day.</p>
+        <p className="mt-2">An alliance mismatch skips that image. A processing failure or pressing Stop pauses the rest of the batch. Each account can start up to 20 scans per day. Retrying starts a new scan and keeps the earlier failure in history.</p>
       </details>
       <label htmlFor="ranking-screenshots" className="mt-4 block font-medium">Ranking screenshots</label>
       <p id="ranking-file-limits" className="text-sm text-text-muted">Up to 20 PNG or JPEG images, 2 MB each.</p>
@@ -143,8 +144,8 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         {!busy && (item.state === "failed" || item.state === "queued" || item.state === "blocked") && <div className="mt-3"><Button variant="secondary" onClick={() => {setItems(previous => previous.filter(p => p.requestId !== item.requestId)); invalidate();}}>Remove screenshot {index + 1} from review</Button></div>}
         {item.result && <div className="mt-3"><Button variant="secondary" onClick={() => setSource({ result: item.result!, title: `Screenshot ${index + 1}` })}>View screenshot {index + 1}</Button></div>}
       </li>)}</ol>}
-      {(initial.attempts.some(a => a.status === "FAILED" && !isAllianceRejection(a)) || items.some(i => i.state === "failed")) && <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={retryFailed} disabled={busy || !queued.length} onChange={e => setRetryFailed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
-        <span>Start a new attempt for failed images I selected again. Earlier failures stay in history. Completed scans are reused.</span></label>}
+      {queued.length > 0 && (initial.attempts.some(a => a.status === "FAILED" && !isAllianceRejection(a)) || items.some(i => i.state === "failed")) && <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={retryFailed} disabled={busy || !queued.length} onChange={e => setRetryFailed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
+        <span>Retry failed scans for the selected files</span></label>}
       <div className="mt-4 flex flex-wrap gap-3"><Button disabled={busy || !queued.length} onClick={scan}>{busy ? "Reading screenshots…" : `Read ${queued.length || "selected"} screenshots`}</Button>
         {busy ? <Button variant="secondary" onClick={() => { cancel.current = true; setMessage("Stopping after the current image. A scan already sent cannot be recalled."); }}>Stop after this image</Button>
           : <Button variant="secondary" disabled={!items.length} onClick={() => { setItems([]); setSource(null); setExcludedSources([]); invalidate(); setMessage("Review cleared. Retained scans remain in upload history."); }}>Clear review</Button>}</div>

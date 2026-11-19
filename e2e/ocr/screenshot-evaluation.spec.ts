@@ -406,7 +406,7 @@ for (const [width, role] of [[320, "OWNER"], [820, "ADMIN"], [1280, "LEADER"]] a
     for (const index of [1, 2]) await expect(page.getByRole("listitem", { name: `Screenshot ${index}`, exact: true })).toContainText("This screenshot does not match the alliance");
     await expect(page.getByText("Queued", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /View screenshot/ })).toHaveCount(0);
-    await expect(page.getByRole("checkbox", { name: /Start a new attempt for failed images/ })).toHaveCount(0);
+    await expect(page.getByRole("checkbox", { name: /Retry failed scans for the selected files/ })).toHaveCount(0);
     const attempt = await prisma.ocrEvaluationAttempt.findFirstOrThrow({ where: { allianceId } });
     expect(attempt).toMatchObject({ status: "FAILED", outcome: "alliance-mismatch" });
     expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(2);
@@ -512,8 +512,9 @@ test("failed batch scans require deliberate new-charge consent and preserve earl
   const failed = await prisma.ocrEvaluationAttempt.findFirstOrThrow({where:{allianceId}});
   expect(failed.status).toBe("FAILED");
   await page.reload();
+  await expect(page.getByRole("checkbox",{name:/Retry failed scans for the selected files/})).toHaveCount(0);
   await upload.setInputFiles(file);
-  const retry = page.getByRole("checkbox",{name:/Start a new attempt for failed images/});
+  const retry = page.getByRole("checkbox",{name:/Retry failed scans for the selected files/});
   await expect(retry).not.toBeChecked();
   await scan.click(); await expect(page.getByText(/Stopped. Completed scans remain/)).toBeVisible();
   expect(await prisma.ocrEvaluationAttempt.count({where:{allianceId}})).toBe(1);
