@@ -103,6 +103,13 @@ export async function loadEvaluationContext(target: EvaluationTarget) {
   });
 }
 
+// Reauthorize in the transaction which appends the confirmed scores.
+export function batchWriteContext(tx: Tx, target: EvaluationTarget) {
+  requireOcrEvaluation(target.allianceId);
+  if (target.scope !== "batch" || target.memberId) throw new OcrEvaluationError("Choose a ranking batch.");
+  return context(tx, target);
+}
+
 function auditView(attempt: OcrEvaluationAttempt) {
   return { id: attempt.id, createdAt: attempt.createdAt.toISOString(), expiresAt: attempt.expiresAt.toISOString(),
     actorName: attempt.actorName, actorRole: attempt.actorRole, playerName: attempt.playerName,

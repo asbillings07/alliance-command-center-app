@@ -3,11 +3,11 @@ import { LocalTimestamp } from "@/app/alliances/[allianceId]/screenshots/LocalTi
 import { getOcrReadiness } from "@/app/src/lib/platform/ocrReadiness";
 
 const criteria = [
-  ["Usable imports", "Count user-confirmed imports, including corrections, among settled journeys. Keep failed, abandoned and open work distinct. Final confirmations are not yet recorded."],
+  ["Usable imports", "Count user-confirmed imports, including corrections, among settled journeys. Keep failed, abandoned and open work distinct. Protected QA confirmations are counted separately below."],
   ["Silent critical errors", "Check player identity, alliance, reporting period and score against a consented human-reviewed sample. Audited counts and unresolved findings are unavailable."],
   ["Time saved", "Compare median and 90th-percentile start-to-confirm times for comparable OCR and manual tasks. Real cohort timings are unavailable. The separate QA baseline below groups manual tasks by the number of rows saved."],
   ["Coverage and repeat use", "Track supported screenshot types, distinct alliances and later-week returns. Daily sign-ins, useful task returns and preference over spreadsheets still need separate evidence."],
-  ["Review and manual fallback", "Verify a person can correct and confirm a saved result or finish by hand. The protected screenshot flow currently ends at recognition review."],
+  ["Review and manual fallback", "Verify a person can correct and confirm a saved result or finish by hand. Eligible leaders can confirm reviewed ranking scores in isolated QA. Real cohort verification is pending."],
   ["Economics and demand", "Calculate cost per confirmed import including retries, failures and support. Invoice costs, confirmed imports and commitments at a specific price are unavailable."],
 ] as const;
 
@@ -56,6 +56,7 @@ export default async function OcrReadinessPage() {
       <h3 id="diagnostics" className="text-lg font-semibold">QA scan activity</h3>
       <p className="mt-1 text-sm text-text-secondary">All {data.attempts} reserved scan attempts in the isolated evaluation. A batch can contain several scans. Registration of a retry preserves the original attempt.</p>
       {data.firstAt && data.lastAt && <p className="mt-2 text-sm text-text-secondary">First scan <LocalTimestamp value={data.firstAt.toISOString()} /> · Latest scan <LocalTimestamp value={data.lastAt.toISOString()} /></p>}
+      <p className="mt-2 text-sm">Confirmed QA score batches: {data.confirmedBatches}</p>
       <dl className="my-4 grid grid-cols-2 gap-4 md:grid-cols-5">
         {counts.map(([label, value]) => <div key={label}><dt className="text-sm text-text-secondary">{label}</dt><dd className="text-xl font-semibold tabular-nums">{value}</dd></div>)}
       </dl>

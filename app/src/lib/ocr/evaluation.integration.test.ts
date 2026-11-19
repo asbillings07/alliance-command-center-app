@@ -4,6 +4,8 @@ import { prisma as db } from "../prisma";
 import { loadIdentityReview, decideMemberIdentity } from "../memberIdentity";
 import { loadMemberAccessReview, decideMemberSelfAccess } from "../memberSelfAccess";
 import { evaluateScreenshot, loadEvaluationContext, ocrEvaluationAvailable, readEvaluationContent, type EvaluationTarget } from "./evaluation";
+import { reviewOrSaveBatch } from "./confirmedBatch";
+import * as providerSelection from "./transport";
 import * as rankingContext from "./rankingContext";
 import * as flags from "../featureFlags/evaluateFeature";
 import { decideOcrConsent, loadOcrConsent } from "./consent";
@@ -39,7 +41,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", ""); vi.stubEnv("NEXT_PUBLIC_SENTRY_REPLAY", "false");
     // Only the explicitly enabled loopback test database. These are synthetic
     // fixtures, never a reset of a provider qualification or paid allowance.
-    await db.$executeRawUnsafe('TRUNCATE TABLE "OcrEvaluationAttempt", "OcrEvaluationBudget"');
+    await db.$executeRawUnsafe('TRUNCATE TABLE "OcrScoreSource", "OcrEvaluationAttempt", "OcrEvaluationBudget"');
     await db.ocrEvaluationBudget.create({ data: { id: OCR_CAMPAIGN } });
     const suffix = crypto.randomUUID();
     actorId = (await db.user.create({ data: { email: `ocr-owner-${suffix}@example.test`, displayName: "Morgan Owner" } })).id;
@@ -296,6 +298,43 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     const result = await Promise.allSettled([renameQaAlliance(rename), renameQaAlliance({ ...rename, name: "Other change" })]);
     expect(result.filter(r => r.status === "fulfilled")).toHaveLength(1);
     expect(await db.ocrQaAllianceNameChange.count({ where: { allianceId } })).toBe(1);
+  });
+  it("qualifies retained ranking sources, saves once on concurrent confirmation, and blocks remapping and revoked access", async () => {
+    const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
+    await db.alliance.update({ where: { id: allianceId }, data: { name: "QA" } });
+    const fixture = rankingFixture();
+    bytes = await sharp(Buffer.from(fixture.svg)).png().toBuffer();
+    vi.mocked(transport.recognize).mockResolvedValue(fixture.recognition);
+    vi.spyOn(providerSelection, "evaluationTransport").mockResolvedValue(transport);
+    const first = await evaluateScreenshot(await input(batch), transport);
+    const period = await db.metricPeriod.create({ data: { allianceId, name:"Test period", startsAt:new Date("2026-11-16"), endsAt:new Date("2026-12-16") } });
+    const metric = await db.metric.create({ data: { allianceId, name:"Daily VS", type:"NUMERIC", observationGrain:"DAILY_OBSERVATION", memberPeriodRollup:"SUM" } });
+    await db.metricPeriodMetric.create({ data: { periodId:period.id, metricId:metric.id, weight:1, required:false } });
+    const selection = { allianceId, periodId:period.id, dailyMetric:metric.id, weeklyMetric:"", attemptIds:[first.id], week:"2026-11-16", captureDate:"", excluded:[first.id+":1",first.id+":2"] };
+    try {
+      const preview = await reviewOrSaveBatch(actorId,selection);
+      const decision = { comparison:preview.comparison, lowerConfirmed:false };
+      const parallel = await Promise.allSettled([reviewOrSaveBatch(actorId,selection,decision),reviewOrSaveBatch(actorId,selection,decision)]);
+      expect(parallel.some(result => result.status === "fulfilled" && result.value.saved)).toBe(true);
+      expect((await reviewOrSaveBatch(actorId,selection,decision)).saved).toBe(true);
+      expect(await db.memberMetricEntry.count({ where:{periodId:period.id} })).toBe(1);
+      expect(await db.ocrScoreSource.count({ where:{attemptId:first.id} })).toBe(1);
+      await expect(reviewOrSaveBatch(actorId,{...selection,week:"2026-11-23"})).rejects.toThrow("already saved");
+      await changeProcessing(false);
+      await expect(reviewOrSaveBatch(actorId,selection,decision)).rejects.toThrow("disabled");
+      await changeProcessing(true);
+      await expect(reviewOrSaveBatch(accountId,selection)).rejects.toThrow("permission");
+      vi.spyOn(Date, "now").mockReturnValue(Date.now()+OCR_RETENTION_MS+60000);
+      await expect(reviewOrSaveBatch(actorId,selection)).rejects.toThrow("retention");
+      expect(transport.recognize).toHaveBeenCalledTimes(1);
+    } finally {
+      await db.ocrScoreSource.deleteMany({where:{attemptId:first.id}});
+      await db.memberMetricEntry.deleteMany({where:{periodId:period.id}});
+      await db.ocrScoreBatch.deleteMany({where:{periodId:period.id}});
+      await db.metricPeriodMetric.deleteMany({where:{periodId:period.id}});
+      await db.metricPeriod.delete({where:{id:period.id}});
+      await db.metric.delete({where:{id:metric.id}});
+    }
   });
   it("reads a whole ranking capture once without member links or accepted metric writes", async () => {
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };

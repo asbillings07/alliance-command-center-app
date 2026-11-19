@@ -95,6 +95,12 @@ export function rankingWindow(context: RankingContext, weekStart: string, captur
   return day.toISOString().slice(0, 10);
 }
 
+/** MetricPeriod boundaries are inclusive civil dates. */
+export function isRankingWeekPeriod(monday: string, start?: string, end?: string) {
+  if (start !== monday || !end || rankingWindow({ kind: "weekly", label: "Weekly Rank" }, monday) === null) return false;
+  return [5, 6].includes((Date.parse(end) - Date.parse(monday)) / 86400000);
+}
+
 export function showCurrentDayProgress(review: RankingReview, confirmedDate: string | null, now = new Date()) {
   // Owner-confirmed fixed reset: 01:00 UTC (9 PM EDT, 8 PM EST). No finality inference.
   const gameDay = new Date(now.getTime() - 60 * 60 * 1000).toISOString().slice(0, 10);

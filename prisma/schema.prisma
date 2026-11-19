@@ -105,6 +105,7 @@ model OcrEvaluationBudget {
 
 // Immutable admission/audit fields; content lives only in expiring private GCS.
 model OcrEvaluationAttempt {
+  acceptedSources OcrScoreSource[]
   id String @id
   requestId String
   // Explicit, separately charged retry; the prior failed audit is preserved.
@@ -776,12 +777,16 @@ model MetricPeriodMetric {
 // How a saved metric value reached ACC. Null on older entries means unknown,
 // not a member submission or a particular import method.
 enum MetricEntryMethod {
+  OCR_SCREENSHOT
   MANUAL
   SPREADSHEET_SINGLE_PERIOD
   SPREADSHEET_MULTI_PERIOD
 }
 
 model MemberMetricEntry {
+  ocrBatchId String?
+  ocrBatch OcrScoreBatch? @relation(fields: [ocrBatchId], references: [id], onDelete: Restrict)
+  ocrSources OcrScoreSource[]
   id String @id @default(cuid())
 
   allianceMemberId String
@@ -1286,4 +1291,26 @@ model QaManualTiming {
   endedAt DateTime?
   savedRows Int?
   // One open timer per context is enforced by a partial unique index in SQL.
+}
+
+model OcrScoreBatch {
+  id String @id
+  allianceId String
+  periodId String
+  actorId String
+  savedAt DateTime @default(now())
+  excludedRows Int
+  entries MemberMetricEntry[]
+  @@index([allianceId, periodId, savedAt])
+}
+
+model OcrScoreSource {
+  attemptId String
+  rowKey String
+  entryId String
+  window String
+  attempt OcrEvaluationAttempt @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  entry MemberMetricEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  @@id([attemptId, rowKey])
+  @@index([entryId])
 }

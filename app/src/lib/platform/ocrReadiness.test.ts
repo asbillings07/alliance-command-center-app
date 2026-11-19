@@ -11,6 +11,7 @@ vi.mock("../ocr/deploymentIsolation", () => ({ checkOcrDeploymentIsolation: mock
 vi.mock("next/navigation", () => ({ notFound() { throw new Error("unavailable"); } }));
 vi.mock("./qaManualTimingSummary", () => ({ qaManualTimingSummary: () => Promise.resolve([]) }));
 vi.mock("../prisma", () => ({ prisma: {
+  ocrScoreBatch: { count: () => Promise.resolve(0) },
   ocrEvaluationAttempt: { aggregate: mocks.aggregate, count: mocks.retries, groupBy: mocks.statuses },
   ocrEvaluationBudget: { findUnique: mocks.budget }, $transaction: mocks.transaction,
 } }));
@@ -28,7 +29,7 @@ describe("Platform OCR evidence", () => {
     mocks.retries.mockResolvedValue(1);
     mocks.statuses.mockResolvedValue([{ status: "FAILED", _count: { _all: 1 } }, { status: "READY", _count: { _all: 2 } }]);
     mocks.budget.mockResolvedValue({ reservedMicros: 30000 });
-    expect(await getOcrReadiness()).toEqual({ timings: [], attempts: 3, firstAttempts: 2, retries: 1, failed: 1, processing: 0, ready: 2, firstAt: date, lastAt: date, reservedMicros: 30000 });
+    expect(await getOcrReadiness()).toEqual({ confirmedBatches: 0, timings: [], attempts: 3, firstAttempts: 2, retries: 1, failed: 1, processing: 0, ready: 2, firstAt: date, lastAt: date, reservedMicros: 30000 });
     expect(mocks.aggregate).toHaveBeenCalledWith({ _count: true, _min: { createdAt: true }, _max: { createdAt: true } });
     expect(mocks.statuses).toHaveBeenCalledWith({ by: ["status"], _count: { _all: true } });
     expect(mocks.retries).toHaveBeenCalledWith({ where: { retryOf: { not: null } } });
