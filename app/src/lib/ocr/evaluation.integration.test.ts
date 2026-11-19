@@ -540,13 +540,13 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
   it("requires explicit consent for a new charged retry and preserves its failed parent", async () => {
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
     vi.mocked(transport.recognize).mockRejectedValueOnce(new Error("private provider failure"));
-    await expect(evaluateScreenshot(await input(batch), transport)).rejects.toThrow("did not complete");
+    await expect(evaluateScreenshot({ ...await input(batch), sourceFilename: "C:\\private\\Lundi-\u202eé.png" }, transport)).rejects.toThrow("did not complete");
     const failed = await db.ocrEvaluationAttempt.findFirstOrThrow();
     const wrong = await sharp({create:{width:300,height:300,channels:3,background:"#ab1234"}}).png().toBuffer();
     await expect(evaluateScreenshot({...await input(batch), retryOf:failed.id, bytes:wrong}, transport)).rejects.toThrow("same screenshot");
-    const request = { ...await input(batch), retryOf: failed.id };
+    const request = { ...await input(batch), retryOf: failed.id, sourceFilename: "copy.png" };
     const retried = await evaluateScreenshot(request, transport);
-    expect(retried).toMatchObject({status:"READY",retryOf:failed.id});
+    expect(retried).toMatchObject({status:"READY",retryOf:failed.id,sourceFilename:"Lundi-é.png"});
     expect(await db.ocrEvaluationAttempt.findUniqueOrThrow({where:{id:failed.id}})).toMatchObject({status:"FAILED"});
     expect((await evaluateScreenshot(request, transport)).id).toBe(retried.id);
     expect((await evaluateScreenshot({...await input(batch),retryOf:failed.id}, transport)).id).toBe(retried.id);

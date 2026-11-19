@@ -122,7 +122,7 @@ export function batchWriteContext(tx: Tx, target: EvaluationTarget) {
 
 function auditView(attempt: OcrEvaluationAttempt) {
   return { id: attempt.id, createdAt: attempt.createdAt.toISOString(), expiresAt: attempt.expiresAt.toISOString(),
-    actorName: attempt.actorName, actorRole: attempt.actorRole, playerName: attempt.playerName,
+    sourceFilename: attempt.sourceFilename, actorName: attempt.actorName, actorRole: attempt.actorRole, playerName: attempt.playerName,
     status: attempt.status, outcome: attempt.outcome, retryOf: attempt.retryOf };
 }
 
@@ -140,8 +140,14 @@ export async function authorizeScreenshotUpload(target: EvaluationTarget) {
   await transaction(tx => context(tx, target));
 }
 
+function uploadBasename(value?: string): string | null {
+  const basename = value?.split(/[\\/]/u).pop()?.replace(/[\p{Cc}\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu, "").trim();
+  if (!basename || basename === "." || basename === "..") return null;
+  return Array.from(basename).slice(0, 255).join("");
+}
+
 export async function evaluateScreenshot(input: EvaluationTarget & {
-  requestId: string; contextKey: string; bytes: Uint8Array; processingConsentId: number; retryOf?: string;
+  requestId: string; contextKey: string; bytes: Uint8Array; processingConsentId: number; retryOf?: string; sourceFilename?: string;
 }, transport: OcrTransport) {
   requireOcrEvaluation(input.allianceId);
   if (!Number.isSafeInteger(input.processingConsentId) || input.processingConsentId < 1) throw new OcrEvaluationError("Reload to review your OCR processing preference.");
@@ -198,6 +204,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
       actorUserId: input.actorId, actorName: current.actorName, actorRole: current.actorRole,
       playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       contextKey: current.contextKey, sourceDigest: image.digest, processingVersion: OCR_VERSION,
+      sourceFilename: parent?.sourceFilename ?? uploadBasename(input.sourceFilename),
       processingConsentId: current.consent.processing!.id, qualityConsentId: qualityAllowed(current.consent) ? current.consent.quality!.id : null,
       imageBytes: image.bytes.length, createdAt: now, expiresAt: new Date(now.getTime() + OCR_RETENTION_MS),
     } });

@@ -13,7 +13,7 @@ import { QaAllianceSettings, type QaAllianceSettingsData } from "./QaAllianceSet
 import { rankingWindow, reconcileOverlap, resolveRankingChoices, showCurrentDayProgress, type RankingReview, type RosterMember } from "@/app/src/lib/ocr/ranking";
 import { allianceRejectionMessage, isAllianceRejection, allianceBatchNotice } from "@/app/src/lib/ocr/allianceEvidence";
 
-type Attempt = { ownRequestId?: string | null; retryable?: boolean; id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
+type Attempt = { sourceFilename: string | null; ownRequestId?: string | null; retryable?: boolean; id: string; status: string; createdAt: string; actorName: string; actorRole: string; outcome?: string | null };
 type Result = { attempt: Attempt; batchReview: RankingReview; contextChanged: boolean };
 type Item = { needsOriginal?: boolean; requestId: string; file: File | null; state: "queued" | "reading" | "ready" | "failed" | "blocked"; error?: string; outcome?: string; attemptId?: string; result?: Result };
 type Props = { destination?: BatchDestination; allianceId: string; initial: { contextKey: string; processingConsentId: number | null; allianceName: string; server: string; members: RosterMember[]; attempts: Attempt[] }; synthetic: boolean; qaSettings?: QaAllianceSettingsData | null };
@@ -28,6 +28,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
   const [items, setItems] = useState<Item[]>([]); const [week, setWeek] = useState(""); const [captureDate, setCaptureDate] = useState("");
   const [notice, setNotice] = useState<ReturnType<typeof allianceBatchNotice>>(null);
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [source, setSource] = useState<{ result: Result; title: string } | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
   const [sourcePicks, setPicks] = useState<string[]>([]);
   const [excludedSources, setExcludedSources] = useState<string[]>([]); const [reviewed, setReviewed] = useState(false);
@@ -87,6 +88,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       try {
         const form = new FormData();
         form.set("screenshot", item.file!, "screenshot");
+        form.set("sourceFilename", item.file!.name);
         if (retry) form.set("retryOf", retry.attempt.id);
         form.set("requestId", item.requestId);
         form.set("contextKey", initial.contextKey); form.set("processingConsentId", String(initial.processingConsentId));
@@ -273,12 +275,29 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       uploadedBy={source.result.attempt.actorName} uploadedAt={source.result.attempt.createdAt}
       onClose={() => setSource(null)} />}
     <p role="status" aria-live="polite" className="break-words text-sm text-text-secondary">{message}</p>
-    <details className="rounded-xl border border-border bg-surface p-4">
-      <summary className="cursor-pointer rounded text-lg font-semibold focus-visible:outline-2 focus-visible:outline-primary">Ranking upload history</summary>
-      <p className="mt-1 text-sm text-text-muted">Latest 20 captures · Times in your timezone. Reopen a scan to review it again.</p>
-      <ol aria-label="Ranking upload history" className="mt-3 divide-y divide-border rounded-lg border border-border">{existing.map(attempt => <li key={attempt.id} className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 px-3 py-2 text-sm"><p className="break-words">Uploaded by {attempt.actorName} · <LocalTimestamp value={attempt.createdAt} /></p>{isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}<div className="mt-2">{attempt.retryable
-        ? <Button variant="secondary" disabled={busy || items.length >= 20} title="Select the original screenshot to retry this scan" onClick={() => retryScan(attempt)}>Retry scan</Button>
-        : <Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Failed" : "Pending"}</Button>}</div></li>)}</ol>
-    </details>
+    <section className="rounded-xl border border-border bg-surface p-4">
+      <h2><button type="button" aria-expanded={historyOpen} aria-controls="ranking-upload-history"
+        onClick={() => setHistoryOpen(open => !open)}
+        className="flex min-h-11 w-full items-center justify-between gap-3 rounded text-left focus-visible:outline-2 focus-visible:outline-primary">
+        <span className="text-lg font-semibold">Ranking upload history</span>
+        <span className="shrink-0 rounded-md border border-border px-3 py-2 text-sm font-medium text-primary-light">{historyOpen ? "Hide history" : "Show history"}</span>
+      </button></h2>
+      <div hidden={!historyOpen} id="ranking-upload-history">
+        <p className="mt-2 text-sm text-text-muted">Latest 20 captures</p>
+        {existing.length === 0 ? <p className="mt-2 text-sm">No other captures to show.</p> :
+          <ol aria-label="Ranking upload history" className="mt-3 divide-y divide-border rounded-lg border border-border">
+            {existing.map(attempt => <li key={attempt.id} className="flex min-w-0 flex-wrap items-center justify-between gap-3 px-3 py-2 text-sm">
+              <div className="min-w-0 flex-1 basis-52">
+                <p className="font-semibold [overflow-wrap:anywhere]">{attempt.sourceFilename ?? "Original filename unavailable"}</p>
+                <p className="mt-1 break-words text-text-muted">Uploaded by {attempt.actorName} · <LocalTimestamp value={attempt.createdAt} /></p>
+                {isAllianceRejection(attempt) && <p className="mt-2 text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}
+              </div>
+              {attempt.retryable
+                ? <Button variant="secondary" disabled={busy || items.length >= 20} title="Select the original screenshot to retry this scan" onClick={() => retryScan(attempt)}>Retry scan</Button>
+                : <Button variant="secondary" disabled={busy || attempt.status !== "READY" || items.length >= 20} onClick={() => reopen(attempt)}>{attempt.status === "READY" ? "Add scan to review" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Failed" : "Pending"}</Button>}
+            </li>)}
+          </ol>}
+      </div>
+    </section>
   </div>;
 }

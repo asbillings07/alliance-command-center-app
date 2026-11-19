@@ -373,9 +373,12 @@ for (const width of [320, 820, 1280]) {
     expect(await prisma.memberMetricEntry.count({ where: { allianceMember: { allianceId } } })).toBe(0);
     await page.reload();
     const retained = page.getByRole("button", { name: "Add scan to review" });
-    const history = page.getByText("Ranking upload history", { exact: true });
+    const history = page.getByRole("button", { name: /Ranking upload history/ });
+    await expect(history).toContainText("Show history");
     await expect(retained).toHaveCount(0);
     await history.press("Enter");
+    await expect(history).toContainText("Hide history");
+    for (const file of files) await expect(page.getByText(file.name, { exact: true })).toBeVisible();
     await expect(retained).toHaveCount(2);
     await history.press("Space");
     await expect(retained).toHaveCount(0);
@@ -599,6 +602,7 @@ for (const timezoneId of ["America/New_York", "Asia/Tokyo"]) {
       await login({ email, password, displayName: "Owner" });
       await page.goto(`/alliances/${allianceId}/screenshots?scope=batch`);
       await page.getByText("Ranking upload history", { exact: true }).click();
+      await expect(page.getByText("Original filename unavailable", { exact: true })).toHaveCount(2);
       await expect(page.getByText("Uploaded by Synthetic uploader", { exact: false }).first()).toBeVisible();
       for (const value of instants) {
         const time = page.locator(`time[datetime="${value}"]`);

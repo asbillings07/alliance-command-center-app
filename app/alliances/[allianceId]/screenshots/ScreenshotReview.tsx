@@ -9,7 +9,7 @@ import { allianceRejectionMessage, isAllianceRejection, allianceBatchNotice } fr
 
 import { AllianceBatchDialog } from "./AllianceBatchDialog";
 
-type Attempt = { id: string; createdAt: string; expiresAt: string; actorName: string; actorRole: string; playerName: string; status: string; outcome: string | null };
+type Attempt = { sourceFilename: string | null; id: string; createdAt: string; expiresAt: string; actorName: string; actorRole: string; playerName: string; status: string; outcome: string | null };
 type Result = { recognition: Recognition; review: VsReview; attempt: Attempt;
   capturedTarget: { playerName: string; allianceName: string; server: string }; contextChanged: boolean };
 type Props = { allianceId: string; memberId: string | null; synthetic: boolean; initial: {
@@ -57,7 +57,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
   async function scan() {
     if (!file || busy) return;
     const token = ++operation.current; controller.current = new AbortController(); setBusy(true); setMessage(""); setResult(null); setNotice(null); setBlockedOutcome(null);
-    const form = new FormData(); form.set("screenshot", file, "screenshot"); form.set("requestId", requestId);
+    const form = new FormData(); form.set("screenshot", file, "screenshot"); form.set("sourceFilename", file.name); form.set("requestId", requestId);
     form.set("contextKey", initial.contextKey); form.set("processingConsentId", String(initial.processingConsentId));
     try {
       const response = await fetch(endpoint, { method: "POST", body: form, signal: controller.current.signal });
@@ -123,9 +123,9 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
     </div>
     {notice && <AllianceBatchDialog {...notice} allianceName={initial.allianceName} server={initial.server} onClose={() => { setNotice(null); input.current?.focus(); }} />}
     <section aria-labelledby="scan-history"><h2 id="scan-history" className="text-lg font-semibold">Screenshot review history</h2>
-      <p className="mb-4 mt-1 text-sm text-text-muted">Latest 20 attempts · Times shown in your timezone · This is upload history, not accepted score history.</p>
+      <p className="mb-4 mt-1 text-sm text-text-muted">Latest 20 attempts · This is upload history, not accepted score history.</p>
       {attempts.length === 0 ? <Card><p className="text-sm text-text-secondary">No screenshot evaluations yet.</p></Card> : <ol className="grid gap-3 lg:grid-cols-2">{attempts.map(attempt => <li key={attempt.id} className="min-w-0 rounded-xl border border-border bg-surface p-4">
-        <p className="break-words font-medium">{attempt.playerName}</p><p className="mt-1 break-words text-sm text-text-secondary">{attempt.actorName} · {attempt.actorRole.toLowerCase()} · <LocalTimestamp value={attempt.createdAt} /></p>
+        <p className="break-words font-medium">{attempt.sourceFilename ?? "Original filename unavailable"}</p><p className="mt-1 break-words text-sm text-text-secondary">Uploaded by {attempt.actorName} · {attempt.actorRole.toLowerCase()} · <LocalTimestamp value={attempt.createdAt} /></p>
         <p className="mt-2 text-sm text-text-muted">{attempt.status === "READY" ? "Recognition complete" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Scan failed — no automatic retry" : "Processing or interrupted — no automatic retry"}</p>
         {isAllianceRejection(attempt) && <p className="mt-2 text-sm text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}
         <div className="mt-3"><Button variant="secondary" disabled={busy || attempt.status !== "READY"} onClick={() => inspect(attempt)}>Review scan</Button></div>
