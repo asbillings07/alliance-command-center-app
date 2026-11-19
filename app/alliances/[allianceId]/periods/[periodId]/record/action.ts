@@ -1,4 +1,5 @@
 "use server";
+import { manualTimingAvailable } from "@/app/src/lib/ocr/manualTiming";
 import { metricEntryProvenance } from "@/app/src/lib/metrics/metricEntryProvenance";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
@@ -17,6 +18,7 @@ type RecordMemberMetricsInput = {
   periodId: string;
   metricId: string;
   allianceId: string;
+  timingId?: string;
   entries: {
     memberId: string;
     value: number;
@@ -114,7 +116,17 @@ export async function recordMemberMetrics(
     throw new Error("One or more members do not belong to this alliance");
   }
 
+  if (input.timingId && !await manualTimingAvailable(auth.user.id, allianceId)) {
+    throw new Error("QA timing is unavailable. Refresh to use ordinary manual entry.");
+  }
   await prisma.$transaction(async (tx) => {
+    if (input.timingId) {
+      const completed = await tx.qaManualTiming.updateMany({
+        where: { id: input.timingId, userId: auth.user.id, allianceId, periodId, metricId, endedAt: null },
+        data: { endedAt: new Date(), savedRows: entries.length },
+      });
+      if (completed.count !== 1) throw new Error("This timing session is no longer open.");
+    }
     const provenance = await metricEntryProvenance(tx, allianceId, auth.user.id, "MANUAL");
     await tx.memberMetricEntry.createMany({
       data: entries.map((entry) => ({

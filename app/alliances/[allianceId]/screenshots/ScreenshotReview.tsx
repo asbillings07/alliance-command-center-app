@@ -1,4 +1,5 @@
 "use client";
+import { LocalTimestamp } from "./LocalTimestamp";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Badge } from "@/app/src/components";
@@ -12,15 +13,14 @@ type Attempt = { id: string; createdAt: string; expiresAt: string; actorName: st
 type Result = { recognition: Recognition; review: VsReview; attempt: Attempt;
   capturedTarget: { playerName: string; allianceName: string; server: string }; contextChanged: boolean };
 type Props = { allianceId: string; memberId: string | null; synthetic: boolean; initial: {
-  playerName: string; allianceName: string; server: string; leader: boolean; contextKey: string; attempts: Attempt[];
+  playerName: string; allianceName: string; server: string; leader: boolean; contextKey: string; processingConsentId: number | null; attempts: Attempt[];
 } };
-const date = (value: string) => new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value));
 
 export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: Props) {
   const [notice, setNotice] = useState<ReturnType<typeof allianceBatchNotice>>(null);
   const [blockedOutcome, setBlockedOutcome] = useState<string | null>(null);
   const router = useRouter(); const [file, setFile] = useState<File | null>(null);
-  const [consent, setConsent] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
   const [result, setResult] = useState<Result | null>(null); const [additionalAttempts, setAdditionalAttempts] = useState<Attempt[]>([]);
   const attempts = [...initial.attempts, ...additionalAttempts.filter(a => !initial.attempts.some(existing => existing.id === a.id))]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20);
@@ -30,7 +30,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
   useEffect(() => () => { operation.current++; controller.current?.abort(); }, []);
 
   function clear() {
-    operation.current++; controller.current?.abort(); setBusy(false); setFile(null); setConsent(false); setResult(null);
+    operation.current++; controller.current?.abort(); setBusy(false); setFile(null); setResult(null);
     setNotice(null); setBlockedOutcome(null);
     setMessage("Selection cleared. A scan already sent may still finish; its history is retained.");
     setRequestId(""); if (input.current) input.current.value = "";
@@ -55,10 +55,10 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
     setNotice(allianceBatchNotice([{ state: "blocked", outcome }]));
   }
   async function scan() {
-    if (!file || !consent || busy) return;
+    if (!file || busy) return;
     const token = ++operation.current; controller.current = new AbortController(); setBusy(true); setMessage(""); setResult(null); setNotice(null); setBlockedOutcome(null);
     const form = new FormData(); form.set("screenshot", file, "screenshot"); form.set("requestId", requestId);
-    form.set("contextKey", initial.contextKey); form.set("consent", "true");
+    form.set("contextKey", initial.contextKey); form.set("processingConsentId", String(initial.processingConsentId));
     try {
       const response = await fetch(endpoint, { method: "POST", body: form, signal: controller.current.signal });
       const body = await response.json(); if (!response.ok) throw Object.assign(new Error(body.error || "The scan did not complete."), { outcome: body.outcome });
@@ -82,15 +82,13 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
       <section className="min-w-0 space-y-4" aria-labelledby="screenshot-heading">
         <Card><h2 id="screenshot-heading" className="text-lg font-semibold">1. Choose a daily VS screenshot</h2>
           <p className="mt-2 text-sm text-text-secondary">Keep the full Alliance Duel screen, player names, scores and countdown visible. PNG or JPEG, up to 2 MB.</p>
-          <p className="mt-2 text-sm text-text-secondary">Only this alliance&apos;s screenshots are accepted. Different, mixed or unreadable alliances are blocked, with no override. Reading an image to check its alliance still uses one scan reservation.</p>
+          <p className="mt-2 text-sm text-text-secondary">Only this alliance&apos;s screenshots are accepted. Different, mixed or unreadable alliances are blocked, with no override.</p>
           <label htmlFor="vs-screenshot" className="mt-4 block text-sm font-medium">Screenshot</label>
           <input ref={input} id="vs-screenshot" type="file" accept="image/png,image/jpeg" disabled={busy} className="mt-2 block w-full min-w-0 rounded-lg border border-border p-2 text-sm focus:outline-2 focus:outline-primary"
-            onChange={event => { const selected = event.target.files?.[0] ?? null; setResult(null); setMessage(""); setConsent(false); setBlockedOutcome(null); setNotice(null);
+            onChange={event => { const selected = event.target.files?.[0] ?? null; setResult(null); setMessage(""); setBlockedOutcome(null); setNotice(null);
               if (selected && (selected.size > 2 * 1024 * 1024 || !["image/png", "image/jpeg"].includes(selected.type))) { setFile(null); setMessage("Choose one PNG or JPEG no larger than 2 MB."); return; }
               setFile(selected); setRequestId(crypto.randomUUID()); }} />
-          <label className="mt-4 flex items-start gap-3 text-sm text-text-secondary"><input type="checkbox" checked={consent} disabled={busy || !file} onChange={e => setConsent(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-primary" />
-            <span>I can share this screenshot with ACC and Google Cloud for text recognition. The prepared image and recognized text are available for 30 days, then scheduled for deletion. Upload history is retained.</span></label>
-          <div className="mt-4 flex flex-wrap gap-3"><Button onClick={scan} disabled={!file || !consent || busy}>{busy ? "Reading screenshot…" : "Read screenshot"}</Button>
+          <div className="mt-4 flex flex-wrap gap-3"><Button onClick={scan} disabled={!file || busy}>{busy ? "Reading screenshot…" : "Read screenshot"}</Button>
             <Button onClick={clear} variant="secondary">{busy ? "Cancel waiting" : "Clear selection"}</Button></div>
           <p className="mt-3 text-xs text-text-muted">Cancelling waiting cannot recall an image already sent. Scans are limited and never retried automatically.</p>
         </Card>
@@ -101,7 +99,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={`${endpoint}&id=${encodeURIComponent(result.attempt.id)}&kind=image`} alt="Daily VS screenshot being reviewed" className="h-auto max-h-[70vh] w-full rounded-lg object-contain" referrerPolicy="no-referrer" onError={() => setMessage("The screenshot is unavailable. It may have expired or your access may have changed.")} />
           </>}
-          {result && <p className="mt-3 text-xs text-text-muted">Orientation corrected; image metadata removed. Access ends {date(result.attempt.expiresAt)} UTC.</p>}
+          {result && <p className="mt-3 text-xs text-text-muted">Orientation corrected; image metadata removed. Access ends <LocalTimestamp value={result.attempt.expiresAt} />.</p>}
         </Card>}
       </section>
       <section className="min-w-0 space-y-4" aria-labelledby="recognition-heading">
@@ -125,9 +123,9 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
     </div>
     {notice && <AllianceBatchDialog {...notice} allianceName={initial.allianceName} server={initial.server} onClose={() => { setNotice(null); input.current?.focus(); }} />}
     <section aria-labelledby="scan-history"><h2 id="scan-history" className="text-lg font-semibold">Screenshot review history</h2>
-      <p className="mb-4 mt-1 text-sm text-text-muted">Latest 20 attempts · Times in UTC · This is upload history, not accepted score history.</p>
+      <p className="mb-4 mt-1 text-sm text-text-muted">Latest 20 attempts · Times shown in your timezone · This is upload history, not accepted score history.</p>
       {attempts.length === 0 ? <Card><p className="text-sm text-text-secondary">No screenshot evaluations yet.</p></Card> : <ol className="grid gap-3 lg:grid-cols-2">{attempts.map(attempt => <li key={attempt.id} className="min-w-0 rounded-xl border border-border bg-surface p-4">
-        <p className="break-words font-medium">{attempt.playerName}</p><p className="mt-1 break-words text-sm text-text-secondary">{attempt.actorName} · {attempt.actorRole.toLowerCase()} · {date(attempt.createdAt)} UTC</p>
+        <p className="break-words font-medium">{attempt.playerName}</p><p className="mt-1 break-words text-sm text-text-secondary">{attempt.actorName} · {attempt.actorRole.toLowerCase()} · <LocalTimestamp value={attempt.createdAt} /></p>
         <p className="mt-2 text-sm text-text-muted">{attempt.status === "READY" ? "Recognition complete" : isAllianceRejection(attempt) ? "Blocked — alliance check" : attempt.status === "FAILED" ? "Scan failed — no automatic retry" : "Processing or interrupted — no automatic retry"}</p>
         {isAllianceRejection(attempt) && <p className="mt-2 text-sm text-warning-light">{allianceRejectionMessage(attempt.outcome)}</p>}
         <div className="mt-3"><Button variant="secondary" disabled={busy || attempt.status !== "READY"} onClick={() => inspect(attempt)}>Review scan</Button></div>

@@ -1,3 +1,4 @@
+import { OcrConsentGate } from "@/app/account/ocr/OcrConsentGate";
 import { PageLayout, Card } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { requireAuth } from "@/app/src/lib/auth/requireAuth";
@@ -20,8 +21,8 @@ export default async function ScreenshotsPage({ params, searchParams }: {
     action={<Button href={back} variant="secondary">{scope === "batch" ? "Back to alliance" : "Back to member"}</Button>}>
     {!review ? <Card><h2 className="text-lg font-semibold">Screenshot evaluation is unavailable</h2>
       <p className="mt-3 text-text-secondary">This trial requires an enabled preview, current access and complete member identity. Ask your leadership team to review your access, or return to your member record.</p></Card>
-      : scope === "batch" ? <LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} />
+      : <OcrConsentGate key={review.consent.processing?.id ?? "first-use"} initial={review.consent}>{scope === "batch" ? <LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} />
       : <ScreenshotReview key={`${allianceId}:${memberId ?? "own"}:${review.contextKey}`} allianceId={allianceId} memberId={memberId || null}
-        initial={review} synthetic={localOcrFixtureEnabled()} />}
+        initial={review} synthetic={localOcrFixtureEnabled()} />}</OcrConsentGate>}
   </PageLayout></main>;
 }

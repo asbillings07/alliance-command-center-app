@@ -1,3 +1,4 @@
+import { OcrConsentGate } from "@/app/account/ocr/OcrConsentGate";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
@@ -7,9 +8,10 @@ import { PageLayout, Card, EmptyState } from "@/app/src/components";
 import { Button } from "@/app/src/components/client";
 import { canProvisionMetricsForPeriod } from "@/app/src/lib/periods/canProvisionMetricsForPeriod";
 
-import { ocrEvaluationVisible, localOcrFixtureEnabled } from "@/app/src/lib/ocr/config";
-import { loadEvaluationContext } from "@/app/src/lib/ocr/evaluation";
+import { localOcrFixtureEnabled } from "@/app/src/lib/ocr/config";
+import { loadEvaluationContext, ocrEvaluationAvailable } from "@/app/src/lib/ocr/evaluation";
 import { loadQaAllianceSettings } from "@/app/src/lib/ocr/qaAlliance";
+import { SavedScoreBatches } from "../../../screenshots/SavedScoreBatches";
 import { LeaderBatchReview } from "../../../screenshots/LeaderBatchReview";
 
 type Params = {
@@ -123,11 +125,12 @@ export default async function ImportPage({ params, searchParams }: Params) {
         { label: "Capture Evaluation Results" },
       ];
 
-  const screenshotTrial = ocrEvaluationVisible();
-  const screenshots = screenshotTrial && (await searchParams).method === "screenshots";
+  const screenshotTrial = await ocrEvaluationAvailable({ allianceId, actorId: auth.user.id, memberId: null, scope: "batch" });
+  const method = (await searchParams).method;
+  const screenshots = method === "screenshots" || (method !== "spreadsheet" && screenshotTrial);
   const methodLinks = screenshotTrial ? <nav aria-label="Add results" className="mb-6 flex flex-wrap gap-3">
     <Button variant={screenshots ? "primary" : "secondary"} href={`/alliances/${allianceId}/periods/${periodId}/import?method=screenshots`}>Screenshots</Button>
-    <Button variant={screenshots ? "secondary" : "primary"} href={`/alliances/${allianceId}/periods/${periodId}/import`}>Spreadsheet</Button>
+    <Button variant={screenshots ? "secondary" : "primary"} href={`/alliances/${allianceId}/periods/${periodId}/import?method=spreadsheet`}>Spreadsheet</Button>
     <Button variant="secondary" href={`/alliances/${allianceId}/periods/${periodId}/record`}>Manual entry</Button>
   </nav> : null;
   if (screenshots) {
@@ -135,8 +138,9 @@ export default async function ImportPage({ params, searchParams }: Params) {
     const qaSettings = review && auth.permissions.canImportMetrics ? await loadQaAllianceSettings(allianceId, auth.user.id).catch(() => null) : null;
     return <main className="sentry-block" data-sentry-block><PageLayout breadcrumb={breadcrumb} title="Capture Evaluation Results" description={`Review ranking screenshots for ${period.name}.`} maxWidth="6xl">
       {methodLinks}
-      {review ? <LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} />
+      {review ? <OcrConsentGate key={review.consent.processing?.id ?? "first-use"} initial={review.consent}><LeaderBatchReview key={review.contextKey} allianceId={allianceId} initial={review} destination={{ periodId, name: period.name, metrics: period.periodMetrics.filter(pm => pm.metric.active && pm.metric.type === "NUMERIC").map(pm => ({ id: pm.metricId, name: pm.metric.name, daily: pm.metric.observationGrain === "DAILY_OBSERVATION" })) }} synthetic={localOcrFixtureEnabled()} qaSettings={qaSettings} /></OcrConsentGate>
         : <Card><h2 className="text-lg font-semibold">Screenshot evaluation is unavailable</h2><p className="mt-2 text-text-secondary">This trial requires an enabled preview and current import access.</p></Card>}
+      {review && <SavedScoreBatches allianceId={allianceId} periodId={periodId} />}
     </PageLayout></main>;
   }
 

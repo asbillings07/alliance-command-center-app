@@ -95,6 +95,12 @@ export function rankingWindow(context: RankingContext, weekStart: string, captur
   return day.toISOString().slice(0, 10);
 }
 
+/** MetricPeriod boundaries are inclusive civil dates. */
+export function isRankingWeekPeriod(monday: string, start?: string, end?: string) {
+  if (start !== monday || !end || rankingWindow({ kind: "weekly", label: "Weekly Rank" }, monday) === null) return false;
+  return [5, 6].includes((Date.parse(end) - Date.parse(monday)) / 86400000);
+}
+
 export function showCurrentDayProgress(review: RankingReview, confirmedDate: string | null, now = new Date()) {
   // Owner-confirmed fixed reset: 01:00 UTC (9 PM EDT, 8 PM EST). No finality inference.
   const gameDay = new Date(now.getTime() - 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -102,13 +108,35 @@ export function showCurrentDayProgress(review: RankingReview, confirmedDate: str
 }
 
 export type BatchCandidate = RankingRow & { attemptId: string; window: string | null; source: number };
-export function reconcileOverlap(rows: BatchCandidate[]) {
+export function reconcileOverlap(rows: BatchCandidate[], allowNewMembers = false) {
+  const possible = (r: BatchCandidate) => r.status === "unmatched" && !!r.allianceLabel && r.value !== null
+    && r.sourceName.trim().length > 0 && r.sourceName.length <= 200 && !/[\p{Cc}\p{Cf}]/u.test(r.sourceName);
+  const newNames = new Set(allowNewMembers ? rows.filter(possible).map(r => exactNameKey(r.sourceName)) : []);
+  // Different spellings in the same capture may represent one person. Hold both.
+  const uncertain = new Set<string>();
+  const spellings = new Map<string, string>();
+  for (const name of newNames) {
+    // Compare variation keys in linear passes, including single OCR omissions,
+    // substitutions and transpositions. Preserve the original display name.
+    const folded = name.normalize("NFKC").toLowerCase();
+    const variants = new Set([folded]);
+    for (let i = 0; i < folded.length; i++) variants.add(folded.slice(0, i) + folded.slice(i + 1));
+    for (const variant of variants) {
+      const other = spellings.get(variant);
+      if (other !== undefined && other !== name) { uncertain.add(name); uncertain.add(other); }
+      else spellings.set(variant, name);
+    }
+  }
+  const safeNames = new Set([...newNames].filter(name => !uncertain.has(name)));
   const groups = new Map<string, BatchCandidate[]>();
   for (const row of rows) {
     // Daily and weekly slots stay separate. Unknown source identities never merge.
-    const key = row.status === "exact" && row.window ? JSON.stringify([row.memberId, row.window]) : JSON.stringify([row.attemptId, row.key]);
+    const createMember = possible(row) && safeNames.has(exactNameKey(row.sourceName));
+    const key = row.window && (row.status === "exact" || createMember)
+      ? JSON.stringify([createMember ? "new" : "existing", createMember ? exactNameKey(row.sourceName) : row.memberId, row.window])
+      : JSON.stringify(["source", row.attemptId, row.key]);
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
-  return [...groups.values()].map(group => ({ row: group[0], sources: group,
+  return [...groups.values()].map(group => ({ row: group[0], sources: group, createMember: possible(group[0]) && safeNames.has(exactNameKey(group[0].sourceName)),
     conflict: group.some(r => r.value !== group[0].value), duplicates: group.length - 1 }));
 }

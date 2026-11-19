@@ -1,6 +1,7 @@
 "use client";
 import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
+import { LocalTimestamp } from "./LocalTimestamp";
 import { Button, ConfirmDialog } from "@/app/src/components/client";
 import type { loadQaAllianceSettings } from "@/app/src/lib/ocr/qaAlliance";
 import { saveQaAllianceName } from "./qa-actions";
@@ -16,13 +17,14 @@ export function QaAllianceSettings({ allianceId, initial, disabled }: { alliance
     <label htmlFor={inputId} className="mt-4 block text-sm font-medium">QA alliance name</label>
     <input id={inputId} value={name} maxLength={200} disabled={disabled || confirm} onChange={event => setName(event.target.value)}
       className="mt-2 w-full rounded-lg border border-border bg-background p-3 text-text-primary focus:outline-2 focus:outline-primary" />
-    <p className="mt-2 text-sm text-text-secondary">Earlier scans keep their original names. After saving, select your screenshot again for a fresh review. New scans still reserve $0.01 each within the same $5 cap.</p>
+    <p className="mt-2 text-sm text-text-secondary">Earlier scans keep their original names. After saving, select your screenshot again for a fresh review.</p>
+    <p className="mt-2 text-sm text-text-secondary">QA only: each new scan or retry reserves $0.01 from the existing $5 trial cap, including failed attempts and alliance mismatches. Reopening completed scans does not make a new OCR request. These are internal evaluation costs, not user charges.</p>
     {disabled && <p className="mt-2 text-sm text-warning-light">Wait for the current screenshot check to finish before editing the name.</p>}
     <div className="mt-4"><Button variant="secondary" disabled={disabled || !name.trim() || name.trim() === initial.name}
       onClick={() => setConfirm(true)}>Review QA name change</Button></div>
     {initial.history.length > 0 && <div className="mt-5"><h2 className="font-medium">QA name history</h2>
       <ol className="mt-2 space-y-2 text-sm text-text-secondary">{initial.history.map(change => <li key={change.id} className="break-words">
-        <span>{change.previousName} → {change.name}</span><br /><span>{change.actorName} · {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(change.createdAt))} UTC</span>
+        <span>{change.previousName} → {change.name}</span><br /><span>{change.actorName} · <LocalTimestamp value={change.createdAt} /></span>
       </li>)}</ol></div>}
     <ConfirmDialog isOpen={confirm} onClose={() => setConfirm(false)} title="Change this QA alliance name?" confirmLabel="Save QA name" pendingLabel="Saving QA name…"
       description={<div className="space-y-3 break-words"><p><strong>Current:</strong> {initial.name}<br /><strong>New:</strong> {name.trim()}</p>

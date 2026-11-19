@@ -105,6 +105,7 @@ model OcrEvaluationBudget {
 
 // Immutable admission/audit fields; content lives only in expiring private GCS.
 model OcrEvaluationAttempt {
+  acceptedSources OcrScoreSource[]
   id String @id
   requestId String
   // Explicit, separately charged retry; the prior failed audit is preserved.
@@ -121,6 +122,9 @@ model OcrEvaluationAttempt {
   contextKey String
   sourceDigest String
   processingVersion String
+  // Historical permission references, not retroactive grants for legacy scans.
+  processingConsentId Int?
+  qualityConsentId Int?
   imageBytes Int
   createdAt DateTime @default(now())
   expiresAt DateTime
@@ -130,6 +134,24 @@ model OcrEvaluationAttempt {
   @@unique([actorUserId, requestId])
   @@index([allianceId, memberId, createdAt])
   @@index([actorUserId, createdAt])
+}
+
+enum OcrConsentPurpose {
+  PROCESSING
+  QUALITY_REVIEW
+}
+
+// Append-only decisions serialized per account. Default off creates no refusal.
+model OcrConsentDecision {
+  id Int @id @default(autoincrement())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose OcrConsentPurpose
+  granted Boolean
+  noticeVersion String
+  createdAt DateTime @default(now())
+
+  @@index([userId, purpose, id])
 }
 
 // QA setup history. No cascading relation can erase the recorded change.
@@ -575,6 +597,8 @@ model User {
   // it (see revokeSessions) rejects all previously issued tokens. Unlike the
   // isPlatformAdmin hint, this is an invariant, not a snapshot. See issue #132.
   sessionVersion          Int       @default(0)
+  ocrConsentVersion       Int       @default(0)
+  ocrConsentDecisions     OcrConsentDecision[]
 
   memberships                       AllianceMembership[]
   authoredNotes                     LeadershipNote[]
@@ -753,12 +777,17 @@ model MetricPeriodMetric {
 // How a saved metric value reached ACC. Null on older entries means unknown,
 // not a member submission or a particular import method.
 enum MetricEntryMethod {
+  OCR_SCREENSHOT
   MANUAL
   SPREADSHEET_SINGLE_PERIOD
   SPREADSHEET_MULTI_PERIOD
 }
 
 model MemberMetricEntry {
+  ocrCreatedRosterMember Boolean @default(false)
+  ocrBatchId String?
+  ocrBatch OcrScoreBatch? @relation(fields: [ocrBatchId], references: [id], onDelete: Restrict)
+  ocrSources OcrScoreSource[]
   id String @id @default(cuid())
 
   allianceMemberId String
@@ -1250,4 +1279,45 @@ model FeedbackTriageEvent {
 
   @@index([feedbackId, createdAt, id])
   @@index([actorUserId])
+}
+
+// Isolated QA timing only. Production cohort measurements require separate enrollment.
+model QaManualTiming {
+  id String @id @default(uuid())
+  userId String
+  allianceId String
+  periodId String
+  metricId String
+  startedAt DateTime @default(now())
+  endedAt DateTime?
+  savedRows Int?
+  // One open timer per context is enforced by a partial unique index in SQL.
+}
+
+model OcrScoreBatch {
+  confirmationDigest String? @unique
+  id String @id
+  allianceId String
+  periodId String
+  actorId String
+  savedAt DateTime @default(now())
+  excludedRows Int
+  entries MemberMetricEntry[]
+  @@index([allianceId, periodId, savedAt])
+}
+
+model OcrScoreSource {
+  attemptId String
+  rowKey String
+  entryId String
+  window String
+  attempt OcrEvaluationAttempt @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  entry MemberMetricEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  @@id([attemptId, rowKey])
+  @@index([entryId])
+}
+
+model OcrPilotReservation {
+  id         String   @id @db.Uuid
+  reservedAt DateTime @default(now())
 }

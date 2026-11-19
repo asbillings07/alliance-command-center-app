@@ -102,3 +102,15 @@ describe("leader ranking screenshots", () => {
     expect(reconcileOverlap([base, { ...base, value: 1, attemptId: "b" }])[0].conflict).toBe(true);
   });
 });
+
+it("proposes only new, alliance-labelled names and reconciles their scores by reporting window", () => {
+  const base: BatchCandidate = { key: "0", source: 1, sourceName: "Riley Chen", sourceValue: "12", value: 12, status: "unmatched",
+    memberId: null, matchedName: null, y: 1, allianceLabel: "[QA] Synthetic", window: "2026-11-16", attemptId: "first" };
+  const second = { ...base, attemptId: "second" };
+  expect(reconcileOverlap([base, second], true)).toMatchObject([{createMember:true, duplicates:1}]);
+  expect(reconcileOverlap([base, {...second, value:13}], true)[0].conflict).toBe(true);
+  expect(reconcileOverlap([base, {...second, sourceName:"Riley Chon"}],true).every(g => !g.createMember)).toBe(true);
+  for (const row of [{...base,allianceLabel:null}, {...base,status:"archived" as const}, {...base,value:null}])
+    expect(reconcileOverlap([row],true)[0].createMember).toBe(false);
+  expect(reconcileOverlap([base])[0].createMember).toBe(false);
+});

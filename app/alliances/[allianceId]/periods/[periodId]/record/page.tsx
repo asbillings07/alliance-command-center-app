@@ -1,3 +1,4 @@
+import { manualTimingAvailable, openManualTiming } from "@/app/src/lib/ocr/manualTiming";
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
@@ -35,6 +36,7 @@ export default async function PeriodRecordPage({
   const metrics = period.periodMetrics.map((pm) => ({
     id: pm.metric.id,
     name: pm.metric.name,
+    periodValue: pm.metric.observationGrain === "PERIOD_VALUE",
   }));
 
   const alliance = await prisma.alliance.findUnique({
@@ -99,6 +101,8 @@ export default async function PeriodRecordPage({
     );
   }
 
+  const timingEnabled = await manualTimingAvailable(auth.user.id, allianceId);
+  const openTimer = timingEnabled ? await openManualTiming(auth.user.id, allianceId, periodId) : null;
   return (
     <PageLayout
       breadcrumb={breadcrumb}
@@ -119,6 +123,8 @@ export default async function PeriodRecordPage({
         <Card.Body>
           <RecordMetricsForm
             periodId={periodId}
+            timingEnabled={timingEnabled}
+            openTimer={openTimer}
             periodName={period.name}
             allianceId={allianceId}
             members={alliance.allianceMembers}

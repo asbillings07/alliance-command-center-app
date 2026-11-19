@@ -9,6 +9,7 @@ export const HISTORY_PAGE_SIZE = 25;
 const orderBy = [{ recordedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }] as const;
 const select = {
   id: true, value: true, status: true, recordedAt: true, createdAt: true,
+  ocrSources: { select: { window: true, attempt: { select: { actorName: true, createdAt: true } } } },
   observedOn: true, enteredByName: true, enteredByRole: true, entryMethod: true,
   metric: { select: { id: true, name: true, unitLabel: true } },
   periodMetric: { select: { period: { select: { name: true } } } },

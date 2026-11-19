@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # Qualify the consent slice while its rollout dependency remains unmerged.
+    branches: [main, codex/ocr-recognition-trial]
 
 # Deny all permissions by default (principle of least privilege)
 # Each job explicitly declares what it needs
@@ -416,6 +417,7 @@ jobs:
       contents: read
     env:
       OCR_EVAL_TEST_FIXTURE: "1"
+      FEATURE_FLAG_TEST_OVERRIDES: '{"reports":true,"ocr-screenshot-evaluation":true}'
       SENTRY_DSN: ""
       NEXT_PUBLIC_SENTRY_DSN: ""
       NEXT_PUBLIC_SENTRY_REPLAY: "false"
@@ -461,10 +463,17 @@ jobs:
         run: npm run build
 
       - name: Run Playwright tests
-        run: npx tsx ./node_modules/@playwright/test/cli.js test e2e/ocr/screenshot-evaluation.spec.ts --project=application
+        run: npx tsx ./node_modules/@playwright/test/cli.js test e2e/ocr/screenshot-evaluation.spec.ts e2e/ocr/account-consent.spec.ts e2e/ocr/platform-readiness.spec.ts --project=application
         env:
           CI: true
           FEEDBACK_INBOX_TEST_HOOKS: "true"
+
+      - name: Verify OCR disabled routes and uploads
+        run: npx tsx ./node_modules/@playwright/test/cli.js test e2e/ocr/rollout-disabled.spec.ts --project=application
+        env:
+          CI: true
+          OCR_ROLLOUT_OFF_TEST: "1"
+          FEATURE_FLAG_TEST_OVERRIDES: '{"reports":true,"ocr-screenshot-evaluation":false}'
 
       - name: Upload Playwright Report
         uses: actions/upload-artifact@v7

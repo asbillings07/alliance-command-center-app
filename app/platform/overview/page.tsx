@@ -1,3 +1,4 @@
+import { ocrPreferencesAvailable } from "@/app/src/lib/ocr/config";
 import Link from "next/link";
 import { Badge } from "@/app/src/components";
 import {
@@ -162,6 +163,7 @@ export default async function PlatformOverview() {
           Recover account access →
         </Link>
       </section>
+      {ocrPreferencesAvailable() && <Link href="/platform/ocr-readiness" className="inline-block text-primary hover:underline">Review OCR release readiness →</Link>}
       {/* Section 1: Action Required */}
       <section data-testid="action-required-section">
         <h2 className="text-lg font-semibold text-text-secondary mb-4">

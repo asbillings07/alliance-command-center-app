@@ -1,9 +1,19 @@
 import { checkDbIdentity, connectionIdentity, productionIdentities } from "../productionDb";
+import { OCR_EVALUATION_BRANCHES } from "./evaluationBranches";
+
+/** Local fixtures use loopback with no driver routing overrides. */
+export function isLocalOcrDatabase(connection: string | undefined) {
+  try {
+    const url = new URL(connection ?? "");
+    return ["postgres:", "postgresql:"].includes(url.protocol) && !url.search
+      && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch { return false; }
+}
 
 /** Read-only configuration preflight. Call before Prisma can open a connection. */
 export function checkOcrDeploymentIsolation(env: Record<string, string | undefined>): string[] {
   if (env.VERCEL_ENV !== "preview" || env.VERCEL_TARGET_ENV !== "acc-ocr-eval"
-    || env.VERCEL_GIT_COMMIT_REF !== "codex/ocr-recognition-trial") {
+    || !OCR_EVALUATION_BRANCHES.includes(env.VERCEL_GIT_COMMIT_REF ?? "")) {
     return ["OCR deployment preflight requires the dedicated evaluation environment and reviewed branch."];
   }
 
@@ -61,4 +71,13 @@ export function checkOcrDeploymentIsolation(env: Record<string, string | undefin
     // Parsing errors may contain connection strings. Never echo their values.
     return ["OCR database configuration is malformed; no migration may run."];
   }
+}
+
+/** A replacement QA database must never become a second lifetime allowance. */
+export function originalOcrAllowanceDatabase(env: Record<string, string | undefined>) {
+  if (checkOcrDeploymentIsolation(env).length) return false;
+  return [env.DATABASE_URL!, env.DIRECT_URL!].every(value => {
+    const url = new URL(value);
+    return connectionIdentity(value) === "ep-bold-resonance-bbeekisz" && url.pathname === "/acc_ocr_eval";
+  });
 }

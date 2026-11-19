@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { LocalTimestamp } from "./LocalTimestamp";
 import { Button } from "@/app/src/components/Button";
 
 type Props = {
@@ -72,7 +73,7 @@ export function RankingScreenshotDialog({ imageUrl, title, periodLabel, uploaded
         </>}
       </div>
       <footer className="shrink-0 border-t border-border p-4 text-xs text-text-muted">
-        <p className="break-words">Uploaded by {uploadedBy} · {new Date(uploadedAt).toISOString()}</p>
+        <p className="break-words">Uploaded by {uploadedBy} · <LocalTimestamp value={uploadedAt} /></p>
         <p className="mt-1">Recognition does not establish image authenticity. Your review stays unchanged when you close this preview.</p>
       </footer>
     </div>

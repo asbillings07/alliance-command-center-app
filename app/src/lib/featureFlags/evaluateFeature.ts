@@ -3,7 +3,7 @@ import * as Sentry from "@sentry/nextjs";
 import { featureFlagRegistry, type FeatureFlagKey } from "./registry";
 import type { FeatureContext } from "./context";
 import { vercelDecisionProvider } from "./provider";
-import { createEvaluator } from "./createEvaluator";
+import { createEvaluator, hasRequiredTargetingContext } from "./createEvaluator";
 import { resolveTestOverride } from "./testOverrides";
 
 const registryKeys = Object.keys(featureFlagRegistry) as FeatureFlagKey[];
@@ -52,6 +52,10 @@ export async function evaluateFeature(
     nodeEnv: process.env.NODE_ENV,
     accE2eMode: process.env.ACC_E2E_MODE,
   });
+  if (!hasRequiredTargetingContext(featureFlagRegistry[flag], context)) {
+    recordEvaluation(flag, false);
+    return false;
+  }
   if (override !== undefined) {
     recordEvaluation(flag, override);
     return override;

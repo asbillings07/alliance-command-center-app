@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkOcrDeploymentIsolation } from "./deploymentIsolation";
+import { originalOcrAllowanceDatabase, checkOcrDeploymentIsolation } from "./deploymentIsolation";
 import { parse } from "pg-connection-string";
 
 const connection = (id: string) => `postgresql://test:private-password@${id}.us-east-1.aws.neon.tech/neondb`;
@@ -62,4 +62,12 @@ describe("OCR pre-migration isolation", () => {
       DIRECT_URL: `${valid.DIRECT_URL}?sslmode=verify-full`,
     })).toEqual([]);
   });
+});
+
+it("binds shared pilot reservations to the original allowance database", () => {
+  const db = "postgresql://ep-bold-resonance-bbeekisz.us-east-1.aws.neon.tech/acc_ocr_eval?sslmode=require";
+  const pinned = { ...valid, OCR_EVAL_DB_IDENTITY: "ep-bold-resonance-bbeekisz", DATABASE_URL: db, DIRECT_URL: db };
+  expect(originalOcrAllowanceDatabase(pinned)).toBe(true);
+  expect(originalOcrAllowanceDatabase({ ...pinned, DATABASE_URL: db.replace("/acc_ocr_eval", "/fresh") })).toBe(false);
+  expect(originalOcrAllowanceDatabase(valid)).toBe(false);
 });
