@@ -80,14 +80,14 @@ export function parseVisionResponse(value: unknown, width: number, height: numbe
   }
   const annotations = annotation.textAnnotations ?? [];
   if (!Array.isArray(annotations)) throw new Error("Invalid recognition annotations");
-  if (annotations.length > 1001) throw new RecognitionFailure("result-too-large");
+  if (annotations.length > 1001) throw new RecognitionFailure("too-many-annotations");
   const text = annotations[0]?.description ?? "";
-  if (typeof text === "string" && text.length > 16000) throw new RecognitionFailure("result-too-large");
+  if (typeof text === "string" && text.length > 16000) throw new RecognitionFailure("recognized-text-too-long");
   if (typeof text !== "string") throw new Error("Invalid recognition text");
   const words: OcrWord[] = [];
   for (const annotation of annotations.slice(1)) {
     if (typeof annotation.description !== "string") throw new Error("Invalid recognition word");
-    if (annotation.description.length > 500) throw new RecognitionFailure("result-too-large");
+    if (annotation.description.length > 500) throw new RecognitionFailure("recognized-word-too-long");
     const vertices = annotation.boundingPoly?.vertices;
     if (!Array.isArray(vertices) || vertices.length !== 4) continue;
     if (vertices.some(v => !Number.isFinite(v.x ?? 0) || !Number.isFinite(v.y ?? 0)

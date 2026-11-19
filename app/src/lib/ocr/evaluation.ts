@@ -244,7 +244,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     failureStage = "ranking-analysis";
     const rankingContext = await readRankingContext(image.bytes, recognition);
     const content = Buffer.from(JSON.stringify({ ...recognition, rankingContext }));
-    if (content.length > OCR_MAX_RESULT_BYTES) throw new RecognitionFailure("result-too-large");
+    if (content.length > OCR_MAX_RESULT_BYTES) throw new RecognitionFailure("retained-result-too-large");
     failureStage = "access-check";
     await unchanged(input, attempt.contextKey, input.processingConsentId);
     failureStage = "result-storage";

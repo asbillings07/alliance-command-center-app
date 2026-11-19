@@ -113,11 +113,11 @@ export function googleOcrTransport(): OcrTransport {
       try {
         const data = await boundedBody(response, 512 * 1024);
         const recognition = parseVisionResponse(JSON.parse(data.toString()), image.width, image.height, shortDelayAllowed);
-        if (Buffer.byteLength(JSON.stringify(recognition)) > OCR_MAX_RESULT_BYTES) throw new RecognitionFailure("result-too-large");
+        if (Buffer.byteLength(JSON.stringify(recognition)) > OCR_MAX_RESULT_BYTES) throw new RecognitionFailure("retained-result-too-large");
         return recognition;
       } catch (error) {
         if (error instanceof RecognitionFailure) throw error;
-        throw new RecognitionFailure(error instanceof ResponseTooLarge ? "result-too-large" : "response-unreadable");
+        throw new RecognitionFailure(error instanceof ResponseTooLarge ? "provider-response-too-large" : "response-unreadable");
       }
     },
   };

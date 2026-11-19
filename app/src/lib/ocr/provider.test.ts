@@ -78,7 +78,10 @@ describe("bounded provider execution", () => {
     ["network interruption", () => { throw new Error("private-sentinel"); }, "provider-unavailable"],
     ["invalid JSON", () => new Response("private-sentinel"), "response-unreadable"],
     ["invalid structure", () => Response.json({ private: "private-sentinel" }), "response-unreadable"],
-    ["oversized response", () => new Response("x".repeat(512 * 1024 + 1)), "result-too-large"],
+    ["oversized response", () => new Response("x".repeat(512 * 1024 + 1)), "provider-response-too-large"],
+    ["too many annotations", () => Response.json({responses: [{textAnnotations: Array(1002).fill({description:"x"})}]}), "too-many-annotations"],
+    ["too much text", () => Response.json({responses: [{textAnnotations: [{description:"x".repeat(16001)}]}]}), "recognized-text-too-long"],
+    ["oversized word", () => Response.json({responses: [{textAnnotations: [{description:"x"},{description:"x".repeat(501)}]}]}), "recognized-word-too-long"],
   ] as const)("classifies %s without exposing raw details or retrying", async (_example, makeResponse, reason) => {
     config();
     const send = vi.fn(makeResponse);
