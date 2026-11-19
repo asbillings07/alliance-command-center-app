@@ -113,7 +113,9 @@ export function RecordMetricsForm({
       setValues({});
       setError(null);
     } catch {
-      return { error: "Could not confirm whether the data was applied. Check Go back in time before trying again." };
+      return { error: timer
+        ? "Could not confirm the save. Check Go back in time first. To continue by hand, close this dialog and choose Stop timing. Your entered values stay here."
+        : "Could not confirm whether the data was applied. Check Go back in time before trying again." };
     } finally {
       setIsPending(false);
     }
@@ -150,7 +152,7 @@ export function RecordMetricsForm({
         </select>
       </div>
 
-      {timingEnabled && (timer || selectedMetric?.periodValue) && (
+      {(timer || (timingEnabled && selectedMetric?.periodValue)) && (
         <div className="rounded-md border border-border p-3">
           <p className="text-sm text-text-secondary">{timer
             ? "QA timing is active until you apply the data or stop timing. Leaving this page keeps the timer running."

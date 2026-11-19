@@ -2,7 +2,7 @@
 import { requireAllianceAccess } from "@/app/src/lib/auth/requireAllianceAccess";
 import { Permissions } from "@/app/src/lib/auth/permissions";
 import { prisma } from "@/app/src/lib/prisma";
-import { manualTimingAvailable, openManualTiming } from "@/app/src/lib/ocr/manualTiming";
+import { manualTimingAvailable, manualTimingIsolated, openManualTiming } from "@/app/src/lib/ocr/manualTiming";
 
 async function timingUser(allianceId: string) {
   const { user } = await requireAllianceAccess({ allianceId, requiredPermission: Permissions.IMPORT_METRICS });
@@ -23,6 +23,9 @@ export async function startManualTiming(allianceId: string, periodId: string, me
 }
 
 export async function stopManualTiming(allianceId: string, periodId: string, id: string) {
-  const userId = await timingUser(allianceId);
+  const { user } = await requireAllianceAccess({ allianceId, requiredPermission: Permissions.IMPORT_METRICS });
+  // Ending one's timer must remain possible after the rollout rule is disabled.
+  if (!manualTimingIsolated()) throw new Error("QA timing is unavailable.");
+  const userId = user.id;
   await prisma.qaManualTiming.updateMany({ where: { id, userId, allianceId, periodId, endedAt: null }, data: { endedAt: new Date() } });
 }

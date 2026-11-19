@@ -4,8 +4,12 @@ import { localOcrFixtureEnabled, ocrPreferencesAvailable, OcrEvaluationError } f
 import { checkOcrDeploymentIsolation } from "./deploymentIsolation";
 import { requireOcrRollout } from "./rollout";
 
+export function manualTimingIsolated() {
+  return ocrPreferencesAvailable() && (localOcrFixtureEnabled() || checkOcrDeploymentIsolation(process.env).length === 0);
+}
+
 export async function manualTimingAvailable(userId: string, allianceId: string) {
-  if (!ocrPreferencesAvailable() || (!localOcrFixtureEnabled() && checkOcrDeploymentIsolation(process.env).length)) return false;
+  if (!manualTimingIsolated()) return false;
   try { await requireOcrRollout({ userId, allianceId }); return true; }
   catch (error) { if (error instanceof OcrEvaluationError) return false; throw error; }
 }
