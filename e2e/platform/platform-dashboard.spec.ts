@@ -396,7 +396,9 @@ test.describe("Platform Operations Console", () => {
         });
         await expect.poll(() => prisma.importErrorReport.count({ where: { allianceId: alliance.id, code: "unsupported_format" } })).toBe(1);
         await page.goto("/platform/activity");
-        await page.getByRole("link", { name: "Import errors", exact: true }).click();
+        await page.getByRole("link", { name: "Logs", exact: true }).click();
+        await expect(page.getByRole("link", { name: "Logs", exact: true })).toHaveAttribute("aria-current", "page");
+        await expect(page.getByRole("link", { name: "Activity", exact: true })).not.toHaveAttribute("aria-current", "page");
         await page.getByLabel("Alliance name").fill(name);
         await page.getByRole("button", { name: "Filter errors" }).click();
         const row = page.getByRole("button", { name: /Unsupported file format/ });

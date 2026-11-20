@@ -2,6 +2,7 @@ import Link from "next/link";
 import { LocalTimestamp } from "@/app/alliances/[allianceId]/screenshots/LocalTimestamp";
 import { activityPeriods, parseActivityPeriod } from "@/app/src/lib/platform/activityPeriod";
 import { getImportErrors, type MethodFilter } from "@/app/src/lib/platform/importErrors";
+import { wordSnapshotAvailable } from "@/app/src/lib/platform/qaWordSnapshot";
 import { ErrorList } from "./ErrorList";
 
 export default async function ImportErrorsPage({ searchParams }: {
@@ -18,7 +19,9 @@ export default async function ImportErrorsPage({ searchParams }: {
   const href = (n: number) => "?" + new URLSearchParams({ period, method, alliance, page: String(n), ...(snapshot ? { view: "word" } : {}) });
   const field = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
   return <article className="mx-auto max-w-4xl space-y-5">
-    <Link className="text-primary underline" href="/platform/activity">Platform activity</Link>
+    {wordSnapshotAvailable() && <Link className="text-primary underline" href={snapshot ? "/platform/activity/import-errors" : "/platform/activity/import-errors?view=word"}>
+      {snapshot ? "View QA import errors" : "View WORD pilot snapshot"}
+    </Link>}
     <h1 className="text-2xl font-bold">Import errors</h1>
     {data.capturedAt && <p className="rounded border border-border p-3">QA preview · WORD snapshot as of <LocalTimestamp value={data.capturedAt} /></p>}
     <form className="grid items-end gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-2 lg:grid-cols-4">
