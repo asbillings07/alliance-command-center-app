@@ -1,5 +1,6 @@
 "use client";
 
+import { reportImportIssue, showImportIssue } from "@/app/src/lib/importDiagnostics/report";
 import { useMemo, useState } from "react";
 import { ApplyMetricDataDialog, type MetricApplicationSummary } from "@/app/src/components/ApplyMetricDataDialog";
 import { useRouter } from "next/navigation";
@@ -695,6 +696,7 @@ export function MultiPeriodImportFlow({
   playerColumnIndex,
   onCancel,
 }: MultiPeriodImportFlowProps) {
+  const workflow = routePeriodId ? "evaluation" : "setup";
   const router = useRouter();
   const sortedPeriods = useMemo(() => sortAlliancePeriods(alliancePeriods), [alliancePeriods]);
   const proposals = useMemo(
@@ -1083,7 +1085,7 @@ export function MultiPeriodImportFlow({
   const handlePreview = () => {
     setError(null);
     if (periodMetricCollision) {
-      setError(periodMetricCollision);
+      showImportIssue(allianceId, workflow, "review_blocked", setError, periodMetricCollision);
       return;
     }
 
@@ -1103,23 +1105,23 @@ export function MultiPeriodImportFlow({
     );
 
     if (nextPreviews.length === 0) {
-      setError("Map at least one column in an included proposal to preview import.");
+      showImportIssue(allianceId, workflow, "missing_mapping", setError, "Map at least one column in an included proposal to preview import.");
       return;
     }
     if (totalMissingIdentity > 0) {
-      setError(
+      showImportIssue(allianceId, workflow, "missing_identity", setError,
         `Cannot preview: ${totalMissingIdentity} ${totalMissingIdentity === 1 ? "cell contains" : "cells contain"} metric values but missing player names.`,
       );
       return;
     }
     if (totalInvalidValues > 0) {
-      setError(
+      showImportIssue(allianceId, workflow, "invalid_values", setError,
         `Cannot preview: ${totalInvalidValues} ${totalInvalidValues === 1 ? "cell contains" : "cells contain"} invalid non-whole-number values.`,
       );
       return;
     }
     if (totalMatched === 0) {
-      setError("No rows matched any of your alliance members for the mapped columns.");
+      showImportIssue(allianceId, workflow, "no_matches", setError, "No rows matched any of your alliance members for the mapped columns.");
       return;
     }
 
@@ -1163,7 +1165,7 @@ export function MultiPeriodImportFlow({
 
     const groups = [...groupsMap.values()].filter((g) => g.mappings.length > 0);
     if (groups.length === 0) {
-      setError("No matched entries to import");
+      showImportIssue(allianceId, workflow, "no_matches", setError, "No matched entries to import");
       return;
     }
 
@@ -1187,6 +1189,7 @@ export function MultiPeriodImportFlow({
       router.refresh();
       setStep("complete");
     } catch {
+      reportImportIssue(allianceId, workflow, "save_unconfirmed");
       return { error: "Could not confirm whether the data was applied. Check Go back in time before trying again." };
     } finally {
       setIsPending(false);

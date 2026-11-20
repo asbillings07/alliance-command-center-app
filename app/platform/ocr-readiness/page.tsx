@@ -32,6 +32,7 @@ export default async function OcrReadinessPage({ searchParams }: { searchParams:
         {([["Uploads", scans - retries], ["Scan attempts", scans], ["Retries included in attempts", retries], ["Failed attempts", failures], ["Confirmed score batches", saves], ["Confirmed scores", confirmedScores]] as const).map(([label, value]) =>
           <div key={label} className="rounded-lg border border-border p-4"><dt>{label}</dt><dd className="text-xl font-semibold">{value}</dd></div>)}
       </dl>
+      <Link className="inline-block text-primary underline" href={snapshot ? "/platform/activity/import-errors?view=word" : "/platform/activity/import-errors"}>Investigate import errors</Link>
       <PilotActivity attempts={activity} period={period} snapshot={!!snapshot} />
       <p>Public beta and paid release: Not enough evidence. A confirmed batch can contain several screenshots. A comparable manual baseline and independent accuracy audit are still needed.</p>
     </article>;

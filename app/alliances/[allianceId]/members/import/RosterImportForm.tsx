@@ -1,5 +1,6 @@
 "use client";
 
+import { showImportIssue } from "@/app/src/lib/importDiagnostics/report";
 import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -177,7 +178,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
 
       if (parseResult.kind === "error") {
         setParseErrorCode(parseResult.code);
-        setError(parseResult.message);
+        showImportIssue(allianceId, "roster", parseResult.code, setError, parseResult.message);
         return;
       }
 
@@ -186,7 +187,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
       processSheetRows(parseResult.workbook, parseResult.workbook.defaultSheetIndex);
     } catch {
       setIsLoadingFile(false);
-      setError("An unexpected error occurred while reading the file.");
+      showImportIssue(allianceId, "roster", "malformed", setError, "An unexpected error occurred while reading the file.");
     }
   };
 
@@ -195,7 +196,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
     if (!sheet || sheet.rows.length === 0) {
       setParsedMembers([]);
       setMappedColumnIndices({ playerColIndex: null, thpColIndex: null, roleColIndex: null });
-      setError("The selected worksheet is empty.");
+      showImportIssue(allianceId, "roster", "empty_sheet", setError, "The selected worksheet is empty.");
       return;
     }
 
@@ -206,7 +207,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
     if (analysis.error) {
       setParsedMembers([]);
       setMappedColumnIndices({ playerColIndex: null, thpColIndex: null, roleColIndex: null });
-      setError(analysis.error);
+      showImportIssue(allianceId, "roster", "review_blocked", setError, analysis.error);
       return;
     }
 
@@ -214,7 +215,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
     if (!playerCol) {
       setParsedMembers([]);
       setMappedColumnIndices({ playerColIndex: null, thpColIndex: null, roleColIndex: null });
-      setError("No player column found. Your spreadsheet must have a column named: Player, Member, Name, or IGN.");
+      showImportIssue(allianceId, "roster", "missing_player_column", setError, "No player column found. Your spreadsheet must have a column named: Player, Member, Name, or IGN.");
       return;
     }
 
@@ -256,7 +257,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
 
     if (rawMembers.length === 0) {
       setParsedMembers([]);
-      setError("No valid members found in the worksheet.");
+      showImportIssue(allianceId, "roster", "no_matches", setError, "No valid members found in the worksheet.");
       return;
     }
 
@@ -434,7 +435,7 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
     }
 
     if (!parsedWorkbook || !currentSheet) {
-      setError("Missing source file information. Please re-upload your spreadsheet.");
+      showImportIssue(allianceId, "roster", "review_blocked", setError, "Missing source file information. Please re-upload your spreadsheet.");
       return;
     }
 
@@ -455,14 +456,14 @@ export function RosterImportForm({ allianceId, existingMembers, returnTo }: Rost
         });
         setImportResult(result);
         if (result.errors.length > 0 && result.created === 0 && result.restored === 0) {
-          setError(result.errors.join("; "));
+          showImportIssue(allianceId, "roster", "save_rejected", setError, result.errors.join("; "));
         } else {
           setError(null);
           router.refresh();
           setStep("complete");
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to create members. Please try again.");
+        showImportIssue(allianceId, "roster", "save_unconfirmed", setError, err instanceof Error ? err.message : "Failed to create members. Please try again.");
       }
     });
   };

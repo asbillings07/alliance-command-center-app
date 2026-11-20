@@ -1336,3 +1336,18 @@ model OcrPilotReservation {
   id         String   @id @db.Uuid
   reservedAt DateTime @default(now())
 }
+
+// Bounded browser reports. Only fixed codes and the reporting tab's build are retained.
+model ImportErrorReport {
+  id        String   @id @default(cuid())
+  allianceId String
+  actorId   String
+  scanRequestId String? @db.VarChar(36)
+  workflow  String   @db.VarChar(24)
+  code      String   @db.VarChar(32)
+  clientBuild String? @db.VarChar(7)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt, id])
+  @@index([actorId, createdAt])
+}

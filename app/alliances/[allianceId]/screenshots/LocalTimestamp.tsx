@@ -7,12 +7,12 @@ const clientSnapshot = () => true;
 const serverSnapshot = () => false;
 
 /** Format in the viewer's locale and time zone only after hydration. */
-export function LocalTimestamp({ value }: { value: string }) {
+export function LocalTimestamp({ value, seconds = false }: { value: string; seconds?: boolean }) {
   const hydrated = useSyncExternalStore(subscribe, clientSnapshot, serverSnapshot);
   const timestamp = new Date(value);
   if (Number.isNaN(timestamp.getTime())) return <span>Time unavailable</span>;
   const label = hydrated ? new Intl.DateTimeFormat(undefined, {
-    year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short",
+    year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", ...(seconds ? { second: "2-digit" as const } : {}), timeZoneName: "short",
   }).format(timestamp) : "Loading local time…";
   return <time dateTime={value} title={hydrated ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined}>{label}</time>;
 }

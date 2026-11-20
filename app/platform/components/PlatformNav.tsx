@@ -31,7 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Activity",
     href: "/platform/activity",
-    description: "Live Feed of everything",
+    description: "Recent activity and import errors",
   },
   {
     label: "Beta",

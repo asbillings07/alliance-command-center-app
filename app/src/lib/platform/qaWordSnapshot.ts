@@ -26,6 +26,10 @@ function activityRow(value: Record<string, unknown>): ActivityRow {
     scores: count(value.scores), lastSavedAt: value.lastSavedAt === null ? null : date(value.lastSavedAt) };
 }
 
+export function wordSnapshotAvailable() {
+  return originalOcrAllowanceDatabase(process.env) && process.env.VERCEL_GIT_COMMIT_REF === "codex/platform-ocr-attempt-history" && !!process.env.OCR_QA_WORD_ACTIVITY;
+}
+
 /** Per-deployment readout. No production credentials, files, identities or recognized content. */
 export async function getQaWordSnapshot(period: ActivityPeriod) {
   await requirePlatformAdmin();
