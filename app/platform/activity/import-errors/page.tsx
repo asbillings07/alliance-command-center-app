@@ -25,7 +25,7 @@ export default async function ImportErrorsPage({ searchParams }: {
     </Link>}
     <h1 className="text-2xl font-bold">{activity === "all" ? "All import activity" : "Import errors"}</h1>
     {data.capturedAt && <p className="rounded border border-border p-3">QA preview · WORD snapshot as of <LocalTimestamp value={data.capturedAt} /></p>}
-    <form className="grid items-end gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-2 lg:grid-cols-5">
+    <form key={href(0)} className="grid items-end gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-2 lg:grid-cols-5">
       {snapshot && <input type="hidden" name="view" value="word" />}
       <label>Activity<select name="activity" defaultValue={activity} className={field}><option value="errors">Errors only</option><option value="all">All import activity</option></select></label>
       <label>Date range<select name="period" defaultValue={period} className={field}>{Object.entries(activityPeriods).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}</select></label>
