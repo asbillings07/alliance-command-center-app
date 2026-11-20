@@ -614,18 +614,20 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
     const original = await input(batch);
     const joined = { ...original, requestId: crypto.randomUUID() };
-    const started = Promise.withResolvers<void>();
-    const finish = Promise.withResolvers<void>();
+    let signalStarted!: () => void;
+    let signalFinish!: () => void;
+    const started = new Promise<void>(resolve => { signalStarted = resolve; });
+    const finish = new Promise<void>(resolve => { signalFinish = resolve; });
     vi.mocked(transport.recognize).mockImplementationOnce(async () => {
-      started.resolve();
-      await finish.promise;
+      signalStarted();
+      await finish;
       throw new Error("provider failure");
     });
     const failure = expect(evaluateScreenshot(original, transport)).rejects.toThrow("did not complete");
-    await started.promise;
+    await started;
     try {
       expect(await evaluateScreenshot(joined, transport)).toMatchObject({ status: "PROCESSING" });
-    } finally { finish.resolve(); }
+    } finally { signalFinish(); }
     await failure;
     const originalFailure = await evaluateScreenshot(original, transport);
     expect(await evaluateScreenshot(joined, transport)).toMatchObject({ id: originalFailure.id, status: "FAILED" });
