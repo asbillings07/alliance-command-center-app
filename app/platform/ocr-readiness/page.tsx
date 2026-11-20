@@ -3,6 +3,8 @@ import { LocalTimestamp } from "@/app/alliances/[allianceId]/screenshots/LocalTi
 import { productionPilotConfigured } from "@/app/src/lib/ocr/productionPilot";
 import { getProductionPilotCounts, getOcrReadiness } from "@/app/src/lib/platform/ocrReadiness";
 
+import { PilotActivity } from "./PilotActivity";
+
 const criteria = [
   ["Usable imports", "Count user-confirmed imports, including corrections, among settled journeys. Keep failed, abandoned and open work distinct. Protected QA confirmations are counted separately below."],
   ["Silent critical errors", "Check player identity, alliance, reporting period and score against a consented human-reviewed sample. Audited counts and unresolved findings are unavailable."],
@@ -12,9 +14,10 @@ const criteria = [
   ["Economics and demand", "Calculate cost per confirmed import including retries, failures and support. Invoice costs, confirmed imports and commitments at a specific price are unavailable."],
 ] as const;
 
-export default async function OcrReadinessPage() {
+export default async function OcrReadinessPage({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
   if (productionPilotConfigured()) {
-    const { scans, retries, failures, saves } = await getProductionPilotCounts();
+    const sinceFix = (await searchParams).period !== "all";
+    const { scans, retries, failures, saves, activity } = await getProductionPilotCounts(sinceFix);
     return <article className="mx-auto max-w-5xl space-y-5">
       <Link href="/platform/overview" className="text-sm text-primary hover:underline">Platform overview</Link>
       <h2 className="text-2xl font-bold">WORD OCR pilot</h2>
@@ -23,6 +26,7 @@ export default async function OcrReadinessPage() {
         {([["Uploads", scans - retries], ["Scan attempts", scans], ["Retries included in attempts", retries], ["Failed attempts", failures], ["Confirmed score batches", saves]] as const).map(([label, value]) =>
           <div key={label} className="rounded-lg border border-border p-4"><dt>{label}</dt><dd className="text-xl font-semibold">{value}</dd></div>)}
       </dl>
+      <PilotActivity attempts={activity} sinceFix={sinceFix} />
       <p>Public beta and paid release: Not enough evidence. A confirmed batch can contain several screenshots. A comparable manual baseline and independent accuracy audit are still needed.</p>
     </article>;
   }
