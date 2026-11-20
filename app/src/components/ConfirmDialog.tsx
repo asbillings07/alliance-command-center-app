@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode } from "react";
 import { Button, type ButtonVariant } from "./Button";
 
 export type ConfirmDialogResult = { error?: string } | void;
@@ -41,6 +41,9 @@ export type ConfirmDialogProps = {
     onConfirm: () => Promise<ConfirmDialogResult>;
     /** Called whenever the dialog closes, via any path (Cancel, Escape, or a successful confirm). */
     onClose: () => void;
+    onOpened?: () => void;
+    /** Only an explicit Cancel or Escape that actually closes the dialog. */
+    onDismissed?: () => void;
 };
 
 /**
@@ -60,7 +63,7 @@ export function ConfirmDialog({
     confirmVariant = "primary",
     confirmDisabled = false,
     onConfirm,
-    onClose,
+    onClose, onOpened, onDismissed,
 }: ConfirmDialogProps) {
     const dialogRef = useRef<HTMLDialogElement>(null);
     const [isPending, setIsPending] = useState(false);
@@ -78,6 +81,8 @@ export function ConfirmDialog({
      * superseded attempt is a no-op instead of overwriting or closing the
      * *new* attempt (old-success, old-error, and second-confirm races).
      */
+    const notifyOpened = useEffectEvent(() => onOpened?.());
+    const dismissRequested = useRef(false);
     const attemptIdRef = useRef(0);
 
     useEffect(() => {
@@ -99,13 +104,16 @@ export function ConfirmDialog({
             // clean.
             setError(null);
             setIsPending(false);
+            dismissRequested.current = false;
             dialog.showModal();
+            notifyOpened();
         } else if (!isOpen && dialog.open) {
             dialog.close();
         }
     }, [isOpen]);
 
     const handleCancelClick = () => {
+        dismissRequested.current = true;
         dialogRef.current?.close();
     };
 
@@ -147,13 +155,19 @@ export function ConfirmDialog({
     return (
         <dialog
             ref={dialogRef}
-            onClose={onClose}
+            onClose={() => {
+                if (dismissRequested.current) onDismissed?.();
+                dismissRequested.current = false;
+                onClose();
+            }}
             onCancel={(e) => {
                 // Escape fires "cancel" then "close". Block it mid-request so a
                 // completing mutation can't land after the dialog (and its
                 // error slot) have already been dismissed.
                 if (isPending) {
                     e.preventDefault();
+                } else {
+                    dismissRequested.current = true;
                 }
             }}
             aria-labelledby={titleId}

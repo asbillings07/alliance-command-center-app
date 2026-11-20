@@ -1,7 +1,8 @@
 "use client";
+import { reportReviewMilestone } from "@/app/src/lib/importDiagnostics/reportReviewMilestone";
 import { reportImportIssue } from "@/app/src/lib/importDiagnostics/report";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button, ConfirmDialog } from "@/app/src/components/client";
 import type { BatchSelection } from "@/app/src/lib/ocr/confirmedBatch";
@@ -18,6 +19,7 @@ export function BatchConfirmation({ destination, daily, weekly, selection }: {
   const [review, setReview] = useState<Review | null>(null);
   const [busy, setBusy] = useState(false), [lower, setLower] = useState(false), [error, setError] = useState("");
   const [createConfirmed, setCreateConfirmed] = useState(false);
+  const dialogInteraction = useRef<string | null>(null);
   const newNames = [...new Set(review?.comparisons.filter(r => r.createMember).map(r => r.member) ?? [])];
   const router = useRouter();
   const input = { ...selection, periodId, dailyMetric:dailyMetric === "custom" ? "create:"+dailyName : dailyMetric, weeklyMetric:weeklyMetric === "custom" ? "create:"+weeklyName : weeklyMetric };
@@ -55,6 +57,13 @@ export function BatchConfirmation({ destination, daily, weekly, selection }: {
     </>}
     {error && <p role="alert">{error}</p>}
     {review && !review.saved && <ConfirmDialog isOpen title="Apply these scores?" confirmLabel="Confirm and save scores"
+      onOpened={() => {
+        dialogInteraction.current = crypto.randomUUID();
+        reportReviewMilestone(selection.allianceId, selection.attemptIds, dialogInteraction.current, "score_displayed");
+      }}
+      onDismissed={() => {
+        if (dialogInteraction.current) reportReviewMilestone(selection.allianceId, selection.attemptIds, dialogInteraction.current, "confirmation_dismissed");
+      }}
       confirmDisabled={(!!decreases && !lower) || (newNames.length > 0 && !createConfirmed)} onClose={() => setReview(current => current?.saved ? current : null)}
       description={<div className="space-y-3"><p>Destination: <strong>{review.periodName}</strong>. Check each member and reporting date. These scores will appear in leadership results and member history. {review.excluded} rows excluded.</p>
         {review.changes.length > 0 && <div><strong>Setup included when you confirm</strong><ul>{review.changes.map(change=><li key={change}>{change}</li>)}</ul></div>}

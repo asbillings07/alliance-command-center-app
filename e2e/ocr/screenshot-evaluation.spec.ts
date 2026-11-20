@@ -716,6 +716,10 @@ test("a confirmed ranking batch persists under the correct members for a second 
     await page.getByLabel("Week beginning (Monday)").fill("2026-11-16");
     await expect(page.getByRole("row").filter({has:page.getByRole("button",{name:"View source for Riley Chen"})})).toContainText("New roster member");
     await page.getByRole("button",{name:"Finish recognition review"}).click();
+    const stages = async () => (await prisma.ocrReviewMilestone.findMany({
+      where: { allianceId, actorId: ownerScenario.userId }, orderBy: { id: "asc" }, select: { stage: true },
+    })).map(event => event.stage);
+    await expect.poll(stages).toEqual(["recognition_finished"]);
     await page.getByLabel("Daily score metric").selectOption(metric.id);
     await page.getByRole("button",{name:"Review score changes"}).click();
     const dialog = page.getByRole("dialog",{name:"Apply these scores?"});
@@ -723,7 +727,9 @@ test("a confirmed ranking batch persists under the correct members for a second 
     const confirm = dialog.getByRole("button",{name:"Confirm and save scores"});
     await expect(confirm).toBeDisabled();
     await expect(dialog).toContainText("1 new roster member will be created");
+    await expect.poll(stages).toEqual(["recognition_finished", "score_displayed"]);
     await dialog.getByRole("button",{name:"Cancel"}).click();
+    await expect.poll(stages).toEqual(["recognition_finished", "score_displayed", "confirmation_dismissed"]);
     expect(await prisma.ocrScoreBatch.count({where:{allianceId}})).toBe(0);
     expect(await prisma.allianceMember.count({where:{allianceId,playerName:"Riley Chen"}})).toBe(0);
     await page.getByRole("button",{name:"Review score changes"}).click();
@@ -733,9 +739,10 @@ test("a confirmed ranking batch persists under the correct members for a second 
     await prisma.memberMetricEntry.create({ data: { allianceMemberId: members[0].id, metricId: metric.id, periodId: period.id, observationGrain: "DAILY_OBSERVATION", observedOn: new Date("2026-11-16"), value: 26000000 } });
     await confirm.click();
     await expect(dialog.getByRole("alert")).toContainText("changed");
+    expect(await stages()).toEqual(["recognition_finished", "score_displayed", "confirmation_dismissed", "score_displayed"]);
     expect(await prisma.ocrScoreBatch.count({where:{allianceId}})).toBe(0);
     expect(await prisma.allianceMember.count({where:{allianceId,playerName:"Riley Chen"}})).toBe(0);
-    await dialog.getByRole("button",{name:"Cancel"}).click();
+    await page.keyboard.press("Escape");
     await page.getByRole("button",{name:"Review score changes"}).click();
     await expect(dialog).toContainText("26,000,000");
     await dialog.getByRole("checkbox",{name:/lower scores/}).check();
@@ -748,6 +755,8 @@ test("a confirmed ranking batch persists under the correct members for a second 
     expect(added.userId).toBeNull();
     members.push(added);
     expect(entries.map(e=>[e.allianceMemberId,e.value])).toEqual([[members[0].id,23340000],[members[1].id,19317601],[added.id,17512500]]);
+    expect(await stages()).toEqual(["recognition_finished", "score_displayed", "confirmation_dismissed",
+      "score_displayed", "confirmation_dismissed", "score_displayed"]);
     await page.reload();
     await expect(page.getByRole("heading",{name:"Saved score batches"})).toBeVisible();
     await page.context().clearCookies();

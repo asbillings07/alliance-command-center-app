@@ -3,6 +3,7 @@ import { Prisma } from "@/app/generated/prisma/client";
 import { requirePlatformAdmin } from "../auth/requirePlatformAdmin";
 import { prisma } from "../prisma";
 import { reasons, workflows, type Reason, type Workflow } from "../importDiagnostics/codes";
+import { reviewStages, type ReviewStage } from "../importDiagnostics/reviewStages";
 import { activityStart, type ActivityPeriod } from "./activityPeriod";
 import { pilotError, type ActivityRow } from "./ocrPilotActivity";
 import { getQaWordSnapshot } from "./qaWordSnapshot";
@@ -23,6 +24,9 @@ function present(row: DbRow): ImportErrorRow {
     source = "Scan record";
     const outcome = row.code === "READY" ? "Ready for review" : row.code === "PROCESSING" ? "Processing" : pilotError("FAILED", row.code)!;
     reason = row.action ? row.action + " · " + outcome : outcome;
+  } else if (row.key.startsWith("review:")) {
+    source = "Reported by the reviewer’s browser";
+    reason = reviewStages[row.code as ReviewStage];
   } else if (row.key.startsWith("report:")) {
     source = "Reported by the browser";
     reason = reasons[row.code as Reason] ?? "Cause unavailable";
@@ -65,6 +69,10 @@ export async function getImportLog({ period, method, alliance, page, snapshot, a
       WHERE r."scanRequestId" IS NULL OR NOT EXISTS (SELECT 1 FROM "OcrEvaluationAttempt" a
         WHERE a."requestId" = r."scanRequestId" AND a."allianceId" = r."allianceId" AND a."actorUserId" = r."actorId" AND a.status = 'FAILED')
       ${all ? Prisma.sql`
+        UNION ALL
+        SELECT 'review:' || lpad(m.id::text, 10, '0'), m."createdAt", m."allianceId", m."actorId",
+          'screenshot', m.stage, m."clientBuild", '', NULL
+        FROM "OcrReviewMilestone" m
         UNION ALL
         SELECT 'batch:' || b.id, b."savedAt", b."allianceId", b."actorId", 'screenshot', NULL, NULL, '',
           (SELECT count(*)::int FROM "MemberMetricEntry" m WHERE m."ocrBatchId" = b.id)
@@ -120,5 +128,17 @@ export async function getRelatedScans(key: string, snapshot: boolean) {
       WHERE s."attemptId" = a.id AND b."allianceId" = a."allianceId" AND b."actorId" = a."actorUserId"
     ) saved WHERE selected.id = ${id} ORDER BY a."createdAt", a.id
   `);
-  return rows.map(step);
+  if (!rows.length) return [];
+  const milestones = await prisma.$queryRaw<{ id: number; stage: ReviewStage; createdAt: Date; clientBuild: string | null; reviewer: string }[]>(Prisma.sql`
+    SELECT m.id, m.stage, m."createdAt", m."clientBuild", COALESCE(u."displayName", 'Reviewer') AS reviewer
+    FROM "OcrReviewMilestone" m
+    JOIN "OcrEvaluationAttempt" selected ON selected.id = ${id} AND selected."allianceId" = m."allianceId"
+    LEFT JOIN "User" u ON u.id = m."actorId"
+    WHERE m."attemptIds" && ARRAY[${Prisma.join(rows.map(row => row.id))}]::text[]
+    ORDER BY m."createdAt", m.id
+  `);
+  return [...rows.map(step), ...milestones.map(m => ({
+    key: "review:" + m.id, when: m.createdAt.toISOString(), action: reviewStages[m.stage],
+    outcome: "Reported by " + m.reviewer, build: m.clientBuild, scores: 0, saved: null,
+  }))].sort((a, b) => a.when.localeCompare(b.when));
 }
