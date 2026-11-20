@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { prisma } from "../prisma";
 import { getImportLog, getRelatedScans } from "./importErrors";
+import { recordReviewMilestone } from "../importDiagnostics/reviewAction";
+import { decideOcrConsent } from "../ocr/consent";
+import { OCR_PROCESSING_NOTICE } from "../ocr/consentPolicy";
 import { reportImportError } from "../importDiagnostics/reportAction";
 
 const mocks = vi.hoisted(() => ({ admin: vi.fn(), auth: vi.fn() }));
@@ -81,6 +84,35 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true" || !localDb || !!process.e
       await prisma.metricPeriod.delete({where: {id: period.id}});
       await prisma.metric.delete({where: {id: metric.id}});
       await prisma.allianceMember.delete({where: {id: member.id}});
+    }
+  });
+  it("links review stages only to eligible attempts and shows each browser interaction once", async () => {
+    vi.stubEnv("ACC_E2E_MODE", "1");
+    vi.stubEnv("OCR_EVAL_TEST_FIXTURE", "1");
+    vi.stubEnv("FEATURE_FLAG_TEST_OVERRIDES", '{"ocr-screenshot-evaluation":true}');
+    const interaction = randomUUID();
+    try {
+      await decideOcrConsent(actor, { purpose: "PROCESSING", granted: true, expectedId: null, noticeVersion: OCR_PROCESSING_NOTICE });
+      await recordReviewMilestone(alliance, [ready], interaction, "confirmation_dismissed");
+      await recordReviewMilestone(alliance, [ready, foreign], interaction, "recognition_finished");
+      await recordReviewMilestone(alliance, [failed], interaction, "score_displayed");
+      expect(await prisma.ocrReviewMilestone.count({ where: { actorId: actor } })).toBe(0);
+      await expect(recordReviewMilestone(other, [foreign], interaction, "score_displayed")).rejects.toThrow();
+      await recordReviewMilestone(alliance, [ready], randomUUID(), "recognition_finished");
+      await recordReviewMilestone(alliance, [ready], interaction, "score_displayed", "123abcd");
+      await recordReviewMilestone(alliance, [ready], interaction, "score_displayed", "123abcd");
+      await recordReviewMilestone(alliance, [ready], interaction, "confirmation_dismissed");
+      const list = await getImportLog({ ...filters, activity: "all", method: "screenshot" });
+      const events = list.rows.filter(row => row.key.startsWith("review:"));
+      expect(events.map(row => row.reason)).toEqual(["Confirmation dismissed", "Score review displayed", "Recognition review finished"]);
+      expect(events[1]).toMatchObject({account:"QA operator", build:"123abcd"});
+      expect((await getImportLog(filters)).rows.some(row => row.key.startsWith("review:"))).toBe(false);
+      expect((await getRelatedScans("scan:" + failed, false)).filter(row => row.key.startsWith("review:"))).toHaveLength(3);
+      expect((await getRelatedScans("scan:" + foreign, false)).filter(row => row.key.startsWith("review:"))).toHaveLength(0);
+      expect(JSON.stringify(events)).not.toContain("private");
+    } finally {
+      vi.unstubAllEnvs();
+      await prisma.ocrReviewMilestone.deleteMany({ where: { actorId: actor } });
     }
   });
   it("links the successful retry only within the same account, alliance and member scope", async () => {

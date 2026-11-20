@@ -1351,3 +1351,18 @@ model ImportErrorReport {
   @@index([createdAt, id])
   @@index([actorId, createdAt])
 }
+
+model OcrReviewMilestone {
+  id            Int      @id @default(autoincrement())
+  allianceId    String
+  actorId       String
+  interactionId String   @db.Uuid
+  stage         String   @db.VarChar(32)
+  attemptIds    String[]
+  clientBuild   String?  @db.VarChar(7)
+  createdAt     DateTime @default(now())
+
+  @@unique([actorId, interactionId, stage])
+  @@index([allianceId, createdAt])
+  @@index([actorId, createdAt])
+}
