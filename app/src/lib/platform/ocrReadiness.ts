@@ -43,12 +43,13 @@ export async function getProductionPilotCounts(sinceFix = true) {
   if (!productionPilotConfigured()) notFound();
   const allianceId = process.env.OCR_PILOT_ALLIANCE_ID!;
   const actorId = process.env.OCR_PILOT_USER_ID!;
-  const [scans, retries, failures, saves, activity] = await prisma.$transaction([
+  const [scans, retries, failures, saves, confirmedScores, activity] = await prisma.$transaction([
     prisma.ocrEvaluationAttempt.count({ where: { allianceId, actorUserId: actorId } }),
     prisma.ocrEvaluationAttempt.count({ where: { allianceId, actorUserId: actorId, retryOf: { not: null } } }),
     prisma.ocrEvaluationAttempt.count({ where: { allianceId, actorUserId: actorId, status: "FAILED" } }),
     prisma.ocrScoreBatch.count({ where: { allianceId, actorId } }),
+    prisma.memberMetricEntry.count({ where: { ocrBatch: { allianceId, actorId } } }),
     pilotActivityQuery(allianceId, actorId, sinceFix ? new Date(thursdayFixLiveAt) : null),
   ], { isolationLevel: "RepeatableRead" });
-  return { scans, retries, failures, saves, activity };
+  return { scans, retries, failures, saves, confirmedScores, activity };
 }

@@ -3,6 +3,7 @@ import { LocalTimestamp } from "@/app/alliances/[allianceId]/screenshots/LocalTi
 import { productionPilotConfigured } from "@/app/src/lib/ocr/productionPilot";
 import { getProductionPilotCounts, getOcrReadiness } from "@/app/src/lib/platform/ocrReadiness";
 
+import { getQaWordSnapshot } from "@/app/src/lib/platform/qaWordSnapshot";
 import { PilotActivity } from "./PilotActivity";
 
 const criteria = [
@@ -14,19 +15,23 @@ const criteria = [
   ["Economics and demand", "Calculate cost per confirmed import including retries, failures and support. Invoice costs, confirmed imports and commitments at a specific price are unavailable."],
 ] as const;
 
-export default async function OcrReadinessPage({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
-  if (productionPilotConfigured()) {
-    const sinceFix = (await searchParams).period !== "all";
-    const { scans, retries, failures, saves, activity } = await getProductionPilotCounts(sinceFix);
+export default async function OcrReadinessPage({ searchParams }: { searchParams: Promise<{ period?: string; view?: string }> }) {
+  const params = await searchParams;
+  const sinceFix = params.period !== "all";
+  const live = productionPilotConfigured();
+  if (live || params.view === "word") {
+    const snapshot = live ? null : await getQaWordSnapshot(sinceFix);
+    const { scans, retries, failures, saves, confirmedScores, activity } = snapshot ?? await getProductionPilotCounts(sinceFix);
     return <article className="mx-auto max-w-5xl space-y-5">
       <Link href="/platform/overview" className="text-sm text-primary hover:underline">Platform overview</Link>
       <h2 className="text-2xl font-bold">WORD OCR pilot</h2>
+      {snapshot && <p className="rounded-lg border border-border bg-surface p-3">QA preview · WORD activity as of <LocalTimestamp value={snapshot.capturedAt} /></p>}
       <p>All-time activity for the selected account in WORD.</p>
       <dl className="grid gap-3 sm:grid-cols-2">
-        {([["Uploads", scans - retries], ["Scan attempts", scans], ["Retries included in attempts", retries], ["Failed attempts", failures], ["Confirmed score batches", saves]] as const).map(([label, value]) =>
+        {([["Uploads", scans - retries], ["Scan attempts", scans], ["Retries included in attempts", retries], ["Failed attempts", failures], ["Confirmed score batches", saves], ["Confirmed scores", confirmedScores]] as const).map(([label, value]) =>
           <div key={label} className="rounded-lg border border-border p-4"><dt>{label}</dt><dd className="text-xl font-semibold">{value}</dd></div>)}
       </dl>
-      <PilotActivity attempts={activity} sinceFix={sinceFix} />
+      <PilotActivity attempts={activity} sinceFix={sinceFix} snapshot={!!snapshot} />
       <p>Public beta and paid release: Not enough evidence. A confirmed batch can contain several screenshots. A comparable manual baseline and independent accuracy audit are still needed.</p>
     </article>;
   }

@@ -22,7 +22,7 @@ export function pilotError(status: string, outcome: string | null) {
   return recognitionFailureMessage(outcome) ?? failureStages.get(outcome?.replace(/^processing-failed:/, "") ?? "") ?? "The failure reason was not recorded.";
 }
 
-type ActivityRow = {
+export type ActivityRow = {
   id: string; firstId: string; createdAt: Date; status: string; outcome: string | null;
   retry: boolean; automaticRetry: boolean; scores: number; lastSavedAt: Date | null;
 };
