@@ -400,7 +400,7 @@ test.describe("Platform Operations Console", () => {
         await expect(page.getByRole("link", { name: "Logs", exact: true })).toHaveAttribute("aria-current", "page");
         await expect(page.getByRole("link", { name: "Activity", exact: true })).not.toHaveAttribute("aria-current", "page");
         await page.getByLabel("Alliance name").fill(name);
-        await page.getByRole("button", { name: "Filter errors" }).click();
+        await page.getByRole("button", { name: "Apply filters" }).click();
         const row = page.getByRole("button", { name: /Unsupported file format/ });
         await row.click();
         const detail = page.getByRole("dialog", { name: "Import details" });
@@ -409,6 +409,10 @@ test.describe("Platform Operations Console", () => {
         await expect(detail).not.toContainText("private-fixture");
         await page.keyboard.press("Escape");
         await expect(row).toBeFocused();
+        await page.getByLabel("Activity", { exact: true }).selectOption("all");
+        await page.getByRole("button", { name: "Apply filters" }).click();
+        await expect(page.getByRole("heading", { name: "All import activity" })).toBeVisible();
+        await expect(row).toBeVisible();
       } finally {
         await prisma.importErrorReport.deleteMany({ where: { allianceId: alliance.id } });
         await prisma.allianceMembership.deleteMany({ where: { allianceId: alliance.id } });

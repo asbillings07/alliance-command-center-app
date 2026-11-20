@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { prisma } from "../prisma";
-import { getImportErrors, getRelatedScans } from "./importErrors";
+import { getImportLog, getRelatedScans } from "./importErrors";
 import { reportImportError } from "../importDiagnostics/reportAction";
 
 const mocks = vi.hoisted(() => ({ admin: vi.fn(), auth: vi.fn() }));
@@ -24,7 +24,7 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true" || !localDb || !!process.e
       sourceDigest: randomUUID(), processingVersion: "test", imageBytes: 10, createdAt, expiresAt: new Date(createdAt.getTime() + 30 * 86400000) };
     await prisma.ocrEvaluationAttempt.createMany({ data: [
       { ...base, id: failed, requestId: request, status: "FAILED", outcome: "processing-failed:recognition" },
-      { ...base, id: ready, requestId: randomUUID(), retryOf: failed, status: "READY", clientBuild: "a123bc4" },
+      { ...base, id: ready, createdAt: new Date(createdAt.getTime() + 1000), expiresAt: new Date(base.expiresAt.getTime() + 1000), requestId: randomUUID(), retryOf: failed, status: "READY", clientBuild: "a123bc4" },
       { ...base, id: foreign, requestId: randomUUID(), allianceId: other, status: "READY" },
     ] });
   });
@@ -43,14 +43,18 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true" || !localDb || !!process.e
     // A UI caller cannot store a filename as an error code.
     await reportImportError(alliance, "evaluation", "private.png" as "encrypted");
     expect(await prisma.importErrorReport.count({ where: { actorId: actor } })).toBe(2);
-    const {rows} = await getImportErrors(filters);
+    const {rows} = await getImportLog(filters);
     expect(rows).toHaveLength(2);
     expect(rows.find(r => r.source === "Scan record")?.reason).toContain("specific cause was not recorded");
     expect(JSON.stringify(rows)).not.toContain("private");
-    expect((await getImportErrors({ ...filters, method: "spreadsheet" })).rows).toMatchObject([{ build: "123abcd", reason: "Password-protected workbook" }]);
-    expect((await getImportErrors({ ...filters, page: 1 })).rows).toEqual([]);
+    expect((await getImportLog({ ...filters, method: "spreadsheet" })).rows).toMatchObject([{ build: "123abcd", reason: "Password-protected workbook" }]);
+    expect((await getImportLog({ ...filters, page: 1 })).rows).toEqual([]);
   });
   it("links the successful retry only within the same account, alliance and member scope", async () => {
+    const timeline = await getImportLog({ ...filters, activity: "all", method: "screenshot" });
+    expect(timeline.rows.map(r => r.key)).toEqual(["scan:" + ready, "scan:" + failed]);
+    expect(timeline.rows[0].reason).toBe("User retry · Ready for review");
+    expect(timeline.rows[1].reason).toMatch(/failed/i);
     const steps = await getRelatedScans("scan:" + failed, false);
     expect(steps).toHaveLength(2);
     expect(steps.find(s => s.key === "scan:" + ready)).toMatchObject({ action: "User retry", outcome: "Ready for review", scores: 0, build: "a123bc4" });
@@ -58,6 +62,6 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true" || !localDb || !!process.e
     mocks.admin.mockRejectedValueOnce(Error("denied"));
     await expect(getRelatedScans("scan:" + failed, false)).rejects.toThrow("denied");
     mocks.admin.mockRejectedValueOnce(Error("denied"));
-    await expect(getImportErrors(filters)).rejects.toThrow("denied");
+    await expect(getImportLog(filters)).rejects.toThrow("denied");
   });
 });

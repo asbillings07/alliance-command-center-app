@@ -11,45 +11,76 @@ export type ImportErrorRow = {
   key: string; when: string; alliance: string; account: string; method: string;
   reason: string; source: string; build: string | null;
 };
-type DbRow = { key: string; at: Date; alliance: string | null; actor: string; workflow: Workflow; code: string | null; build: string | null };
+type DbRow = { key: string; at: Date; alliance: string | null; actor: string; workflow: Workflow; code: string | null; build: string | null; action: string; scores: number | null };
 export type ImportStep = { key: string; when: string; action: string; outcome: string; build: string | null; scores: number; saved: string | null };
 export type MethodFilter = "all" | "screenshot" | "spreadsheet";
-type Filters = { period: ActivityPeriod; method: MethodFilter; alliance: string; page: number; snapshot: boolean };
+type Filters = { period: ActivityPeriod; method: MethodFilter; alliance: string; page: number; snapshot: boolean; activity?: "all" | "errors" };
 const pageSize = 25;
 
 function present(row: DbRow): ImportErrorRow {
-  const scan = row.key.startsWith("scan:");
+  let source: string, reason: string;
+  if (row.key.startsWith("scan:")) {
+    source = "Scan record";
+    const outcome = row.code === "READY" ? "Ready for review" : row.code === "PROCESSING" ? "Processing" : pilotError("FAILED", row.code)!;
+    reason = row.action ? row.action + " · " + outcome : outcome;
+  } else if (row.key.startsWith("report:")) {
+    source = "Reported by the browser";
+    reason = reasons[row.code as Reason] ?? "Cause unavailable";
+  } else {
+    source = "Saved import record";
+    reason = row.scores === null ? "Roster import saved" : row.scores === 1 ? "1 score confirmed" : row.scores + " scores confirmed";
+  }
   return { key: row.key, when: row.at.toISOString(), alliance: row.alliance || "Former alliance",
-    account: row.actor, method: workflows[row.workflow], build: row.build,
-    source: scan ? "Scan record" : "Reported by the browser",
-    reason: scan ? pilotError("FAILED", row.code)! : reasons[row.code as Reason] ?? "Cause unavailable" };
+    account: row.actor, method: workflows[row.workflow], build: row.build, source, reason };
 }
 
-function snapshotRow(row: ActivityRow): ImportErrorRow {
-  return { key: "scan:" + row.id, when: row.createdAt.toISOString(), alliance: "WORD", account: "WORD pilot account",
-    method: workflows.screenshot, build: row.clientBuild, source: "Scan record", reason: pilotError(row.status, row.outcome)! };
-}
-
-export async function getImportErrors({ period, method, alliance, page, snapshot }: Filters) {
+export async function getImportLog({ period, method, alliance, page, snapshot, activity = "errors" }: Filters) {
   await requirePlatformAdmin();
+  const all = activity === "all";
   if (snapshot) {
     const data = await getQaWordSnapshot(period);
-    const rows = data.activity.filter(a => a.status === "FAILED" && method !== "spreadsheet" && (!alliance || alliance.toLowerCase() === "word")).map(snapshotRow);
-    return { rows: rows.slice(page * pageSize, (page + 1) * pageSize), more: false, capturedAt: data.capturedAt };
+    const start = activityStart(period, new Date(data.capturedAt));
+    const rows = data.activity
+      .filter(a => (all || a.status === "FAILED") && (!start || a.createdAt >= start)
+        && method !== "spreadsheet" && (!alliance || alliance.toLowerCase() === "word"))
+      .map(a => {
+        const item = step(a);
+        return { key: item.key, when: item.when, alliance: "WORD", account: "WORD pilot account", method: workflows.screenshot,
+          build: item.build, source: "Scan record", reason: all ? item.action + " · " + item.outcome : item.outcome };
+      })
+      .sort((a,b) => b.when.localeCompare(a.when) || b.key.localeCompare(a.key));
+    return { rows: rows.slice(page * pageSize, (page + 1) * pageSize), more: rows.length > (page + 1) * pageSize, capturedAt: data.capturedAt };
   }
   const start = activityStart(period, new Date());
   const rows = await prisma.$queryRaw<DbRow[]>(Prisma.sql`
     WITH events AS (
       SELECT 'scan:' || a.id AS key, a."createdAt" AS at, a."allianceId", a."actorUserId" AS actor,
-        'screenshot' AS workflow, a.outcome AS code, a."clientBuild" AS build
-      FROM "OcrEvaluationAttempt" a WHERE a.status = 'FAILED'
+        'screenshot' AS workflow, CASE WHEN a.status = 'FAILED' THEN a.outcome ELSE a.status END AS code, a."clientBuild" AS build,
+        CASE WHEN NOT ${all} THEN '' WHEN a."automaticRetry" THEN 'Automatic retry'
+          WHEN a."retryOf" IS NOT NULL THEN 'User retry' ELSE 'Scan' END AS action, NULL::int AS scores
+      FROM "OcrEvaluationAttempt" a WHERE ${all} OR a.status = 'FAILED'
       UNION ALL
-      SELECT 'report:' || r.id, r."createdAt", r."allianceId", r."actorId", r.workflow, r.code, r."clientBuild"
+      SELECT 'report:' || r.id, r."createdAt", r."allianceId", r."actorId", r.workflow, r.code, r."clientBuild", '', NULL
       FROM "ImportErrorReport" r
       WHERE r."scanRequestId" IS NULL OR NOT EXISTS (SELECT 1 FROM "OcrEvaluationAttempt" a
         WHERE a."requestId" = r."scanRequestId" AND a."allianceId" = r."allianceId" AND a."actorUserId" = r."actorId" AND a.status = 'FAILED')
+      ${all ? Prisma.sql`
+        UNION ALL
+        SELECT 'batch:' || b.id, b."savedAt", b."allianceId", b."actorId", 'screenshot', NULL, NULL, '',
+          (SELECT count(*)::int FROM "MemberMetricEntry" m WHERE m."ocrBatchId" = b.id)
+        FROM "OcrScoreBatch" b
+        UNION ALL
+        SELECT 'roster:' || i.id, i."createdAt", i."allianceId", i."actorUserId",
+          CASE WHEN i.mode = 'HISTORICAL' THEN 'historical' ELSE 'roster' END, NULL, NULL, '', NULL
+        FROM "MemberImport" i
+        UNION ALL
+        SELECT 'entry:' || m.id, m."createdAt", member."allianceId", m."enteredByUserId",
+          'evaluation', NULL, NULL, '', 1
+        FROM "MemberMetricEntry" m JOIN "AllianceMember" member ON member.id = m."allianceMemberId"
+        WHERE m."entryMethod" IN ('SPREADSHEET_SINGLE_PERIOD', 'SPREADSHEET_MULTI_PERIOD') AND m.status = 'ACTIVE'
+      ` : Prisma.empty}
     )
-    SELECT e.key, e.at, a.name AS alliance, COALESCE(u."displayName", e.actor) AS actor, e.workflow, e.code, e.build
+    SELECT e.key, e.at, a.name AS alliance, COALESCE(u."displayName", e.actor, 'Former account') AS actor, e.workflow, e.code, e.build, e.action, e.scores
     FROM events e LEFT JOIN "Alliance" a ON a.id = e."allianceId" LEFT JOIN "User" u ON u.id = e.actor
     WHERE TRUE
       ${start ? Prisma.sql`AND e.at >= ${start}` : Prisma.empty}
