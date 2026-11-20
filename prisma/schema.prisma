@@ -134,6 +134,7 @@ model OcrEvaluationAttempt {
   server String
   contextKey String
   sourceFilename String? @db.VarChar(255)
+  clientBuild String? @db.VarChar(7)
   sourceDigest String
   processingVersion String
   // Historical permission references, not retroactive grants for legacy scans.

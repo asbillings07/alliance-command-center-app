@@ -2,10 +2,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { uploadWithRetry } from "./uploadWithRetry";
 
 const failed = { id: "first", status: "FAILED", retryOnce: true };
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 it("shows progress, waits two seconds and sends one linked retry even if the service stays unavailable", async () => {
   vi.useFakeTimers();
+  vi.stubEnv("NEXT_PUBLIC_APP_BUILD", "abc1234");
   const post = vi.fn().mockResolvedValueOnce(Response.json(failed)).mockResolvedValueOnce(Response.json({ ...failed, id: "second" }));
   vi.stubGlobal("fetch", post);
   const onRetry = vi.fn();
@@ -18,6 +19,7 @@ it("shows progress, waits two seconds and sends one linked retry even if the ser
   await vi.advanceTimersByTimeAsync(1);
   expect((await result).id).toBe("second");
   expect(post).toHaveBeenCalledTimes(2);
+  for (const [, init] of post.mock.calls) expect(init.headers["X-ACC-Client-Build"]).toBe("abc1234");
   expect(form.get("retryOf")).toBe("first");
   expect(form.get("requestId")).not.toBe("original");
 });

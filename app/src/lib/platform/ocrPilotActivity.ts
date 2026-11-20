@@ -21,7 +21,7 @@ export function pilotError(status: string, outcome: string | null) {
 
 export type ActivityRow = {
   id: string; firstId: string; createdAt: Date; status: string; outcome: string | null;
-  retry: boolean; automaticRetry: boolean; scores: number; lastSavedAt: Date | null;
+  clientBuild: string | null; retry: boolean; automaticRetry: boolean; scores: number; lastSavedAt: Date | null;
 };
 
 // Both the attempts and saved evidence belong to the nominated pilot account and alliance.
@@ -29,7 +29,7 @@ export type ActivityRow = {
 export function pilotActivityQuery(allianceId: string, actorId: string, since: Date | null) {
   return prisma.$queryRaw<ActivityRow[]>(Prisma.sql`
     WITH scoped AS (
-      SELECT a.id, a."createdAt", a.status, a.outcome, a."retryOf" IS NOT NULL AS retry, a."automaticRetry",
+      SELECT a.id, a."createdAt", a.status, a.outcome, a."clientBuild", a."retryOf" IS NOT NULL AS retry, a."automaticRetry",
         first_value(a.id) OVER (PARTITION BY a."sourceDigest" ORDER BY a."createdAt", a.id) AS "firstId"
       FROM "OcrEvaluationAttempt" a
       WHERE a."allianceId" = ${allianceId} AND a."actorUserId" = ${actorId} AND a."memberId" IS NULL

@@ -330,12 +330,12 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     const original = await input(target);
     vi.mocked(transport.recognize).mockRejectedValue(new RecognitionFailure("provider-temporary"));
     const first = await evaluateScreenshot(original, transport);
-    const second = await evaluateScreenshot({ ...original, requestId: crypto.randomUUID(), retryOf: first.id, automaticRetry: true }, transport);
+    const second = await evaluateScreenshot({ ...original, clientBuild: "dab1234", requestId: crypto.randomUUID(), retryOf: first.id, automaticRetry: true }, transport);
     const activity = await pilotActivityQuery(allianceId, actorId, new Date(second.createdAt));
-    expect(activity).toEqual([expect.objectContaining({ id: second.id, firstId: first.id, retry: true, automaticRetry: true, scores: 0, lastSavedAt: null })]);
+    expect(activity).toEqual([expect.objectContaining({ id: second.id, firstId: first.id, clientBuild: "dab1234", retry: true, automaticRetry: true, scores: 0, lastSavedAt: null })]);
     expect(pilotError(activity[0].status, activity[0].outcome)).toMatch(/temporarily unavailable/);
     expect(pilotError("FAILED", "unknown private message")).toBe("The failure reason was not recorded.");
-    expect(await pilotActivityQuery(allianceId, actorId, null)).toHaveLength(2);
+    expect((await pilotActivityQuery(allianceId, actorId, null)).find(a => a.id === first.id)?.clientBuild).toBeNull();
   });
   it.each([false, true])("saves once under concurrent confirmation and replay (initially empty roster: %s)", async empty => {
     if (empty) await db.allianceMember.delete({ where: {id:memberId} });

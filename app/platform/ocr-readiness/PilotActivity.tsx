@@ -20,6 +20,7 @@ export function PilotActivity({ attempts, period, snapshot }: Props) {
             <span className={reason ? "font-medium text-warning-light" : "font-medium"}>{state}</span>
           </div>
           <p className="text-sm text-text-secondary">Image {a.firstId.slice(0, 8)} · Scanned <LocalTimestamp value={a.createdAt.toISOString()} /></p>
+          <p className="text-sm text-text-secondary">App version at scan · {a.clientBuild ?? "Not recorded"}</p>
           {reason && <p className="text-sm">{reason}</p>}
           {a.lastSavedAt && <p className="text-sm">{a.scores} {a.scores === 1 ? "score" : "scores"} confirmed across all saves · Last saved <LocalTimestamp value={a.lastSavedAt.toISOString()} /></p>}
         </li>;

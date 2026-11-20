@@ -1,4 +1,5 @@
 import "server-only";
+import { readClientBuild } from "../ocr/clientBuild";
 import { notFound } from "next/navigation";
 import { requirePlatformAdmin } from "../auth/requirePlatformAdmin";
 import { originalOcrAllowanceDatabase } from "../ocr/deploymentIsolation";
@@ -21,7 +22,7 @@ function activityRow(value: Record<string, unknown>): ActivityRow {
     || (status !== "READY" && status !== "FAILED" && status !== "PROCESSING")
     || !(outcome === null || (typeof outcome === "string" && /^(alliance-|processing-failed:)[a-z-]{1,36}$/.test(outcome)))
     || typeof retry !== "boolean" || typeof automaticRetry !== "boolean") throw Error();
-  return { id, firstId, status, outcome, retry, automaticRetry, createdAt: date(value.createdAt),
+  return { id, firstId, status, outcome, retry, automaticRetry, clientBuild: readClientBuild(value.clientBuild), createdAt: date(value.createdAt),
     scores: count(value.scores), lastSavedAt: value.lastSavedAt === null ? null : date(value.lastSavedAt) };
 }
 
