@@ -36,7 +36,10 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
   const router = useRouter();
   const [items, setItems] = useState<Item[]>([]); const [week, setWeek] = useState(""); const [captureDate, setCaptureDate] = useState("");
   const [notice, setNotice] = useState<ReturnType<typeof allianceBatchNotice>>(null);
-  const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [source, setSource] = useState<{ result: Result; title: string } | null>(null);
+  const [scanning, setBusy] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const busy = scanning || selecting;
+  const [message, setMessage] = useState(""); const [source, setSource] = useState<{ result: Result; title: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
   const [sourcePicks, setPicks] = useState<string[]>([]);
@@ -67,17 +70,39 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
   const weekInvalid = !!week && !rankingWindow({ kind: "weekly", label: "Weekly Rank" }, week);
 
   function invalidate() { setNeedsReviewOnly(false); setPicks([]); setNotice(null); setReviewed(false); }
-  function queueScreenshots(files: File[], replaceId?: string) {
+  async function queueScreenshots(files: File[], replaceId?: string) {
     if (!files.length || busy) return;
-    const index = replaceId ? items.findIndex(item => item.requestId === replaceId) : -1;
-    const remove = index < 0 ? 0 : 1;
-    if (items.length - remove + files.length > 20 || files.some(file => !validRankingFile(file))) {
-      setMessage("Choose up to 20 PNG or JPEG images, each no larger than 2 MB."); return;
+    const constraints = "Choose up to 20 PNG or JPEG images, each no larger than 2 MB.";
+    if (files.length > 20 || files.some(file => !validRankingFile(file))) {
+      setMessage(constraints); return;
     }
-    const next = [...items];
-    next.splice(index < 0 ? next.length : index, remove, ...files.map(file => ({ file, requestId: crypto.randomUUID(), state: "queued" as const })));
-    setItems(next);
-    invalidate(); setMessage("");
+    setSelecting(true);
+    try {
+      const next = [...items];
+      let insertion = replaceId ? next.findIndex(item => item.requestId === replaceId) : -1;
+      if (insertion >= 0) next.splice(insertion, 1);
+      else insertion = next.length;
+      for (const file of files) {
+        const queued: Item = { file, requestId: crypto.randomUUID(), state: "queued" };
+        // Match the actual file so two different screenshots named image.png stay separate.
+        const candidates = next.filter(item => item.state === "failed" && item.file?.size === file.size);
+        let previous: Item | undefined;
+        if (candidates.length) {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          for (const candidate of candidates) {
+            const old = new Uint8Array(await candidate.file!.arrayBuffer());
+            if (bytes.every((byte, i) => byte === old[i])) { previous = candidate; break; }
+          }
+        }
+        if (previous) next[next.indexOf(previous)] = queued;
+        else next.splice(insertion++, 0, queued);
+      }
+      if (next.length > 20) { setMessage(constraints); return; }
+      setItems(next);
+      invalidate(); setMessage("");
+    } catch {
+      setMessage("The selected file could not be read. Choose the screenshot again.");
+    } finally { setSelecting(false); }
   }
   function selectReplacements(requestId?: string) {
     replacementTarget.current = requestId;
@@ -128,7 +153,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
           continue;
         }
         if (attempt.status === "FAILED" && isDenseRecognition(attempt.outcome)) {
-          update(item.requestId, { file: null, state: "failed", outcome: attempt.outcome, error: recognitionFailureMessage(attempt.outcome) });
+          update(item.requestId, { state: "failed", outcome: attempt.outcome, error: recognitionFailureMessage(attempt.outcome) });
           continue;
         }
         if (attempt.status === "FAILED") throw new Error(recognitionFailureMessage(attempt.outcome) ?? "This scan failed. You can retry this screenshot.");
@@ -191,7 +216,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
       <details className="rounded-xl border border-border bg-surface p-4 text-sm">
         <summary className="w-fit cursor-pointer rounded font-semibold text-text-primary focus-visible:outline-2 focus-visible:outline-primary">Expected ranking screenshot format</summary>
         <p className="mt-3 text-text-secondary">Show the selected weekday or Weekly Rank, plus each player’s name, alliance and points. In the game, select Your Alliance to filter the rankings.</p>
-        <p className="mt-2 text-text-secondary">Mixed, unreadable or different alliances are blocked. Dense screenshots are skipped so the rest can continue. Other processing failures or pressing Stop pause the batch. A temporary Google outage triggers one retry after two seconds. Each account can start up to 20 scans per day, including retries.</p>
+        <p className="mt-2 text-text-secondary">Mixed, unreadable or different alliances are blocked. Dense screenshots are skipped so the rest can continue. Other processing failures or pressing Stop pause the batch. Selecting a failed screenshot again starts a fresh scan. Completed scans are reused. A temporary Google outage triggers one retry after two seconds. Each account can start up to 20 scans per day, including retries.</p>
       </details>
       <ImportFileUpload id="ranking-screenshots" ariaLabel="Ranking screenshots" multiple accept="image/png,image/jpeg"
         dropSubject="your ranking screenshots" buttonLabel="Select screenshots"
@@ -228,8 +253,8 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         {item.result && <div className="mt-3"><Button variant="secondary" onClick={() => setSource({ result: item.result!, title: `Screenshot ${index + 1}` })}>View screenshot {index + 1}</Button></div>}
       </li>;})}</ol>}
       {items.length > 0 && <div className="flex flex-wrap justify-end gap-3"><Button disabled={busy || !queued.length} onClick={() => scan()}>{busy ? "Reading screenshots…" : `Read ${queued.length || "selected"} screenshots`}</Button>
-        {busy ? <Button variant="secondary" onClick={() => { cancel.current = true; setMessage("Stopping after the current image. A scan already sent cannot be recalled."); }}>Stop after this image</Button>
-          : <Button variant="secondary" disabled={!items.length} onClick={() => { setItems([]); setSource(null); setExcludedSources([]); invalidate(); setMessage("Review cleared. Retained scans remain in upload history."); }}>Clear review</Button>}</div>}
+        {scanning ? <Button variant="secondary" onClick={() => { cancel.current = true; setMessage("Stopping after the current image. A scan already sent cannot be recalled."); }}>Stop after this image</Button>
+          : <Button variant="secondary" disabled={busy || !items.length} onClick={() => { setItems([]); setSource(null); setExcludedSources([]); invalidate(); setMessage("Review cleared. Retained scans remain in upload history."); }}>Clear review</Button>}</div>}
     </div></Card.Body></Card>
     {results.length > 0 && <Card><Card.Body><section aria-labelledby="batch-review-heading"><h2 id="batch-review-heading" className="text-lg font-semibold">Review &amp; confirm import</h2>
       <h3 className="mt-4 font-semibold">Scoring dates</h3>

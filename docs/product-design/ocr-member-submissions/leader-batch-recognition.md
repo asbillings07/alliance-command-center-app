@@ -43,7 +43,7 @@ This slice stops at recognition review. It does not insert accepted metric entri
 
 ## Limits and privacy
 
-All scans share the existing immutable attempt history and monotonic $5 / 500-attempt allowance. Each newly dispatched image reserves $0.01; identical images in the same actor/alliance/context reuse their retained attempt, including failed or uncertain attempts. A new client request ID is not a retry grant. A leader must separately select the explicit paid-retry checkbox to start a new attempt for the same failed image. The new attempt links to its immutable failed parent; the parent and its consumed reservation remain unchanged. Completed or still-processing scans are never redispatched by this option. Reads stay bounded and reauthorize after storage access.
+Selecting a screenshot again and choosing **Read** starts a fresh recognition attempt if processing previously failed. **Retry scan** remains available on eligible failed cards. Both paths link the new attempt to the failure in upload history. Replaying the same request, reopening a completed scan, or finding a scan still processing reuses its attempt. Alliance rejections continue to block the upload. Every fresh dispatch rechecks access, consent and the applicable resource limits. QA and designated test accounts share the $5 testing allowance. Reads stay bounded and reauthorize after storage access.
 
 Batch attempts have no target member, are restricted to the existing import permission, and cannot be read through the member-only route. Images and recognition remain private for 30 days and use the same deletion preflight. Telemetry remains disabled in the isolated environment. Production, ordinary Preview and accepted member scores remain unchanged.
 

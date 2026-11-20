@@ -199,12 +199,16 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
       const child = await tx.ocrEvaluationAttempt.findUnique({ where: { retryOf: parent.id } });
       if (child) return {attempt: child, dispatched: false};
     }
-    const retryOf = parent?.id ?? null;
+    let retryOf = parent?.id ?? null;
     if (input.scope === "batch") {
       const duplicate = await tx.ocrEvaluationAttempt.findFirst({ where: { allianceId: input.allianceId, memberId: null,
         actorUserId: input.actorId, sourceDigest: image.digest, contextKey: current.contextKey, processingConsentId: input.processingConsentId,
         processingVersion: OCR_VERSION, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
-      if (duplicate && duplicate.id !== retryOf) return { attempt: duplicate, dispatched: false };
+      if (duplicate && duplicate.id !== retryOf) {
+        if (parent || duplicate.status !== "FAILED" || isAllianceRejection(duplicate)) return { attempt: duplicate, dispatched: false };
+        // A new request for a failed file starts another attempt in the same history.
+        retryOf = duplicate.id;
+      }
     }
     const now = new Date(); const since = new Date(now); since.setUTCHours(0, 0, 0, 0);
     if (await tx.ocrEvaluationAttempt.count({ where: { actorUserId: input.actorId, createdAt: { gte: since } } }) >= 20) {
