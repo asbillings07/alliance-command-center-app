@@ -28,7 +28,7 @@ export function ErrorList({ rows, snapshot, summaries }: { rows: ImportErrorRow[
       {rows.map((row, index) => <li key={row.key}><button type="button" aria-haspopup="dialog" onClick={() => open(row)}
         className="flex w-full items-center justify-between gap-3 rounded-lg p-4 text-left hover:bg-surface-secondary focus-visible:outline-2 focus-visible:outline-primary">
         <span className="min-w-0">{summaries?.[index] ?? <><strong className="block">{row.reason}</strong>
-          <span className="block text-sm text-text-secondary">{row.alliance} · {row.method} · <LocalTimestamp value={row.when} /></span></>}</span>
+          <span className="block text-sm text-text-secondary">{row.alliance} · {row.method} · <LocalTimestamp seconds value={row.when} /></span></>}</span>
         <span aria-hidden="true">›</span>
       </button></li>)}
     </ul>
@@ -51,7 +51,7 @@ export function ErrorList({ rows, snapshot, summaries }: { rows: ImportErrorRow[
             <p>{item.outcome}</p><p className="text-text-secondary">App version · {item.build ?? "Not recorded"}</p>
             {item.scores > 0 && item.saved ? <p>{item.scores} scores confirmed · <LocalTimestamp value={item.saved} /></p> : item.outcome === "Ready for review" && <p>No confirmed scores recorded for this attempt.</p>}
           </li>)}</ol>}
-        </section> : <p className="text-sm text-text-secondary">This report records what the user encountered. A later retry or save cannot be verified from this report alone.</p>}
+        </section> : selected.key.startsWith("report:") && <p className="text-sm text-text-secondary">This report records what the user encountered. A later retry or save cannot be verified from this report alone.</p>}
       </div>}
     </dialog>
   </>;

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { prisma } from "../prisma";
-import { getImportErrors, getRelatedScans } from "./importErrors";
+import { getImportLog, getRelatedScans } from "./importErrors";
 import { reportImportError } from "../importDiagnostics/reportAction";
 
 const mocks = vi.hoisted(() => ({ admin: vi.fn(), auth: vi.fn() }));
@@ -24,7 +24,7 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true" || !localDb || !!process.e
       sourceDigest: randomUUID(), processingVersion: "test", imageBytes: 10, createdAt, expiresAt: new Date(createdAt.getTime() + 30 * 86400000) };
     await prisma.ocrEvaluationAttempt.createMany({ data: [
       { ...base, id: failed, requestId: request, status: "FAILED", outcome: "processing-failed:recognition" },
-      { ...base, id: ready, requestId: randomUUID(), retryOf: failed, status: "READY", clientBuild: "a123bc4" },
+      { ...base, id: ready, createdAt: new Date(createdAt.getTime() + 1000), expiresAt: new Date(base.expiresAt.getTime() + 1000), requestId: randomUUID(), retryOf: failed, status: "READY", clientBuild: "a123bc4" },
       { ...base, id: foreign, requestId: randomUUID(), allianceId: other, status: "READY" },
     ] });
   });
@@ -43,14 +43,51 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true" || !localDb || !!process.e
     // A UI caller cannot store a filename as an error code.
     await reportImportError(alliance, "evaluation", "private.png" as "encrypted");
     expect(await prisma.importErrorReport.count({ where: { actorId: actor } })).toBe(2);
-    const {rows} = await getImportErrors(filters);
+    const {rows} = await getImportLog(filters);
     expect(rows).toHaveLength(2);
     expect(rows.find(r => r.source === "Scan record")?.reason).toContain("specific cause was not recorded");
     expect(JSON.stringify(rows)).not.toContain("private");
-    expect((await getImportErrors({ ...filters, method: "spreadsheet" })).rows).toMatchObject([{ build: "123abcd", reason: "Password-protected workbook" }]);
-    expect((await getImportErrors({ ...filters, page: 1 })).rows).toEqual([]);
+    expect((await getImportLog({ ...filters, method: "spreadsheet" })).rows).toMatchObject([{ build: "123abcd", reason: "Password-protected workbook" }]);
+    expect((await getImportLog({ ...filters, page: 1 })).rows).toEqual([]);
+  });
+  it("shows recorded spreadsheet scores for the selected alliance and date before paginating", async () => {
+    const period = await prisma.metricPeriod.create({ data: { allianceId: alliance, name: "Test week" } });
+    const metric = await prisma.metric.create({ data: { allianceId: alliance, name: "Test points", type: "NUMERIC" } });
+    const member = await prisma.allianceMember.create({ data: { allianceId: alliance, playerName: "private fixture" } });
+    const slot = { metricId: metric.id, periodId: period.id };
+    try {
+      await prisma.metricPeriodMetric.create({ data: { ...slot, weight: 1, required: false } });
+      const base = { ...slot, allianceMemberId: member.id, value: 10, enteredByUserId: actor, enteredByName: "QA operator", enteredByRole: "LEADER" } as const;
+      const yesterday = new Date(Date.now() - 2 * 86400000);
+      const entries = Array.from({length: 26}, (_, i) => ({
+        ...base, id: randomUUID(), entryMethod: i % 2 ? "SPREADSHEET_MULTI_PERIOD" as const : "SPREADSHEET_SINGLE_PERIOD" as const,
+        createdAt: new Date(Date.now() - 60000 - i * 1000),
+      }));
+      await prisma.memberMetricEntry.createMany({ data: [...entries,
+        { ...base, entryMethod: "SPREADSHEET_SINGLE_PERIOD", createdAt: yesterday },
+        { ...base, entryMethod: "MANUAL" }, { ...base, entryMethod: "OCR_SCREENSHOT" },
+      ] });
+      const query = { ...filters, activity: "all", method: "spreadsheet", period: "24h" } as const;
+      const first = await getImportLog(query);
+      const second = await getImportLog({ ...query, page: 1 });
+      expect(first.more).toBe(true);
+      const scores = [...first.rows, ...second.rows].filter(row => row.key.startsWith("entry:"));
+      expect(scores.map(row => row.key)).toEqual(entries.map(row => "entry:" + row.id));
+      expect(scores.every(row => row.account === "QA operator" && row.method === "Evaluation spreadsheet" && row.reason === "1 score confirmed")).toBe(true);
+      expect((await getImportLog({...query, alliance: other})).rows).toEqual([]);
+    } finally {
+      await prisma.memberMetricEntry.deleteMany({where: slot});
+      await prisma.metricPeriodMetric.deleteMany({where: slot});
+      await prisma.metricPeriod.delete({where: {id: period.id}});
+      await prisma.metric.delete({where: {id: metric.id}});
+      await prisma.allianceMember.delete({where: {id: member.id}});
+    }
   });
   it("links the successful retry only within the same account, alliance and member scope", async () => {
+    const timeline = await getImportLog({ ...filters, activity: "all", method: "screenshot" });
+    expect(timeline.rows.map(r => r.key)).toEqual(["scan:" + ready, "scan:" + failed]);
+    expect(timeline.rows[0].reason).toBe("User retry · Ready for review");
+    expect(timeline.rows[1].reason).toMatch(/failed/i);
     const steps = await getRelatedScans("scan:" + failed, false);
     expect(steps).toHaveLength(2);
     expect(steps.find(s => s.key === "scan:" + ready)).toMatchObject({ action: "User retry", outcome: "Ready for review", scores: 0, build: "a123bc4" });
@@ -58,6 +95,6 @@ describe.skipIf(process.env.INTEGRATION_DB !== "true" || !localDb || !!process.e
     mocks.admin.mockRejectedValueOnce(Error("denied"));
     await expect(getRelatedScans("scan:" + failed, false)).rejects.toThrow("denied");
     mocks.admin.mockRejectedValueOnce(Error("denied"));
-    await expect(getImportErrors(filters)).rejects.toThrow("denied");
+    await expect(getImportLog(filters)).rejects.toThrow("denied");
   });
 });
