@@ -610,6 +610,32 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     expect(transport.recognize).toHaveBeenCalledTimes(2);
     expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 2, reservedMicros: 20000 });
   });
+  it("keeps a duplicate joined during recognition bound to that scan after it fails", async () => {
+    const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
+    const original = await input(batch);
+    const joined = { ...original, requestId: crypto.randomUUID() };
+    const started = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    vi.mocked(transport.recognize).mockImplementationOnce(async () => {
+      started.resolve();
+      await finish.promise;
+      throw new Error("provider failure");
+    });
+    const failure = expect(evaluateScreenshot(original, transport)).rejects.toThrow("did not complete");
+    await started.promise;
+    try {
+      expect(await evaluateScreenshot(joined, transport)).toMatchObject({ status: "PROCESSING" });
+    } finally { finish.resolve(); }
+    await failure;
+    const originalFailure = await evaluateScreenshot(original, transport);
+    expect(await evaluateScreenshot(joined, transport)).toMatchObject({ id: originalFailure.id, status: "FAILED" });
+    expect(transport.recognize).toHaveBeenCalledTimes(1);
+    const fresh = await evaluateScreenshot({ ...original, requestId: crypto.randomUUID() }, transport);
+    expect(fresh).toMatchObject({ status: "READY", retryOf: originalFailure.id });
+    expect((await evaluateScreenshot(joined, transport)).id).toBe(originalFailure.id);
+    expect(transport.recognize).toHaveBeenCalledTimes(2);
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 2, reservedMicros: 20000 });
+  });
   it("checks the remaining test allowance before rescanning a reselected failure", async () => {
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
     vi.mocked(transport.recognize).mockRejectedValueOnce(new Error("provider failure"));

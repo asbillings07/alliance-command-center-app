@@ -184,7 +184,9 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
     if (current.contextKey !== input.contextKey) throw new OcrEvaluationError("The member's identity or access changed. Reload this review.");
     // One shared ledger lock serializes reservations across every instance.
     await tx.$queryRaw`SELECT "id" FROM "OcrEvaluationBudget" WHERE "id" = ${resourceId} FOR UPDATE`;
-    const existing = await tx.ocrEvaluationAttempt.findUnique({ where: { actorUserId_requestId: { actorUserId: input.actorId, requestId: input.requestId } } });
+    const requestKey = { actorUserId_requestId: { actorUserId: input.actorId, requestId: input.requestId } };
+    const existing = await tx.ocrEvaluationAttempt.findUnique({ where: requestKey })
+      ?? (await tx.ocrPendingRequest.findUnique({ where: requestKey, select: { attempt: true } }))?.attempt;
     if (existing) {
       if (existing.allianceId !== input.allianceId || existing.memberId !== current.memberId
         || existing.sourceDigest !== image.digest || existing.processingVersion !== OCR_VERSION
@@ -194,10 +196,17 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
       }) : null;
       return { attempt: child ?? existing, dispatched: false };
     }
+    async function reuse(attempt: OcrEvaluationAttempt) {
+      if (attempt.status === "PROCESSING") {
+        // A replay after this scan fails must still refer to the scan it joined.
+        await tx.ocrPendingRequest.create({ data: { ...requestKey.actorUserId_requestId, attemptId: attempt.id } });
+      }
+      return { attempt, dispatched: false };
+    }
     if (parent) {
       if (parent.expiresAt <= new Date()) throw new OcrEvaluationError("This screenshot has expired.");
       const child = await tx.ocrEvaluationAttempt.findUnique({ where: { retryOf: parent.id } });
-      if (child) return {attempt: child, dispatched: false};
+      if (child) return reuse(child);
     }
     let retryOf = parent?.id ?? null;
     if (input.scope === "batch") {
@@ -205,7 +214,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
         actorUserId: input.actorId, sourceDigest: image.digest, contextKey: current.contextKey, processingConsentId: input.processingConsentId,
         processingVersion: OCR_VERSION, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
       if (duplicate && duplicate.id !== retryOf) {
-        if (parent || duplicate.status !== "FAILED" || isAllianceRejection(duplicate)) return { attempt: duplicate, dispatched: false };
+        if (parent || duplicate.status !== "FAILED" || isAllianceRejection(duplicate)) return reuse(duplicate);
         // A new request for a failed file starts another attempt in the same history.
         retryOf = duplicate.id;
       }
