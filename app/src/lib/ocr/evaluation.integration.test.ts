@@ -61,7 +61,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", ""); vi.stubEnv("NEXT_PUBLIC_SENTRY_REPLAY", "false");
     // Only the explicitly enabled loopback test database. These are synthetic
     // fixtures, never a reset of a provider qualification or paid allowance.
-    await db.$executeRawUnsafe('TRUNCATE TABLE "OcrScoreSource", "OcrEvaluationAttempt", "OcrEvaluationBudget"');
+    await db.$executeRawUnsafe('TRUNCATE TABLE "OcrPendingRequest", "OcrScoreSource", "OcrEvaluationAttempt", "OcrEvaluationBudget"');
     await db.ocrEvaluationBudget.createMany({ data: [{ id: OCR_CAMPAIGN }, { id: OCR_CUSTOMER_RESOURCES }] });
     const suffix = crypto.randomUUID();
     actorId = (await db.user.create({ data: { email: `ocr-owner-${suffix}@example.test`, displayName: "Morgan Owner" } })).id;
@@ -464,6 +464,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     vi.mocked(transport.recognize).mockResolvedValue({ ...fixture.recognition, words });
     const first = await evaluateScreenshot(await input(batch), transport);
     expect(first).toMatchObject({ status: "FAILED", outcome: `alliance-${outcome}` });
+    expect((await evaluateScreenshot(await input(batch), transport)).id).toBe(first.id);
     await expect(evaluateScreenshot({ ...await input(batch), retryOf: first.id }, transport)).rejects.toThrow(/unavailable for retry/);
     for (const kind of ["result", "image"] as const) {
       await expect(readEvaluationContent(batch, first.id, kind, transport)).rejects.toThrow("No results were added");
@@ -598,26 +599,71 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
     vi.mocked(transport.recognize).mockRejectedValue(new RecognitionFailure(reason));
     const outcome = `processing-failed:${reason}`;
-    const first = evaluateScreenshot(await input(batch), transport);
+    const original = await input(batch);
+    const first = evaluateScreenshot(original, transport);
     if (reason === "result-too-large") {
       const attempt = await first;
       expect(attempt).toMatchObject({ status: "FAILED", outcome });
       expect((await loadEvaluationContext(batch)).attempts[0].retryable).toBe(false);
       await expect(evaluateScreenshot({ ...await input(batch), retryOf: attempt.id }, transport)).rejects.toThrow("unavailable for retry");
     } else await expect(first).rejects.toMatchObject({ outcome, message: recognitionFailureMessage(outcome) });
-    const existing = await evaluateScreenshot(await input(batch), transport);
+    const existing = await evaluateScreenshot(original, transport);
     expect(existing).toMatchObject({ status: "FAILED", outcome });
     expect((await loadEvaluationContext(batch)).attempts).toEqual(expect.arrayContaining([expect.objectContaining({ id: existing.id, outcome })]));
     expect(transport.recognize).toHaveBeenCalledTimes(1);
     expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 1, reservedMicros: 10000 });
   });
-  it("does not redispatch a failed batch image under a new client request ID", async () => {
+  it("rescans a reselected failure once and reuses the recovered result", async () => {
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
-    vi.mocked(transport.recognize).mockRejectedValue(new Error("provider failure"));
-    await expect(evaluateScreenshot(await input(batch), transport)).rejects.toThrow("did not complete");
-    expect(await evaluateScreenshot(await input(batch), transport)).toMatchObject({ status: "FAILED", outcome: "processing-failed:recognition" });
+    const original = await input(batch);
+    vi.mocked(transport.recognize).mockRejectedValueOnce(new Error("provider failure"));
+    await expect(evaluateScreenshot(original, transport)).rejects.toThrow("did not complete");
+    const failed = await evaluateScreenshot(original, transport);
+    const reupload = { ...original, requestId: crypto.randomUUID(), sourceFilename: "renamed.png" };
+    const recovered = await evaluateScreenshot(reupload, transport);
+    expect(recovered).toMatchObject({ status: "READY", retryOf: failed.id });
+    expect((await evaluateScreenshot(reupload, transport)).id).toBe(recovered.id);
+    expect((await evaluateScreenshot({ ...original, requestId: crypto.randomUUID() }, transport)).id).toBe(recovered.id);
+    expect(await evaluateScreenshot(original, transport)).toMatchObject({ id: failed.id, status: "FAILED" });
+    expect(transport.recognize).toHaveBeenCalledTimes(2);
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 2, reservedMicros: 20000 });
+  });
+  it("keeps a duplicate joined during recognition bound to that scan after it fails", async () => {
+    const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
+    const original = await input(batch);
+    const joined = { ...original, requestId: crypto.randomUUID() };
+    let signalStarted!: () => void;
+    let signalFinish!: () => void;
+    const started = new Promise<void>(resolve => { signalStarted = resolve; });
+    const finish = new Promise<void>(resolve => { signalFinish = resolve; });
+    vi.mocked(transport.recognize).mockImplementationOnce(async () => {
+      signalStarted();
+      await finish;
+      throw new Error("provider failure");
+    });
+    const failure = expect(evaluateScreenshot(original, transport)).rejects.toThrow("did not complete");
+    await started;
+    try {
+      expect(await evaluateScreenshot(joined, transport)).toMatchObject({ status: "PROCESSING" });
+    } finally { signalFinish(); }
+    await failure;
+    const originalFailure = await evaluateScreenshot(original, transport);
+    expect(await evaluateScreenshot(joined, transport)).toMatchObject({ id: originalFailure.id, status: "FAILED" });
     expect(transport.recognize).toHaveBeenCalledTimes(1);
-    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 1, reservedMicros: 10000 });
+    const fresh = await evaluateScreenshot({ ...original, requestId: crypto.randomUUID() }, transport);
+    expect(fresh).toMatchObject({ status: "READY", retryOf: originalFailure.id });
+    expect((await evaluateScreenshot(joined, transport)).id).toBe(originalFailure.id);
+    expect(transport.recognize).toHaveBeenCalledTimes(2);
+    expect(await db.ocrEvaluationBudget.findUniqueOrThrow({ where: { id: OCR_CAMPAIGN } })).toMatchObject({ attempts: 2, reservedMicros: 20000 });
+  });
+  it("checks the remaining test allowance before rescanning a reselected failure", async () => {
+    const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
+    vi.mocked(transport.recognize).mockRejectedValueOnce(new Error("provider failure"));
+    await expect(evaluateScreenshot(await input(batch), transport)).rejects.toThrow("did not complete");
+    await db.ocrEvaluationBudget.update({ where: { id: OCR_CAMPAIGN }, data: { reservedMicros: 5_000_000 } });
+    await expect(evaluateScreenshot(await input(batch), transport)).rejects.toThrow("scanning is paused");
+    expect(transport.recognize).toHaveBeenCalledTimes(1);
+    expect(await db.ocrEvaluationAttempt.count()).toBe(1);
   });
   it("requires explicit consent for a new charged retry and preserves its failed parent", async () => {
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };

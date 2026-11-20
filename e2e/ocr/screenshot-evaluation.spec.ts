@@ -594,9 +594,10 @@ test("a temporary outage retries once on the same card and reload shows one uplo
   expect(await prisma.ocrEvaluationAttempt.count({ where: { allianceId } })).toBe(2);
 });
 
-for (const origin of ["card", "history"] as const) {
+for (const origin of ["card", "history", "upload"] as const) {
   test(`retrying from the ${origin} scans only the failed screenshot`, async ({ page, login, ownerScenario }) => {
   test.setTimeout(120000);
+  if (origin === "upload") await page.setViewportSize({ width: 390, height: 844 });
   const {allianceId,email,password} = ownerScenario;
   await prisma.alliance.update({ where: { id: allianceId }, data: { name: "QA", server: allianceId } });
   await login({email,password,displayName:"Owner"});
@@ -629,17 +630,23 @@ for (const origin of ["card", "history"] as const) {
     const picker = page.waitForEvent("filechooser");
     await retry.click();
     await (await picker).setFiles(file);
+  } else if (origin === "upload") {
+    // The ordinary picker can recover the failed card, even under a different filename.
+    await queuedCard.getByRole("button", { name: "Remove screenshot 2 from review" }).click();
+    await upload.setInputFiles({ ...file, name: "reselected.png" });
+    await expect(card).toContainText("Queued");
+    await scan.click();
   } else {
     await retry.click();
   }
   await expect.poll(()=>prisma.ocrEvaluationAttempt.count({where:{allianceId}})).toBe(2);
-  await expect(page.getByText(/Screenshot retry complete/)).toBeVisible();
+  await expect(page.getByText(origin === "upload" ? /Batch recognition is ready/ : /Screenshot retry complete/)).toBeVisible();
   expect(await prisma.ocrEvaluationAttempt.findUniqueOrThrow({where:{retryOf:failed.id}})).toMatchObject({status:"READY",retryOf:failed.id});
-  await expect(queuedCard).toContainText("Queued");
+  if (origin !== "upload") await expect(queuedCard).toContainText("Queued");
   const successful = page.getByRole("listitem",{name:`Screenshot ${origin === "history" ? 2 : 1}`,exact:true});
   await expect(successful.getByRole("button",{name:"Retry scan"})).toHaveCount(0);
   await expect(page.getByRole("button",{name:"Retry scan",exact:true})).toHaveCount(0);
-  await queuedCard.getByRole("button",{name:`Remove screenshot ${queuedNumber} from review`,exact:true}).click();
+  if (origin !== "upload") await queuedCard.getByRole("button",{name:`Remove screenshot ${queuedNumber} from review`,exact:true}).click();
   await page.getByLabel("Week beginning (Monday)").fill("2026-11-16");
   await page.getByRole("button",{name:"Finish recognition review"}).click();
   await expect(page.getByText(/^Recognition reviewed(?: · No scores saved)?$/)).toBeVisible();
