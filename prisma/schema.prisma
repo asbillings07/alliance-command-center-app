@@ -104,7 +104,19 @@ model OcrEvaluationBudget {
 }
 
 // Immutable admission/audit fields; content lives only in expiring private GCS.
+// Records a second request that joined an existing scan before its outcome was known.
+model OcrPendingRequest {
+  actorUserId String
+  requestId String
+  attemptId String
+  attempt OcrEvaluationAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@id([actorUserId, requestId])
+  @@index([attemptId])
+}
+
 model OcrEvaluationAttempt {
+  pendingRequests OcrPendingRequest[]
   acceptedSources OcrScoreSource[]
   id String @id
   requestId String
