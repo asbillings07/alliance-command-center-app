@@ -60,7 +60,7 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", ""); vi.stubEnv("NEXT_PUBLIC_SENTRY_REPLAY", "false");
     // Only the explicitly enabled loopback test database. These are synthetic
     // fixtures, never a reset of a provider qualification or paid allowance.
-    await db.$executeRawUnsafe('TRUNCATE TABLE "OcrScoreSource", "OcrEvaluationAttempt", "OcrEvaluationBudget"');
+    await db.$executeRawUnsafe('TRUNCATE TABLE "OcrPendingRequest", "OcrScoreSource", "OcrEvaluationAttempt", "OcrEvaluationBudget"');
     await db.ocrEvaluationBudget.createMany({ data: [{ id: OCR_CAMPAIGN }, { id: OCR_CUSTOMER_RESOURCES }] });
     const suffix = crypto.randomUUID();
     actorId = (await db.user.create({ data: { email: `ocr-owner-${suffix}@example.test`, displayName: "Morgan Owner" } })).id;
