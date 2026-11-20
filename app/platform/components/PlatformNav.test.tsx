@@ -1,4 +1,5 @@
 import React from "react";
+import { usePathname } from "next/navigation";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect, vi } from "vitest";
 import type { AdminAllianceWorkspace } from "@/app/src/lib/platform/adminWorkspace";
@@ -13,7 +14,7 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/platform/overview",
+  usePathname: vi.fn(() => "/platform/overview"),
 }));
 
 vi.mock("@/app/src/components/client", () => ({
@@ -37,6 +38,21 @@ const multipleWorkspace: AdminAllianceWorkspace = {
 };
 
 describe("PlatformNav", () => {
+  it.each(["/platform/activity", "/platform/activity/import-errors"])(
+    "highlights only the matching destination on desktop and mobile for %s", (path) => {
+      for (const nav of [
+        <PlatformNav key="desktop" workspace={singleWorkspace} />,
+        <PlatformNavMobile key="mobile" isOpen onClose={() => {}} workspace={singleWorkspace} />,
+      ]) {
+        vi.mocked(usePathname).mockReturnValueOnce(path);
+        const html = renderToStaticMarkup(nav);
+        expect(html).toContain('href="/platform/activity/import-errors"');
+        expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+        expect(html).toContain(`href="${path}" aria-current="page"`);
+      }
+    },
+  );
+
   it("renders no workspace link when workspace is none", () => {
     const html = renderToStaticMarkup(
       <PlatformNav workspace={{ kind: "none" }} />
