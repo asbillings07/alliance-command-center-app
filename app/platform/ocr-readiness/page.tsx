@@ -4,6 +4,7 @@ import { productionPilotConfigured } from "@/app/src/lib/ocr/productionPilot";
 import { getProductionPilotCounts, getOcrReadiness } from "@/app/src/lib/platform/ocrReadiness";
 
 import { getQaWordSnapshot } from "@/app/src/lib/platform/qaWordSnapshot";
+import { parseActivityPeriod } from "@/app/src/lib/platform/activityPeriod";
 import { PilotActivity } from "./PilotActivity";
 
 const criteria = [
@@ -17,11 +18,11 @@ const criteria = [
 
 export default async function OcrReadinessPage({ searchParams }: { searchParams: Promise<{ period?: string; view?: string }> }) {
   const params = await searchParams;
-  const sinceFix = params.period !== "all";
+  const period = parseActivityPeriod(params.period);
   const live = productionPilotConfigured();
   if (live || params.view === "word") {
-    const snapshot = live ? null : await getQaWordSnapshot(sinceFix);
-    const { scans, retries, failures, saves, confirmedScores, activity } = snapshot ?? await getProductionPilotCounts(sinceFix);
+    const snapshot = live ? null : await getQaWordSnapshot(period);
+    const { scans, retries, failures, saves, confirmedScores, activity } = snapshot ?? await getProductionPilotCounts(period);
     return <article className="mx-auto max-w-5xl space-y-5">
       <Link href="/platform/overview" className="text-sm text-primary hover:underline">Platform overview</Link>
       <h2 className="text-2xl font-bold">WORD OCR pilot</h2>
@@ -31,7 +32,7 @@ export default async function OcrReadinessPage({ searchParams }: { searchParams:
         {([["Uploads", scans - retries], ["Scan attempts", scans], ["Retries included in attempts", retries], ["Failed attempts", failures], ["Confirmed score batches", saves], ["Confirmed scores", confirmedScores]] as const).map(([label, value]) =>
           <div key={label} className="rounded-lg border border-border p-4"><dt>{label}</dt><dd className="text-xl font-semibold">{value}</dd></div>)}
       </dl>
-      <PilotActivity attempts={activity} sinceFix={sinceFix} snapshot={!!snapshot} />
+      <PilotActivity attempts={activity} period={period} snapshot={!!snapshot} />
       <p>Public beta and paid release: Not enough evidence. A confirmed batch can contain several screenshots. A comparable manual baseline and independent accuracy audit are still needed.</p>
     </article>;
   }

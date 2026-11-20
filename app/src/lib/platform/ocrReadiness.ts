@@ -5,7 +5,8 @@ import { OCR_CAMPAIGN, localOcrFixtureEnabled, ocrPreferencesAvailable } from ".
 import { productionPilotConfigured } from "../ocr/productionPilot";
 import { checkOcrDeploymentIsolation, isLocalOcrDatabase } from "../ocr/deploymentIsolation";
 import { qaManualTimingSummary } from "./qaManualTimingSummary";
-import { pilotActivityQuery, thursdayFixLiveAt } from "./ocrPilotActivity";
+import { activityStart, type ActivityPeriod } from "./activityPeriod";
+import { pilotActivityQuery } from "./ocrPilotActivity";
 import { prisma } from "../prisma";
 
 /** Read only aggregate diagnostics from the dedicated evaluation database. */
@@ -38,7 +39,7 @@ export async function getOcrReadiness() {
 
 // Production counters come only from the nominated real account and alliance.
 // Expose aggregate workflow counts to Platform, never recognized content.
-export async function getProductionPilotCounts(sinceFix = true) {
+export async function getProductionPilotCounts(period: ActivityPeriod) {
   await requirePlatformAdmin();
   if (!productionPilotConfigured()) notFound();
   const allianceId = process.env.OCR_PILOT_ALLIANCE_ID!;
@@ -49,7 +50,7 @@ export async function getProductionPilotCounts(sinceFix = true) {
     prisma.ocrEvaluationAttempt.count({ where: { allianceId, actorUserId: actorId, status: "FAILED" } }),
     prisma.ocrScoreBatch.count({ where: { allianceId, actorId } }),
     prisma.memberMetricEntry.count({ where: { ocrBatch: { allianceId, actorId } } }),
-    pilotActivityQuery(allianceId, actorId, sinceFix ? new Date(thursdayFixLiveAt) : null),
+    pilotActivityQuery(allianceId, actorId, activityStart(period, new Date())),
   ], { isolationLevel: "RepeatableRead" });
   return { scans, retries, failures, saves, confirmedScores, activity };
 }

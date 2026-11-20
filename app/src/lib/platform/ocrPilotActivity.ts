@@ -4,9 +4,6 @@ import { prisma } from "../prisma";
 import { allianceRejectionMessage, isAllianceRejection } from "../ocr/allianceEvidence";
 import { recognitionFailureMessage } from "../ocr/recognitionFailure";
 
-// Vercel assigned alliancehqapp.com to release 36cff5f at this instant.
-export const thursdayFixLiveAt = "2026-11-19T23:52:02.959Z";
-
 const failureStages = new Map([
   ["allowance", "The app could not reserve the scan allowance."],
   ["access-check", "The app could not verify access during the scan."],

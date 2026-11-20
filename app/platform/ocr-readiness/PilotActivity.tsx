@@ -1,19 +1,15 @@
-import Link from "next/link";
+import { ActivityPeriodFilter } from "./ActivityPeriodFilter";
+import type { ActivityPeriod } from "@/app/src/lib/platform/activityPeriod";
 import { LocalTimestamp } from "@/app/alliances/[allianceId]/screenshots/LocalTimestamp";
-import { pilotError, thursdayFixLiveAt, type pilotActivityQuery } from "@/app/src/lib/platform/ocrPilotActivity";
+import { pilotError, type pilotActivityQuery } from "@/app/src/lib/platform/ocrPilotActivity";
 
-type Props = { attempts: Awaited<ReturnType<typeof pilotActivityQuery>>; sinceFix: boolean; snapshot: boolean };
+type Props = { attempts: Awaited<ReturnType<typeof pilotActivityQuery>>; period: ActivityPeriod; snapshot: boolean };
 
-export function PilotActivity({ attempts, sinceFix, snapshot }: Props) {
+export function PilotActivity({ attempts, period, snapshot }: Props) {
   return <section id="scan-history" aria-labelledby="scan-history-title" className="space-y-3 rounded-lg border border-border bg-surface p-4">
     <h3 id="scan-history-title" className="text-lg font-semibold">Scan and confirmation history</h3>
-    <nav aria-label="Activity period" className="flex flex-wrap gap-2">
-      {([["Since Thursday fix", true], ["All time", false]] as const).map(([label, recent]) =>
-        <Link key={label} aria-current={recent === sinceFix ? "page" : undefined}
-          className="rounded-md border border-border px-3 py-2 text-sm aria-[current=page]:border-primary aria-[current=page]:font-semibold"
-          href={{ pathname: "/platform/ocr-readiness", query: { ...(snapshot && { view: "word" }), ...(!recent && { period: "all" }) }, hash: "scan-history" }}>{label}</Link>)}
-    </nav>
-    <p className="text-sm text-text-secondary">Latest 20 recorded attempts by scan or confirmation time{sinceFix && <> since <LocalTimestamp value={thursdayFixLiveAt} /></>}. Reopening a scan does not create an attempt. Errors before a scan starts are outside this history.</p>
+    <ActivityPeriodFilter period={period} snapshot={snapshot} />
+    <p className="text-sm text-text-secondary">Latest 20 recorded attempts by scan or confirmation time. Reopening a scan does not create an attempt. Errors before a scan starts are outside this history.</p>
     {attempts.length === 0 ? <p>No scan attempts or score confirmations recorded in this period.</p> :
       <ol className="divide-y divide-border">{attempts.map(a => {
         const state = a.scores > 0 ? "Scores confirmed" : a.status === "READY" ? "Ready for review" : a.status === "FAILED" ? "Failed" : "Processing";

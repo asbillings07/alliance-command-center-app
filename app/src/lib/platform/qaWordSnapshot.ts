@@ -2,7 +2,8 @@ import "server-only";
 import { notFound } from "next/navigation";
 import { requirePlatformAdmin } from "../auth/requirePlatformAdmin";
 import { originalOcrAllowanceDatabase } from "../ocr/deploymentIsolation";
-import { thursdayFixLiveAt, type ActivityRow } from "./ocrPilotActivity";
+import { activityStart, type ActivityPeriod } from "./activityPeriod";
+import type { ActivityRow } from "./ocrPilotActivity";
 
 function count(value: unknown): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw Error();
@@ -25,7 +26,7 @@ function activityRow(value: Record<string, unknown>): ActivityRow {
 }
 
 /** Per-deployment readout. No production credentials, files, identities or recognized content. */
-export async function getQaWordSnapshot(sinceFix: boolean) {
+export async function getQaWordSnapshot(period: ActivityPeriod) {
   await requirePlatformAdmin();
   if (!originalOcrAllowanceDatabase(process.env)
     || process.env.VERCEL_GIT_COMMIT_REF !== "codex/platform-ocr-attempt-history") notFound();
@@ -35,11 +36,12 @@ export async function getQaWordSnapshot(sinceFix: boolean) {
     const data = JSON.parse(raw);
     if (!Array.isArray(data.activity) || data.activity.length > 20) throw Error();
     const rows: ActivityRow[] = data.activity.map(activityRow);
-    const since = Date.parse(thursdayFixLiveAt);
+    const capturedAt = date(data.capturedAt);
+    const since = activityStart(period, capturedAt);
     return {
-      capturedAt: date(data.capturedAt).toISOString(), scans: count(data.scans), retries: count(data.retries),
+      capturedAt: capturedAt.toISOString(), scans: count(data.scans), retries: count(data.retries),
       failures: count(data.failures), saves: count(data.saves), confirmedScores: count(data.confirmedScores),
-      activity: rows.filter(row => !sinceFix || row.createdAt.getTime() >= since || (row.lastSavedAt?.getTime() ?? 0) >= since),
+      activity: rows.filter(row => since === null || row.createdAt >= since || (row.lastSavedAt !== null && row.lastSavedAt >= since)),
     };
   } catch { notFound(); }
 }

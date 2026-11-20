@@ -7,7 +7,7 @@ import { getQaWordSnapshot } from "./qaWordSnapshot";
 
 afterEach(() => { vi.unstubAllEnvs(); vi.resetAllMocks(); });
 describe("WORD QA activity", () => {
-  const row = { id: "00000001", firstId: "00000001", createdAt: "2026-11-19T12:00:00Z", status: "READY",
+  const row = { id: "00000001", firstId: "00000001", createdAt: "2026-11-10T12:00:00Z", status: "READY",
     outcome: null, retry: false, automaticRetry: false, scores: 2, lastSavedAt: "2026-11-19T23:59:00Z" };
   function configure(activity = [row]) {
     isolated.mockReturnValue(true);
@@ -16,21 +16,23 @@ describe("WORD QA activity", () => {
   }
   it("shows a later confirmation on an earlier scan and keeps older history under All time", async () => {
     configure([row, { ...row, id: "00000002", lastSavedAt: row.createdAt }]);
-    expect((await getQaWordSnapshot(true)).activity.map(a => a.id)).toEqual([row.id]);
-    expect((await getQaWordSnapshot(false)).activity).toHaveLength(2);
+    expect((await getQaWordSnapshot("7d")).activity.map(a => a.id)).toEqual([row.id]);
+    expect((await getQaWordSnapshot("24h")).activity).toHaveLength(1);
+    expect((await getQaWordSnapshot("30d")).activity).toHaveLength(2);
+    expect((await getQaWordSnapshot("all")).activity).toHaveLength(2);
   });
   it("requires Platform admin and the exact isolated target", async () => {
     configure();
     admin.mockRejectedValueOnce(new Error("denied"));
-    await expect(getQaWordSnapshot(false)).rejects.toThrow("denied");
+    await expect(getQaWordSnapshot("all")).rejects.toThrow("denied");
     expect(isolated).not.toHaveBeenCalled();
     isolated.mockReturnValue(false);
-    await expect(getQaWordSnapshot(false)).rejects.toThrow("unavailable");
+    await expect(getQaWordSnapshot("all")).rejects.toThrow("unavailable");
   });
   it("rejects malformed snapshots and non-opaque image references", async () => {
     configure([{ ...row, id: "private filename" }]);
-    await expect(getQaWordSnapshot(false)).rejects.toThrow("unavailable");
+    await expect(getQaWordSnapshot("all")).rejects.toThrow("unavailable");
     vi.stubEnv("OCR_QA_WORD_ACTIVITY", "");
-    await expect(getQaWordSnapshot(false)).rejects.toThrow("unavailable");
+    await expect(getQaWordSnapshot("all")).rejects.toThrow("unavailable");
   });
 });
