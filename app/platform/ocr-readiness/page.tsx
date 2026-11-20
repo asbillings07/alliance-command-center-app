@@ -3,6 +3,10 @@ import { LocalTimestamp } from "@/app/alliances/[allianceId]/screenshots/LocalTi
 import { productionPilotConfigured } from "@/app/src/lib/ocr/productionPilot";
 import { getProductionPilotCounts, getOcrReadiness } from "@/app/src/lib/platform/ocrReadiness";
 
+import { getQaWordSnapshot } from "@/app/src/lib/platform/qaWordSnapshot";
+import { parseActivityPeriod } from "@/app/src/lib/platform/activityPeriod";
+import { PilotActivity } from "./PilotActivity";
+
 const criteria = [
   ["Usable imports", "Count user-confirmed imports, including corrections, among settled journeys. Keep failed, abandoned and open work distinct. Protected QA confirmations are counted separately below."],
   ["Silent critical errors", "Check player identity, alliance, reporting period and score against a consented human-reviewed sample. Audited counts and unresolved findings are unavailable."],
@@ -12,17 +16,24 @@ const criteria = [
   ["Economics and demand", "Calculate cost per confirmed import including retries, failures and support. Invoice costs, confirmed imports and commitments at a specific price are unavailable."],
 ] as const;
 
-export default async function OcrReadinessPage() {
-  if (productionPilotConfigured()) {
-    const { scans, retries, failures, saves } = await getProductionPilotCounts();
+export default async function OcrReadinessPage({ searchParams }: { searchParams: Promise<{ period?: string; view?: string }> }) {
+  const params = await searchParams;
+  const period = parseActivityPeriod(params.period);
+  const live = productionPilotConfigured();
+  if (live || params.view === "word") {
+    const snapshot = live ? null : await getQaWordSnapshot(period);
+    const { scans, retries, failures, saves, confirmedScores, activity } = snapshot ?? await getProductionPilotCounts(period);
     return <article className="mx-auto max-w-5xl space-y-5">
       <Link href="/platform/overview" className="text-sm text-primary hover:underline">Platform overview</Link>
       <h2 className="text-2xl font-bold">WORD OCR pilot</h2>
+      {snapshot && <p className="rounded-lg border border-border bg-surface p-3">QA preview · WORD activity as of <LocalTimestamp value={snapshot.capturedAt} /></p>}
       <p>All-time activity for the selected account in WORD.</p>
       <dl className="grid gap-3 sm:grid-cols-2">
-        {([["Uploads", scans - retries], ["Scan attempts", scans], ["Retries included in attempts", retries], ["Failed attempts", failures], ["Confirmed score batches", saves]] as const).map(([label, value]) =>
+        {([["Uploads", scans - retries], ["Scan attempts", scans], ["Retries included in attempts", retries], ["Failed attempts", failures], ["Confirmed score batches", saves], ["Confirmed scores", confirmedScores]] as const).map(([label, value]) =>
           <div key={label} className="rounded-lg border border-border p-4"><dt>{label}</dt><dd className="text-xl font-semibold">{value}</dd></div>)}
       </dl>
+      <Link className="inline-block text-primary underline" href={snapshot ? "/platform/activity/import-errors?view=word" : "/platform/activity/import-errors"}>Investigate import errors</Link>
+      <PilotActivity attempts={activity} period={period} snapshot={!!snapshot} />
       <p>Public beta and paid release: Not enough evidence. A confirmed batch can contain several screenshots. A comparable manual baseline and independent accuracy audit are still needed.</p>
     </article>;
   }

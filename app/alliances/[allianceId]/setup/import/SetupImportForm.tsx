@@ -1,5 +1,6 @@
 "use client";
 
+import { showImportIssue } from "@/app/src/lib/importDiagnostics/report";
 import { useState, useTransition } from "react";
 import { parseWorkbookFile, type ParsedWorkbook, type SpreadsheetParseErrorCode } from "@/app/src/lib/workbookParser";
 import { SpreadsheetUpload } from "@/app/src/components/spreadsheet/SpreadsheetUpload";
@@ -68,7 +69,7 @@ export function SetupImportForm({
       overrideHeaderRowIndex,
     );
     if (!result.ok) {
-      setError(result.error);
+      showImportIssue(allianceId, "setup", "review_blocked", setError, result.error);
       setTableBounds(null);
       setPlayerColumnIndex(null);
       setPeriodProposalReview(null);
@@ -101,7 +102,7 @@ export function SetupImportForm({
 
       if (parseResult.kind === "error") {
         setParseErrorCode(parseResult.code);
-        setError(parseResult.message);
+        showImportIssue(allianceId, "setup", parseResult.code, setError, parseResult.message);
         return;
       }
 
@@ -113,7 +114,7 @@ export function SetupImportForm({
       });
     } catch {
       setIsLoadingFile(false);
-      setError("An unexpected error occurred while reading the file.");
+      showImportIssue(allianceId, "setup", "malformed", setError, "An unexpected error occurred while reading the file.");
     }
   };
 

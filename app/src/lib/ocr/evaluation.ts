@@ -1,4 +1,5 @@
 import "server-only";
+import { readClientBuild } from "./clientBuild";
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type AllianceRole, type OcrEvaluationAttempt } from "@/app/generated/prisma/client";
 import { prisma } from "../prisma";
@@ -156,7 +157,7 @@ function uploadBasename(value?: string): string | null {
 }
 
 export async function evaluateScreenshot(input: EvaluationTarget & {
-  requestId: string; contextKey: string; bytes: Uint8Array; processingConsentId: number; retryOf?: string; automaticRetry?: boolean; sourceFilename?: string;
+  requestId: string; contextKey: string; bytes: Uint8Array; processingConsentId: number; retryOf?: string; automaticRetry?: boolean; sourceFilename?: string; clientBuild?: string | null;
 }, transport: OcrTransport) {
   requireOcrEvaluation(input.allianceId);
   if (!Number.isSafeInteger(input.processingConsentId) || input.processingConsentId < 1) throw new OcrEvaluationError("Reload to review your OCR processing preference.");
@@ -233,6 +234,7 @@ export async function evaluateScreenshot(input: EvaluationTarget & {
       actorUserId: input.actorId, actorName: current.actorName, actorRole: current.actorRole,
       playerName: current.playerName, allianceName: current.allianceName, server: current.server,
       contextKey: current.contextKey, sourceDigest: image.digest, processingVersion: OCR_VERSION,
+      clientBuild: readClientBuild(input.clientBuild),
       sourceFilename: parent?.sourceFilename ?? uploadBasename(input.sourceFilename),
       processingConsentId: current.consent.processing!.id, qualityConsentId: qualityAllowed(current.consent) ? current.consent.quality!.id : null,
       imageBytes: image.bytes.length, createdAt: now, expiresAt: new Date(now.getTime() + OCR_RETENTION_MS),

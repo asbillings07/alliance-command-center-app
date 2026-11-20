@@ -1,4 +1,5 @@
 "use client";
+import { reportImportIssue } from "@/app/src/lib/importDiagnostics/report";
 import { LocalTimestamp } from "./LocalTimestamp";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -49,7 +50,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
       const next = await readResult(attempt.id);
       if (token !== operation.current) return;
       setResult(next);
-    } catch (error) { if (token === operation.current) { setMessage(error instanceof Error ? error.message : "Unable to open this scan."); if (isAllianceRejection(error)) block(error.outcome); } }
+    } catch (error) { if (token === operation.current) { reportImportIssue(allianceId, "screenshot", "result_unavailable"); setMessage(error instanceof Error ? error.message : "Unable to open this scan."); if (isAllianceRejection(error)) block(error.outcome); } }
     finally { if (token === operation.current) setBusy(false); }
   }
   function block(outcome: string) {
@@ -61,6 +62,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
     const token = ++operation.current; controller.current = new AbortController(); setBusy(true); setMessage(""); setResult(null); setNotice(null); setBlockedOutcome(null);
     const form = new FormData(); form.set("screenshot", file, "screenshot"); form.set("sourceFilename", file.name); form.set("requestId", requestId);
     form.set("contextKey", initial.contextKey); form.set("processingConsentId", String(initial.processingConsentId));
+    let openingResult = false;
     try {
       const attempt: Attempt = await uploadWithRetry(endpoint, form, {
         onRetry: () => setMessage("Retrying scan…"), cancelled: () => token !== operation.current,
@@ -70,9 +72,10 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
       setAdditionalAttempts(previous => [attempt, ...previous.filter(a => a.id !== attempt.id)].slice(0, 20));
       if (isAllianceRejection(attempt)) { block(attempt.outcome); return; }
       if (attempt.status !== "READY") { setMessage(recognitionFailureMessage(attempt.outcome) ?? "This attempt has not completed. It will not be sent again automatically. Reload to check its history."); return; }
+      openingResult = true;
       const next = await readResult(attempt.id);
       if (token === operation.current) { setResult(next); setFile(null); setMessage("Recognition is ready to review. No scores were changed."); }
-    } catch (error) { if (token === operation.current) { setMessage(error instanceof Error ? error.message : "The scan did not complete. Reload before trying again."); if (isAllianceRejection(error)) block(error.outcome); } }
+    } catch (error) { if (token === operation.current) { reportImportIssue(allianceId, "screenshot", openingResult ? "result_unavailable" : "scan_unconfirmed", String(form.get("requestId"))); setMessage(error instanceof Error ? error.message : "The scan did not complete. Reload before trying again."); if (isAllianceRejection(error)) block(error.outcome); } }
     finally { if (token === operation.current) { setBusy(false); router.refresh(); } }
   }
   const matched = result?.review.identity === "candidate";
@@ -89,7 +92,7 @@ export function ScreenshotReview({ allianceId, memberId, initial, synthetic }: P
           <label htmlFor="vs-screenshot" className="mt-4 block text-sm font-medium">Screenshot</label>
           <input ref={input} id="vs-screenshot" type="file" accept="image/png,image/jpeg" disabled={busy} className="mt-2 block w-full min-w-0 rounded-lg border border-border p-2 text-sm focus:outline-2 focus:outline-primary"
             onChange={event => { const selected = event.target.files?.[0] ?? null; setResult(null); setMessage(""); setBlockedOutcome(null); setNotice(null);
-              if (selected && (selected.size > 2 * 1024 * 1024 || !["image/png", "image/jpeg"].includes(selected.type))) { setFile(null); setMessage("Choose one PNG or JPEG no larger than 2 MB."); return; }
+              if (selected && (selected.size > 2 * 1024 * 1024 || !["image/png", "image/jpeg"].includes(selected.type))) { reportImportIssue(allianceId, "screenshot", "invalid_selection"); setFile(null); setMessage("Choose one PNG or JPEG no larger than 2 MB."); return; }
               setFile(selected); setRequestId(crypto.randomUUID()); }} />
           <div className="mt-4 flex flex-wrap gap-3"><Button onClick={scan} disabled={!file || busy}>{busy ? "Reading screenshot…" : "Read screenshot"}</Button>
             <Button onClick={clear} variant="secondary">{busy ? "Cancel waiting" : "Clear selection"}</Button></div>

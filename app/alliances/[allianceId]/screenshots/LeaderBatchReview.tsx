@@ -1,4 +1,5 @@
 "use client";
+import { reportImportIssue } from "@/app/src/lib/importDiagnostics/report";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/app/src/components";
@@ -74,7 +75,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
     if (!files.length || busy) return;
     const constraints = "Choose up to 20 PNG or JPEG images, each no larger than 2 MB.";
     if (files.length > 20 || files.some(file => !validRankingFile(file))) {
-      setMessage(constraints); return;
+      reportImportIssue(allianceId, "screenshot", "invalid_selection"); setMessage(constraints); return;
     }
     setSelecting(true);
     try {
@@ -97,10 +98,11 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         if (previous) next[next.indexOf(previous)] = queued;
         else next.splice(insertion++, 0, queued);
       }
-      if (next.length > 20) { setMessage(constraints); return; }
+      if (next.length > 20) { reportImportIssue(allianceId, "screenshot", "invalid_selection"); setMessage(constraints); return; }
       setItems(next);
       invalidate(); setMessage("");
     } catch {
+      reportImportIssue(allianceId, "screenshot", "malformed");
       setMessage("The selected file could not be read. Choose the screenshot again.");
     } finally { setSelecting(false); }
   }
@@ -137,8 +139,9 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
     for (const item of selected) {
       if (cancel.current || !active.current) break;
       update(item.requestId, { state: "reading" });
+      const form = new FormData();
+      let openingResult = false;
       try {
-        const form = new FormData();
         form.set("screenshot", item.file!, "screenshot");
         form.set("sourceFilename", item.file!.name);
         if (retry) form.set("retryOf", retry.attempt.id);
@@ -158,6 +161,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         }
         if (attempt.status === "FAILED") throw new Error(recognitionFailureMessage(attempt.outcome) ?? "This scan failed. You can retry this screenshot.");
         if (attempt.status !== "READY") throw new Error("This scan is still pending. Check upload history before trying again.");
+        openingResult = true;
         const result = await read(attempt.id);
         if (nextItems.some(p => p.requestId !== item.requestId && p.result?.attempt.id === result.attempt.id)) {
           nextItems = nextItems.filter(p => p.requestId !== item.requestId);
@@ -167,6 +171,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         if (isAllianceRejection(error)) {
           update(item.requestId, { file: null, state: "blocked", outcome: error.outcome, error: allianceRejectionMessage(error.outcome) });
         } else {
+          reportImportIssue(allianceId, "screenshot", openingResult ? "result_unavailable" : "scan_unconfirmed", String(form.get("requestId")));
           const description = error instanceof Error ? error.message : "Scan failed.";
           update(item.requestId, { state: "failed", error: description, needsOriginal: retry?.fromPicker || (error instanceof Error && "outcome" in error && error.outcome === "retry-needs-file") });
           // Uncertain processing or changed access stops dispatch. A confirmed
@@ -203,7 +208,10 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         nextItems = [...items.filter(item => item.attemptId !== attempt.id && item.result?.attempt.id !== attempt.id), blocked];
         invalidate(); setItems(nextItems); setNotice(allianceBatchNotice(nextItems));
         setMessage(blocked.error!);
-      } else setMessage(error instanceof Error ? error.message : "Scan unavailable.");
+      } else {
+        reportImportIssue(allianceId, "screenshot", "result_unavailable");
+        setMessage(error instanceof Error ? error.message : "Scan unavailable.");
+      }
     } finally { if (active.current) setBusy(false); }
   }
   return <div className="w-full space-y-5 sentry-block" data-sentry-block>
@@ -235,6 +243,7 @@ export function LeaderBatchReview({ allianceId, initial, synthetic, qaSettings, 
         retryTarget.current = null;
         if (!file || !target) return;
         if (!validRankingFile(file)) {
+          reportImportIssue(allianceId, "screenshot", "invalid_selection");
           setMessage("Choose the original PNG or JPEG screenshot, no larger than 2 MB, then retry.");
           return;
         }

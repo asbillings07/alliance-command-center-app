@@ -1,3 +1,4 @@
+import { wordSnapshotAvailable } from "@/app/src/lib/platform/qaWordSnapshot";
 import Link from "next/link";
 import { Badge } from "@/app/src/components";
 import { getRecentActivity, type ActivityType } from "@/app/src/lib/platform";
@@ -107,7 +108,12 @@ export default async function PlatformActivity() {
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <h1 className="text-lg font-semibold text-text-secondary">Live Feed</h1>
+      <h1 className="text-2xl font-bold">Platform activity</h1>
+      <div className="flex flex-wrap gap-4">
+        <Link className="font-semibold text-primary underline" href="/platform/activity/import-errors">Import errors</Link>
+        {wordSnapshotAvailable() && <Link className="text-primary underline" href="/platform/activity/import-errors?view=word">WORD pilot snapshot</Link>}
+      </div>
+      <h2 className="text-lg font-semibold text-text-secondary">Live Feed</h2>
 
       {activity.length === 0 ? (
         <div className="text-center py-12 text-text-muted">

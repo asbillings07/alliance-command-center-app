@@ -1,4 +1,5 @@
 'use client'
+import { reportImportIssue, showImportIssue } from "@/app/src/lib/importDiagnostics/report";
 import { useState, useMemo } from "react";
 import { ApplyMetricDataDialog, type MetricApplicationSummary } from "@/app/src/components/ApplyMetricDataDialog";
 import { useRouter } from "next/navigation";
@@ -316,7 +317,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
       if (parseResult.kind === "error") {
         setParseErrorCode(parseResult.code);
-        setError(parseResult.message);
+        showImportIssue(allianceId, "evaluation", parseResult.code, setError, parseResult.message);
         return;
       }
 
@@ -326,7 +327,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       analyzeWorkbookSheet(parseResult.workbook, parseResult.workbook.defaultSheetIndex, 0);
     } catch {
       setIsLoadingFile(false);
-      setError("An unexpected error occurred while reading the file.");
+      showImportIssue(allianceId, "evaluation", "malformed", setError, "An unexpected error occurred while reading the file.");
     }
   };
 
@@ -345,7 +346,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       setColumnMappings([]);
       setPreviews([]);
       setParseErrors([]);
-      setError("The selected worksheet is empty.");
+      showImportIssue(allianceId, "evaluation", "empty_sheet", setError, "The selected worksheet is empty.");
       return;
     }
 
@@ -373,7 +374,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       setColumnMappings([]);
       setPreviews([]);
       setParseErrors([]);
-      setError(result.error);
+      showImportIssue(allianceId, "evaluation", "review_blocked", setError, result.error);
       return;
     }
     if (result.columns.length < 2) {
@@ -383,7 +384,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       setColumnMappings([]);
       setPreviews([]);
       setParseErrors([]);
-      setError("Worksheet must have at least 2 columns in selected region");
+      showImportIssue(allianceId, "evaluation", "review_blocked", setError, "Worksheet must have at least 2 columns in selected region");
       return;
     }
 
@@ -536,7 +537,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
     if (mapped.length === 0) {
       setPreviews([]);
       setStep("select");
-      setError("All columns were skipped. Map at least one column to preview import.");
+      showImportIssue(allianceId, "evaluation", "missing_mapping", setError, "All columns were skipped. Map at least one column to preview import.");
       return [];
     }
 
@@ -658,7 +659,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       return;
     }
 
-    setError(
+    showImportIssue(allianceId, "evaluation", "metric_permission", setError,
       `Creating a new metric for "${columnName}" requires metric configuration permission. Please select an existing metric or skip the column.`,
     );
   };
@@ -738,23 +739,23 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
 
     if (totalMatched === 0 || totalMissingIdentityCount > 0 || totalInvalidValueCount > 0) {
       if (totalMissingIdentityCount > 0) {
-        setError(
+        showImportIssue(allianceId, "evaluation", "missing_identity", setError,
           `Cannot import: ${totalMissingIdentityCount} ${totalMissingIdentityCount === 1 ? "cell contains" : "cells contain"} metric values but missing player names. Check player column.`,
         );
       } else if (totalInvalidValueCount > 0) {
-        setError(
+        showImportIssue(allianceId, "evaluation", "invalid_values", setError,
           `Cannot import: ${totalInvalidValueCount} ${totalInvalidValueCount === 1 ? "cell contains" : "cells contain"} invalid non-whole-number values.`,
         );
       } else if (totalParsed === 0 && totalSkippedBlanksInSelect > 0) {
-        setError(
+        showImportIssue(allianceId, "evaluation", "no_values", setError,
           `No importable values found. ${totalSkippedBlanksInSelect} blank metric ${totalSkippedBlanksInSelect === 1 ? "cell was" : "cells were"} skipped.`,
         );
       } else if (totalParsed === 0) {
-        setError(
+        showImportIssue(allianceId, "evaluation", "no_values", setError,
           "No valid values found to import. Check the mapped columns.",
         );
       } else {
-        setError(
+        showImportIssue(allianceId, "evaluation", "no_matches", setError,
           "No rows matched any of your alliance members. Check the player names and try again.",
         );
       }
@@ -932,7 +933,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       .filter((m) => m.entries.length > 0);
 
     if (mappings.length === 0) {
-      setError("No matched entries to import");
+      showImportIssue(allianceId, "evaluation", "no_matches", setError, "No matched entries to import");
       return;
     }
 
@@ -956,6 +957,7 @@ export function ImportForm({ periodId, periodName, allianceId, members, metrics,
       router.refresh();
       setStep("complete");
     } catch {
+      reportImportIssue(allianceId, "evaluation", "save_unconfirmed");
       return { error: "Could not confirm whether the data was applied. Check Go back in time before trying again." };
     } finally {
       setIsPending(false);

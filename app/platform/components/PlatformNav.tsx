@@ -31,7 +31,12 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Activity",
     href: "/platform/activity",
-    description: "Live Feed of everything",
+    description: "Recent platform activity",
+  },
+  {
+    label: "Logs",
+    href: "/platform/activity/import-errors",
+    description: "Investigate import errors",
   },
   {
     label: "Beta",
@@ -44,6 +49,12 @@ const NAV_ITEMS: NavItem[] = [
     description: "Triage tester feedback",
   },
 ];
+
+// Nested destinations such as the import log have their own menu entry.
+function currentNavItem(pathname: string) {
+  return NAV_ITEMS.filter(item => pathname === item.href || pathname.startsWith(item.href + "/"))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+}
 
 function WorkspaceNavLink({
   workspace,
@@ -96,15 +107,14 @@ export function PlatformNav({
 }: {
   workspace: AdminAllianceWorkspace;
 }) {
-  const pathname = usePathname();
+  const current = currentNavItem(usePathname());
 
   return (
     <div className="flex flex-col flex-1">
       <nav className="flex-1 py-4">
         <ul className="space-y-1 px-3">
           {NAV_ITEMS.map((item) => {
-            const isActive =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const isActive = item === current;
 
             return (
               <li key={item.href}>
@@ -142,7 +152,7 @@ export function PlatformNavMobile({
   onClose: () => void;
   workspace: AdminAllianceWorkspace;
 }) {
-  const pathname = usePathname();
+  const current = currentNavItem(usePathname());
 
   if (!isOpen) return null;
 
@@ -169,11 +179,10 @@ export function PlatformNavMobile({
           </button>
         </div>
 
-        <nav className="flex-1 py-4">
+        <nav className="min-h-0 flex-1 overflow-y-auto py-4">
           <ul className="space-y-1 px-3">
             {NAV_ITEMS.map((item) => {
-              const isActive =
-                pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const isActive = item === current;
 
               return (
                 <li key={item.href}>

@@ -1,4 +1,5 @@
 "use client";
+import { reportImportIssue } from "@/app/src/lib/importDiagnostics/report";
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -25,8 +26,11 @@ export function BatchConfirmation({ destination, daily, weekly, selection }: {
     setBusy(true); setError(""); setLower(false); setCreateConfirmed(false);
     try {
       const result = await checkBatch(input);
-      if (!result.review) setError(result.error); else setReview(result.review);
-    } catch { setError("Review unavailable. Your selection is still here."); }
+      if (!result.review) {
+        reportImportIssue(selection.allianceId, "screenshot", "review_blocked");
+        setError(result.error);
+      } else setReview(result.review);
+    } catch { reportImportIssue(selection.allianceId, "screenshot", "result_unavailable"); setError("Review unavailable. Your selection is still here."); }
     finally { setBusy(false); }
   };
   return <section className="mt-4 space-y-3 border-t border-border pt-4">
@@ -62,8 +66,17 @@ export function BatchConfirmation({ destination, daily, weekly, selection }: {
         </div>}
         {decreases && <label className="block"><input type="checkbox" checked={lower} onChange={e => setLower(e.target.checked)} /> I confirm the lower scores shown above. Previous values stay in history.</label>}</div>}
       onConfirm={async () => {
-        const result = await checkBatch(input, { comparison: review.comparison, lowerConfirmed: lower, createMembersConfirmed: createConfirmed });
-        if (!result.review?.saved) return { error: result.error ?? "Could not confirm the save. Review the batch again." };
+        let result;
+        try {
+          result = await checkBatch(input, { comparison: review.comparison, lowerConfirmed: lower, createMembersConfirmed: createConfirmed });
+        } catch {
+          reportImportIssue(selection.allianceId, "screenshot", "save_unconfirmed");
+          return { error: "Check saved batches before retrying." };
+        }
+        if (!result.review?.saved) {
+          reportImportIssue(selection.allianceId, "screenshot", "save_unconfirmed");
+          return { error: result.error ?? "Could not confirm the save. Review the batch again." };
+        }
         setReview(result.review); router.refresh();
       }} />}
   </section>;

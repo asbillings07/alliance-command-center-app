@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   env: {
+    // Embed the deployment revision in the browser bundle, including older open tabs.
+    NEXT_PUBLIC_APP_BUILD: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "",
     // Identifies the deployed build in feedback submissions. CI/CD should set
     // NEXT_PUBLIC_APP_VERSION (e.g. a semver or `1.0.0-beta.3+sha`); locally we
     // fall back to the package version npm exposes during scripts, then "".

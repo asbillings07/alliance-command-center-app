@@ -1,5 +1,6 @@
 "use client";
 
+import { showImportIssue } from "@/app/src/lib/importDiagnostics/report";
 import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -233,7 +234,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
 
             if (parseResult.kind === "error") {
                 setParseErrorCode(parseResult.code);
-                setError(parseResult.message);
+                showImportIssue(allianceId, "historical", parseResult.code, setError, parseResult.message);
                 return;
             }
 
@@ -242,7 +243,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
             processSheetRows(parseResult.workbook, parseResult.workbook.defaultSheetIndex);
         } catch {
             setIsLoadingFile(false);
-            setError("An unexpected error occurred while reading the file.");
+            showImportIssue(allianceId, "historical", "malformed", setError, "An unexpected error occurred while reading the file.");
         }
     };
 
@@ -251,7 +252,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
         if (!sheet || sheet.rows.length === 0) {
             setParsedMembers([]);
             setMappedColumnIndices({ playerColIndex: null, thpColIndex: null, roleColIndex: null });
-            setError("The selected worksheet is empty.");
+            showImportIssue(allianceId, "historical", "empty_sheet", setError, "The selected worksheet is empty.");
             return;
         }
 
@@ -262,7 +263,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
         if (analysis.error) {
             setParsedMembers([]);
             setMappedColumnIndices({ playerColIndex: null, thpColIndex: null, roleColIndex: null });
-            setError(analysis.error);
+            showImportIssue(allianceId, "historical", "review_blocked", setError, analysis.error);
             return;
         }
 
@@ -270,7 +271,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
         if (!playerCol) {
             setParsedMembers([]);
             setMappedColumnIndices({ playerColIndex: null, thpColIndex: null, roleColIndex: null });
-            setError("No player column found. Your spreadsheet must have a column named: Player, Member, Name, or IGN.");
+            showImportIssue(allianceId, "historical", "missing_player_column", setError, "No player column found. Your spreadsheet must have a column named: Player, Member, Name, or IGN.");
             return;
         }
 
@@ -314,7 +315,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
 
         if (rawMembers.length === 0) {
             setParsedMembers([]);
-            setError("No valid members found in the worksheet.");
+            showImportIssue(allianceId, "historical", "no_matches", setError, "No valid members found in the worksheet.");
             return;
         }
 
@@ -487,7 +488,7 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
         }
 
         if (!parsedWorkbook || !currentSheet) {
-            setError("Missing source file information. Please re-upload your spreadsheet.");
+            showImportIssue(allianceId, "historical", "review_blocked", setError, "Missing source file information. Please re-upload your spreadsheet.");
             return;
         }
 
@@ -546,14 +547,14 @@ export function HistoricalRosterImportForm({ allianceId, existingMembers, return
                     result.createdArchived === 0 &&
                     result.restored === 0
                 ) {
-                    setError(result.errors.join("; "));
+                    showImportIssue(allianceId, "historical", "save_rejected", setError, result.errors.join("; "));
                 } else {
                     setError(null);
                     router.refresh();
                     setStep("complete");
                 }
             } catch (err) {
-                setError(err instanceof Error ? err.message : "Failed to import historical roster. Please try again.");
+                showImportIssue(allianceId, "historical", "save_unconfirmed", setError, err instanceof Error ? err.message : "Failed to import historical roster. Please try again.");
             }
         });
     };

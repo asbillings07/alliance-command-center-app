@@ -5,7 +5,8 @@ export async function uploadWithRetry(endpoint: string, form: FormData, options:
   cancelled: () => boolean;
   signal?: AbortSignal;
 }) {
-  const post = () => fetch(endpoint, { method: "POST", body: form, signal: options.signal });
+  const build = process.env.NEXT_PUBLIC_APP_BUILD;
+  const post = () => fetch(endpoint, { method: "POST", headers: build ? { "X-ACC-Client-Build": build } : undefined, body: form, signal: options.signal });
   const first = await post();
   const attempt = await first.json();
   if (!first.ok) throw Object.assign(new Error(attempt.error || "The scan did not complete."), { outcome: attempt.outcome });

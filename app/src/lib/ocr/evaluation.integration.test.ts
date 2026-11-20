@@ -4,6 +4,7 @@ import { prisma as db } from "../prisma";
 import { loadIdentityReview, decideMemberIdentity } from "../memberIdentity";
 import { loadMemberAccessReview, decideMemberSelfAccess } from "../memberSelfAccess";
 import { evaluateScreenshot, loadEvaluationContext, ocrEvaluationAvailable, readEvaluationContent, type EvaluationTarget } from "./evaluation";
+import { pilotActivityQuery, pilotError } from "../platform/ocrPilotActivity";
 import { reservePilotAllowance } from "./pilotAllowance";
 import { reviewOrSaveBatch } from "./confirmedBatch";
 import * as providerSelection from "./transport";
@@ -324,6 +325,18 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
     expect(result.filter(r => r.status === "fulfilled")).toHaveLength(1);
     expect(await db.ocrQaAllianceNameChange.count({ where: { allianceId } })).toBe(1);
   });
+  it("shows an earlier failure and its later retry separately, without exposing provider text", async () => {
+    const target: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
+    const original = await input(target);
+    vi.mocked(transport.recognize).mockRejectedValue(new RecognitionFailure("provider-temporary"));
+    const first = await evaluateScreenshot(original, transport);
+    const second = await evaluateScreenshot({ ...original, clientBuild: "dab1234", requestId: crypto.randomUUID(), retryOf: first.id, automaticRetry: true }, transport);
+    const activity = await pilotActivityQuery(allianceId, actorId, new Date(second.createdAt));
+    expect(activity).toEqual([expect.objectContaining({ id: second.id, firstId: first.id, clientBuild: "dab1234", retry: true, automaticRetry: true, scores: 0, lastSavedAt: null })]);
+    expect(pilotError(activity[0].status, activity[0].outcome)).toMatch(/temporarily unavailable/);
+    expect(pilotError("FAILED", "unknown private message")).toBe("The failure reason was not recorded.");
+    expect((await pilotActivityQuery(allianceId, actorId, null)).find(a => a.id === first.id)?.clientBuild).toBeNull();
+  });
   it.each([false, true])("saves once under concurrent confirmation and replay (initially empty roster: %s)", async empty => {
     if (empty) await db.allianceMember.delete({ where: {id:memberId} });
     const batch: EvaluationTarget = { allianceId, actorId, memberId: null, scope: "batch" };
@@ -350,6 +363,11 @@ describe.skipIf(!enabled)("integration: managed OCR evaluation authority and res
       expect((await reviewOrSaveBatch(actorId,selection,decision)).saved).toBe(true);
       expect(await db.memberMetricEntry.count({ where:{periodId:period.id} })).toBe(empty ? 3 : 1);
       expect(await db.ocrScoreSource.count({ where:{attemptId:first.id} })).toBe(empty ? 3 : 1);
+      const [activity] = await pilotActivityQuery(allianceId, actorId, null);
+      expect(activity).toMatchObject({ id: first.id, firstId: first.id, status: "READY", scores: empty ? 3 : 1, lastSavedAt: expect.any(Date) });
+      expect(await pilotActivityQuery(allianceId, accountId, null)).toEqual([]);
+      expect(await pilotActivityQuery("another-alliance", actorId, null)).toEqual([]);
+      expect(await pilotActivityQuery(allianceId, actorId, new Date("2099-01-01"))).toEqual([]);
       if (empty) {
         const roster = await db.allianceMember.findMany({where:{allianceId},select:{playerName:true,userId:true},orderBy:{playerName:"asc"}});
         expect(roster).toEqual(["Jordan Vale","Morgan Reed","Riley Chen"].map(playerName=>({playerName,userId:null})));

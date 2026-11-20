@@ -385,6 +385,37 @@ test.describe("Platform Operations Console", () => {
   });
 
   test.describe("Activity Page", () => {
+    test("follows a rejected roster file from upload to Platform error details", async ({ page }) => {
+      const user = await prisma.user.findUniqueOrThrow({ where: { email: process.env.TEST_PLATFORM_ADMIN_EMAIL! } });
+      const name = "Import QA " + crypto.randomUUID();
+      const alliance = await prisma.alliance.create({ data: { name, server: name, memberships: { create: { userId: user.id, role: "OWNER" } } } });
+      try {
+        await page.goto(`/alliances/${alliance.id}/members/import`);
+        await page.getByLabel(/import member spreadsheet/i).setInputFiles({
+          name: "private-fixture.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4"),
+        });
+        await expect.poll(() => prisma.importErrorReport.count({ where: { allianceId: alliance.id, code: "unsupported_format" } })).toBe(1);
+        await page.goto("/platform/activity");
+        await page.getByRole("link", { name: "Logs", exact: true }).click();
+        await expect(page.getByRole("link", { name: "Logs", exact: true })).toHaveAttribute("aria-current", "page");
+        await expect(page.getByRole("link", { name: "Activity", exact: true })).not.toHaveAttribute("aria-current", "page");
+        await page.getByLabel("Alliance name").fill(name);
+        await page.getByRole("button", { name: "Filter errors" }).click();
+        const row = page.getByRole("button", { name: /Unsupported file format/ });
+        await row.click();
+        const detail = page.getByRole("dialog", { name: "Import details" });
+        await expect(detail.getByText("Roster spreadsheet")).toBeVisible();
+        await expect(detail.getByText("Reported by the browser")).toBeVisible();
+        await expect(detail).not.toContainText("private-fixture");
+        await page.keyboard.press("Escape");
+        await expect(row).toBeFocused();
+      } finally {
+        await prisma.importErrorReport.deleteMany({ where: { allianceId: alliance.id } });
+        await prisma.allianceMembership.deleteMany({ where: { allianceId: alliance.id } });
+        await prisma.alliance.delete({ where: { id: alliance.id } });
+      }
+    });
+
     test("displays Live Feed header", async ({ page }) => {
       await page.goto("/platform/activity");
 

@@ -1,0 +1,52 @@
+import "server-only";
+import { readClientBuild } from "../ocr/clientBuild";
+import { notFound } from "next/navigation";
+import { requirePlatformAdmin } from "../auth/requirePlatformAdmin";
+import { originalOcrAllowanceDatabase } from "../ocr/deploymentIsolation";
+import { activityStart, type ActivityPeriod } from "./activityPeriod";
+import type { ActivityRow } from "./ocrPilotActivity";
+
+function count(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw Error();
+  return value;
+}
+
+function date(value: unknown): Date {
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) throw Error();
+  return new Date(value);
+}
+
+function activityRow(value: Record<string, unknown>): ActivityRow {
+  const { id, firstId, status, outcome, retry, automaticRetry } = value;
+  if (typeof id !== "string" || !/^\d{8}$/.test(id) || typeof firstId !== "string" || !/^\d{8}$/.test(firstId)
+    || (status !== "READY" && status !== "FAILED" && status !== "PROCESSING")
+    || !(outcome === null || (typeof outcome === "string" && /^(alliance-|processing-failed:)[a-z-]{1,36}$/.test(outcome)))
+    || typeof retry !== "boolean" || typeof automaticRetry !== "boolean") throw Error();
+  return { id, firstId, status, outcome, retry, automaticRetry, clientBuild: readClientBuild(value.clientBuild), createdAt: date(value.createdAt),
+    scores: count(value.scores), lastSavedAt: value.lastSavedAt === null ? null : date(value.lastSavedAt) };
+}
+
+export function wordSnapshotAvailable() {
+  return originalOcrAllowanceDatabase(process.env) && process.env.VERCEL_GIT_COMMIT_REF === "codex/platform-ocr-attempt-history" && !!process.env.OCR_QA_WORD_ACTIVITY;
+}
+
+/** Per-deployment readout. No production credentials, files, identities or recognized content. */
+export async function getQaWordSnapshot(period: ActivityPeriod) {
+  await requirePlatformAdmin();
+  if (!originalOcrAllowanceDatabase(process.env)
+    || process.env.VERCEL_GIT_COMMIT_REF !== "codex/platform-ocr-attempt-history") notFound();
+  const raw = process.env.OCR_QA_WORD_ACTIVITY;
+  if (!raw || raw.length > 16000) notFound();
+  try {
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data.activity) || data.activity.length > 20) throw Error();
+    const rows: ActivityRow[] = data.activity.map(activityRow);
+    const capturedAt = date(data.capturedAt);
+    const since = activityStart(period, capturedAt);
+    return {
+      capturedAt: capturedAt.toISOString(), scans: count(data.scans), retries: count(data.retries),
+      failures: count(data.failures), saves: count(data.saves), confirmedScores: count(data.confirmedScores),
+      activity: rows.filter(row => since === null || row.createdAt >= since || (row.lastSavedAt !== null && row.lastSavedAt >= since)),
+    };
+  } catch { notFound(); }
+}
