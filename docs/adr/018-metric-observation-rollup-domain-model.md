@@ -179,3 +179,14 @@ The new history view reports an individual saved entry, not an effective report
 “as known then.” Timestamp/id correction ordering is not transaction commit
 ordering. A later submission/decision and historical-cutoff amendment is required
 before enabling member OCR, finality or leadership precedence.
+
+## Prepared screenshot-submission amendment (#400)
+
+The [score-review qualification contract](../product-design/ocr-member-submissions/score-review-contract.md)
+separates pending member evidence from accepted leadership decisions, defines
+exact lower-score confirmation and finality conflicts, and requires a committed
+per-context revision for historical replay. Its pure synthetic resolver does not
+change this ADR's active canonical queries or any production writer. Persistence,
+qualified screenshot admission, transactional projection and the complete consumer
+audit remain required before activation. Existing timestamps/IDs must not be
+reinterpreted as a commit clock or legacy rows as final screenshot evidence.
