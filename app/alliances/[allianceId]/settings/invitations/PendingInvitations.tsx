@@ -2,6 +2,7 @@
 
 import { useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/app/src/components/Button";
 import { cancelInvitationAction, resendInvitationAction } from "./action";
 import { InvitationEmailNotice } from "./InvitationEmailNotice";
 import type { EmailStatus } from "@/app/src/lib/email/types";
@@ -64,8 +65,11 @@ export function PendingInvitations({
     emailStatus: EmailStatus | "unknown";
   } | null>(null);
 
-  const handleCancel = (invitationId: string) => {
-    if (!confirm("Are you sure you want to cancel this invitation?")) return;
+  const handleCancel = (invitation: PendingInvitation) => {
+    if (!confirm(
+      `Revoke the invitation for ${invitation.playerNameSnapshot} (${invitation.email})?\n\nTheir current invitation link and code will stop working. To correct an email address, send a new invitation after revoking this one. This will not remove the member record.`
+    )) return;
+    const invitationId = invitation.id;
 
     setError(null);
     setResendResult(null);
@@ -175,82 +179,48 @@ export function PendingInvitations({
         </div>
       )}
 
-      <div className="overflow-x-auto -mx-6 px-6">
-        <table className="min-w-full">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="pb-3 pr-6 text-left text-xs font-medium text-text-muted uppercase tracking-wide">
-                Player
-              </th>
-              <th className="pb-3 pr-6 text-left text-xs font-medium text-text-muted uppercase tracking-wide">
-                Email
-              </th>
-              <th className="pb-3 pr-6 text-left text-xs font-medium text-text-muted uppercase tracking-wide">
-                Role
-              </th>
-              <th className="pb-3 pr-6 text-left text-xs font-medium text-text-muted uppercase tracking-wide">
-                Invited By
-              </th>
-              <th className="pb-3 pr-6 text-left text-xs font-medium text-text-muted uppercase tracking-wide">
-                Expires
-              </th>
-              <th className="pb-3 pl-6 text-right text-xs font-medium text-text-muted uppercase tracking-wide">
-                
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-surface-secondary">
-            {invitations.map((invitation) => {
-              const expired = isExpired(invitation.expiresAt);
-              return (
-                <tr key={invitation.id} className={expired ? "bg-surface-secondary/50" : ""}>
-                  <td className="py-3 pr-6 text-sm font-medium text-text-primary">
-                    {invitation.playerNameSnapshot}
-                  </td>
-                  <td className="py-3 pr-6 text-sm text-text-secondary">
-                    {invitation.email}
-                  </td>
-                  <td className="py-3 pr-6 text-sm text-text-secondary">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-surface-secondary text-text-secondary">
-                      {formatRole(invitation.membershipRole)}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-6 text-sm text-text-muted">
-                    {invitation.invitedBy.displayName}
-                  </td>
-                  <td className="py-3 pr-6 text-sm">
-                    {expired ? (
-                      <span className="text-warning-light text-xs font-medium">Expired</span>
-                    ) : (
-                      <span className="text-text-muted text-xs">
-                        {formatDate(invitation.expiresAt)}
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 pl-6 text-sm text-right space-x-3">
-                    <button
-                      type="button"
-                      onClick={() => handleResend(invitation.id)}
-                      disabled={isPending}
-                      className="text-text-muted hover:text-text-primary disabled:opacity-50 text-xs"
-                    >
-                      Resend
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleCancel(invitation.id)}
-                      disabled={isPending}
-                      className="text-text-muted hover:text-danger-light disabled:opacity-50 text-xs"
-                    >
-                      Cancel
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <p className="text-sm text-text-secondary">
+        Manage each invitation below. If the email is incorrect, revoke it and send a new invitation.
+      </p>
+      <ul role="list" aria-label="Pending invitations" aria-busy={isPending} className="space-y-4">
+        {invitations.map((invitation) => {
+          const expired = isExpired(invitation.expiresAt);
+          return (
+            <li key={invitation.id} className="min-w-0 rounded-lg border border-border p-4">
+              <h3 className="font-semibold text-text-primary [overflow-wrap:anywhere]">
+                {invitation.playerNameSnapshot}
+              </h3>
+              <p className="mt-1 text-sm text-text-secondary [overflow-wrap:anywhere]">
+                {invitation.email}
+              </p>
+              <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                <div className="min-w-0">
+                  <dt className="text-text-muted">Role</dt>
+                  <dd className="mt-1 text-text-secondary">{formatRole(invitation.membershipRole)}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-text-muted">Invited by</dt>
+                  <dd className="mt-1 text-text-secondary [overflow-wrap:anywhere]">{invitation.invitedBy.displayName}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-text-muted">Expires</dt>
+                  <dd className={`mt-1 ${expired ? "text-warning-light" : "text-text-secondary"}`}>
+                    {expired ? "Expired" : formatDate(invitation.expiresAt)}
+                  </dd>
+                </div>
+              </dl>
+              <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row">
+                <Button type="button" variant="secondary" size="lg" onClick={() => handleResend(invitation.id)} disabled={isPending}>
+                  Resend
+                </Button>
+                <Button type="button" variant="danger" size="lg" onClick={() => handleCancel(invitation)} disabled={isPending}>
+                  Revoke invitation
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
